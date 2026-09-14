@@ -1,7 +1,7 @@
-"""Действия бота (коннект, следующий, стоп, профиль…) — общая логика для команд и кнопок.
+"""Действия бота: поиск пары, следующий, стоп, профиль, ник, настройки-экраны.
 
-Хендлеры в handlers/* только разбирают апдейт и вызывают отсюда нужное действие,
-так что кнопка «🔎 Поиск собеседника» и команда /connect делают буквально одно и то же.
+Хендлеры только разбирают апдейт и вызывают отсюда нужное действие — кнопка
+«🔎 Поиск собеседника» и команда /connect делают буквально одно и то же.
 """
 
 from __future__ import annotations
@@ -20,46 +20,38 @@ from aiogram.exceptions import (
 )
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
+from . import nick as nicklib
 from . import texts
 from .config import Config
 from .db import Database
-from .keyboards import menu_keyboard, rating_keyboard, back_menu_keyboard
+from .keyboards import menu_keyboard, rating_keyboard
 from .levels import level_for
 from .matching import Matchmaker
+from .pack import EmojiPack
 
 
 @dataclass(slots=True)
 class Ctx:
-    """Всё, что нужно действию: бот, сервисы, кто запросил и откуда отвечать."""
-
     bot: Bot
     db: Database
     mm: Matchmaker
     cfg: Config
+    pack: EmojiPack
     event: Message | CallbackQuery
     user_id: int
-    me: Any
+    me: Any = None
 
-    @classmethod
-    def build(cls, event: Message | CallbackQuery, data: dict) -> "Ctx":
-        user = data.get("event_from_user")
-        return cls(
-            bot=data["bot"],
-            db=data["db"],
-            mm=data["mm"],
-            cfg=data["cfg"],
-            event=event,
-            user_id=getattr(user, "id", 0),
-            me=data.get("me"),
-        )
+    def __post_init__(self) -> None:
+        if self.pack is None:
+            self.pack = EmojiPack(self.cfg.emoji_pack_url)
 
     # ------------------------------------------------------------------ answers
     async def reply(self, text: str, markup: InlineKeyboardMarkup | None = None, **kw: Any) -> Message | None:
-        if isinstance(self.event, CallbackQuery):
-            if self.event.message is None:
-                return None
-            return await self.event.message.answer(text=text, reply_markup=markup, **kw)
-        return await self.event.answer(text=text, reply_markup=markup, **kw)
+        target = self.event.message if isinstance(self.event, CallbackQuery) else self.event
+        if target is None:
+            return None
+        return await _send_text(target, text, markup, self.pack, **kw)
+
     async def ack(self, text: str = "", alert: bool = False) -> None:
         if isinstance(self.event, CallbackQuery):
             try:
@@ -70,15 +62,24 @@ class Ctx:
     async def edit(self, text: str, markup: InlineKeyboardMarkup | None = None) -> bool:
         if not isinstance(self.event, CallbackQuery) or self.event.message is None:
             return False
-        try:
-            await self.event.message.edit_text(text=text, reply_markup=markup)
-            return True
-        except TelegramBadRequest:
-            return False  # «Message is not modified» — не страшно
-        except TelegramAPIError:
-            return False
+        for attempt in range(2):
+            body = self.pack.wrap(text) if attempt == 0 else self.pack.strip(text)
+            try:
+                await self.event.message.edit_text(text=body, reply_markup=markup)
+                return True
+            except TelegramBadRequest as exc:
+                if attempt == 0 and self.pack.accept(exc):
+                    continue
+                return False
+            except TelegramAPIError:
+                return False
+        return False
 
-    # ------------------------------------------------------------------ prefs / guards
+    # ------------------------------------------------------------------ профиль
+    @property
+    def nick(self) -> str:
+        return nicklib.display(self.me["nickname"] if self.me else "", self.user_id)
+
     @property
     def prefs(self) -> dict[str, Any]:
         me = self.me
@@ -88,36 +89,76 @@ class Ctx:
             "same_district": bool(me["same_district"]) if me else False,
         }
 
+    async def ensure_nick(self) -> str:
+        """Авто-ник при первом же контакте — чтобы нигде не светилось настоящее имя."""
+        if self.me is None:
+            return self.nick
+        if not (self.me["nickname"] or "").strip():
+            auto = nicklib.auto_nick(self.user_id)
+            await self.db.set_profile(self.user_id, nickname=auto)
+            self.me = await self.db.get_user(self.user_id)
+        return self.nick
+
+    # ------------------------------------------------------------------ guards
     async def restricted(self) -> bool:
-        """True — пользователю нельзя в чат (бан/мут). Уже всё объяснили."""
         reason = await self.db.is_restricted(self.user_id)
         if reason == "banned":
             row = await self.db.get_user(self.user_id)
-            why = (row["ban_reason"] if row else "") or "нарушение правил Анончата"
+            why = (row["ban_reason"] if row else "") or "нарушение правил"
             await self.reply(
-                texts.BANNED.format(city=self.cfg.city, reason=texts.esc(why), contact="/feedback"),
-                markup=back_menu_keyboard(),
+                texts.BANNED.format(city=texts.esc(self.cfg.city), reason=texts.esc(why)),
+                markup=menu_keyboard(self.cfg.emoji_pack_url),
             )
             return True
         if reason == "muted":
             row = await self.db.get_user(self.user_id)
             mins = max(1, int(((row["mute_until"] if row else 0) - time.time()) // 60) + 1)
-            await self.reply(texts.MUTED.format(mins=mins), markup=menu_keyboard(self.cfg.emoji_pack_url))
+            await self.reply(
+                texts.MUTED.format(mins=mins), markup=menu_keyboard(self.cfg.emoji_pack_url)
+            )
             return True
         return False
 
 
-async def send_to(bot: Bot, chat_id: int, text: str, markup: InlineKeyboardMarkup | None = None) -> bool:
-    """Доставка собеседнику. False — пользователь недоступен (заблокировал бота)."""
+# --------------------------------------------------------------------- low-level
+async def _send_text(
+    target: Message, text: str, markup: InlineKeyboardMarkup | None, pack: EmojiPack, **kw: Any
+) -> Message | None:
     for attempt in range(2):
+        body = pack.wrap(text) if attempt == 0 else pack.strip(text)
         try:
-            await bot.send_message(chat_id, text, reply_markup=markup)
+            return await target.answer(text=body, reply_markup=markup, **kw)
+        except TelegramBadRequest as exc:
+            if attempt == 0 and pack.accept(exc):
+                continue
+            return None
+    return None
+
+
+async def send_to(
+    bot: Bot,
+    chat_id: int,
+    text: str,
+    markup: InlineKeyboardMarkup | None = None,
+    pack: EmojiPack | None = None,
+) -> bool:
+    """Доставка собеседнику. False — пользователь недоступен (заблокировал бота)."""
+    if not chat_id:
+        return False
+    for attempt in range(2):
+        body = pack.wrap(text) if (pack and attempt == 0) else text
+        try:
+            await bot.send_message(chat_id, body, reply_markup=markup)
             return True
+        except TelegramBadRequest as exc:
+            if attempt == 0 and pack is not None and pack.accept(exc):
+                continue
+            return False
         except TelegramRetryAfter as exc:
             if attempt == 0:
                 await asyncio.sleep(min(float(exc.retry_after) + 0.3, 3.0))
                 continue
-            return True  # не паникуем: сообщение дойдёт при следующей попытке
+            return True
         except (TelegramForbiddenError, TelegramAPIError):
             return False
     return False
@@ -137,55 +178,64 @@ async def send_copy_to(bot: Bot, message: Message, chat_id: int) -> bool:
         return False
 
 
-# --------------------------------------------------------------------- menus
+# --------------------------------------------------------------------- экраны
 async def show_menu(ctx: Ctx, edit: bool = True) -> None:
     status = ctx.mm.status(ctx.user_id)
-    xp = int(ctx.me["xp"]) if ctx.me else 0
-    info = level_for(xp)
+    info = level_for(int(ctx.me["xp"]) if ctx.me else 0)
     state = {
         "paired": texts.STATUS_PAIRED,
-        "queued": texts.STATUS_QUEUED.format(city=ctx.cfg.city),
-    }.get(status, texts.STATUS_FREE.format(city=ctx.cfg.city))
+        "queued": texts.STATUS_QUEUED,
+    }.get(status, texts.STATUS_FREE.format(city=texts.esc(ctx.cfg.city)))
 
     body = (
-        f"🧲 <b>Анонимный чат · {texts.esc(ctx.cfg.city)}</b>\n\n"
-        f"🥇 Уровень <b>{info.level}</b> · {texts.esc(info.title)}\n"
-        f"<code>{info.bar}</code> {info.xp} XP"
-        + (f" · ещё {info.to_next} до «{texts.esc(info.next_title)}»" if info.to_next is not None else "")
-        + f"\n\n{state}"
+        f"🧲 <b>{texts.esc(ctx.cfg.city)}</b> · уровень {info.level} "
+        f"<i>{texts.esc(info.title)}</i>\n<code>{info.bar}</code> {info.xp} XP\n\n{state}"
     )
-    kb = menu_keyboard(ctx.cfg.emoji_pack_url, status)
+    kb = menu_keyboard(ctx.cfg.emoji_pack_url, status, ctx.mm.queue_size())
     if edit and await ctx.edit(body, kb):
         return
     await ctx.reply(body, kb)
 
 
+async def show_welcome(ctx: Ctx) -> None:
+    nick = await ctx.ensure_nick()
+    await ctx.reply(
+        texts.WELCOME.format(
+            city=texts.esc(ctx.cfg.city),
+            nick=texts.esc(nick),
+            nick_hint=texts.NICK_HINT,
+        ),
+        markup=menu_keyboard(ctx.cfg.emoji_pack_url, ctx.mm.status(ctx.user_id), ctx.mm.queue_size()),
+    )
+
+
 async def show_help(ctx: Ctx) -> None:
     await ctx.reply(
-        texts.HELP.format(city=texts.esc(ctx.cfg.city), pack=ctx.cfg.emoji_pack_url),
+        texts.HELP.format(pack=ctx.cfg.emoji_pack_url),
         markup=menu_keyboard(ctx.cfg.emoji_pack_url, ctx.mm.status(ctx.user_id)),
     )
 
 
 async def show_rules(ctx: Ctx) -> None:
-    await ctx.reply(texts.RULES, markup=menu_keyboard(ctx.cfg.emoji_pack_url, ctx.mm.status(ctx.user_id)))
+    await ctx.reply(
+        texts.RULES, markup=menu_keyboard(ctx.cfg.emoji_pack_url, ctx.mm.status(ctx.user_id))
+    )
 
 
 async def show_top(ctx: Ctx) -> None:
     rows = await ctx.db.top(10)
     if not rows:
-        await ctx.reply("🏆 Топ пуст — будь первым, кто начнёт общаться в городе!",
-                        markup=menu_keyboard(ctx.cfg.emoji_pack_url))
+        await ctx.reply("Топ пуст — начни общаться первым.", markup=menu_keyboard(ctx.cfg.emoji_pack_url))
         return
-    medals = ["🥇", "🥈", "🥉"]
-    lines = [f"🏆 <b>Топ собеседников · {texts.esc(ctx.cfg.city)}</b>", ""]
+    medals = {1: "1", 2: "2", 3: "3"}
+    lines = [f"<b>Топ · {texts.esc(ctx.cfg.city)}</b>", ""]
     for i, row in enumerate(rows, start=1):
         info = level_for(int(row["xp"]))
-        mark = medals[i - 1] if i <= 3 else f"{i}."
         lines.append(
-            f"{mark} <b>{texts.esc(row['first_name'])}</b> — {info.xp} XP · {texts.esc(info.title)}"
-            f"\n     💬 {row['dialogs']} диалогов · 👍 {row['good_ratings']}"
+            f"{medals.get(i, str(i))}. <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id'])))}</b>"
+            f" — {info.xp} XP · {texts.esc(info.title)}"
         )
+    lines += ["", "<i>Ники придумывают сами участники. Реальных имён здесь нет.</i>"]
     await ctx.reply("\n".join(lines), markup=menu_keyboard(ctx.cfg.emoji_pack_url))
 
 
@@ -194,69 +244,92 @@ async def show_profile(ctx: Ctx) -> None:
         await ctx.reply(texts.PROFILE_MISSING)
         return
     me = ctx.me
-    xp = int(me["xp"])
-    info = level_for(xp)
-    dialog = ctx.mm.dialog_stats(ctx.user_id)
-    status_line = {
-        "paired": "💬 сейчас в диалоге",
-        "queued": "⏳ ждёт пару в очереди",
-    }.get(ctx.mm.status(ctx.user_id), "🧊 свободен")
-
-    about = texts.esc(me["about"]) if me["about"] else "<i>не заполнено — добавь в ⚙️ Настройках</i>"
+    info = level_for(int(me["xp"]))
+    status = ctx.mm.status(ctx.user_id)
+    about = texts.esc(me["about"]) if me["about"] else texts.PROFILE_ABOUT_EMPTY
     lines = [
-        f"👤 <b>Профиль собеседника · {texts.esc(ctx.cfg.city)}</b>",
+        texts.PROFILE_TITLE.format(city=texts.esc(ctx.cfg.city)),
         "",
-        f"🥇 <b>Уровень {info.level}</b> — {texts.esc(info.title)}",
-        f"<code>{info.bar}</code> <b>{info.xp} XP</b>"
-        + (f" → ещё {info.to_next} XP до «{texts.esc(info.next_title)}»" if info.to_next is not None else " · максимум"),
+        f"Ник: <b>{texts.esc(ctx.nick)}</b>",
+        f"Уровень {info.level} — <b>{texts.esc(info.title)}</b>",
+        f"<code>{info.bar}</code> {info.xp} XP"
+        + (f" · до «{texts.esc(info.next_title)}» {info.to_next}" if info.to_next is not None else ""),
         "",
-        f"✉️ Сообщений отправлено: <b>{me['messages']}</b>",
-        f"💬 Диалогов проведено: <b>{me['dialogs']}</b>",
-        f"👍 Хороших оценок: <b>{me['good_ratings']}</b> · 👎 скучных: <b>{me['bad_ratings']}</b>",
-        f"🚩 Жалоб на тебя: <b>{me['reports_received']}</b>",
-        f"📍 Район: <b>{texts.esc(me['district']) if me['district'] else 'не указан'}</b>",
-        f"🗣 {about}",
+        f"Диалогов: {me['dialogs']} · сообщений: {me['messages']}",
+        f"Оценок 👍 {me['good_ratings']} · 👎 {me['bad_ratings']}",
+        f"Жалоб на тебя: {me['reports_received']}",
+        f"Район: {texts.esc(me['district']) if me['district'] else '—'}",
+        f"О себе: {about}",
         "",
-        f"Статус: {status_line}",
+        texts.PROFILE_STATUS.get(status, ""),
     ]
-    if dialog:
-        dur = int(time.time() - dialog["started_at"])
-        lines.append(f"⏱ Текущий диалог идёт: {dur // 60} мин {dur % 60} сек")
-    await ctx.reply("\n".join(lines), markup=menu_keyboard(ctx.cfg.emoji_pack_url, ctx.mm.status(ctx.user_id)))
+    await ctx.reply("\n".join(lines), markup=menu_keyboard(ctx.cfg.emoji_pack_url, status))
 
 
-# --------------------------------------------------------------------- dialogs
-async def _notify_pair(bot: Bot, cfg: Config, user_id: int, partner_id: int) -> bool:
-    """Сообщаем обоим, что пара найдена. False — собеседник недоступен."""
-    kb = menu_keyboard(cfg.emoji_pack_url, "paired")
-    if not await send_to(bot, partner_id, texts.MATCHED, kb):
+# --------------------------------------------------------------------- ники
+async def ask_nick(ctx: Ctx) -> None:
+    await ctx.reply(
+        texts.NICK_PROMPT.format(nick=texts.esc(ctx.nick), max=nicklib.NICK_MAX),
+        markup=menu_keyboard(ctx.cfg.emoji_pack_url, ctx.mm.status(ctx.user_id)),
+    )
+
+
+async def set_nick(ctx: Ctx, raw: str) -> tuple[bool, str]:
+    """Валидация + уникальность. Возвращает (успех, текст ответа)."""
+    value = (raw or "").strip()
+    if value in {"-", "—", "--", "auto"}:
+        await ctx.db.set_profile(ctx.user_id, nickname="")
+        ctx.me = await ctx.db.get_user(ctx.user_id)
+        return True, texts.NICK_RESET.format(nick=texts.esc(await ctx.ensure_nick()))
+
+    candidate, error = nicklib.validate(value)
+    if error:
+        return False, texts.NICK_BAD.format(error=texts.esc(error))
+    if await ctx.db.nickname_taken(candidate, except_user_id=ctx.user_id):
+        return False, texts.NICK_TAKEN
+
+    await ctx.db.set_profile(ctx.user_id, nickname=candidate)
+    ctx.me = await ctx.db.get_user(ctx.user_id)
+    return True, texts.NICK_SAVED.format(nick=texts.esc(candidate))
+
+
+# --------------------------------------------------------------------- пары
+async def announce_pair(ctx: Ctx, user_id: int, partner_id: int) -> bool:
+    """Сообщаем обоим о паре. False — собеседник недоступен."""
+    nick_me = ctx.nick
+    kb = menu_keyboard(ctx.cfg.emoji_pack_url, "paired")
+    body_me = texts.MATCHED.format(nick=texts.esc(nick_me))
+    if not await send_to(ctx.bot, partner_id, texts.MATCHED.format(nick="Аноним"), kb, ctx.pack):
         return False
-    await send_to(bot, user_id, texts.MATCHED, kb)
+    await send_to(ctx.bot, user_id, body_me, kb, ctx.pack)
     return True
 
 
-async def announce_pairs(bot: Bot, cfg: Config, mm: Matchmaker, pairs: list[tuple[int, int]]) -> int:
+async def announce_pairs(
+    bot: Bot, cfg: Config, mm: Matchmaker, pairs: list[tuple[int, int]], pack: EmojiPack | None = None
+) -> int:
     """Разослать «пара найдена» тем, кого свёл sweep() после смены настроек."""
     kb = menu_keyboard(cfg.emoji_pack_url, "paired")
     made = 0
     for a, b in pairs:
-        if not await send_to(bot, b, texts.MATCHED, kb):
+        if not await send_to(bot, b, texts.MATCHED.format(nick="Аноним"), kb, pack):
             mm.forget(b)
-            await send_to(bot, a, texts.PARTNER_LEFT, kb)
+            await send_to(bot, a, texts.PARTNER_LEFT, kb, pack)
             continue
-        await send_to(bot, a, texts.MATCHED, kb)
+        await send_to(bot, a, texts.MATCHED.format(nick="Аноним"), kb, pack)
         made += 1
     return made
 
 
-async def break_pair(bot: Bot, cfg: Config, mm: Matchmaker, user_id: int, note: str) -> None:
-    """Расцепить пару (модерация/мут) и честно сообщить обеим сторонам."""
+async def break_pair(
+    bot: Bot, cfg: Config, mm: Matchmaker, user_id: int, note: str, pack: EmojiPack | None = None
+) -> None:
     kb = menu_keyboard(cfg.emoji_pack_url)
-    partner, summary = mm.release(user_id)
+    partner, _ = mm.release(user_id)
     if partner is None:
         return
-    await send_to(bot, partner, note, kb)
-    await send_to(bot, user_id, note, kb)
+    await send_to(bot, partner, note, kb, pack)
+    await send_to(bot, user_id, note, kb, pack)
 
 
 async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -> None:
@@ -270,11 +343,10 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
     theirs = int(counts.get(partner, 0))
     started = int(summary.get("started_at", time.time()))
 
-    match_id = await ctx.db.log_dialog(
-        ctx.user_id, partner, mine, theirs, started, ended_by
-    )
+    match_id = await ctx.db.log_dialog(ctx.user_id, partner, mine, theirs, started, ended_by)
     cap = ctx.cfg.xp_message_cap
     live = mine > 0 and theirs > 0 and (mine + theirs) >= 6
+    my_xp = min(mine, cap) * ctx.cfg.xp_per_message + (ctx.cfg.xp_per_dialog if live else 0)
     for uid, sent in ((ctx.user_id, mine), (partner, theirs)):
         gain = min(sent, cap) * ctx.cfg.xp_per_message + (ctx.cfg.xp_per_dialog if live else 0)
         if gain:
@@ -284,25 +356,24 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
 
     ctx.mm.remember_rating([ctx.user_id, partner], match_id)
 
-    await send_to(ctx.bot, partner, notify_partner, menu_keyboard(ctx.cfg.emoji_pack_url))
-    xp_hint = f"\n+{min(mine, cap) * ctx.cfg.xp_per_message + (ctx.cfg.xp_per_dialog if live else 0)} XP за этот диалог"
-    await ctx.reply(note + xp_hint, markup=rating_keyboard())
-    await send_to(ctx.bot, partner, texts.RATING_ASK.format(xp=ctx.cfg.xp_good_rating), rating_keyboard())
+    await send_to(ctx.bot, partner, notify_partner, menu_keyboard(ctx.cfg.emoji_pack_url), ctx.pack)
+    await ctx.reply(note + texts.XP_EARNED.format(xp=my_xp), markup=rating_keyboard())
+    await send_to(ctx.bot, partner, texts.RATING_ASK, rating_keyboard(), ctx.pack)
 
 
 async def act_connect(ctx: Ctx) -> None:
     if await ctx.restricted():
         return
+    await ctx.ensure_nick()
     status = ctx.mm.status(ctx.user_id)
     if status == "paired":
         await ctx.reply(texts.ALREADY_PAIRED, markup=menu_keyboard(ctx.cfg.emoji_pack_url, "paired"))
         return
     if status == "queued":
         await ctx.reply(
-            texts.QUEUED.format(
-                city=texts.esc(ctx.cfg.city), pos=ctx.mm.position(ctx.user_id) or 1, size=ctx.mm.queue_size()
-            ),
-            markup=menu_keyboard(ctx.cfg.emoji_pack_url, "queued"),
+            texts.QUEUED.format(city=texts.esc(ctx.cfg.city), pos=ctx.mm.position(ctx.user_id) or 1,
+                                size=ctx.mm.queue_size()),
+            markup=menu_keyboard(ctx.cfg.emoji_pack_url, "queued", ctx.mm.queue_size()),
         )
         return
 
@@ -310,25 +381,25 @@ async def act_connect(ctx: Ctx) -> None:
     for _ in range(8):
         outcome, payload = ctx.mm.connect(ctx.user_id, **prefs)
         if outcome == "paired":
-            if await _notify_pair(ctx.bot, ctx.cfg, ctx.user_id, payload):
-                await ctx.ack("🧲 Пара найдена!")
+            if await announce_pair(ctx, ctx.user_id, payload):
+                await ctx.ack("Пара найдена")
                 return
-            # собеседник исчез — убираем его и пробуем снова
             ctx.mm.forget(payload)
             continue
         if outcome == "queued":
             await ctx.reply(
-                texts.QUEUED.format(
-                    city=texts.esc(ctx.cfg.city), pos=payload or 1, size=ctx.mm.queue_size()
-                ),
-                markup=menu_keyboard(ctx.cfg.emoji_pack_url, "queued"),
+                texts.QUEUED.format(city=texts.esc(ctx.cfg.city), pos=payload or 1,
+                                    size=ctx.mm.queue_size()),
+                markup=menu_keyboard(ctx.cfg.emoji_pack_url, "queued", ctx.mm.queue_size()),
             )
-            await ctx.ack("⏳ Ты в очереди")
+            await ctx.ack("Ты в очереди")
             return
-        await ctx.reply(texts.QUEUE_FULL.format(limit=ctx.cfg.queue_soft_limit),
-                        markup=menu_keyboard(ctx.cfg.emoji_pack_url))
+        await ctx.reply(
+            texts.QUEUE_FULL.format(limit=ctx.cfg.queue_soft_limit),
+            markup=menu_keyboard(ctx.cfg.emoji_pack_url),
+        )
         return
-    await ctx.reply("😅 Не успел никого подобрать. Попробуй ещё разок.",
+    await ctx.reply("Не успел никого подобрать — попробуй ещё раз.",
                     markup=menu_keyboard(ctx.cfg.emoji_pack_url))
 
 
@@ -338,12 +409,7 @@ async def act_next(ctx: Ctx) -> None:
     if ctx.mm.status(ctx.user_id) != "paired":
         await act_connect(ctx)
         return
-    await _end_dialog(
-        ctx,
-        ended_by=ctx.user_id,
-        note="⏭️ Пропустил. Ищу нового собеседника…",
-        notify_partner=texts.PARTNER_SKIPPED,
-    )
+    await _end_dialog(ctx, ended_by=ctx.user_id, note="Пропустил.", notify_partner=texts.PARTNER_SKIPPED)
     await act_connect(ctx)
 
 
@@ -352,37 +418,32 @@ async def act_stop(ctx: Ctx) -> None:
         ctx.mm.forget(ctx.user_id)
         await ctx.reply(texts.NO_DIALOG, markup=menu_keyboard(ctx.cfg.emoji_pack_url))
         return
-    await _end_dialog(
-        ctx,
-        ended_by=ctx.user_id,
-        note="⏹️ Диалог остановлен. Ты анонимно вышел — собеседник не узнает ничего лишнего.",
-        notify_partner=texts.PARTNER_LEFT,
-    )
+    await _end_dialog(ctx, ended_by=ctx.user_id, note=texts.DIALOG_STOPPED, notify_partner=texts.PARTNER_LEFT)
 
 
 async def apply_rating(ctx: Ctx, positive: bool) -> None:
     entry = ctx.mm.pop_rating(ctx.user_id)
     if entry is None:
-        await ctx.ack("Оценку уже учли или диалог слишком старый 🙂", alert=True)
+        await ctx.ack(texts.RATING_STALE, alert=True)
         return
     match_id, partner = entry
     await ctx.db.rate_dialog(match_id, ctx.user_id, 1 if positive else 0)
     if positive:
         await ctx.db.award_xp(partner, ctx.cfg.xp_good_rating)
-        await send_to(ctx.bot, partner, texts.RATING_DONE_GOOD.format(xp=ctx.cfg.xp_good_rating))
-        await ctx.ack("👍 Спасибо!")
+        await send_to(ctx.bot, partner, texts.RATING_DONE_GOOD.format(xp=ctx.cfg.xp_good_rating),
+                      None, ctx.pack)
+        await ctx.ack("Спасибо")
     else:
-        await send_to(ctx.bot, partner, texts.RATING_DONE_BAD)
+        await send_to(ctx.bot, partner, texts.RATING_DONE_BAD, None, ctx.pack)
         await ctx.ack("Записал")
     await ctx.reply(
-        "Готово. Жми <b>🔎 Поиск собеседника</b>, когда захочешь продолжить.",
-        markup=menu_keyboard(ctx.cfg.emoji_pack_url),
+        "Готово.", markup=menu_keyboard(ctx.cfg.emoji_pack_url, ctx.mm.status(ctx.user_id))
     )
 
 
 async def forget_everything(ctx: Ctx) -> None:
-    """Полное удаление профиля (по желанию пользователя)."""
     ctx.mm.forget(ctx.user_id)
     await ctx.db.forget_user(ctx.user_id)
-    await ctx.reply(texts.FORGET_DONE.format(city=texts.esc(ctx.cfg.city)),
-                    markup=menu_keyboard(ctx.cfg.emoji_pack_url))
+    await ctx.reply(
+        texts.FORGET_DONE, markup=menu_keyboard(ctx.cfg.emoji_pack_url)
+    )

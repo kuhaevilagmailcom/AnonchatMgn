@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -26,6 +27,7 @@ from anonchat.db import Database
 from anonchat.handlers import get_routers
 from anonchat.matching import Matchmaker
 from anonchat.middlewares import DataContext, Throttling
+from anonchat.pack import EmojiPack
 
 ADMIN = 999
 A, B, C = 1001, 1002, 1003
@@ -80,17 +82,17 @@ class RecordingSession(BaseSession):
         self.outbox.clear()
 
 
-def msg_update(bot: Bot, uid: int, text: str, update_id: int) -> Update:
-    payload = {
-        "update_id": update_id,
-        "message": {
-            "message_id": update_id,
-            "date": 1_700_000_000,
-            "chat": {"id": uid, "type": "private", "first_name": f"U{uid}"},
-            "from": {"id": uid, "is_bot": False, "first_name": f"U{uid}"},
-            "text": text,
-        },
+def msg_update(bot: Bot, uid: int, text: str, update_id: int, entities: list[dict] | None = None) -> Update:
+    message: dict[str, Any] = {
+        "message_id": update_id,
+        "date": 1_700_000_000,
+        "chat": {"id": uid, "type": "private", "first_name": f"U{uid}"},
+        "from": {"id": uid, "is_bot": False, "first_name": f"U{uid}"},
+        "text": text,
     }
+    if entities:
+        message["entities"] = entities
+    payload = {"update_id": update_id, "message": message}
     return Update.model_validate(payload, context={"bot": bot})
 
 
@@ -129,18 +131,19 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     )
 
     dp = Dispatcher(storage=MemoryStorage())
+    pack = EmojiPack(cfg.emoji_pack_url)
     for observer in (dp.message, dp.callback_query):
         observer.outer_middleware(Throttling(cfg, limit=200))
-        observer.middleware(DataContext(cfg, db, mm))
+        observer.middleware(DataContext(cfg, db, mm, pack))
     for router in get_routers():
         dp.include_router(router)
 
     step = 0
 
-    async def send(uid: int, text: str) -> None:
+    async def send(uid: int, text: str, entities: list[dict] | None = None) -> None:
         nonlocal step
         step += 1
-        await dp.feed_update(bot, msg_update(bot, uid, text, step))
+        await dp.feed_update(bot, msg_update(bot, uid, text, step, entities))
 
     async def press(uid: int, data: str) -> None:
         nonlocal step
@@ -152,20 +155,24 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
             raise AssertionError(f"{label}\noutbox A/B: {session.texts_to(A)} | {session.texts_to(B)}")
         print(f"  ok  {label}")
 
-    # 1. /start — приветствие и красивое меню
+    # 1. /start — приветствие, авто-ник и минималистичное меню
     await send(A, "/start")
     check("Анонимный чат" in session.last_to(A), "/start показывает приветствие с меню")
+    check("Аноним-1001" in session.last_to(A), "при первом входе выдаётся авто-ник вместо имени из Telegram")
+    check((await db.get_user(A))["nickname"] == "Аноним-1001", "авто-ник сохранился в базу")
     check(session.has_keyboard(A), "в меню есть инлайн-кнопки")
     kb = session.to(A)[-1]["reply_markup"]["inline_keyboard"]
-    labels = " ".join(btn["text"] for row in kb for btn in row)
-    for needle in ("🔎 Поиск собеседника", "⏭️ Следующий", "⏹️ Остановить диалог", "🚩"):
+    labels = [btn["text"] for row in kb for btn in row]
+    for needle in ("🔎 Поиск собеседника", "⏭ Следующий", "⏹ Стоп", "🚩 Жалоба"):
         check(needle in labels, f"кнопка «{needle}» на месте")
+    with_emoji = [t for t in labels if any(ord(c) > 0x2500 for c in t)]
+    check(len(with_emoji) <= 4, f"эмодзи только на главных действиях, не {with_emoji}")
     check(any("addemoji/NewsEmoji" in str(row) for row in kb), "есть кнопка с эмодзи-паком")
 
     # 2. A жмёт поиск — встаёт в очередь
     session.clear()
     await press(A, "act:connect")
-    check("Ищу тебе пару" in session.last_to(A), "кнопка 🔎 ставит в очередь")
+    check("Ищу пару" in session.last_to(A), "кнопка 🔎 ставит в очередь")
     check(mm.status(A) == "queued", "матчмейкер видит A в очереди")
 
     # 3. B жмёт поиск — сводим обоих
@@ -221,6 +228,59 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     await send(A, "/profile")
     check("Уровень" in session.last_to(A) and "XP" in session.last_to(A), "профиль показывает уровень общения")
 
+    # 8b. свой ник вместо реального имени
+    session.clear()
+    await send(A, "/nick Ким Вайнон")
+    check((await db.get_user(A))["nickname"] == "Ким Вайнон", "/nick сохранил выбранный ник")
+    check("Ким Вайнон" in " ".join(session.texts_to(A)), "бот подтвердил ник")
+    await send(B, "/nick Ким Вайнон")
+    check("уже занят" in " ".join(session.texts_to(B)), "дубликат ника не проходят")
+    await send(B, "/nick Магнит")
+    check((await db.get_user(B))["nickname"] == "Магнит", "свободный ник принимается")
+    await send(A, "/nick " + "а" * 40)
+    check("максимум" in " ".join(session.texts_to(A)).lower(), "слишком длинный ник отклонён")
+    await send(A, "/nick <b>хакер</b>")
+    check("<b>хакер" not in " ".join(session.texts_to(A)), "HTML-мусор в ник не проскакивает")
+    await send(A, "/nick Лена О")
+    check((await db.get_user(A))["nickname"] == "Лена О", "ник с пробелом нормален")
+    await send(A, "/nick -")
+    check((await db.get_user(A))["nickname"] == "Аноним-1001", "«-» возвращает авто-ник")
+    await send(A, "/nick Лена О")
+    check((await db.get_user(A))["nickname"] == "Лена О", "ник можно вернуть обратно")
+    # после команды с аргументом (даже неудачным) обычный текст должен доходить собеседнику
+    await press(A, "act:connect")
+    await press(B, "act:connect")
+    check(mm.partner(A) == B, "A и B снова в паре")
+    session.clear()
+    await send(A, "обычное сообщение в чат")
+    check("обычное сообщение в чат" in session.last_to(B), "текст уходит собеседнику, а не съедается вводом ника")
+    await send(A, "/stop")
+
+    session.clear()
+    await send(ADMIN, "/top")
+    top_text = " ".join(session.texts_to(ADMIN))
+    check("Лена О" in top_text and "Магнит" in top_text, "в топе — выбранные ники")
+    check("U1001" not in top_text and "U1002" not in top_text, "в топе нет реальных имён из Telegram")
+
+    # 8c. эмодзи из городского пака в текстах бота
+    session.clear()
+    await send(
+        A,
+        "🧲 привет",
+        entities=[{"type": "custom_emoji", "offset": 0, "length": 2, "custom_emoji_id": "AQADBAD123"}],
+    )
+    check(pack.known() == 1 and pack.has("🧲"), "бот подсмотрел id эмодзи из пака у пользователя")
+    check(json.loads(await db.get_kv("emoji_ids")) == [["🧲", "AQADBAD123"]], "id эмодзи пережил рестарт (в базе)")
+    await send(A, "/start")
+    check(
+        '<tg-emoji emoji-id="AQADBAD123">🧲</tg-emoji>' in session.last_to(A),
+        "в своих текстах бот использует эмодзи из пака",
+    )
+    pack.enabled = False  # Telegram может запретить — проверяем откат
+    await send(A, "/start")
+    check("tg-emoji" not in session.last_to(A), "если эмодзи недоступны — текст уходит обычными смайлами")
+    pack.enabled = True
+
     # 9. жалоба от A на C
     session.clear()
     await press(A, "act:connect")
@@ -254,7 +314,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     session.clear()
     await press(A, "act:next")
     check(mm.status(A) in {"queued", "paired"}, "после «Следующий» A снова в поиске")
-    check("перешёл к следующему" in " ".join(session.texts_to(B)).lower()
+    check("собеседник сменил чат" in " ".join(session.texts_to(B)).lower()
           or mm.status(B) in {"free", "queued", "paired"}, "B уведомлён о скипе")
 
     # 12. чужие команды модерации недоступны

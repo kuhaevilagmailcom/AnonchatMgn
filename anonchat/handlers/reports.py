@@ -1,4 +1,4 @@
-"""Жалобы: кнопка 🚩 → причина → комментарий → карточка админу, авто-мут за серию жалоб."""
+"""Жалобы: кнопка «Жалоба» → причина → комментарий → карточка админу, авто-мут за серию жалоб."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from .. import keyboards as K
+from .. import nick as nicklib
 from .. import texts
 from ..actions import Ctx, break_pair, send_to
 from ..config import Config
@@ -19,7 +20,7 @@ from ..matching import Matchmaker
 
 router = Router(name="reports")
 
-REASON_TITLES = {code: title for title, code in K.REPORT_REASONS}
+REASON_TITLES = K.REASON_TITLES
 
 
 class ReportStates(StatesGroup):
@@ -28,7 +29,7 @@ class ReportStates(StatesGroup):
 
 async def notify_admins(ctx: Ctx, body: str, markup=None) -> None:
     for admin_id in ctx.cfg.admin_ids:
-        await send_to(ctx.bot, admin_id, body, markup)
+        await send_to(ctx.bot, admin_id, body, markup, ctx.pack)
 
 
 # ---------------------------------------------------------------------------------- старт жалобы
@@ -44,20 +45,13 @@ async def cb_report(event: CallbackQuery, ctx: Ctx) -> None:
 
 async def open_report(ctx: Ctx, edit: bool = True) -> None:
     partner = ctx.mm.partner(ctx.user_id)
-    if partner is None:
-        await ctx.reply(
-            texts.REPORT_NO_TARGET, markup=K.menu_keyboard(ctx.cfg.emoji_pack_url)
-        )
-        return
-    body = (
-        "🚩 <b>На что жалуетесь?</b>\n\n"
-        "Жалоба анонимная: собеседник не узнает, кто её отправил. "
-        "Модератор увидит текст переписки в этом диалоге и примет решение."
-    )
     kb = K.report_keyboard()
-    if edit and await ctx.edit(body, kb):
+    if partner is None:
+        await ctx.reply(texts.REPORT_NO_TARGET, markup=K.menu_keyboard(ctx.cfg.emoji_pack_url))
         return
-    await ctx.reply(body, kb)
+    if edit and await ctx.edit(texts.REPORT_INTRO, kb):
+        return
+    await ctx.reply(texts.REPORT_INTRO, kb)
 
 
 # ---------------------------------------------------------------------------------- причина
@@ -71,7 +65,7 @@ async def cb_skip_comment(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> 
 async def cb_reason(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
     code = event.data.split(":", 1)[1]
     if code not in REASON_TITLES:
-        await ctx.ack("Не понял причину 🤔", alert=True)
+        await ctx.ack("Не понял причину", alert=True)
         return
     partner = ctx.mm.partner(ctx.user_id)
     if partner is None:
@@ -80,11 +74,9 @@ async def cb_reason(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
         return
     await state.set_state(ReportStates.comment)
     await state.update_data(reason=code, partner=partner)
-    await ctx.edit(
-        f"🧾 Причина: <b>{texts.esc(REASON_TITLES[code])}</b>\n\n"
-        "Добавь пару слов контекстом (можно пропустить) — так модератор разберётся быстрее.",
-        K.skip_cancel_keyboard(),
-    )
+    prompt = texts.REPORT_COMMENT_PROMPT.format(reason=texts.esc(REASON_TITLES[code]))
+    if not await ctx.edit(prompt, K.skip_cancel_keyboard()):
+        await ctx.reply(prompt, K.skip_cancel_keyboard())
     await ctx.ack("Принято")
 
 
@@ -108,33 +100,34 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
 
     report_id, day_count = await db.add_report(ctx.user_id, partner, reason, comment)
     target_row = await db.get_user(partner)
+    # карточка — только для модератора: здесь настоящие данные уместны
     target_name = (target_row["first_name"] if target_row else "собеседник") or "собеседник"
     target_login = f"@{target_row['username']}" if target_row and target_row["username"] else "без юзернейма"
+    target_nick = nicklib.display(target_row["nickname"] if target_row else "", partner)
 
     card = (
         f"🚩 <b>Жалоба #{report_id}</b>\n"
         f"Причина: <b>{texts.esc(REASON_TITLES.get(reason, reason))}</b>\n"
-        f"На: <code>{partner}</code> · {texts.esc(target_name)} ({texts.esc(target_login)})\n"
+        f"На: <code>{partner}</code> · в чате как <b>{texts.esc(target_nick)}</b> · "
+        f"{texts.esc(target_name)} ({texts.esc(target_login)})\n"
         f"От: <code>{ctx.user_id}</code>\n"
-        f"💬 {texts.esc(comment) if comment else '<i>без комментария</i>'}\n"
-        f"📈 Жалоб на него за сутки: <b>{day_count}</b>\n"
-        f"🕐 {time.strftime('%d.%m %H:%M')}"
+        f"{texts.esc(comment) if comment else '<i>без комментария</i>'}\n"
+        f"Жалоб на него за сутки: <b>{day_count}</b> · {time.strftime('%d.%m %H:%M')}"
     )
-    kb = K.admin_report_keyboard(report_id)
-    await notify_admins(ctx, card, kb)
+    await notify_admins(ctx, card, K.admin_report_keyboard(report_id))
 
     auto = ""
     if day_count >= cfg.auto_mute_reports:
         until = await db.set_mute(partner, cfg.auto_mute_minutes)
         mins = max(1, int((until - time.time()) // 60))
-        await send_to(ctx.bot, partner, texts.MUTED.format(mins=mins))
-        await break_pair(ctx.bot, cfg, mm, partner, "🛡 Модерация закрыла диалог из-за жалоб.")
-        auto = f"\n\n🔇 Автомут на <b>{mins}</b> мин уже применён."
+        await send_to(ctx.bot, partner, texts.MUTED.format(mins=mins), None, ctx.pack)
+        await break_pair(ctx.bot, cfg, mm, partner, texts.MOD_CLOSED_DIALOG, ctx.pack)
+        auto = f"\nАвто-мут на {mins} мин применён."
 
     await ctx.reply(
         texts.REPORT_TAKEN.format(rid=report_id, reason=texts.esc(REASON_TITLES.get(reason, reason)))
         + auto
-        + "\n\nХочешь — сразу выйди из диалога кнопкой <b>⏹️ Остановить диалог</b>.",
+        + "\n\nХочешь — сразу выйди из диалога: <b>⏹ Стоп</b>.",
         markup=K.menu_keyboard(cfg.emoji_pack_url),
     )
 
@@ -144,11 +137,11 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
 async def cmd_feedback(message: Message, ctx: Ctx) -> None:
     body = (message.text or "").partition(" ")[2].strip()
     if not body:
-        await ctx.reply("Напиши текст: <code>/feedback а вы бы добавили темы для разговора</code>")
+        await ctx.reply(texts.FEEDBACK_EMPTY)
         return
     await notify_admins(
         ctx,
         f"💌 <b>Фидбек</b> от <code>{ctx.user_id}</code> ({texts.esc(message.from_user.first_name)}):\n"
         f"{texts.esc(body[:1000])}",
     )
-    await ctx.reply("✅ Передал админам. Спасибо, что делаешь чат в городе лучше!")
+    await ctx.reply(texts.FEEDBACK_SENT)

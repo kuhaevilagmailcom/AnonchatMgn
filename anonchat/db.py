@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS users (
     user_id          INTEGER PRIMARY KEY,
     username         TEXT,
     first_name       TEXT,
+    nickname         TEXT    NOT NULL DEFAULT '',
+    nick_key         TEXT    NOT NULL DEFAULT '',
     created_at       INTEGER NOT NULL DEFAULT 0,
     last_seen        INTEGER NOT NULL DEFAULT 0,
     xp               INTEGER NOT NULL DEFAULT 0,
@@ -56,10 +58,21 @@ CREATE TABLE IF NOT EXISTS reports (
     handled_at  INTEGER
 );
 
+CREATE TABLE IF NOT EXISTS kv (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_reports_target ON reports(target_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_users_xp ON users(xp DESC);
 """
+
+#: колонки, которых не было в ранних версиях схемы — догоняем их на лету
+_MIGRATIONS: tuple[tuple[str, str], ...] = (
+    ("nickname", "ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT ''"),
+    ("nick_key", "ALTER TABLE users ADD COLUMN nick_key TEXT NOT NULL DEFAULT ''"),
+)
 
 
 def now() -> int:
@@ -78,8 +91,32 @@ class Database:
         self._db.row_factory = aiosqlite.Row
         await self._db.execute("PRAGMA journal_mode=WAL")
         await self._db.executescript(SCHEMA)
+        await self._migrate()
         await self._db.commit()
         return self
+
+    async def _migrate(self) -> None:
+        """Старые базы могут не иметь новых колонок — добавляем, не теряя данные."""
+        async with self.db.execute("PRAGMA table_info(users)") as cur:
+            cols = {row[1] for row in await cur.fetchall()}
+        added = False
+        for name, sql in _MIGRATIONS:
+            if name not in cols:
+                await self.db.execute(sql)
+                added = True
+        if added or "nick_key" in cols:
+            await self._backfill_nick_keys()
+
+    async def _backfill_nick_keys(self) -> None:
+        """Регистронезависимый ключ ника: LOWER() в SQLite не понимает кириллицу, считаем в Python."""
+        rows = await self._fetchall(
+            "SELECT user_id, nickname FROM users WHERE nick_key = '' AND nickname <> ''"
+        )
+        for row in rows:
+            await self.db.execute(
+                "UPDATE users SET nick_key = ? WHERE user_id = ?",
+                (str(row["nickname"]).strip().casefold(), int(row["user_id"])),
+            )
 
     async def close(self) -> None:
         if self._db is not None:
@@ -121,13 +158,32 @@ class Database:
     async def get_user(self, user_id: int) -> aiosqlite.Row | None:
         return await self._fetchone("SELECT * FROM users WHERE user_id = ?", (user_id,))
 
+    async def nickname_taken(self, nickname: str, except_user_id: int = 0) -> int | None:
+        """Ник должен быть уникальным — иначе топ превращается в «Аноним, Аноним, Аноним».
+
+        Сравнение по nick_key (casefold), потому что SQLite-ный COLLATE NOCASE
+        работает только с латиницей: «МАГНИТ» и «Магнит» для него разные.
+        """
+        key = str(nickname or "").strip().casefold()
+        if not key:
+            return None
+        row = await self._fetchone(
+            "SELECT user_id FROM users WHERE nick_key = ? AND user_id != ? LIMIT 1",
+            (key, int(except_user_id)),
+        )
+        return int(row["user_id"]) if row else None
+
     async def touch(self, user_id: int) -> None:
         await self.db.execute("UPDATE users SET last_seen = ? WHERE user_id = ?", (now(), user_id))
         await self.db.commit()
 
     async def set_profile(self, user_id: int, **fields: Any) -> None:
-        allowed = {"district", "gender", "same_district", "about"}
+        allowed = {"district", "gender", "same_district", "about", "nickname"}
+        if "nickname" in fields:
+            fields["nick_key"] = str(fields["nickname"] or "").strip().casefold()
         keys = [k for k in fields if k in allowed]
+        if "nick_key" in fields:
+            keys.append("nick_key")
         if not keys:
             return
         sets = ", ".join(f"{k} = ?" for k in keys)
@@ -218,7 +274,8 @@ class Database:
 
     async def list_reports(self, status: str = "new", limit: int = 20) -> list[aiosqlite.Row]:
         return await self._fetchall(
-            """SELECT r.*, t.username AS target_username, t.first_name AS target_name
+            """SELECT r.*, t.username AS target_username, t.first_name AS target_name,
+                      t.nickname AS target_nickname
                FROM reports r LEFT JOIN users t ON t.user_id = r.target_id
                WHERE r.status = ? ORDER BY r.created_at DESC LIMIT ?""",
             (status, limit),
@@ -226,7 +283,8 @@ class Database:
 
     async def get_report(self, report_id: int) -> aiosqlite.Row | None:
         return await self._fetchone(
-            """SELECT r.*, t.username AS target_username, t.first_name AS target_name
+            """SELECT r.*, t.username AS target_username, t.first_name AS target_name,
+                      t.nickname AS target_nickname
                FROM reports r LEFT JOIN users t ON t.user_id = r.target_id WHERE r.id = ?""",
             (report_id,),
         )
@@ -304,10 +362,23 @@ class Database:
 
     async def top(self, limit: int = 10) -> list[aiosqlite.Row]:
         return await self._fetchall(
-            """SELECT user_id, first_name, username, xp, messages, dialogs, good_ratings
+            """SELECT user_id, nickname, xp, messages, dialogs, good_ratings
                FROM users WHERE banned = 0 ORDER BY xp DESC LIMIT ?""",
             (limit,),
         )
+
+    # ------------------------------------------------------------------ kv (id эмодзи пака и пр.)
+    async def get_kv(self, key: str, default: str = "") -> str:
+        row = await self._fetchone("SELECT value FROM kv WHERE key = ?", (key,))
+        return str(row["value"]) if row else default
+
+    async def set_kv(self, key: str, value: str) -> None:
+        await self.db.execute(
+            "INSERT INTO kv (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+        await self.db.commit()
 
     async def bump(self, user_id: int, column: str, amount: int = 1) -> None:
         allowed = {
@@ -338,7 +409,7 @@ class Database:
     async def find_user_ids(self, name: str, limit: int = 10) -> list[aiosqlite.Row]:
         like = f"%{name.lstrip('@')}%"
         return await self._fetchall(
-            "SELECT user_id, username, first_name FROM users "
-            "WHERE username LIKE ? OR first_name LIKE ? LIMIT ?",
-            (like, like, limit),
+            "SELECT user_id, username, first_name, nickname FROM users "
+            "WHERE username LIKE ? OR first_name LIKE ? OR nickname LIKE ? LIMIT ?",
+            (like, like, like, limit),
         )

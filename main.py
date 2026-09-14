@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 
 from aiogram import Bot, Dispatcher
@@ -22,10 +23,18 @@ from anonchat.db import Database
 from anonchat.handlers import get_routers
 from anonchat.matching import Matchmaker
 from anonchat.middlewares import DataContext, Throttling
+from anonchat.pack import EmojiPack
 
 log = logging.getLogger("anonchat")
 
-__all__ = ["COMMANDS", "ADMIN_COMMANDS", "build", "janitor", "register_commands", "main"]
+__all__ = [
+    "COMMANDS",
+    "ADMIN_COMMANDS",
+    "build",
+    "janitor",
+    "register_commands",
+    "main",
+]
 
 
 async def janitor(mm: Matchmaker) -> None:
@@ -40,16 +49,17 @@ async def janitor(mm: Matchmaker) -> None:
             log.exception("janitor: что-то пошло не так, продолжаем")
 
 
-def build(cfg: Config) -> tuple[Bot, Dispatcher, Database, Matchmaker]:
+def build(cfg: Config) -> tuple[Bot, Dispatcher, Database, Matchmaker, EmojiPack]:
     """Собираем всё приложение одной функцией — удобно для тестов и вебхук-режима."""
     db = Database(cfg.db_path)
     mm = Matchmaker(queue_limit=cfg.queue_soft_limit)
+    pack = EmojiPack(cfg.emoji_pack_url)
     bot = Bot(cfg.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
 
     for observer in (dp.message, dp.callback_query):
         observer.outer_middleware(Throttling(cfg, limit=cfg.inchat_rate_limit))
-        observer.middleware(DataContext(cfg, db, mm))
+        observer.middleware(DataContext(cfg, db, mm, pack))
 
     for router in get_routers():
         dp.include_router(router)
@@ -58,7 +68,22 @@ def build(cfg: Config) -> tuple[Bot, Dispatcher, Database, Matchmaker]:
     async def on_error(event: ErrorEvent) -> None:  # pragma: no cover
         log.exception("Необработанная ошибка: %s", event.exception)
 
-    return bot, dp, db, mm
+    return bot, dp, db, mm, pack
+
+
+async def load_pack(db: Database, pack: EmojiPack) -> None:
+    """Достаём из базы id эмодзи городского пака, которые бот подсмотрел у участников."""
+    raw = await db.get_kv("emoji_ids")
+    if not raw:
+        return
+    try:
+        pairs = json.loads(raw)
+    except (ValueError, TypeError):
+        log.warning("kv.emoji_ids повреждён — начинаю с чистого листа")
+        return
+    if isinstance(pairs, list):
+        pack.load([tuple(item) for item in pairs if isinstance(item, (list, tuple)) and len(item) == 2])
+        log.info("эмодзи из пака города: %d шт.", pack.known())
 
 
 async def register_commands(bot: Bot, cfg: Config) -> None:
@@ -67,14 +92,18 @@ async def register_commands(bot: Bot, cfg: Config) -> None:
 
 
 async def main() -> None:  # pragma: no cover
-    cfg = Config.from_env()
+    import sys
+
+    token_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    cfg = Config.from_env(token_arg=token_arg)
     logging.basicConfig(
         level=logging.DEBUG if cfg.debug else logging.INFO,
         format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
     )
 
-    bot, dp, database, mm = build(cfg)
+    bot, dp, database, mm, pack = build(cfg)
     await database.start()
+    await load_pack(database, pack)
 
     janitor_task: asyncio.Task | None = None
 

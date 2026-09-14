@@ -186,6 +186,120 @@ def test_database() -> None:
     asyncio.run(guarded())
 
 
+# --------------------------------------------------------------------------------- ники
+def test_nickname_rules() -> None:
+    from anonchat import nick
+
+    assert nick.validate("  Ким   Вайнон  ")[0] == "Ким Вайнон"
+    assert nick.validate("Магнитка1743")[1] is None
+    assert nick.validate("  ")[0] == "" and nick.validate("  ")[1] is None  # пусто = сброс на авто-ник
+    assert nick.validate("-")[1] is not None  # сам «-» разбирает set_nick, а не validate
+    assert nick.validate("a")[1] and "минимум" in nick.validate("a")[1]
+    assert nick.validate("з" * 30)[1] and "максимум" in nick.validate("з" * 30)[1]
+    for bad in ("<b>ник</b>", "ник/соslash", "@username", "ник`x", "back\\slash"):
+        assert nick.validate(bad)[1] is not None, bad
+    assert nick.validate("Йцукен7 !?-_()")[1] is None
+    assert nick.auto_nick(1001) == "Аноним-1001"
+    assert nick.auto_nick(-98765432) == "Аноним-5432"  # отрицательные id тоже не ломают ник
+    assert nick.display("", 5) == "Аноним-0005"
+    assert nick.display("  ", 5) == "Аноним-0005"
+    assert nick.display("Лена", 5) == "Лена"
+
+
+# --------------------------------------------------------------------------------- пак эмодзи
+def test_pack_emoji() -> None:
+    from types import SimpleNamespace
+
+    from anonchat.pack import EmojiPack
+
+    def fake_message(text: str, emoji_id: str, length: int) -> SimpleNamespace:
+        entity = SimpleNamespace(type="custom_emoji", offset=0, length=length, custom_emoji_id=emoji_id)
+        return SimpleNamespace(text=text, entities=[entity])
+
+    pack = EmojiPack("https://t.me/addemoji/NewsEmoji")
+    assert pack.wrap("🧲 старт") == "🧲 старт"  # id пока нет — текст как есть
+
+    assert pack.harvest(fake_message("🧲 привет", "AAA111", 2)) == ["🧲"]
+    assert pack.has("🧲") and pack.known() == 1
+    assert pack.harvest(fake_message("🧲 ещё раз", "AAA222", 2)) == []  # символ уже известен
+    assert pack.as_pairs() == [("🧲", "AAA222")]  # id обновляем на последний увиденный
+
+    assert pack.wrap("🧲 старт") == '<tg-emoji emoji-id="AAA222">🧲</tg-emoji> старт'
+    assert pack.strip(pack.wrap("🧲 старт")) == "🧲 старт"
+
+    # ZWJ-последовательность целиком, а не по половинкам (🙋‍♂️ = 5 единиц UTF-16)
+    pack.harvest(fake_message("🙋‍♂️ хай", "BBB333", 5))
+    wrapped = pack.wrap("🙋‍♂️ и ещё 🧲")
+    assert 'emoji-id="BBB333">🙋‍♂️<' in wrapped, wrapped
+
+    # битая длина у entity не должна ронять бота и резать эмодзи пополам
+    broken = EmojiPack()
+    broken.harvest(fake_message("🙋‍♂️ хай", "XXX", 3))
+    assert broken.known() == 0, "осколки ZWJ-последовательности не запоминаем"
+
+    # лимит подмены: украшаем максимум N эмодзи в сообщении
+    pack.load([("✨", "CCC"), ("💬", "DDD"), ("⏳", "EEE")])
+    limited = pack.wrap("✨💬⏳", limit=2)
+    assert limited.count("<tg-emoji") == 2, limited
+
+    # Telegram запретил тег — откатываемся и больше не пробуем
+    assert pack.accept(Exception("Bad Request: can't parse entities: tg-emoji is unsupported")) is True
+    assert pack.enabled is False
+    assert pack.wrap("🧲 старт") == "🧲 старт"
+
+
+# --------------------------------------------------------------------------------- база: ник + миграция
+def test_db_nickname_and_kv() -> None:
+    import sqlite3
+
+    async def scenario() -> None:
+        tmp = Path(tempfile.mkdtemp()) / "migrate.db"
+        # база, созданная более ранней версией бота: без колонки nickname и таблицы kv
+        old = sqlite3.connect(tmp)
+        old.execute(
+            """CREATE TABLE users (
+                   user_id INTEGER PRIMARY KEY, username TEXT, first_name TEXT,
+                   created_at INTEGER NOT NULL DEFAULT 0, last_seen INTEGER NOT NULL DEFAULT 0,
+                   xp INTEGER NOT NULL DEFAULT 0, messages INTEGER NOT NULL DEFAULT 0,
+                   dialogs INTEGER NOT NULL DEFAULT 0, good_ratings INTEGER NOT NULL DEFAULT 0,
+                   bad_ratings INTEGER NOT NULL DEFAULT 0, reports_sent INTEGER NOT NULL DEFAULT 0,
+                   reports_received INTEGER NOT NULL DEFAULT 0, district TEXT NOT NULL DEFAULT '',
+                   gender TEXT NOT NULL DEFAULT '', same_district INTEGER NOT NULL DEFAULT 0,
+                   about TEXT NOT NULL DEFAULT '', banned INTEGER NOT NULL DEFAULT 0,
+                   ban_reason TEXT NOT NULL DEFAULT '', mute_until INTEGER NOT NULL DEFAULT 0)"""
+        )
+        old.execute("INSERT INTO users (user_id, first_name, xp) VALUES (7, 'Олд', 100)")
+        old.commit()
+        old.close()
+
+        db = await Database(tmp).start()
+        try:
+            assert await db.get_user(7) is not None, "старые данные не потерялись"
+            assert (await db.get_user(7))["nickname"] == "", "колонка nickname добавлена на лету"
+
+            await db.set_profile(7, nickname="Старожил")
+            assert (await db.get_user(7))["nickname"] == "Старожил"
+            assert await db.nickname_taken("старожил") == 7, "кириллица тоже сравнивается без регистра"
+            assert await db.nickname_taken("СТАРОЖИЛ") == 7
+            assert await db.nickname_taken("Старожил", except_user_id=7) is None
+            assert await db.nickname_taken("Свободный") is None
+            assert await db.nickname_taken("") is None
+
+            await db.set_kv("emoji_ids", '[["🧲","AAA"]]')
+            assert await db.get_kv("emoji_ids") == '[["🧲","AAA"]]'
+            await db.set_kv("emoji_ids", '[["🧲","BBB"]]')
+            assert await db.get_kv("emoji_ids") == '[["🧲","BBB"]]'
+            assert await db.get_kv("нет-такого", "дефолт") == "дефолт"
+
+            top = await db.top(5)
+            assert top[0]["nickname"] == "Старожил", "в топ уходит ник, а не настоящее имя"
+            assert "first_name" not in top[0].keys()
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())  # внутри scenario db закрывается в finally — процесс не зависнет
+
+
 def run_all() -> int:  # python -m tests.core
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:

@@ -12,6 +12,7 @@ from aiogram.types import CallbackQuery, Message, TelegramObject, User
 from .actions import Ctx
 from .config import Config
 from .db import Database
+from .pack import EmojiPack
 
 
 def event_user(event: TelegramObject) -> User | None:
@@ -27,15 +28,17 @@ def event_user(event: TelegramObject) -> User | None:
 class DataContext(BaseMiddleware):
     """Плюсует cfg/db/matchmaker в data и собирает готовый Ctx для хендлеров."""
 
-    def __init__(self, config: Config, db: Database, matchmaker) -> None:
+    def __init__(self, config: Config, db: Database, matchmaker, pack=None) -> None:
         self.config = config
         self.db = db
         self.mm = matchmaker
+        self.pack = pack or EmojiPack(config.emoji_pack_url)
 
     async def __call__(self, handler, event: TelegramObject, data: dict):
         data["cfg"] = self.config
         data["db"] = self.db
         data["mm"] = self.mm
+        data["pack"] = self.pack
         data["is_admin"] = False
         data["ctx"] = None
         data["me"] = None
@@ -57,6 +60,7 @@ class DataContext(BaseMiddleware):
                 db=self.db,
                 mm=self.mm,
                 cfg=self.config,
+                pack=self.pack,
                 event=event,
                 user_id=user.id,
                 me=me,
@@ -86,9 +90,9 @@ class Throttling(BaseMiddleware):
 
         if len(bucket) >= self.limit:
             if isinstance(event, CallbackQuery):
-                await event.answer("🐢 Слишком быстро. Подожди секунду.", show_alert=True)
+                await event.answer("Слишком быстро — подожди секунду.", show_alert=True)
             elif isinstance(event, Message):
-                await event.answer("🐢 Попридержи коней — слишком много сообщений в минуту.")
+                await event.answer("Попридержи коней: слишком много сообщений в минуту.")
             return
 
         bucket.append(ts)

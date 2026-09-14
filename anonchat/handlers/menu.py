@@ -18,6 +18,7 @@ from ..actions import (
     show_menu,
     show_rules,
     show_top,
+    show_welcome,
 )
 from ..commands import ensure_for_admin
 from ..config import Config
@@ -31,16 +32,7 @@ async def cmd_start(message: Message, ctx: Ctx, cfg: Config) -> None:
     if ctx.user_id in cfg.admin_ids:
         # при первом /start админа Telegram уже позволяет поставить его личное меню модератора
         await ensure_for_admin(ctx.bot, cfg, ctx.user_id)
-    kb = K.menu_keyboard(cfg.emoji_pack_url, ctx.mm.status(ctx.user_id))
-    await ctx.reply(
-        texts.WELCOME.format(
-            city=texts.esc(cfg.city),
-            short=texts.esc(cfg.city_short),
-            pack=cfg.emoji_pack_url,
-            menu="👇 Кнопки ниже — можно прямо по ним, можно командами.",
-        ),
-        markup=kb,
-    )
+    await show_welcome(ctx)
     if ctx.mm.status(ctx.user_id) == "queued":
         await ctx.reply("Ты всё ещё в очереди поиска — найду пару автоматически.")
 
@@ -97,7 +89,7 @@ async def cb_stop(event: CallbackQuery, ctx: Ctx, cfg: Config) -> None:
         await ctx.reply(texts.NO_DIALOG, markup=K.menu_keyboard(cfg.emoji_pack_url))
         return
     await ctx.edit(
-        "⏹️ Точно остановить диалог? Собеседник увидит, что чат закрыт (но не узнает, кто ты).",
+        "⏹ Остановить диалог? Собеседник увидит, что чат закрыт — но не узнает, кто ты.",
         K.confirm_stop_keyboard(),
     )
 
@@ -109,7 +101,7 @@ async def cb_stop_yes(event: CallbackQuery, ctx: Ctx) -> None:
 
 @router.callback_query(F.data == K.CB_STOP_NO)
 async def cb_stop_no(event: CallbackQuery, ctx: Ctx) -> None:
-    await ctx.ack("Хорошо, продолжаем 💬")
+    await ctx.ack("Хорошо, продолжаем")
     await show_menu(ctx)
 
 

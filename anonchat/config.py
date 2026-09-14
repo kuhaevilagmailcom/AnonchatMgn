@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
+
+#: панели хостинга называют переменную с токеном по-разному — принимаем любой вариант
+_TOKEN_KEYS = ("BOT_TOKEN", "TELEGRAM_BOT_TOKEN", "TELEGRAM_TOKEN", "BOT_KEY", "TOKEN")
 
 
 def _load_dotenv(path: Path) -> None:
@@ -29,6 +33,34 @@ def _parse_ids(raw: str) -> tuple[int, ...]:
         if chunk.lstrip("-").isdigit():
             ids.append(int(chunk))
     return tuple(ids)
+
+
+def _find_token(cli: str | None = None) -> str:
+    if cli and ":" in cli:
+        return cli.strip()
+    for key in _TOKEN_KEYS:
+        value = os.getenv(key, "").strip()
+        if value:
+            return value
+    raise RuntimeError(
+        "Не найден токен бота. Задай переменную окружения BOT_TOKEN (поддерживаются также "
+        "TELEGRAM_BOT_TOKEN / TELEGRAM_TOKEN) или положи токен вторым аргументом: python main.py <токен>"
+    )
+
+
+def _pick_db_path(raw: str) -> Path:
+    """Там, где файловая система READ ONLY (некоторые панели), пишем во временный каталог."""
+    path = Path(raw)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        probe = path.parent / ".anonchat_write_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        return path
+    except OSError:
+        fallback = Path(tempfile.gettempdir()) / "anonchat_mgn.db"
+        print(f"[anonchat] {path} недоступен для записи, беру {fallback}")
+        return fallback
 
 
 @dataclass(slots=True)
@@ -64,18 +96,13 @@ class Config:
         return next(f.default for f in fields(cls) if f.name == name)
 
     @classmethod
-    def from_env(cls, dotenv: str | Path = ".env") -> "Config":
+    def from_env(cls, dotenv: str | Path = ".env", token_arg: str | None = None) -> "Config":
         _load_dotenv(Path(dotenv))
-        token = os.getenv("BOT_TOKEN", "").strip()
-        if not token:
-            raise RuntimeError(
-                "Не задан BOT_TOKEN. Скопируйте .env.example в .env и вставьте токен @BotFather."
-            )
         env = os.getenv
         return cls(
-            bot_token=token,
-            admin_ids=_parse_ids(env("ADMIN_IDS", "")),
-            db_path=Path(env("DB_PATH", str(cls._default("db_path")))),
+            bot_token=_find_token(token_arg),
+            admin_ids=_parse_ids(env("ADMIN_IDS", env("TELEGRAM_ADMIN_ID", ""))),
+            db_path=_pick_db_path(env("DB_PATH", str(cls._default("db_path")))),
             city=env("CITY_NAME", cls._default("city")),
             city_short=env("CITY_SHORT", cls._default("city_short")),
             emoji_pack_url=env("EMOJI_PACK_URL", cls._default("emoji_pack_url")),

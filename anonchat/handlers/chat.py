@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -12,6 +14,7 @@ from ..actions import Ctx, send_copy_to, show_menu
 from ..config import Config
 from ..db import Database
 from ..matching import Matchmaker
+from ..pack import EmojiPack
 
 router = Router(name="chat")
 
@@ -40,14 +43,20 @@ async def cmd_menu(message: Message, ctx: Ctx) -> None:
 
 
 @router.message(F.chat.type == "private")
-async def relay_to_partner(message: Message, ctx: Ctx, cfg: Config, db: Database, mm: Matchmaker) -> None:
+async def relay_to_partner(
+    message: Message, ctx: Ctx, cfg: Config, db: Database, mm: Matchmaker, pack: EmojiPack
+) -> None:
     """Ловим ВСЁ остальное в личке: если есть пара — отправляем копию собеседнику."""
     if ctx.user_id == 0 or message.from_user is None:
         return
 
+    # пользователь прислал эмодзи из пака — запоминаем id, чтобы бот тоже мог им пользоваться
+    if pack.harvest(message):
+        await db.set_kv("emoji_ids", json.dumps(pack.as_pairs(), ensure_ascii=False))
+
     if message.text and message.text.startswith("/"):
         await ctx.reply(
-            "🤖 Не знаю такой команды. Меню — <code>/start</code>, помощь — <code>/help</code>.",
+            "Не знаю такой команды. Меню — <code>/start</code>, помощь — <code>/help</code>.",
             markup=K.menu_keyboard(cfg.emoji_pack_url, mm.status(ctx.user_id)),
         )
         return
@@ -57,8 +66,8 @@ async def relay_to_partner(message: Message, ctx: Ctx, cfg: Config, db: Database
 
     if message.content_type not in ALLOWED_TYPES:
         await ctx.reply(
-            "🚫 Такой тип сообщений анонимный чат не пересылает (контакты, ссылки-запросы и прочее "
-            "могут выдать личность). Отправь текстом 🙂"
+            "Такой тип сообщений анонимный чат не пересылает: контакты и подобные запросы "
+            "могут выдать личность. Отправь текстом."
         )
         return
 
@@ -74,7 +83,7 @@ async def relay_to_partner(message: Message, ctx: Ctx, cfg: Config, db: Database
 
     if len(message.text or "") > cfg.max_message_len:
         await ctx.reply(
-            f"📏 Слишком длинно — больше {cfg.max_message_len} символов не отправляем. "
+            f"Слишком длинно — больше {cfg.max_message_len} символов не отправляем. "
             "Разбей на пару сообщений, собеседнику так только легче."
         )
         mm.uncount_message(ctx.user_id)
@@ -85,10 +94,10 @@ async def relay_to_partner(message: Message, ctx: Ctx, cfg: Config, db: Database
         mm.uncount_message(ctx.user_id)
         mm.forget(ctx.user_id)
         await ctx.reply(
-            "👋 Собеседник недоступен — диалог закрыт. Нажми <b>🔎 Поиск собеседника</b>, чтобы найти нового.",
+            "Собеседник недоступен — диалог закрыт. «Поиск собеседника» в меню, чтобы найти нового.",
             markup=K.menu_keyboard(cfg.emoji_pack_url),
         )
         return
 
     if sent_count == 1:
-        await ctx.reply("🤫 Первое сообщение ушло анонимно: никто не видит ни ник, ни аватарку.")
+        await ctx.reply(texts.FIRST_SENT)
