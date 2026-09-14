@@ -15,6 +15,44 @@ from anonchat.matching import Matchmaker  # noqa: E402
 
 
 # --------------------------------------------------------------------------------- levels
+def test_config_defaults(monkeypatch=None) -> None:
+    """from_env должен читать дефолты полей, а не slots-дескрипторы (был реальный баг)."""
+    import os
+
+    from anonchat.config import Config
+
+    saved = {k: os.environ.get(k) for k in ("BOT_TOKEN", "CITY_NAME", "ADMIN_IDS", "AUTO_MUTE_REPORTS")}
+    os.environ["BOT_TOKEN"] = "12:TEST"
+    os.environ.pop("CITY_NAME", None)
+    os.environ["ADMIN_IDS"] = "777, 888"
+    try:
+        cfg = Config.from_env(dotenv=".__no_such_env__.local")
+        assert cfg.city == "Магнитогорск" and cfg.city_short == "МГН"
+        assert cfg.admin_ids == (777, 888)
+        assert cfg.auto_mute_reports == 3 and isinstance(cfg.auto_mute_reports, int)
+        assert cfg.emoji_pack_url.startswith("https://t.me/addemoji/")
+        assert cfg.max_message_len == 3000
+
+        os.environ["CITY_NAME"] = "Челябинск"
+        os.environ["AUTO_MUTE_REPORTS"] = "5"
+        cfg2 = Config.from_env(dotenv=".__no_such_env__.local")
+        assert cfg2.city == "Челябинск" and cfg2.auto_mute_reports == 5
+
+        os.environ["BOT_TOKEN"] = ""
+        try:
+            Config.from_env(dotenv=".__no_such_env__.local")
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("пустой BOT_TOKEN обязан ронять запуск")
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 def test_levels_progress() -> None:
     first = level_for(0)
     assert first.level == 1 and first.title == LEVELS[0][1]

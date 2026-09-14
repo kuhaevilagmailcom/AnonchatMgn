@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
+from typing import Any
 
 
 def _load_dotenv(path: Path) -> None:
@@ -58,6 +59,11 @@ class Config:
     debug: bool = False
 
     @classmethod
+    def _default(cls, name: str) -> Any:
+        """Значение поля по умолчанию (у slots-датакласса cls.field — дескриптор, не значение)."""
+        return next(f.default for f in fields(cls) if f.name == name)
+
+    @classmethod
     def from_env(cls, dotenv: str | Path = ".env") -> "Config":
         _load_dotenv(Path(dotenv))
         token = os.getenv("BOT_TOKEN", "").strip()
@@ -65,17 +71,19 @@ class Config:
             raise RuntimeError(
                 "Не задан BOT_TOKEN. Скопируйте .env.example в .env и вставьте токен @BotFather."
             )
-        db_path = Path(os.getenv("DB_PATH", "data/anonchat_mgn.db"))
+        env = os.getenv
         return cls(
             bot_token=token,
-            admin_ids=_parse_ids(os.getenv("ADMIN_IDS", "")),
-            db_path=db_path,
-            city=os.getenv("CITY_NAME", cls.city),
-            city_short=os.getenv("CITY_SHORT", cls.city_short),
-            emoji_pack_url=os.getenv("EMOJI_PACK_URL", cls.emoji_pack_url),
-            auto_mute_reports=int(os.getenv("AUTO_MUTE_REPORTS", cls.auto_mute_reports)),
-            auto_mute_minutes=int(os.getenv("AUTO_MUTE_MINUTES", cls.auto_mute_minutes)),
-            debug=os.getenv("DEBUG", "").lower() in {"1", "true", "yes"},
+            admin_ids=_parse_ids(env("ADMIN_IDS", "")),
+            db_path=Path(env("DB_PATH", str(cls._default("db_path")))),
+            city=env("CITY_NAME", cls._default("city")),
+            city_short=env("CITY_SHORT", cls._default("city_short")),
+            emoji_pack_url=env("EMOJI_PACK_URL", cls._default("emoji_pack_url")),
+            auto_mute_reports=int(env("AUTO_MUTE_REPORTS", str(cls._default("auto_mute_reports")))),
+            auto_mute_minutes=int(env("AUTO_MUTE_MINUTES", str(cls._default("auto_mute_minutes")))),
+            inchat_rate_limit=int(env("INCHAT_RATE_LIMIT", str(cls._default("inchat_rate_limit")))),
+            max_message_len=int(env("MAX_MESSAGE_LEN", str(cls._default("max_message_len")))),
+            debug=env("DEBUG", "").lower() in {"1", "true", "yes"},
         )
 
     @property
