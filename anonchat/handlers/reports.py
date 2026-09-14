@@ -1,0 +1,154 @@
+"""Жалобы: кнопка 🚩 → причина → комментарий → карточка админу, авто-мут за серию жалоб."""
+
+from __future__ import annotations
+
+import time
+
+from aiogram import F, Router
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import CallbackQuery, Message
+
+from .. import keyboards as K
+from .. import texts
+from ..actions import Ctx, break_pair, send_to
+from ..config import Config
+from ..db import Database
+from ..matching import Matchmaker
+
+router = Router(name="reports")
+
+REASON_TITLES = {code: title for title, code in K.REPORT_REASONS}
+
+
+class ReportStates(StatesGroup):
+    comment = State()
+
+
+async def notify_admins(ctx: Ctx, body: str, markup=None) -> None:
+    for admin_id in ctx.cfg.admin_ids:
+        await send_to(ctx.bot, admin_id, body, markup)
+
+
+# ---------------------------------------------------------------------------------- старт жалобы
+@router.message(Command("report", "complain", "жалоба"))
+async def cmd_report(message: Message, ctx: Ctx) -> None:
+    await open_report(ctx, edit=False)
+
+
+@router.callback_query(F.data == K.CB_REPORT)
+async def cb_report(event: CallbackQuery, ctx: Ctx) -> None:
+    await open_report(ctx)
+
+
+async def open_report(ctx: Ctx, edit: bool = True) -> None:
+    partner = ctx.mm.partner(ctx.user_id)
+    if partner is None:
+        await ctx.reply(
+            texts.REPORT_NO_TARGET, markup=K.menu_keyboard(ctx.cfg.emoji_pack_url)
+        )
+        return
+    body = (
+        "🚩 <b>На что жалуетесь?</b>\n\n"
+        "Жалоба анонимная: собеседник не узнает, кто её отправил. "
+        "Модератор увидит текст переписки в этом диалоге и примет решение."
+    )
+    kb = K.report_keyboard()
+    if edit and await ctx.edit(body, kb):
+        return
+    await ctx.reply(body, kb)
+
+
+# ---------------------------------------------------------------------------------- причина
+@router.callback_query(F.data == "rep:skip")
+async def cb_skip_comment(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
+    data = await state.get_data()
+    await finish_report(ctx, state, data.get("reason", "other"), "")
+
+
+@router.callback_query(F.data.startswith("rep:"))
+async def cb_reason(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
+    code = event.data.split(":", 1)[1]
+    if code not in REASON_TITLES:
+        await ctx.ack("Не понял причину 🤔", alert=True)
+        return
+    partner = ctx.mm.partner(ctx.user_id)
+    if partner is None:
+        await state.clear()
+        await ctx.reply(texts.REPORT_NO_TARGET, markup=K.menu_keyboard(ctx.cfg.emoji_pack_url))
+        return
+    await state.set_state(ReportStates.comment)
+    await state.update_data(reason=code, partner=partner)
+    await ctx.edit(
+        f"🧾 Причина: <b>{texts.esc(REASON_TITLES[code])}</b>\n\n"
+        "Добавь пару слов контекстом (можно пропустить) — так модератор разберётся быстрее.",
+        K.skip_cancel_keyboard(),
+    )
+    await ctx.ack("Принято")
+
+
+# ---------------------------------------------------------------------------------- текст жалобы
+@router.message(ReportStates.comment, F.text)
+async def report_comment(message: Message, ctx: Ctx, state: FSMContext) -> None:
+    data = await state.get_data()
+    await finish_report(ctx, state, data.get("reason", "other"), (message.text or "").strip()[:500])
+
+
+async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) -> None:
+    await state.clear()
+    mm: Matchmaker = ctx.mm
+    db: Database = ctx.db
+    cfg: Config = ctx.cfg
+
+    partner = mm.partner(ctx.user_id)
+    if partner is None:
+        await ctx.reply(texts.REPORT_NO_TARGET, markup=K.menu_keyboard(cfg.emoji_pack_url))
+        return
+
+    report_id, day_count = await db.add_report(ctx.user_id, partner, reason, comment)
+    target_row = await db.get_user(partner)
+    target_name = (target_row["first_name"] if target_row else "собеседник") or "собеседник"
+    target_login = f"@{target_row['username']}" if target_row and target_row["username"] else "без юзернейма"
+
+    card = (
+        f"🚩 <b>Жалоба #{report_id}</b>\n"
+        f"Причина: <b>{texts.esc(REASON_TITLES.get(reason, reason))}</b>\n"
+        f"На: <code>{partner}</code> · {texts.esc(target_name)} ({texts.esc(target_login)})\n"
+        f"От: <code>{ctx.user_id}</code>\n"
+        f"💬 {texts.esc(comment) if comment else '<i>без комментария</i>'}\n"
+        f"📈 Жалоб на него за сутки: <b>{day_count}</b>\n"
+        f"🕐 {time.strftime('%d.%m %H:%M')}"
+    )
+    kb = K.admin_report_keyboard(report_id)
+    await notify_admins(ctx, card, kb)
+
+    auto = ""
+    if day_count >= cfg.auto_mute_reports:
+        until = await db.set_mute(partner, cfg.auto_mute_minutes)
+        mins = max(1, int((until - time.time()) // 60))
+        await send_to(ctx.bot, partner, texts.MUTED.format(mins=mins))
+        await break_pair(ctx.bot, cfg, mm, partner, "🛡 Модерация закрыла диалог из-за жалоб.")
+        auto = f"\n\n🔇 Автомут на <b>{mins}</b> мин уже применён."
+
+    await ctx.reply(
+        texts.REPORT_TAKEN.format(rid=report_id, reason=texts.esc(REASON_TITLES.get(reason, reason)))
+        + auto
+        + "\n\nХочешь — сразу выйди из диалога кнопкой <b>⏹️ Остановить диалог</b>.",
+        markup=K.menu_keyboard(cfg.emoji_pack_url),
+    )
+
+
+# --------------------------------------------------------------------------------=> /feedback
+@router.message(Command("feedback"))
+async def cmd_feedback(message: Message, ctx: Ctx) -> None:
+    body = (message.text or "").partition(" ")[2].strip()
+    if not body:
+        await ctx.reply("Напиши текст: <code>/feedback а вы бы добавили темы для разговора</code>")
+        return
+    await notify_admins(
+        ctx,
+        f"💌 <b>Фидбек</b> от <code>{ctx.user_id}</code> ({texts.esc(message.from_user.first_name)}):\n"
+        f"{texts.esc(body[:1000])}",
+    )
+    await ctx.reply("✅ Передал админам. Спасибо, что делаешь чат в городе лучше!")

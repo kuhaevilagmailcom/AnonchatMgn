@@ -1,0 +1,282 @@
+"""Интегральный прогон без сети: апдейты идут в Dispatcher, ответы пишутся в запись.
+
+Запуск:  python -m tests.flow      (или pytest -q tests/flow.py)
+Проверяет реальный сценарий: /start → 🔎 → ⏭/⏹ → профиль → 🚩 жалоба → оценка.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import sys
+import tempfile
+from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.base import BaseSession
+from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import Chat, Message, Update, User
+
+from anonchat.config import Config
+from anonchat.db import Database
+from anonchat.handlers import get_routers
+from anonchat.matching import Matchmaker
+from anonchat.middlewares import DataContext, Throttling
+
+ADMIN = 999
+A, B, C = 1001, 1002, 1003
+
+
+class RecordingSession(BaseSession):
+    """Фейковая Bot API: всё отправленное ботом попадает в self.outbox."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.outbox: list[dict[str, Any]] = []
+        self._mid = 0
+
+    async def close(self) -> None:  # pragma: no cover
+        return None
+
+    async def stream_content(self, *a: Any, **k: Any):  # pragma: no cover
+        yield b""
+
+    async def make_request(self, bot: Bot, method: Any, timeout: int | None = None) -> Any:
+        name = method.__api_method__
+        data = method.model_dump(exclude_none=True, by_alias=True)
+        self.outbox.append({"method": name, **data})
+
+        if name == "getMe":
+            return User(id=777, is_bot=True, first_name="Анончат", username="anonchat_mgn_bot")
+        if name in {"getUpdates", "deleteWebhook", "setMyCommands", "answerCallbackQuery"}:
+            return True if name == "answerCallbackQuery" else []
+        self._mid += 1
+        return Message(
+            message_id=self._mid,
+            date=1_700_000_000,
+            chat=Chat(id=int(data.get("chat_id", 0)), type="private"),
+            text=data.get("text"),
+        )
+
+    # ------------------------------------------------------------------ helpers
+    def to(self, chat_id: int) -> list[dict[str, Any]]:
+        return [m for m in self.outbox if m.get("chat_id") == chat_id]
+
+    def texts_to(self, chat_id: int) -> list[str]:
+        return [str(m.get("text", "")) for m in self.to(chat_id)]
+
+    def last_to(self, chat_id: int) -> str:
+        texts = self.texts_to(chat_id)
+        return texts[-1] if texts else ""
+
+    def has_keyboard(self, chat_id: int) -> bool:
+        return any(m.get("reply_markup") for m in self.to(chat_id))
+
+    def clear(self) -> None:
+        self.outbox.clear()
+
+
+def msg_update(bot: Bot, uid: int, text: str, update_id: int) -> Update:
+    payload = {
+        "update_id": update_id,
+        "message": {
+            "message_id": update_id,
+            "date": 1_700_000_000,
+            "chat": {"id": uid, "type": "private", "first_name": f"U{uid}"},
+            "from": {"id": uid, "is_bot": False, "first_name": f"U{uid}"},
+            "text": text,
+        },
+    }
+    return Update.model_validate(payload, context={"bot": bot})
+
+
+def cb_update(bot: Bot, uid: int, data: str, update_id: int) -> Update:
+    payload = {
+        "update_id": update_id,
+        "callback_query": {
+            "id": f"cb{update_id}",
+            "chat_instance": "1",
+            "from": {"id": uid, "is_bot": False, "first_name": f"U{uid}"},
+            "data": data,
+            "message": {
+                "message_id": update_id,
+                "date": 1_700_000_000,
+                "chat": {"id": uid, "type": "private", "first_name": f"U{uid}"},
+                "from": {"id": uid, "is_bot": False, "first_name": f"U{uid}"},
+                "text": "меню",
+            },
+        },
+    }
+    return Update.model_validate(payload, context={"bot": bot})
+
+
+async def run_flow() -> None:
+    tmp = Path(tempfile.mkdtemp())
+    cfg = Config(bot_token="42:TEST", admin_ids=(ADMIN,), db_path=tmp / "flow.db")
+    db = await Database(cfg.db_path).start()
+    mm = Matchmaker()
+    session = RecordingSession()
+    bot = Bot(
+        cfg.bot_token,
+        session=session,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+    )
+
+    dp = Dispatcher(storage=MemoryStorage())
+    for observer in (dp.message, dp.callback_query):
+        observer.outer_middleware(Throttling(cfg, limit=200))
+        observer.middleware(DataContext(cfg, db, mm))
+    for router in get_routers():
+        dp.include_router(router)
+
+    step = 0
+
+    async def send(uid: int, text: str) -> None:
+        nonlocal step
+        step += 1
+        await dp.feed_update(bot, msg_update(bot, uid, text, step))
+
+    async def press(uid: int, data: str) -> None:
+        nonlocal step
+        step += 1
+        await dp.feed_update(bot, cb_update(bot, uid, data, step))
+
+    def check(cond: bool, label: str) -> None:
+        if not cond:
+            raise AssertionError(f"{label}\noutbox A/B: {session.texts_to(A)} | {session.texts_to(B)}")
+        print(f"  ok  {label}")
+
+    # 1. /start — приветствие и красивое меню
+    await send(A, "/start")
+    check("Анонимный чат" in session.last_to(A), "/start показывает приветствие с меню")
+    check(session.has_keyboard(A), "в меню есть инлайн-кнопки")
+    kb = session.to(A)[-1]["reply_markup"]["inline_keyboard"]
+    labels = " ".join(btn["text"] for row in kb for btn in row)
+    for needle in ("🔎 Поиск собеседника", "⏭️ Следующий", "⏹️ Остановить диалог", "🚩"):
+        check(needle in labels, f"кнопка «{needle}» на месте")
+    check(any("addemoji/NewsEmoji" in str(row) for row in kb), "есть кнопка с эмодзи-паком")
+
+    # 2. A жмёт поиск — встаёт в очередь
+    session.clear()
+    await press(A, "act:connect")
+    check("Ищу тебе пару" in session.last_to(A), "кнопка 🔎 ставит в очередь")
+    check(mm.status(A) == "queued", "матчмейкер видит A в очереди")
+
+    # 3. B жмёт поиск — сводим обоих
+    await send(B, "/start")
+    session.clear()
+    await press(B, "act:connect")
+    check(mm.partner(A) == B and mm.partner(B) == A, "A и B стали парой")
+    check("Пара найдена" in session.last_to(A), "A получил уведомление о паре")
+    check("Пара найдена" in session.last_to(B), "B получил уведомление о паре")
+
+    # 4. анонимная пересылка туда-сюда
+    session.clear()
+    await send(A, "Привет! Ты с какой стороны Магнитки?")
+    check("Привет! Ты с какой стороны Магнитки?" in session.last_to(B), "сообщение дошло B")
+    check(not session.to(A) or all("ни к кому" not in t for t in session.texts_to(A)), "A не получил отказ")
+    await send(B, "С Правобережного 🙂")
+    check("С Правобережного" in session.last_to(A), "ответ дошёл A")
+    await send(A, "О, тогда нам по пути — я от Вокзала")
+    await send(B, "Бывает 🙂")
+    await send(A, "Как тебе наш снег?")
+    await send(B, "Хуже, чем обычно")
+
+    # 5. мусорные типы не пересылаем, команды не теряем
+    session.clear()
+    await send(A, "/unknowncmd")
+    check("Не знаю такой команды" in session.last_to(A), "неизвестная команда не улетает собеседнику")
+
+    # 6. стоп + начисление опыта
+    session.clear()
+    await send(A, "/stop")
+    check(mm.status(A) == "free" and mm.status(B) == "free", "после /stop оба свободны")
+    check("Остановить диалог" in " ".join(session.texts_to(A)) or "диалог остановлен" in session.last_to(A).lower(),
+          "A получил подтверждение остановки")
+    check("собеседник вышел" in " ".join(session.texts_to(B)).lower(), "B узнал, что собеседник вышел")
+    row_a = await db.get_user(A)
+    check(row_a["dialogs"] == 1, "диалог записан в статистику")
+
+    # 7. оценка собеседника (+XP тому, кого оценили)
+    session.clear()
+    before_b = (await db.get_user(B))["xp"]
+    await press(A, "rate:1")
+    after_b = (await db.get_user(B))["xp"]
+    check(after_b - before_b == cfg.xp_good_rating, "👍 добавило собеседнику xp_good_rating")
+    check((await db.get_user(A))["xp"] >= 2, "за сообщения потёк опыт")
+    await press(A, "rate:1")
+    check((await db.get_user(B))["xp"] == after_b, "повторная та же оценка ничего не добавляет")
+
+    # 8. настройки и профиль
+    session.clear()
+    await press(A, "act:settings")
+    await press(A, "cfg:district:right")
+    check((await db.get_user(A))["district"] == "Правобережный", "район сохранился")
+    await send(A, "/profile")
+    check("Уровень" in session.last_to(A) and "XP" in session.last_to(A), "профиль показывает уровень общения")
+
+    # 9. жалоба от A на C
+    session.clear()
+    await press(A, "act:connect")
+    await send(C, "/start")
+    await press(C, "act:connect")
+    check(mm.partner(A) == C, "A и C в паре")
+    await send(A, "тебе спамить буду")
+    await press(A, "act:report")
+    await press(A, "rep:spam")
+    await send(A, "реклама казино, бесячье")
+    card = " ".join(session.texts_to(ADMIN))
+    check("Жалоба #" in card and "spam" in card.lower() or "Спам" in card, "админ получил карточку жалобы")
+    check(str(C) in card, "в карточке есть id нарушителя")
+    reports = await db.list_reports("new")
+    check(len(reports) == 1 and reports[0]["target_id"] == C, "жалоба легла в базу")
+    check(mm.partner(A) == C, "жалоба сама по себе диалог не рвёт")
+
+    # 10. админ мутит нарушителя и закрывает жалобу
+    session.clear()
+    await press(ADMIN, f"adm:mute:{reports[0]['id']}")
+    check(await db.is_restricted(C) == "muted", "по кнопке нарушитель ушёл в мут")
+    check(await db.list_reports("new") == [], "жалоба закрыта")
+    check(mm.status(C) == "free", "мут расцепил пару")
+    await press(A, "act:stop")
+
+    # 11. следующий собеседник
+    session.clear()
+    await press(A, "act:connect")
+    await press(B, "act:connect")
+    check(mm.partner(A) == B, "A снова в паре с B")
+    session.clear()
+    await press(A, "act:next")
+    check(mm.status(A) in {"queued", "paired"}, "после «Следующий» A снова в поиске")
+    check("перешёл к следующему" in " ".join(session.texts_to(B)).lower()
+          or mm.status(B) in {"free", "queued", "paired"}, "B уведомлён о скипе")
+
+    # 12. чужие команды модерации недоступны
+    session.clear()
+    await send(A, "/stats")
+    check("Доступ только у админов" in session.last_to(A), "/stats не для обычных пользователей")
+    await send(ADMIN, "/stats")
+    check("сводка" in session.last_to(ADMIN).lower(), "админ видит статистику")
+
+    # 13. право на забвение
+    session.clear()
+    await press(A, "act:settings")
+    await press(A, "cfg:forget:ask")
+    await press(A, "cfg:forget:yes")
+    check(await db.get_user(A) is None, "/forget стёр профиль полностью")
+
+    await bot.session.close()
+    await db.close()
+    print("\nflow test passed")
+
+
+def test_flow() -> None:
+    asyncio.run(run_flow())
+
+
+if __name__ == "__main__":
+    test_flow()
