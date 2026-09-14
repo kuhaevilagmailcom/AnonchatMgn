@@ -169,7 +169,18 @@ class Database:
             return "muted"
         return None
 
+    async def _ensure_row(self, user_id: int) -> None:
+        """Модерация может прийти по «сырому» id — заводим строку, чтобы что-то банить/мутить."""
+        row = await self._fetchone("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+        if row is None:
+            await self.db.execute(
+                "INSERT INTO users (user_id, first_name, created_at, last_seen) VALUES (?, ?, ?, 0)",
+                (user_id, f"user{user_id}", now()),
+            )
+            await self.db.commit()
+
     async def set_ban(self, user_id: int, banned: bool, reason: str = "") -> None:
+        await self._ensure_row(user_id)
         await self.db.execute(
             "UPDATE users SET banned = ?, ban_reason = ?, mute_until = 0 WHERE user_id = ?",
             (int(banned), reason if banned else "", user_id),
@@ -177,6 +188,7 @@ class Database:
         await self.db.commit()
 
     async def set_mute(self, user_id: int, minutes: int) -> int:
+        await self._ensure_row(user_id)
         until = now() + max(0, minutes) * 60
         await self.db.execute("UPDATE users SET mute_until = ? WHERE user_id = ?", (until, user_id))
         await self.db.commit()

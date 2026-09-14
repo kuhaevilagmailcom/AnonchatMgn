@@ -114,10 +114,12 @@ def cb_update(bot: Bot, uid: int, data: str, update_id: int) -> Update:
     return Update.model_validate(payload, context={"bot": bot})
 
 
-async def run_flow() -> None:
+async def run_flow(holder: dict[str, Any] | None = None) -> None:
     tmp = Path(tempfile.mkdtemp())
     cfg = Config(bot_token="42:TEST", admin_ids=(ADMIN,), db_path=tmp / "flow.db")
     db = await Database(cfg.db_path).start()
+    if holder is not None:
+        holder["db"] = db
     mm = Matchmaker()
     session = RecordingSession()
     bot = Bot(
@@ -269,13 +271,51 @@ async def run_flow() -> None:
     await press(A, "cfg:forget:yes")
     check(await db.get_user(A) is None, "/forget стёр профиль полностью")
 
+    # 14. админские команды модерации
+    session.clear()
+    await send(ADMIN, "/queue")
+    check("Очередь" in session.last_to(ADMIN), "/queue показывает очередь")
+    await send(ADMIN, f"/find {B}")
+    check(str(B) in session.last_to(ADMIN), "/find нашёл пользователя по id")
+    await send(ADMIN, "/resolve")
+    check("Формат" in session.last_to(ADMIN), "/resolve без аргументов подсказывает формат")
+
+    await send(ADMIN, f"/ban {B} спам и хамство")
+    check(await db.is_restricted(B) == "banned", "/ban забанил пользователя")
+    session.clear()
+    await press(B, "act:connect")
+    check("заблокирован" in session.last_to(B).lower(), "баненному отказано в поиске пары")
+    check(mm.status(B) == "free", "бан выкинул из очереди/пары")
+
+    session.clear()
+    await send(ADMIN, f"/unban {B}")
+    check(await db.is_restricted(B) is None, "/unban вернул в игру")
+    await send(ADMIN, "/bc 🌨 Первый снег — болтайте тёпло!")
+    check("Рассылаю" in " ".join(session.texts_to(ADMIN)), "/bc запущен и отчитался")
+    check(any("Первый снег" in t for t in session.texts_to(B)), "рассылка дошла пользователю")
+
+    await send(ADMIN, "/mute 4242 5")
+    check("заглушён на 5 мин" in session.last_to(ADMIN), "/mute работает даже по «сырому» id")
+    check(await db.is_restricted(4242) == "muted", "мут применился и создал заглушку-профиль")
+
     await bot.session.close()
     await db.close()
     print("\nflow test passed")
 
 
 def test_flow() -> None:
-    asyncio.run(run_flow())
+    """Гарантированно закрываем БД: иначе worker-поток aiosqlite вешает процесс при упавшем асерте."""
+    holder: dict[str, Any] = {}
+
+    async def guarded() -> None:
+        try:
+            await run_flow(holder)
+        finally:
+            db = holder.get("db")
+            if db is not None:
+                await db.close()
+
+    asyncio.run(guarded())
 
 
 if __name__ == "__main__":

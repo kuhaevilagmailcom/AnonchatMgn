@@ -124,9 +124,12 @@ def test_queue_limit() -> None:
 
 # --------------------------------------------------------------------------------- database
 def test_database() -> None:
+    holder: dict[str, object] = {}
+
     async def scenario() -> None:
         path = Path(tempfile.mkdtemp()) / "t.db"
         db = await Database(path).start()
+        holder["db"] = db
 
         row = await db.ensure_user(10, "petr", "Пётр")
         assert row["xp"] == 0 and row["district"] == ""
@@ -172,7 +175,15 @@ def test_database() -> None:
         assert (await db.stats())["dialogs"] == 0  # диалоги удалённого пользователя тоже стёрты
         await db.close()
 
-    asyncio.run(scenario())
+    async def guarded() -> None:
+        try:
+            await scenario()
+        finally:
+            db = holder.get("db")
+            if db is not None:
+                await db.close()
+
+    asyncio.run(guarded())
 
 
 def run_all() -> int:  # python -m tests.core
