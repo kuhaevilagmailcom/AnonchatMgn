@@ -31,7 +31,8 @@ HTML-разметка, FSM и асинхронная база.
 
 ```
 AnonchatMgn/
-├── run.py                 # запуск: бот, диспетчер, мидлвари, команды, janitor
+├── main.py                # точка входа: бот, диспетчер, мидлвари, команды, janitor
+├── run.py                 # алиас: `python run.py` работает так же (историческое имя)
 ├── requirements.txt
 ├── .env.example
 ├── Dockerfile
@@ -67,7 +68,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 cp .env.example .env       # впиши токен от @BotFather и свой Telegram ID
-python run.py
+python main.py             # есть и алиас: python run.py
 ```
 
 Как узнать свой ID для `ADMIN_IDS`: напиши [@userinfobot](https://t.me/userinfobot) — он покажет число.
@@ -114,7 +115,7 @@ docker run -d --name anonchat-mgn \
   anonchat-mgn
 ```
 
-или `docker compose up -d`. Для VPS-варианта без Docker — `systemd`-юнит с `python run.py` и
+или `docker compose up -d`. Для VPS-варианта без Docker — `systemd`-юнит с `python main.py` и
 `Restart=always`.
 
 ## Идеи, что докрутить

@@ -19,6 +19,7 @@ from ..actions import (
     show_rules,
     show_top,
 )
+from ..commands import ensure_for_admin
 from ..config import Config
 
 router = Router(name="menu")
@@ -27,6 +28,9 @@ router = Router(name="menu")
 # ---------------------------------------------------------------------------------- команды
 @router.message(CommandStart())
 async def cmd_start(message: Message, ctx: Ctx, cfg: Config) -> None:
+    if ctx.user_id in cfg.admin_ids:
+        # при первом /start админа Telegram уже позволяет поставить его личное меню модератора
+        await ensure_for_admin(ctx.bot, cfg, ctx.user_id)
     kb = K.menu_keyboard(cfg.emoji_pack_url, ctx.mm.status(ctx.user_id))
     await ctx.reply(
         texts.WELCOME.format(

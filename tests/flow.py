@@ -273,6 +273,11 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
 
     # 14. админские команды модерации
     session.clear()
+    await send(ADMIN, "/start")
+    check(
+        any(m["method"] == "setMyCommands" for m in session.outbox),
+        "/start админа донастраивает личное меню модератора",
+    )
     await send(ADMIN, "/queue")
     check("Очередь" in session.last_to(ADMIN), "/queue показывает очередь")
     await send(ADMIN, f"/find {B}")

@@ -13,4 +13,4 @@ COPY . .
 # БД живёт в /app/data — монтируй volume, чтобы не потерять профили и опыт
 RUN mkdir -p /app/data
 
-CMD ["python", "run.py"]
+CMD ["python", "main.py"]
