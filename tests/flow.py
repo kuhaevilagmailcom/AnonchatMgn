@@ -27,6 +27,7 @@ from anonchat.db import Database
 from anonchat.handlers import get_routers
 from anonchat.matching import Matchmaker
 from anonchat.middlewares import DataContext, Throttling
+from anonchat.pack import ICONS as PACK_ICONS
 from anonchat.pack import EmojiPack
 
 ADMIN = 999
@@ -162,31 +163,44 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     check((await db.get_user(A))["nickname"] == "Аноним-1001", "авто-ник сохранился в базу")
     check(session.has_keyboard(A), "в меню есть инлайн-кнопки")
     kb = session.to(A)[-1]["reply_markup"]["inline_keyboard"]
-    labels = [btn["text"] for row in kb for btn in row]
+    buttons = [btn for row in kb for btn in row]
+    labels = [btn["text"] for btn in buttons]
     for needle in (
-        "🔎 Поиск собеседника",
-        "⏭ Следующий",
-        "⏹ Стоп",
-        "🚩 Жалоба",
-        "📊 Профиль",
-        "⚙️ Настройки",
-        "🏆 Топ",
-        "📜 Правила",
-        "❓ Помощь",
+        "Поиск собеседника",
+        "Следующий",
+        "Стоп",
+        "Жалоба",
+        "Профиль",
+        "Настройки",
+        "Топ",
+        "Правила",
+        "Помощь",
     ):
         check(needle in labels, f"кнопка «{needle}» на месте")
     check(len(labels) == 9, f"в главном меню 9 кнопок, не {len(labels)}")
     check(
-        all("url" not in str(btn) for row in kb for btn in row),
+        all("url" not in str(btn) for btn in buttons),
         "кнопки с эмодзи-паком в меню больше нет (ссылка осталась в /help)",
     )
-    def emoji_count(label: str) -> int:
-        # вариационные селекторы и ZWJ — не отдельные эмодзи («⚙️» = один знак)
-        return sum(1 for c in label if ord(c) > 0x2500 and c not in "\ufe0f\ufe0e\u200d")
-
+    # эмодзи на кнопках — анимированные из пака, а не юникодные в подписи
     check(
-        all(emoji_count(t) <= 1 for t in labels),
-        f"не больше одного эмодзи на кнопке: {labels}",
+        all(btn.get("icon_custom_emoji_id") for btn in buttons),
+        f"у каждой кнопки есть icon_custom_emoji_id: {[list(b) for b in buttons[:2]]}",
+    )
+    check(
+        all(str(btn["icon_custom_emoji_id"]).isdigit() for btn in buttons),
+        "id эмодзи — числовой, как в NewsEmoji",
+    )
+    check(
+        all(not any(ord(c) > 0x2500 for c in t) for t in labels),
+        f"подписи кнопок чистые, эмодзи — иконкой: {labels}",
+    )
+    styles = {btn["text"]: btn.get("style") for btn in buttons}
+    check(styles["Поиск собеседника"] == "success", "главное действие подсвечено")
+    check(styles["Стоп"] == "danger", "стоп — красный")
+    check(
+        f'<tg-emoji emoji-id="{PACK_ICONS["profile"]}">🙂</tg-emoji>' in session.last_to(A),
+        "приветствие сразу пишет премиум-эмодзи пака (не юникодный значок)",
     )
 
     # 2. A жмёт поиск — встаёт в очередь
@@ -298,7 +312,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
         "🧲 привет",
         entities=[{"type": "custom_emoji", "offset": 0, "length": 2, "custom_emoji_id": "AQADBAD123"}],
     )
-    check(pack.known() == 1 and pack.has("🧲"), "бот подсмотрел id эмодзи из пака у пользователя")
+    check(pack.extra() == 1 and pack.has("🧲"), "бот подсмотрел id эмодзи из пака у пользователя")
     check(json.loads(await db.get_kv("emoji_ids")) == [["🧲", "AQADBAD123"]], "id эмодзи пережил рестарт (в базе)")
     await send(A, "/start")
     check(

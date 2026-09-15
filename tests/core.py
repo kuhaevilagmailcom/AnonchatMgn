@@ -221,26 +221,82 @@ def test_nickname_rules() -> None:
     assert nick.display("Лена", 5) == "Лена"
 
 
+# --------------------------------------------------------------------------------- кнопки
+def test_keyboard_styles_and_icons() -> None:
+    """Все клавиатуры: иконки — числовые id пака, цвета — только те, что принимает Bot API.
+
+    «warning» Bot API отвергает (проверено живьём: Invalid button style specified),
+    поэтому любая опечатка в style роняет отправку сообщения.
+    """
+    from anonchat import keyboards as K
+
+    markups = [
+        K.menu_keyboard("free"), K.menu_keyboard("queued", 3), K.menu_keyboard("paired"),
+        K.district_keyboard(), K.gender_keyboard(),
+        K.settings_keyboard(True, "Правобережный", "Лена О", True),
+        K.report_keyboard(), K.rating_keyboard(), K.confirm_stop_keyboard(),
+        K.confirm_forget_keyboard(), K.back_menu_keyboard(), K.skip_cancel_keyboard(),
+        K.admin_report_keyboard(1),
+    ]
+    icons = set()
+    total = 0
+    for markup in markups:
+        for row in markup.inline_keyboard:
+            for btn in row:
+                data = btn.model_dump()
+                total += 1
+                style = data.get("style")
+                assert style in (None, "") or style in K.STYLES, f"{btn.text}: style={style}"
+                icon = data.get("icon_custom_emoji_id")
+                if icon:
+                    assert icon.isdigit(), f"{btn.text}: иконка не id — {icon}"
+                    icons.add(icon)
+    assert total >= 40, f"клавиатур стало подозрительно мало: {total} кнопок"
+    assert len(icons) >= 12, f"иконки должны брать из пака, а не из одного места: {len(icons)}"
+    # ни одна подпись не содержит юникодный эмодзи: маркер — иконка
+    for markup in markups:
+        for row in markup.inline_keyboard:
+            for btn in row:
+                assert all(
+                    ord(c) < 0x2500 or c in "\ufe0f\ufe0e\u200d" for c in btn.text
+                ), f"в подписи кнопки остался юникодный эмодзи: {btn.text!r}"
+
+
 # --------------------------------------------------------------------------------- пак эмодзи
 def test_pack_emoji() -> None:
     from types import SimpleNamespace
 
-    from anonchat.pack import EmojiPack
+    from anonchat.pack import ICONS, PACK, EmojiPack
 
     def fake_message(text: str, emoji_id: str, length: int) -> SimpleNamespace:
         entity = SimpleNamespace(type="custom_emoji", offset=0, length=length, custom_emoji_id=emoji_id)
         return SimpleNamespace(text=text, entities=[entity])
 
+    # id пака зашиты в код: премиум-эмодзи работают с первого сообщения, ничего ждать не надо
+    assert len(PACK) >= 20 and len(ICONS) == len(PACK)
+    assert all(emoji_id.isdigit() for emoji_id, _, _ in PACK.values()), "custom_emoji_id — цифры"
+    fresh = EmojiPack()
+    assert fresh.wrap("📊 Профиль") == '<tg-emoji emoji-id="5231200819986047254">📊</tg-emoji> Профиль'
+    assert fresh.extra() == 0 and fresh.as_pairs() == [], "встроенное в код в базу не пишем"
+
     pack = EmojiPack("https://t.me/addemoji/NewsEmoji")
-    assert pack.wrap("🧲 старт") == "🧲 старт"  # id пока нет — текст как есть
+    assert pack.wrap("🧲 старт") == "🧲 старт"  # магнита в паке нет — остаётся юникодом
 
     assert pack.harvest(fake_message("🧲 привет", "AAA111", 2)) == ["🧲"]
-    assert pack.has("🧲") and pack.known() == 1
+    assert pack.has("🧲") and pack.extra() == 1
     assert pack.harvest(fake_message("🧲 ещё раз", "AAA222", 2)) == []  # символ уже известен
-    assert pack.as_pairs() == [("🧲", "AAA222")]  # id обновляем на последний увиденный
+    assert pack.as_pairs() == [("🧲", "AAA222")], "id обновляем на последний увиденный"
 
     assert pack.wrap("🧲 старт") == '<tg-emoji emoji-id="AAA222">🧲</tg-emoji> старт'
-    assert pack.strip(pack.wrap("🧲 старт")) == "🧲 старт"
+    assert pack.strip(pack.wrap("🧲 старт")).startswith("🧲 старт")
+
+    # алиасы: в тексте «✅», в паке этот же знак «✔️» — внутрь тега у канонический символ
+    aliased = pack.wrap("✅ готово")
+    assert aliased == '<tg-emoji emoji-id="5206607081334906820">✔️</tg-emoji> готово', aliased
+
+    # один и тот же знак в сообщении оборачиваем один раз — глазами это один акцент
+    twice = pack.wrap("📊 и ещё 📊")
+    assert twice.count("<tg-emoji") == 1, twice
 
     # ZWJ-последовательность целиком, а не по половинкам (🙋‍♂️ = 5 единиц UTF-16)
     pack.harvest(fake_message("🙋‍♂️ хай", "BBB333", 5))
@@ -250,11 +306,11 @@ def test_pack_emoji() -> None:
     # битая длина у entity не должна ронять бота и резать эмодзи пополам
     broken = EmojiPack()
     broken.harvest(fake_message("🙋‍♂️ хай", "XXX", 3))
-    assert broken.known() == 0, "осколки ZWJ-последовательности не запоминаем"
+    assert broken.extra() == 0, "осколки ZWJ-последовательности не запоминаем"
 
-    # лимит подмены: украшаем максимум N эмодзи в сообщении
-    pack.load([("✨", "CCC"), ("💬", "DDD"), ("⏳", "EEE")])
-    limited = pack.wrap("✨💬⏳", limit=2)
+    # лимит подмены: украшаем максимум N эмодзи в сообщении, начиная с заголовка
+    pack.load([("✨", "CCC"), ("🕓", "DDD"), ("⏳", "EEE")])
+    limited = pack.wrap("✨🕓⏳🧲", limit=2)
     assert limited.count("<tg-emoji") == 2, limited
 
     # Telegram запретил тег — откатываемся и больше не пробуем
