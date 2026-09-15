@@ -50,16 +50,28 @@ def _button(
     b.button(**kwargs)
 
 
-def menu_keyboard(status: str = "free", queue_size: int = 0) -> InlineKeyboardMarkup:
-    """Главное меню: сверху поиск/статус, остальное сеткой 2×2."""
+CB_ADMIN_PANEL = "adm:panel"
+
+
+def menu_keyboard(status: str = "free", queue_size: int = 0, admin: bool = False) -> InlineKeyboardMarkup:
+    """Главное меню.
+
+    В диалоге оставляем только действия диалога: профиль/настройки во время
+    переписки не смотрят (и не тыкают в них собеседнику под «печатает…»).
+    """
     b = InlineKeyboardBuilder()
     if status == "paired":
-        head, head_icon, head_style = "Диалог идёт", "support", ""
-    elif status == "queued":
-        head, head_icon, head_style = f"В очереди · ждёт пары: {queue_size}", "refresh", ""
+        _button(b, "Диалог идёт", callback_data=CB_CONNECT, icon="support")
+        _button(b, "Следующий", callback_data=CB_NEXT, icon="next")
+        _button(b, "Стоп", callback_data=CB_STOP, icon="check", style="danger")
+        _button(b, "Жалоба", callback_data=CB_REPORT, icon="warn", style="primary")
+        b.adjust(1, 2, 2)
+        return b.as_markup()
+
+    if status == "queued":
+        _button(b, f"В очереди · ждёт пары: {queue_size}", callback_data=CB_CONNECT, icon="refresh")
     else:
-        head, head_icon, head_style = "Поиск собеседника", "view", "success"
-    _button(b, head, callback_data=CB_CONNECT, icon=head_icon, style=head_style)
+        _button(b, "Поиск собеседника", callback_data=CB_CONNECT, icon="view", style="success")
 
     _button(b, "Следующий", callback_data=CB_NEXT, icon="next")
     _button(b, "Стоп", callback_data=CB_STOP, icon="check", style="danger")
@@ -72,7 +84,11 @@ def menu_keyboard(status: str = "free", queue_size: int = 0) -> InlineKeyboardMa
 
     _button(b, "Правила", callback_data=CB_RULES, icon="ticket")
     _button(b, "Помощь", callback_data=CB_HELP, icon="support")
-    b.adjust(1, 2, 2, 2, 2)
+    rows = [1, 2, 2, 2, 2]
+    if admin:
+        _button(b, "Панель модератора", callback_data=CB_ADMIN_PANEL, icon="bonus", style="primary")
+        rows.append(1)
+    b.adjust(*rows)
     return b.as_markup()
 
 
@@ -206,3 +222,54 @@ def plain_button(text: str, callback_data: str, icon: str = "", style: str = "")
     if style in STYLES:
         kwargs["style"] = style
     return InlineKeyboardButton(**kwargs)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------------- панель модератора
+CB_PANEL = "adm:panel"
+CB_PANEL_STATS = "adm:panel:stats"
+CB_PANEL_REPORTS = "adm:panel:reports"
+CB_PANEL_QUEUE = "adm:panel:queue"
+CB_PANEL_FIND = "adm:panel:find"
+CB_PANEL_BC = "adm:panel:broadcast"
+CB_PANEL_MUTE = "adm:panel:mute"
+CB_PANEL_BAN = "adm:panel:ban"
+CB_PANEL_UNBAN = "adm:panel:unban"
+CB_PANEL_BACK = "adm:panel:back"
+
+
+def admin_panel_keyboard(open_reports: int = 0) -> InlineKeyboardMarkup:
+    """Панель модератора: никаких команд в счёт, всё кнопками."""
+    b = InlineKeyboardBuilder()
+    _button(b, "Сводка", callback_data=CB_PANEL_STATS, icon="stats")
+    _button(
+        b,
+        f"Жалобы · {open_reports}" if open_reports else "Жалобы",
+        callback_data=CB_PANEL_REPORTS,
+        icon="warn",
+        style="danger" if open_reports else "",
+    )
+    _button(b, "Очередь", callback_data=CB_PANEL_QUEUE, icon="refresh")
+    _button(b, "Найти профиль", callback_data=CB_PANEL_FIND, icon="view")
+    _button(b, "Рассылка", callback_data=CB_PANEL_BC, icon="support")
+    _button(b, "Мут по id", callback_data=CB_PANEL_MUTE, icon="settings", style="primary")
+    _button(b, "Бан по id", callback_data=CB_PANEL_BAN, icon="delete", style="danger")
+    _button(b, "Разбан по id", callback_data=CB_PANEL_UNBAN, icon="check")
+    _button(b, "В меню", callback_data=CB_MENU, icon="home")
+    b.adjust(2, 2, 2, 2, 1)
+    return b.as_markup()
+
+
+def panel_back_keyboard() -> InlineKeyboardMarkup:
+    """Из любого экрана панели — назад в панель и в меню."""
+    b = InlineKeyboardBuilder()
+    _button(b, "Назад в панель", callback_data=CB_PANEL_BACK, icon="next")
+    _button(b, "В меню", callback_data=CB_MENU, icon="home")
+    b.adjust(2)
+    return b.as_markup()
+
+
+def panel_cancel_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="check")
+    b.adjust(1)
+    return b.as_markup()

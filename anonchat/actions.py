@@ -77,6 +77,10 @@ class Ctx:
 
     # ------------------------------------------------------------------ профиль
     @property
+    def is_admin(self) -> bool:
+        return self.user_id in self.cfg.admin_ids
+
+    @property
     def nick(self) -> str:
         return nicklib.display(self.me["nickname"] if self.me else "", self.user_id)
 
@@ -116,6 +120,17 @@ class Ctx:
             await self.reply(
                 texts.MUTED.format(mins=mins), markup=menu_keyboard()
             )
+            return True
+        return False
+
+    async def dialog_locked(self) -> bool:
+        """Пока идёт диалог, свои экраны (профиль, настройки, топ, ник) закрыты.
+
+        Иначе человек посреди переписки уходит смотреть статистику, а собеседник
+        остаётся с молчаливым «печатает…». Сначала <code>/stop</code>.
+        """
+        if self.mm.status(self.user_id) == "paired":
+            await self.reply(texts.DIALOG_LOCKED)
             return True
         return False
 
@@ -193,7 +208,7 @@ async def show_menu(ctx: Ctx, edit: bool = True) -> None:
         f"<code>{rank.bar}</code> <i>{rank.pretty(rank.messages)} сообщ.</i>\n\n"
         f"{state}"
     )
-    kb = menu_keyboard(status, ctx.mm.queue_size())
+    kb = menu_keyboard(status, ctx.mm.queue_size(), admin=ctx.is_admin)
     if edit and await ctx.edit(body, kb):
         return
     await ctx.reply(body, kb)
@@ -223,6 +238,8 @@ async def show_rules(ctx: Ctx) -> None:
 
 
 async def show_top(ctx: Ctx) -> None:
+    if await ctx.dialog_locked():
+        return
     rows = await ctx.db.top(10)
     if not rows:
         await ctx.reply("🏆 Топ пуст — начни общаться первым.", markup=menu_keyboard())
@@ -243,6 +260,8 @@ async def show_top(ctx: Ctx) -> None:
 
 
 async def show_profile(ctx: Ctx) -> None:
+    if await ctx.dialog_locked():
+        return
     if ctx.me is None:
         await ctx.reply(texts.PROFILE_MISSING)
         return
@@ -310,29 +329,72 @@ async def set_nick(ctx: Ctx, raw: str) -> tuple[bool, str]:
 
 
 # --------------------------------------------------------------------- пары
+def partner_card(row: Any, user_id: int) -> str:
+    """Публичная карточка найденного собеседника: ник, ранг, сообщения, опыт, оценки, жалобы.
+
+    Настоящие имя и @username сюда не попадают намеренно — только то, что человек
+    выбрал и показал сам.
+    """
+    if row is None:
+        return f"🙂 <b>{texts.esc(nicklib.display('', user_id))}</b>"
+    messages = int(row["messages"])
+    rank = rank_for(messages)
+    return texts.MATCHED_CARD.format(
+        nick=texts.esc(nicklib.display(row["nickname"], user_id)),
+        rank=rank.name,
+        messages=rank.pretty(messages),
+        xp=rank.pretty(int(row["xp"])),
+        good=int(row["good_ratings"]),
+        bad=int(row["bad_ratings"]),
+        reports=int(row["reports_received"]),
+    )
+
+
+def matched_text(card: str, you: str) -> str:
+    return texts.MATCHED.format(card=card, you=texts.esc(you))
+
+
 async def announce_pair(ctx: Ctx, user_id: int, partner_id: int) -> bool:
     """Сообщаем обоим о паре — без кнопок: в диалоге мешают, всё есть командами.
 
-    Возвращает False, если собеседник недоступен (заблокировал бота).
+    Каждый видит карточку другого и свой собственный ник. Возвращает False, если
+    собеседник недоступен (заблокировал бота).
     """
-    if not await send_to(ctx.bot, partner_id, texts.MATCHED.format(nick="Аноним"), None, ctx.pack):
+    partner_row = await ctx.db.get_user(partner_id)
+    my_row = await ctx.db.get_user(user_id)
+    partner_nick = nicklib.display(partner_row["nickname"], partner_id) if partner_row \
+        else nicklib.display("", partner_id)
+    my_nick = nicklib.display(my_row["nickname"], user_id) if my_row else ctx.nick
+
+    if not await send_to(
+        ctx.bot, partner_id, matched_text(partner_card(my_row, user_id), partner_nick), None, ctx.pack
+    ):
         return False
-    await send_to(ctx.bot, user_id, texts.MATCHED.format(nick=texts.esc(ctx.nick)), None, ctx.pack)
+    await send_to(ctx.bot, user_id, matched_text(partner_card(partner_row, partner_id), my_nick), None, ctx.pack)
     return True
 
 
 async def announce_pairs(
-    bot: Bot, cfg: Config, mm: Matchmaker, pairs: list[tuple[int, int]], pack: EmojiPack | None = None
+    bot: Bot,
+    cfg: Config,
+    mm: Matchmaker,
+    pairs: list[tuple[int, int]],
+    pack: EmojiPack | None = None,
+    db: Database | None = None,
 ) -> int:
     """Разослать «собеседник найден» тем, кого свёл sweep() после смены настроек."""
     kb = menu_keyboard()
     made = 0
     for a, b in pairs:
-        if not await send_to(bot, b, texts.MATCHED.format(nick="Аноним"), None, pack):
+        row_a = await db.get_user(a) if db else None
+        row_b = await db.get_user(b) if db else None
+        nick_a = nicklib.display(row_a["nickname"], a) if row_a else nicklib.display("", a)
+        nick_b = nicklib.display(row_b["nickname"], b) if row_b else nicklib.display("", b)
+        if not await send_to(bot, b, matched_text(partner_card(row_a, a), nick_b), None, pack):
             mm.forget(b)
             await send_to(bot, a, texts.PARTNER_LEFT, kb, pack)
             continue
-        await send_to(bot, a, texts.MATCHED.format(nick="Аноним"), None, pack)
+        await send_to(bot, a, matched_text(partner_card(row_b, b), nick_a), None, pack)
         made += 1
     return made
 

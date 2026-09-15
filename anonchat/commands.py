@@ -1,10 +1,13 @@
 """Меню команд бота (то, что видно в «/»-подсказках Telegram).
 
-Нюанс Bot API: `BotCommandScopeChat` для конкретного пользователя принимается только после
-того, как он сам написал боту (иначе — «chat not found»). Поэтому:
+Нюансы Bot API:
 
-* при старте ставим общее меню и пробуем админское (молча пропускаем недоступное);
-* при первом /start админа добиваем настройку его личного меню — `ensure_for_admin`.
+* `BotCommandScopeChat` для конкретного пользователя принимается только после того,
+  как он сам написал боту (иначе — «chat not found»), поэтому при старте ставим общее
+  меню и пробуем админское (молча пропускаем недоступное), а при первом /start админа
+  добиваем его личное меню — `ensure_for_admin`;
+* служебные команды модерации в список меню **не выкладываем**: они работают, если
+  ввести их руками, но показываем мы только `/admin` — дальше панель кнопками.
 """
 
 from __future__ import annotations
@@ -34,6 +37,10 @@ COMMANDS = (
     BotCommand(command="forget", description="🧹 Удалить мой профиль"),
 )
 
+#: единственная админская команда, которую видно в меню
+ADMIN_VISIBLE = (BotCommand(command="admin", description="🛡 Панель модератора"),)
+
+#: работают, если ввести руками (и из панели), но в меню не показываются
 ADMIN_COMMANDS = (
     BotCommand(command="stats", description="📈 Сводка по боту"),
     BotCommand(command="reports", description="🚩 Открытые жалобы"),
@@ -65,7 +72,7 @@ async def ensure_for_admin(bot: Bot, cfg: Config, user_id: int, quiet: bool = Fa
         return user_id in _done
     try:
         await bot.set_my_commands(
-            list(COMMANDS + ADMIN_COMMANDS), scope=BotCommandScopeChat(chat_id=user_id)
+            list(COMMANDS + ADMIN_VISIBLE), scope=BotCommandScopeChat(chat_id=user_id)
         )
     except TelegramAPIError as exc:
         if not quiet:

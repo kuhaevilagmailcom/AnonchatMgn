@@ -22,6 +22,8 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Chat, Message, Update, User
 
+from anonchat import commands as commands_mod
+from anonchat.commands import register_common
 from anonchat.config import Config
 from anonchat.db import Database
 from anonchat.handlers import get_routers
@@ -40,6 +42,8 @@ class RecordingSession(BaseSession):
     def __init__(self) -> None:
         super().__init__()
         self.outbox: list[dict[str, Any]] = []
+        #: setMyCommands переживают clear() — проверяем, что именно уехало в Telegram
+        self.menus: list[dict[str, Any]] = []
         self._mid = 0
 
     async def close(self) -> None:  # pragma: no cover
@@ -52,6 +56,8 @@ class RecordingSession(BaseSession):
         name = method.__api_method__
         data = method.model_dump(exclude_none=True, by_alias=True)
         self.outbox.append({"method": name, **data})
+        if name == "setMyCommands":
+            self.menus.append(data)
 
         if name == "getMe":
             return User(id=777, is_bot=True, first_name="Анончат", username="anonchat_mgn_bot")
@@ -138,6 +144,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
         observer.middleware(DataContext(cfg, db, mm, pack))
     for router in get_routers():
         dp.include_router(router)
+    await register_common(bot, cfg)  # как это делает main.py на старте
 
     step = 0
 
@@ -221,6 +228,15 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
         all(m.get("reply_markup") is None for m in session.to(A) + session.to(B) if m["method"] == "sendMessage"),
         "на сообщении о паре — никаких кнопок, только текст с командами",
     )
+    matched_a = session.texts_to(A)[-1] if session.to(A) else session.last_to(A)
+    check("Аноним-1002" in matched_a, "A видит ник найденного собеседника")
+    check("Старт" in matched_a and "сообщ" in matched_a, "в карточке собеседника ранг и число сообщений")
+    check("жалоб: 0" in matched_a and "👍" in matched_a and "⭐" in matched_a,
+          "в карточке собеседника опыт, оценки и жалобы")
+    check("Ты в чате как" in matched_a and "Аноним-1001" in matched_a, "A видит и свой ник в этом диалоге")
+    check("Аноним-1001" in session.last_to(B), "B видит ник A, а не его настоящее имя")
+    check("U1001" not in session.last_to(B) and "Аня" not in session.last_to(B),
+          "реальные имя/id собеседнику не показываются")
 
     # 4. анонимная пересылка туда-сюда
     session.clear()
@@ -238,6 +254,28 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     session.clear()
     await send(A, "/unknowncmd")
     check("Не знаю такой команды" in session.last_to(A), "неизвестная команда не улетает собеседнику")
+
+    # 5b. пока идёт диалог — свои экраны закрыты, надо /stop
+    session.clear()
+    await send(A, "/profile")
+    check("заверши диалог" in session.last_to(A).lower() and "/stop" in session.last_to(A),
+          "в диалоге профиль закрыт: просит /stop")
+    check(mm.status(A) == "paired", "диалог при этом не распался")
+    session.clear()
+    await press(A, "act:settings")
+    check("заверши диалог" in session.last_to(A).lower(), "и настройки закрыты в диалоге")
+    session.clear()
+    await press(A, "act:top")
+    check("заверши диалог" in session.last_to(A).lower(), "топ тоже закрыт до /stop")
+    session.clear()
+    await press(A, "act:connect")
+    check("уже в диалоге" in session.last_to(A).lower(), "повторный поиск говорит, что ты в диалоге")
+    kb_paired = session.to(A)[-1]["reply_markup"]["inline_keyboard"]
+    paired_labels = [btn["text"] for row in kb_paired for btn in row]
+    check(
+        len(paired_labels) == 4 and "Профиль" not in paired_labels and "Настройки" not in paired_labels,
+        f"в меню во время диалога только действия диалога: {paired_labels}",
+    )
 
     # 6. стоп + начисление опыта
     session.clear()
@@ -376,6 +414,9 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
 
     # 14. админские команды модерации
     session.clear()
+    # считаем, что при старте процесса админу ещё не могли поставить меню (чат «не найден»):
+    # /start обязан донастроить личное меню модератора
+    commands_mod._done.clear()
     await send(ADMIN, "/start")
     check(
         any(m["method"] == "setMyCommands" for m in session.outbox),
@@ -405,6 +446,69 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     await send(ADMIN, "/mute 4242 5")
     check("заглушён на 5 мин" in session.last_to(ADMIN), "/mute работает даже по «сырому» id")
     check(await db.is_restricted(4242) == "muted", "мут применился и создал заглушку-профиль")
+
+    # 15. панель модератора: всё кнопками, команды наружу не торчат
+    session.clear()
+    await send(ADMIN, "/admin")
+    check("Панель модератора" in session.last_to(ADMIN), "/admin открыл панель модератора")
+    kb = session.to(ADMIN)[-1]["reply_markup"]["inline_keyboard"]
+    panel_labels = [btn["text"] for row in kb for btn in row]
+    check(
+        all(x in panel_labels for x in ("Сводка", "Жалобы", "Очередь", "Найти профиль", "Рассылка",
+                                        "Мут по id", "Бан по id", "Разбан по id", "В меню")),
+        f"в панели все разделы: {panel_labels}",
+    )
+    check(
+        all(btn.get("icon_custom_emoji_id") for row in kb for btn in row),
+        "кнопки панели тоже с эмодзи из пака",
+    )
+
+    session.clear()
+    await press(ADMIN, "adm:panel:stats")
+    check("сводка" in session.last_to(ADMIN).lower() and "Пользователей" in session.last_to(ADMIN),
+          "кнопка «Сводка» показывает статистику, не уходя из панели")
+    await press(ADMIN, "adm:panel:queue")
+    check("Очередь" in session.last_to(ADMIN), "кнопка «Очередь» показывает очередь")
+    await press(ADMIN, "adm:panel:back")
+    check("Панель модератора" in session.last_to(ADMIN), "«Назад в панель» возвращает")
+
+    await press(ADMIN, "adm:panel:find")
+    check("Кого ищем" in session.last_to(ADMIN), "«Найти профиль» спрашивает, кого искать")
+    await send(ADMIN, str(B))
+    admin_tape = " ".join(session.texts_to(ADMIN))
+    check(str(B) in admin_tape, "поиск по id из панели сработал")
+    check("Панель модератора" in session.last_to(ADMIN), "после действия вернулись в панель")
+
+    await press(ADMIN, "adm:panel:ban")
+    check("Кому бан" in session.last_to(ADMIN), "«Бан по id» просит id и причину")
+    await send(ADMIN, f"{C} спам с панели")
+    check(await db.is_restricted(C) == "banned", "бан из панели применился")
+    check("забанен" in " ".join(session.texts_to(ADMIN)).lower(), "панель отчиталась о бане")
+    await press(ADMIN, "adm:panel:unban")
+    await send(ADMIN, str(C))
+    check(await db.is_restricted(C) is None, "разбан из панели вернул пользователя")
+
+    await press(ADMIN, "adm:panel:mute")
+    await send(ADMIN, "-")
+    check("Отменил" in " ".join(session.texts_to(ADMIN)), "«-» отменяет ввод и возвращает в панель")
+
+    def menu_for(scope_type: str) -> list[str]:
+        entry = next(
+            (m for m in reversed(session.menus)
+             if isinstance(m.get("scope"), dict) and m["scope"].get("type") == scope_type),
+            None,
+        )
+        assert entry, f"в аутбоке нет setMyCommands для scope {scope_type}"
+        return [c["command"] for c in entry["commands"]]
+
+    admin_menu = menu_for("chat")
+    check("admin" in admin_menu, "админу в меню виден /admin")
+    check(
+        not {"stats", "ban", "unban", "mute", "bc", "reports", "queue", "find"} & set(admin_menu),
+        f"служебные команды не светятся даже админу: {admin_menu}",
+    )
+    public = menu_for("all_private_chats")
+    check("admin" not in public and "stats" not in public, "обычный пользователь не видит админского")
 
     await bot.session.close()
     await db.close()

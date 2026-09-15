@@ -55,10 +55,12 @@ async def _apply(ctx: Ctx, db: Database, mm: Matchmaker, **fields) -> None:
         same_district=bool(me["same_district"]),
     )
     if pairs:
-        await announce_pairs(ctx.bot, ctx.cfg, mm, pairs, ctx.pack)
+        await announce_pairs(ctx.bot, ctx.cfg, mm, pairs, ctx.pack, db)
 
 
 async def settings_screen(ctx: Ctx, edit: bool = True) -> None:
+    if await ctx.dialog_locked():
+        return
     me = ctx.me
     district = (me["district"] if me else "") or ""
     gender = (me["gender"] if me else "") or "не указан"
@@ -92,6 +94,8 @@ async def cb_settings(event: CallbackQuery, ctx: Ctx) -> None:
 @router.message(Command("nick", "ник"))
 async def cmd_nick(message: Message, ctx: Ctx, state: FSMContext) -> None:
     """`/nick Ким` — сразу меняем; голая `/nick` или кнопка — спрашиваем следующим сообщением."""
+    if await ctx.dialog_locked():
+        return
     parts = (message.text or "").split(maxsplit=1)
     if len(parts) > 1:
         ok, answer = await set_nick(ctx, parts[1])
@@ -104,12 +108,18 @@ async def cmd_nick(message: Message, ctx: Ctx, state: FSMContext) -> None:
 
 @router.callback_query(F.data == K.CB_NICK)
 async def cb_nick_ask(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
+    if await ctx.dialog_locked():
+        return
     await state.set_state(ProfileStates.nick)
     await ctx.edit(_nick_prompt(ctx), K.back_menu_keyboard())
 
 
 @router.message(ProfileStates.nick, F.text)
 async def nick_text(message: Message, ctx: Ctx, state: FSMContext) -> None:
+    if ctx.mm.status(ctx.user_id) == "paired":
+        await state.clear()  # иначе текст диалога съедается вводом ника
+        await message.answer(texts.DIALOG_LOCKED)
+        return
     ok, answer = await set_nick(ctx, message.text or "")
     await message.answer(answer)
     if not ok:
@@ -122,11 +132,15 @@ async def nick_text(message: Message, ctx: Ctx, state: FSMContext) -> None:
 # ---------------------------------------------------------------------------------- район
 @router.callback_query(F.data == "cfg:district:ask")
 async def cb_district_ask(event: CallbackQuery, ctx: Ctx) -> None:
+    if await ctx.dialog_locked():
+        return
     await ctx.edit(f"С каким районом {texts.esc(ctx.cfg.city_short)} ты себя ассоциируешь?", K.district_keyboard())
 
 
 @router.callback_query(F.data.startswith("cfg:district:"))
 async def cb_district(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker) -> None:
+    if await ctx.dialog_locked():
+        return
     key = event.data.split(":", 2)[2]
     await _apply(ctx, db, mm, district=DISTRICTS.get(key, ""))
     await ctx.ack("Район обновлён")
@@ -136,6 +150,8 @@ async def cb_district(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmak
 # ---------------------------------------------------------------------------------- пол
 @router.callback_query(F.data == "cfg:gender:ask")
 async def cb_gender_ask(event: CallbackQuery, ctx: Ctx) -> None:
+    if await ctx.dialog_locked():
+        return
     await ctx.edit(
         "Кого указать в профиле? На подбор не влияет — просто строчка для тебя.",
         K.gender_keyboard(),
@@ -144,6 +160,8 @@ async def cb_gender_ask(event: CallbackQuery, ctx: Ctx) -> None:
 
 @router.callback_query(F.data.startswith("cfg:gender:"))
 async def cb_gender(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker) -> None:
+    if await ctx.dialog_locked():
+        return
     key = event.data.split(":", 2)[2]
     await _apply(ctx, db, mm, gender=GENDERS.get(key, ""))
     await ctx.ack("Обновлено")
@@ -153,6 +171,8 @@ async def cb_gender(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker
 # ---------------------------------------------------------------------------------- «только мой район»
 @router.callback_query(F.data == "cfg:same:toggle")
 async def cb_same_toggle(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker) -> None:
+    if await ctx.dialog_locked():
+        return
     me = ctx.me or await db.get_user(ctx.user_id)
     new = 0 if (me and me["same_district"]) else 1
     await _apply(ctx, db, mm, same_district=new)
@@ -163,14 +183,20 @@ async def cb_same_toggle(event: CallbackQuery, ctx: Ctx, db: Database, mm: Match
 # ---------------------------------------------------------------------------------- «о себе»
 @router.callback_query(F.data == "cfg:about:ask")
 async def cb_about_ask(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
+    if await ctx.dialog_locked():
+        return
     await state.set_state(ProfileStates.text)
     await ctx.edit(texts.ABOUT_PROMPT.format(limit=ABOUT_MAX), K.back_menu_keyboard())
 
 
 @router.message(ProfileStates.text, F.text)
 async def about_text(message: Message, ctx: Ctx, state: FSMContext, db: Database) -> None:
+    if ctx.mm.status(ctx.user_id) == "paired":
+        await state.clear()
+        await message.answer(texts.DIALOG_LOCKED)
+        return
     raw = (message.text or "").strip()
-    value = "" if raw in {"-", "—", "--"} else raw[:120]
+    value = "" if raw in {"-", "—", "--"} else raw[:ABOUT_MAX]
     await db.set_profile(ctx.user_id, about=value)
     await state.clear()
     await message.answer(texts.ABOUT_SAVED if value else texts.ABOUT_CLEANED)
@@ -180,6 +206,8 @@ async def about_text(message: Message, ctx: Ctx, state: FSMContext, db: Database
 # ---------------------------------------------------------------------------------- сброс / удаление
 @router.callback_query(F.data == "cfg:reset")
 async def cb_reset(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker) -> None:
+    if await ctx.dialog_locked():
+        return
     await _apply(ctx, db, mm, district="", gender="", same_district=0, about="")
     await ctx.reply(texts.RESET_DONE)
     await settings_screen(ctx, edit=False)
@@ -187,6 +215,8 @@ async def cb_reset(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker)
 
 @router.callback_query(F.data == "cfg:forget:ask")
 async def cb_forget_ask(event: CallbackQuery, ctx: Ctx) -> None:
+    if await ctx.dialog_locked():
+        return
     await ctx.edit(
         "Удалить профиль целиком? Слетят опыт, статистика, ник и настройки. Отменить нельзя.",
         K.confirm_forget_keyboard(),
@@ -195,6 +225,8 @@ async def cb_forget_ask(event: CallbackQuery, ctx: Ctx) -> None:
 
 @router.callback_query(F.data == "cfg:forget:yes")
 async def cb_forget_yes(event: CallbackQuery, ctx: Ctx) -> None:
+    if await ctx.dialog_locked():
+        return
     await forget_everything(ctx)
 
 
@@ -206,6 +238,8 @@ async def cb_forget_no(event: CallbackQuery, ctx: Ctx) -> None:
 
 @router.message(Command("forget"))
 async def cmd_forget(message: Message, ctx: Ctx) -> None:
+    if await ctx.dialog_locked():
+        return
     await ctx.reply(
         "Точно стереть профиль? Кнопка ниже или <code>/cancel</code>, чтобы отменить.",
         markup=K.confirm_forget_keyboard(),

@@ -232,11 +232,13 @@ def test_keyboard_styles_and_icons() -> None:
 
     markups = [
         K.menu_keyboard("free"), K.menu_keyboard("queued", 3), K.menu_keyboard("paired"),
+        K.menu_keyboard("free", admin=True),
         K.district_keyboard(), K.gender_keyboard(),
         K.settings_keyboard(True, "Правобережный", "Лена О", True),
         K.report_keyboard(), K.rating_keyboard(), K.confirm_stop_keyboard(),
         K.confirm_forget_keyboard(), K.back_menu_keyboard(), K.skip_cancel_keyboard(),
-        K.admin_report_keyboard(1),
+        K.admin_report_keyboard(1), K.admin_panel_keyboard(3), K.panel_back_keyboard(),
+        K.panel_cancel_keyboard(),
     ]
     icons = set()
     total = 0
@@ -260,6 +262,19 @@ def test_keyboard_styles_and_icons() -> None:
                 assert all(
                     ord(c) < 0x2500 or c in "\ufe0f\ufe0e\u200d" for c in btn.text
                 ), f"в подписи кнопки остался юникодный эмодзи: {btn.text!r}"
+
+    def texts_of(markup):
+        return [btn.text for row in markup.inline_keyboard for btn in row]
+
+    # в диалоге из меню остаются только действия диалога
+    assert texts_of(K.menu_keyboard("paired")) == ["Диалог идёт", "Следующий", "Стоп", "Жалоба"]
+    # панель модератора: 9 разделов, счётчик жалоб в подписи
+    panel = texts_of(K.admin_panel_keyboard(2))
+    assert len(panel) == 9 and "Жалобы · 2" in panel, panel
+    assert "Жалобы" in texts_of(K.admin_panel_keyboard(0))
+    # кнопка входа в панель появляется только у админа
+    assert texts_of(K.menu_keyboard("free", admin=True))[-1] == "Панель модератора"
+    assert texts_of(K.menu_keyboard("free"))[-1] == "Помощь"
 
 
 # --------------------------------------------------------------------------------- пак эмодзи
