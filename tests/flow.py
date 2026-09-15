@@ -163,11 +163,31 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     check(session.has_keyboard(A), "в меню есть инлайн-кнопки")
     kb = session.to(A)[-1]["reply_markup"]["inline_keyboard"]
     labels = [btn["text"] for row in kb for btn in row]
-    for needle in ("🔎 Поиск собеседника", "⏭ Следующий", "⏹ Стоп", "🚩 Жалоба"):
+    for needle in (
+        "🔎 Поиск собеседника",
+        "⏭ Следующий",
+        "⏹ Стоп",
+        "🚩 Жалоба",
+        "📊 Профиль",
+        "⚙️ Настройки",
+        "🏆 Топ",
+        "📜 Правила",
+        "❓ Помощь",
+    ):
         check(needle in labels, f"кнопка «{needle}» на месте")
-    with_emoji = [t for t in labels if any(ord(c) > 0x2500 for c in t)]
-    check(len(with_emoji) <= 4, f"эмодзи только на главных действиях, не {with_emoji}")
-    check(any("addemoji/NewsEmoji" in str(row) for row in kb), "есть кнопка с эмодзи-паком")
+    check(len(labels) == 9, f"в главном меню 9 кнопок, не {len(labels)}")
+    check(
+        all("url" not in str(btn) for row in kb for btn in row),
+        "кнопки с эмодзи-паком в меню больше нет (ссылка осталась в /help)",
+    )
+    def emoji_count(label: str) -> int:
+        # вариационные селекторы и ZWJ — не отдельные эмодзи («⚙️» = один знак)
+        return sum(1 for c in label if ord(c) > 0x2500 and c not in "\ufe0f\ufe0e\u200d")
+
+    check(
+        all(emoji_count(t) <= 1 for t in labels),
+        f"не больше одного эмодзи на кнопке: {labels}",
+    )
 
     # 2. A жмёт поиск — встаёт в очередь
     session.clear()
@@ -180,14 +200,19 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     session.clear()
     await press(B, "act:connect")
     check(mm.partner(A) == B and mm.partner(B) == A, "A и B стали парой")
-    check("Пара найдена" in session.last_to(A), "A получил уведомление о паре")
-    check("Пара найдена" in session.last_to(B), "B получил уведомление о паре")
+    check("Собеседник найден" in session.last_to(A), "A получил «Собеседник найден»")
+    check("Собеседник найден" in session.last_to(B), "B получил «Собеседник найден»")
+    check("/next" in session.last_to(A) and "/stop" in session.last_to(A), "в тексте подсказки /next и /stop")
+    check(
+        all(m.get("reply_markup") is None for m in session.to(A) + session.to(B) if m["method"] == "sendMessage"),
+        "на сообщении о паре — никаких кнопок, только текст с командами",
+    )
 
     # 4. анонимная пересылка туда-сюда
     session.clear()
     await send(A, "Привет! Ты с какой стороны Магнитки?")
     check("Привет! Ты с какой стороны Магнитки?" in session.last_to(B), "сообщение дошло B")
-    check(not session.to(A) or all("ни к кому" not in t for t in session.texts_to(A)), "A не получил отказ")
+    check(session.to(A) == [], "бот не пишет «доставлено анонимно» — человек и так всё понял")
     await send(B, "С Правобережного 🙂")
     check("С Правобережного" in session.last_to(A), "ответ дошёл A")
     await send(A, "О, тогда нам по пути — я от Вокзала")
@@ -226,7 +251,11 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     await press(A, "cfg:district:right")
     check((await db.get_user(A))["district"] == "Правобережный", "район сохранился")
     await send(A, "/profile")
-    check("Уровень" in session.last_to(A) and "XP" in session.last_to(A), "профиль показывает уровень общения")
+    card = session.last_to(A)
+    check("Старт" in card and "🔰" in card, "профиль показывает ранг по числу сообщений")
+    check("<code>▱▱▱▱" in card, "полоса прогресса до следующего ранга на месте")
+    check("⭐" in card and "Сообщений" in card and "✍️" in card, "профиль — карточка со статистикой")
+    check("до «Бронза»" in card and "1 000" in card, "видно, сколько осталось до Бронзы")
 
     # 8b. свой ник вместо реального имени
     session.clear()

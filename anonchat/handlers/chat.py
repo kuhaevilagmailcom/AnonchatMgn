@@ -56,8 +56,8 @@ async def relay_to_partner(
 
     if message.text and message.text.startswith("/"):
         await ctx.reply(
-            "Не знаю такой команды. Меню — <code>/start</code>, помощь — <code>/help</code>.",
-            markup=K.menu_keyboard(cfg.emoji_pack_url, mm.status(ctx.user_id)),
+            texts.UNKNOWN_COMMAND,
+            markup=K.menu_keyboard(mm.status(ctx.user_id)),
         )
         return
 
@@ -65,27 +65,21 @@ async def relay_to_partner(
         return
 
     if message.content_type not in ALLOWED_TYPES:
-        await ctx.reply(
-            "Такой тип сообщений анонимный чат не пересылает: контакты и подобные запросы "
-            "могут выдать личность. Отправь текстом."
-        )
+        await ctx.reply(texts.UNKNOWN_TYPE)
         return
 
     result = mm.count_message(ctx.user_id)
     if result is None:
         await ctx.reply(
             texts.NO_DIALOG,
-            markup=K.menu_keyboard(cfg.emoji_pack_url, mm.status(ctx.user_id)),
+            markup=K.menu_keyboard(mm.status(ctx.user_id)),
         )
         return
 
-    partner, sent_count = result
+    partner, _sent = result
 
     if len(message.text or "") > cfg.max_message_len:
-        await ctx.reply(
-            f"Слишком длинно — больше {cfg.max_message_len} символов не отправляем. "
-            "Разбей на пару сообщений, собеседнику так только легче."
-        )
+        await ctx.reply(texts.TOO_LONG.format(limit=cfg.max_message_len))
         mm.uncount_message(ctx.user_id)
         return
 
@@ -94,10 +88,8 @@ async def relay_to_partner(
         mm.uncount_message(ctx.user_id)
         mm.forget(ctx.user_id)
         await ctx.reply(
-            "Собеседник недоступен — диалог закрыт. «Поиск собеседника» в меню, чтобы найти нового.",
-            markup=K.menu_keyboard(cfg.emoji_pack_url),
+            texts.PARTNER_UNREACHABLE,
+            markup=K.menu_keyboard(),
         )
         return
-
-    if sent_count == 1:
-        await ctx.reply(texts.FIRST_SENT)
+    # молча: человек знает, что написал в анонимный чат, подтверждений не просил

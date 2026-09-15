@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS kv (
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_reports_target ON reports(target_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_users_xp ON users(xp DESC);
+CREATE INDEX IF NOT EXISTS idx_users_messages ON users(messages DESC);
 """
 
 #: колонки, которых не было в ранних версиях схемы — догоняем их на лету
@@ -361,9 +362,11 @@ class Database:
         }
 
     async def top(self, limit: int = 10) -> list[aiosqlite.Row]:
+        """Ранг считается по сообщениям, поэтому и топ — по сообщениям (опыт только как tie-break)."""
         return await self._fetchall(
-            """SELECT user_id, nickname, xp, messages, dialogs, good_ratings
-               FROM users WHERE banned = 0 ORDER BY xp DESC LIMIT ?""",
+            """SELECT user_id, nickname, messages, xp, dialogs, good_ratings
+               FROM users WHERE banned = 0
+               ORDER BY messages DESC, xp DESC LIMIT ?""",
             (limit,),
         )
 
@@ -409,7 +412,8 @@ class Database:
     async def find_user_ids(self, name: str, limit: int = 10) -> list[aiosqlite.Row]:
         like = f"%{name.lstrip('@')}%"
         return await self._fetchall(
-            "SELECT user_id, username, first_name, nickname FROM users "
+            "SELECT user_id, username, first_name, nickname, messages, xp, dialogs, reports_received, banned "
+            "FROM users "
             "WHERE username LIKE ? OR first_name LIKE ? OR nickname LIKE ? LIMIT ?",
             (like, like, like, limit),
         )

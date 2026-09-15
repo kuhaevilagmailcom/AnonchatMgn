@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from anonchat.db import Database  # noqa: E402
-from anonchat.levels import LEVELS, level_for  # noqa: E402
+from anonchat.levels import RANKS, rank_for  # noqa: E402
 from anonchat.matching import Matchmaker  # noqa: E402
 
 
@@ -54,17 +54,31 @@ def test_config_defaults(monkeypatch=None) -> None:
 
 
 def test_levels_progress() -> None:
-    first = level_for(0)
-    assert first.level == 1 and first.title == LEVELS[0][1]
-    assert first.progress == 0.0 and first.to_next == LEVELS[1][0]
+    """Ранги — по сообщениям: 🔰 Старт → 🥉 Бронза → 🥈 Серебро → 🥇 Золото → 💎 VIP."""
+    first = rank_for(0)
+    assert first.index == 1 and first.title == "Старт" and first.emoji == "🔰"
+    assert first.progress == 0.0 and first.to_next == 1_000 and first.next_title == "Бронза"
 
-    mid = level_for(150)
-    assert mid.level == 3, mid
-    assert 0.0 < mid.progress < 1.0
-    assert len(mid.bar) == 10 and mid.bar.startswith("▓")
+    bronze = rank_for(1_000)
+    assert bronze.title == "Бронза" and bronze.progress == 0.0
+    assert bronze.to_next == 14_000 and bronze.next_title == "Серебро"
 
-    top = level_for(999_999)
-    assert top.level == len(LEVELS) and top.to_next is None
+    mid = rank_for(8_000)
+    assert mid.title == "Бронза" and 0.4 < mid.progress < 0.6
+    assert len(mid.bar) == 8 and mid.bar.startswith("▰▰▰▰▱")
+
+    silver = rank_for(15_000)
+    assert silver.title == "Серебро" and silver.emoji == "🥈"
+    gold = rank_for(100_000)
+    assert gold.title == "Золото" and gold.emoji == "🥇"
+    vip = rank_for(500_000)
+    assert vip.title == "VIP" and vip.emoji == "💎" and vip.is_max and vip.to_next is None
+    assert rank_for(99_999_999).index == len(RANKS)
+
+    # человекочитаемые числа с неразрывными пробелами
+    assert rank_for(15_000).pretty(12345) == "12 345"
+    assert "15 000" in rank_for(12_345).label
+    assert rank_for(0).name == "🔰 Старт"
 
 
 # --------------------------------------------------------------------------------- matching
@@ -139,7 +153,8 @@ def test_database() -> None:
         assert row["district"] == "Правобережный"
 
         assert await db.award_xp(10, 70) == 70
-        assert level_for(70).level == 2
+        assert rank_for(70).title == "Старт", "70 сообщений — ещё не бронза"
+        assert rank_for(1_000).title == "Бронза"
 
         await db.ensure_user(11, None, "Аня")
         rid, day_count = await db.add_report(10, 11, "spam", "реклама казино")

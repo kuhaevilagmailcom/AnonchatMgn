@@ -47,7 +47,7 @@ async def open_report(ctx: Ctx, edit: bool = True) -> None:
     partner = ctx.mm.partner(ctx.user_id)
     kb = K.report_keyboard()
     if partner is None:
-        await ctx.reply(texts.REPORT_NO_TARGET, markup=K.menu_keyboard(ctx.cfg.emoji_pack_url))
+        await ctx.reply(texts.REPORT_NO_TARGET, markup=K.menu_keyboard())
         return
     if edit and await ctx.edit(texts.REPORT_INTRO, kb):
         return
@@ -70,7 +70,7 @@ async def cb_reason(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
     partner = ctx.mm.partner(ctx.user_id)
     if partner is None:
         await state.clear()
-        await ctx.reply(texts.REPORT_NO_TARGET, markup=K.menu_keyboard(ctx.cfg.emoji_pack_url))
+        await ctx.reply(texts.REPORT_NO_TARGET, markup=K.menu_keyboard())
         return
     await state.set_state(ReportStates.comment)
     await state.update_data(reason=code, partner=partner)
@@ -95,7 +95,7 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
 
     partner = mm.partner(ctx.user_id)
     if partner is None:
-        await ctx.reply(texts.REPORT_NO_TARGET, markup=K.menu_keyboard(cfg.emoji_pack_url))
+        await ctx.reply(texts.REPORT_NO_TARGET, markup=K.menu_keyboard())
         return
 
     report_id, day_count = await db.add_report(ctx.user_id, partner, reason, comment)
@@ -122,13 +122,13 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
         mins = max(1, int((until - time.time()) // 60))
         await send_to(ctx.bot, partner, texts.MUTED.format(mins=mins), None, ctx.pack)
         await break_pair(ctx.bot, cfg, mm, partner, texts.MOD_CLOSED_DIALOG, ctx.pack)
-        auto = f"\nАвто-мут на {mins} мин применён."
+        auto = texts.REPORT_AUTO_MUTE.format(mins=mins)
 
     await ctx.reply(
         texts.REPORT_TAKEN.format(rid=report_id, reason=texts.esc(REASON_TITLES.get(reason, reason)))
         + auto
-        + "\n\nХочешь — сразу выйди из диалога: <b>⏹ Стоп</b>.",
-        markup=K.menu_keyboard(cfg.emoji_pack_url),
+        + "\n\nМожешь сразу выйти из диалога: <code>/stop</code>.",
+        markup=K.menu_keyboard(),
     )
 
 

@@ -25,7 +25,7 @@ from . import texts
 from .config import Config
 from .db import Database
 from .keyboards import menu_keyboard, rating_keyboard
-from .levels import level_for
+from .levels import rank_for
 from .matching import Matchmaker
 from .pack import EmojiPack
 
@@ -107,14 +107,14 @@ class Ctx:
             why = (row["ban_reason"] if row else "") or "нарушение правил"
             await self.reply(
                 texts.BANNED.format(city=texts.esc(self.cfg.city), reason=texts.esc(why)),
-                markup=menu_keyboard(self.cfg.emoji_pack_url),
+                markup=menu_keyboard(),
             )
             return True
         if reason == "muted":
             row = await self.db.get_user(self.user_id)
             mins = max(1, int(((row["mute_until"] if row else 0) - time.time()) // 60) + 1)
             await self.reply(
-                texts.MUTED.format(mins=mins), markup=menu_keyboard(self.cfg.emoji_pack_url)
+                texts.MUTED.format(mins=mins), markup=menu_keyboard()
             )
             return True
         return False
@@ -181,17 +181,19 @@ async def send_copy_to(bot: Bot, message: Message, chat_id: int) -> bool:
 # --------------------------------------------------------------------- экраны
 async def show_menu(ctx: Ctx, edit: bool = True) -> None:
     status = ctx.mm.status(ctx.user_id)
-    info = level_for(int(ctx.me["xp"]) if ctx.me else 0)
+    rank = rank_for(int(ctx.me["messages"]) if ctx.me else 0)
     state = {
         "paired": texts.STATUS_PAIRED,
         "queued": texts.STATUS_QUEUED,
-    }.get(status, texts.STATUS_FREE.format(city=texts.esc(ctx.cfg.city)))
+    }.get(status, texts.STATUS_FREE)
 
     body = (
-        f"🧲 <b>{texts.esc(ctx.cfg.city)}</b> · уровень {info.level} "
-        f"<i>{texts.esc(info.title)}</i>\n<code>{info.bar}</code> {info.xp} XP\n\n{state}"
+        f"🧲 <b>{texts.esc(ctx.cfg.city)}</b>\n"
+        f"🙋 <b>{texts.esc(ctx.nick)}</b> · {rank.name}\n"
+        f"<code>{rank.bar}</code> <i>{rank.pretty(rank.messages)} сообщ.</i>\n\n"
+        f"{state}"
     )
-    kb = menu_keyboard(ctx.cfg.emoji_pack_url, status, ctx.mm.queue_size())
+    kb = menu_keyboard(status, ctx.mm.queue_size())
     if edit and await ctx.edit(body, kb):
         return
     await ctx.reply(body, kb)
@@ -205,38 +207,39 @@ async def show_welcome(ctx: Ctx) -> None:
             nick=texts.esc(nick),
             nick_hint=texts.NICK_HINT,
         ),
-        markup=menu_keyboard(ctx.cfg.emoji_pack_url, ctx.mm.status(ctx.user_id), ctx.mm.queue_size()),
+        markup=menu_keyboard(ctx.mm.status(ctx.user_id), ctx.mm.queue_size()),
     )
 
 
 async def show_help(ctx: Ctx) -> None:
     await ctx.reply(
         texts.HELP.format(pack=ctx.cfg.emoji_pack_url),
-        markup=menu_keyboard(ctx.cfg.emoji_pack_url, ctx.mm.status(ctx.user_id)),
+        markup=menu_keyboard(ctx.mm.status(ctx.user_id)),
     )
 
 
 async def show_rules(ctx: Ctx) -> None:
-    await ctx.reply(
-        texts.RULES, markup=menu_keyboard(ctx.cfg.emoji_pack_url, ctx.mm.status(ctx.user_id))
-    )
+    await ctx.reply(texts.RULES, markup=menu_keyboard(ctx.mm.status(ctx.user_id)))
 
 
 async def show_top(ctx: Ctx) -> None:
     rows = await ctx.db.top(10)
     if not rows:
-        await ctx.reply("Топ пуст — начни общаться первым.", markup=menu_keyboard(ctx.cfg.emoji_pack_url))
+        await ctx.reply("🏆 Топ пуст — начни общаться первым.", markup=menu_keyboard())
         return
-    medals = {1: "1", 2: "2", 3: "3"}
-    lines = [f"<b>Топ · {texts.esc(ctx.cfg.city)}</b>", ""]
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    lines = [f"🏆 <b>Топ · {texts.esc(ctx.cfg.city)}</b>", ""]
     for i, row in enumerate(rows, start=1):
-        info = level_for(int(row["xp"]))
+        messages = int(row["messages"])
+        rank = rank_for(messages)
+        # медали только за места: ранг подписываем словом, иначе 🥇/🥈 слипаются с 🥇 Серебро
+        place = medals.get(i, f"<code>{i}</code>")
         lines.append(
-            f"{medals.get(i, str(i))}. <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id'])))}</b>"
-            f" — {info.xp} XP · {texts.esc(info.title)}"
+            f"{place} <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id'])))}</b>"
+            f" — {rank.pretty(messages)} сообщ. · {texts.esc(rank.title)}"
         )
-    lines += ["", "<i>Ники придумывают сами участники. Реальных имён здесь нет.</i>"]
-    await ctx.reply("\n".join(lines), markup=menu_keyboard(ctx.cfg.emoji_pack_url))
+    lines += ["", "<i>Ники участники придумывают сами.</i>"]
+    await ctx.reply("\n".join(lines), markup=menu_keyboard())
 
 
 async def show_profile(ctx: Ctx) -> None:
@@ -244,33 +247,46 @@ async def show_profile(ctx: Ctx) -> None:
         await ctx.reply(texts.PROFILE_MISSING)
         return
     me = ctx.me
-    info = level_for(int(me["xp"]))
+    messages = int(me["messages"])
+    rank = rank_for(messages)
     status = ctx.mm.status(ctx.user_id)
     about = texts.esc(me["about"]) if me["about"] else texts.PROFILE_ABOUT_EMPTY
+
+    progress = f"<code>{rank.bar}</code>"
+    if rank.is_max:
+        progress += f" <i>максимальный ранг</i>"
+    else:
+        progress += (
+            f" <i>{rank.pretty(messages)} / {rank.pretty(rank.next_need or 0)}"
+            f" · до «{texts.esc(rank.next_title)}» ещё {rank.pretty(rank.to_next or 0)}</i>"
+        )
+
     lines = [
         texts.PROFILE_TITLE.format(city=texts.esc(ctx.cfg.city)),
         "",
-        f"Ник: <b>{texts.esc(ctx.nick)}</b>",
-        f"Уровень {info.level} — <b>{texts.esc(info.title)}</b>",
-        f"<code>{info.bar}</code> {info.xp} XP"
-        + (f" · до «{texts.esc(info.next_title)}» {info.to_next}" if info.to_next is not None else ""),
+        f"🙋 <b>{texts.esc(ctx.nick)}</b>",
+        f"{rank.emoji} <b>{texts.esc(rank.title)}</b>",
+        progress,
         "",
-        f"Диалогов: {me['dialogs']} · сообщений: {me['messages']}",
-        f"Оценок 👍 {me['good_ratings']} · 👎 {me['bad_ratings']}",
-        f"Жалоб на тебя: {me['reports_received']}",
-        f"Район: {texts.esc(me['district']) if me['district'] else '—'}",
-        f"О себе: {about}",
+        f"💬 Сообщений: <b>{rank.pretty(messages)}</b> · диалогов: {me['dialogs']}",
+        f"⭐ Опыт: {rank.pretty(int(me['xp']))} · оценки 👍 {me['good_ratings']} / 👎 {me['bad_ratings']}",
+        f"🚩 Жалоб на тебя: {me['reports_received']}",
+        f"📍 {texts.esc(me['district']) if me['district'] else 'район не указан'}"
+        f" · ищу: {texts.PROFILE_SEARCH['own' if me['same_district'] else 'city']}",
+        f"✍️ {about}",
         "",
         texts.PROFILE_STATUS.get(status, ""),
     ]
-    await ctx.reply("\n".join(lines), markup=menu_keyboard(ctx.cfg.emoji_pack_url, status))
+    await ctx.reply("\n".join(lines), markup=menu_keyboard(status))
 
 
 # --------------------------------------------------------------------- ники
 async def ask_nick(ctx: Ctx) -> None:
     await ctx.reply(
-        texts.NICK_PROMPT.format(nick=texts.esc(ctx.nick), max=nicklib.NICK_MAX),
-        markup=menu_keyboard(ctx.cfg.emoji_pack_url, ctx.mm.status(ctx.user_id)),
+        texts.NICK_PROMPT.format(
+            nick=texts.esc(ctx.nick), min=nicklib.NICK_MIN, max=nicklib.NICK_MAX
+        ),
+        markup=menu_keyboard(ctx.mm.status(ctx.user_id)),
     )
 
 
@@ -295,28 +311,28 @@ async def set_nick(ctx: Ctx, raw: str) -> tuple[bool, str]:
 
 # --------------------------------------------------------------------- пары
 async def announce_pair(ctx: Ctx, user_id: int, partner_id: int) -> bool:
-    """Сообщаем обоим о паре. False — собеседник недоступен."""
-    nick_me = ctx.nick
-    kb = menu_keyboard(ctx.cfg.emoji_pack_url, "paired")
-    body_me = texts.MATCHED.format(nick=texts.esc(nick_me))
-    if not await send_to(ctx.bot, partner_id, texts.MATCHED.format(nick="Аноним"), kb, ctx.pack):
+    """Сообщаем обоим о паре — без кнопок: в диалоге мешают, всё есть командами.
+
+    Возвращает False, если собеседник недоступен (заблокировал бота).
+    """
+    if not await send_to(ctx.bot, partner_id, texts.MATCHED.format(nick="Аноним"), None, ctx.pack):
         return False
-    await send_to(ctx.bot, user_id, body_me, kb, ctx.pack)
+    await send_to(ctx.bot, user_id, texts.MATCHED.format(nick=texts.esc(ctx.nick)), None, ctx.pack)
     return True
 
 
 async def announce_pairs(
     bot: Bot, cfg: Config, mm: Matchmaker, pairs: list[tuple[int, int]], pack: EmojiPack | None = None
 ) -> int:
-    """Разослать «пара найдена» тем, кого свёл sweep() после смены настроек."""
-    kb = menu_keyboard(cfg.emoji_pack_url, "paired")
+    """Разослать «собеседник найден» тем, кого свёл sweep() после смены настроек."""
+    kb = menu_keyboard()
     made = 0
     for a, b in pairs:
-        if not await send_to(bot, b, texts.MATCHED.format(nick="Аноним"), kb, pack):
+        if not await send_to(bot, b, texts.MATCHED.format(nick="Аноним"), None, pack):
             mm.forget(b)
             await send_to(bot, a, texts.PARTNER_LEFT, kb, pack)
             continue
-        await send_to(bot, a, texts.MATCHED.format(nick="Аноним"), kb, pack)
+        await send_to(bot, a, texts.MATCHED.format(nick="Аноним"), None, pack)
         made += 1
     return made
 
@@ -324,7 +340,7 @@ async def announce_pairs(
 async def break_pair(
     bot: Bot, cfg: Config, mm: Matchmaker, user_id: int, note: str, pack: EmojiPack | None = None
 ) -> None:
-    kb = menu_keyboard(cfg.emoji_pack_url)
+    kb = menu_keyboard()
     partner, _ = mm.release(user_id)
     if partner is None:
         return
@@ -335,7 +351,7 @@ async def break_pair(
 async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -> None:
     partner, summary = ctx.mm.release(ctx.user_id)
     if partner is None:
-        await ctx.reply(texts.NO_DIALOG, markup=menu_keyboard(ctx.cfg.emoji_pack_url))
+        await ctx.reply(texts.NO_DIALOG, markup=menu_keyboard())
         return
 
     counts: dict[int, int] = summary.get("counts", {}) or {}
@@ -356,7 +372,7 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
 
     ctx.mm.remember_rating([ctx.user_id, partner], match_id)
 
-    await send_to(ctx.bot, partner, notify_partner, menu_keyboard(ctx.cfg.emoji_pack_url), ctx.pack)
+    await send_to(ctx.bot, partner, notify_partner, menu_keyboard(), ctx.pack)
     await ctx.reply(note + texts.XP_EARNED.format(xp=my_xp), markup=rating_keyboard())
     await send_to(ctx.bot, partner, texts.RATING_ASK, rating_keyboard(), ctx.pack)
 
@@ -367,13 +383,13 @@ async def act_connect(ctx: Ctx) -> None:
     await ctx.ensure_nick()
     status = ctx.mm.status(ctx.user_id)
     if status == "paired":
-        await ctx.reply(texts.ALREADY_PAIRED, markup=menu_keyboard(ctx.cfg.emoji_pack_url, "paired"))
+        await ctx.reply(texts.ALREADY_PAIRED, markup=menu_keyboard("paired"))
         return
     if status == "queued":
         await ctx.reply(
             texts.QUEUED.format(city=texts.esc(ctx.cfg.city), pos=ctx.mm.position(ctx.user_id) or 1,
                                 size=ctx.mm.queue_size()),
-            markup=menu_keyboard(ctx.cfg.emoji_pack_url, "queued", ctx.mm.queue_size()),
+            markup=menu_keyboard("queued", ctx.mm.queue_size()),
         )
         return
 
@@ -382,7 +398,7 @@ async def act_connect(ctx: Ctx) -> None:
         outcome, payload = ctx.mm.connect(ctx.user_id, **prefs)
         if outcome == "paired":
             if await announce_pair(ctx, ctx.user_id, payload):
-                await ctx.ack("Пара найдена")
+                await ctx.ack("Собеседник найден")
                 return
             ctx.mm.forget(payload)
             continue
@@ -390,17 +406,17 @@ async def act_connect(ctx: Ctx) -> None:
             await ctx.reply(
                 texts.QUEUED.format(city=texts.esc(ctx.cfg.city), pos=payload or 1,
                                     size=ctx.mm.queue_size()),
-                markup=menu_keyboard(ctx.cfg.emoji_pack_url, "queued", ctx.mm.queue_size()),
+                markup=menu_keyboard("queued", ctx.mm.queue_size()),
             )
             await ctx.ack("Ты в очереди")
             return
         await ctx.reply(
             texts.QUEUE_FULL.format(limit=ctx.cfg.queue_soft_limit),
-            markup=menu_keyboard(ctx.cfg.emoji_pack_url),
+            markup=menu_keyboard(),
         )
         return
     await ctx.reply("Не успел никого подобрать — попробуй ещё раз.",
-                    markup=menu_keyboard(ctx.cfg.emoji_pack_url))
+                    markup=menu_keyboard())
 
 
 async def act_next(ctx: Ctx) -> None:
@@ -416,7 +432,7 @@ async def act_next(ctx: Ctx) -> None:
 async def act_stop(ctx: Ctx) -> None:
     if ctx.mm.status(ctx.user_id) != "paired":
         ctx.mm.forget(ctx.user_id)
-        await ctx.reply(texts.NO_DIALOG, markup=menu_keyboard(ctx.cfg.emoji_pack_url))
+        await ctx.reply(texts.NO_DIALOG, markup=menu_keyboard())
         return
     await _end_dialog(ctx, ended_by=ctx.user_id, note=texts.DIALOG_STOPPED, notify_partner=texts.PARTNER_LEFT)
 
@@ -437,7 +453,7 @@ async def apply_rating(ctx: Ctx, positive: bool) -> None:
         await send_to(ctx.bot, partner, texts.RATING_DONE_BAD, None, ctx.pack)
         await ctx.ack("Записал")
     await ctx.reply(
-        "Готово.", markup=menu_keyboard(ctx.cfg.emoji_pack_url, ctx.mm.status(ctx.user_id))
+        "Готово.", markup=menu_keyboard(ctx.mm.status(ctx.user_id))
     )
 
 
@@ -445,5 +461,5 @@ async def forget_everything(ctx: Ctx) -> None:
     ctx.mm.forget(ctx.user_id)
     await ctx.db.forget_user(ctx.user_id)
     await ctx.reply(
-        texts.FORGET_DONE, markup=menu_keyboard(ctx.cfg.emoji_pack_url)
+        texts.FORGET_DONE, markup=menu_keyboard()
     )

@@ -34,7 +34,7 @@ async def cmd_start(message: Message, ctx: Ctx, cfg: Config) -> None:
         await ensure_for_admin(ctx.bot, cfg, ctx.user_id)
     await show_welcome(ctx)
     if ctx.mm.status(ctx.user_id) == "queued":
-        await ctx.reply("Ты всё ещё в очереди поиска — найду пару автоматически.")
+        await ctx.reply("⏳ Ты всё ещё в очереди — найду пару автоматически.")
 
 
 @router.message(Command("help"))
@@ -86,7 +86,7 @@ async def cb_next(event: CallbackQuery, ctx: Ctx) -> None:
 @router.callback_query(F.data == K.CB_STOP)
 async def cb_stop(event: CallbackQuery, ctx: Ctx, cfg: Config) -> None:
     if ctx.mm.status(ctx.user_id) != "paired":
-        await ctx.reply(texts.NO_DIALOG, markup=K.menu_keyboard(cfg.emoji_pack_url))
+        await ctx.reply(texts.NO_DIALOG, markup=K.menu_keyboard())
         return
     await ctx.edit(
         "⏹ Остановить диалог? Собеседник увидит, что чат закрыт — но не узнает, кто ты.",

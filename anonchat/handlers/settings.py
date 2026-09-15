@@ -19,7 +19,9 @@ router = Router(name="settings")
 
 
 def _nick_prompt(ctx: Ctx) -> str:
-    return texts.NICK_PROMPT.format(nick=texts.esc(ctx.nick), max=nicklib.NICK_MAX)
+    return texts.NICK_PROMPT.format(
+        nick=texts.esc(ctx.nick), min=nicklib.NICK_MIN, max=nicklib.NICK_MAX
+    )
 
 DISTRICTS = {
     "none": "",
@@ -28,7 +30,8 @@ DISTRICTS = {
     "ordz": "Орджоникидзевский",
 }
 
-GENDERS = {"m": "парень", "f": "девушка", "none": ""}
+GENDERS = {"m": "👨 парень", "f": "👩 девушка", "none": ""}
+ABOUT_MAX = 120
 
 
 class ProfileStates(StatesGroup):
@@ -61,12 +64,12 @@ async def settings_screen(ctx: Ctx, edit: bool = True) -> None:
     gender = (me["gender"] if me else "") or "не указан"
     same = bool(me["same_district"]) if me else False
     body = (
-        "<b>Настройки подбора</b>\n\n"
-        f"Ник: <b>{texts.esc(ctx.nick)}</b>\n"
-        f"Район: <b>{texts.esc(district or 'не выбран')}</b>\n"
-        f"Пол в профиле: <b>{texts.esc(gender)}</b>\n"
-        f"Ищу: <b>{'только свой район' if same else 'весь ' + texts.esc(ctx.cfg.city_short)}</b>\n\n"
-        + texts.SETTINGS_NOTE
+        f"{texts.SETTINGS_TITLE}\n\n"
+        f"🙋 Ник: <b>{texts.esc(ctx.nick)}</b>\n"
+        f"📍 Район: <b>{texts.esc(district or 'не выбран')}</b>\n"
+        f"👤 Пол в профиле: <b>{texts.esc(gender)}</b>\n"
+        f"🧭 Ищу: <b>{'только свой район' if same else 'весь ' + texts.esc(ctx.cfg.city_short)}</b>\n\n"
+        f"{texts.SETTINGS_NOTE}"
     )
     kb = K.settings_keyboard(same, district, ctx.nick, bool(me and me["about"]))
     if edit and await ctx.edit(body, kb):
@@ -161,7 +164,7 @@ async def cb_same_toggle(event: CallbackQuery, ctx: Ctx, db: Database, mm: Match
 @router.callback_query(F.data == "cfg:about:ask")
 async def cb_about_ask(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
     await state.set_state(ProfileStates.text)
-    await ctx.edit(texts.ABOUT_PROMPT, K.back_menu_keyboard())
+    await ctx.edit(texts.ABOUT_PROMPT.format(limit=ABOUT_MAX), K.back_menu_keyboard())
 
 
 @router.message(ProfileStates.text, F.text)

@@ -20,30 +20,30 @@ from .config import Config
 log = logging.getLogger("anonchat")
 
 COMMANDS = (
-    BotCommand(command="start", description="Меню чата"),
+    BotCommand(command="start", description="🧲 Меню чата"),
     BotCommand(command="connect", description="🔎 Найти собеседника"),
     BotCommand(command="next", description="⏭ Следующий"),
     BotCommand(command="stop", description="⏹ Остановить диалог"),
     BotCommand(command="report", description="🚩 Пожаловаться"),
-    BotCommand(command="nick", description="Ник, который видят другие"),
-    BotCommand(command="profile", description="Уровень и статистика"),
-    BotCommand(command="settings", description="Район и фильтры"),
-    BotCommand(command="top", description="Топ города"),
-    BotCommand(command="help", description="Как пользоваться"),
-    BotCommand(command="rules", description="Правила"),
-    BotCommand(command="forget", description="Удалить мой профиль"),
+    BotCommand(command="nick", description="🙋 Ник, который видят другие"),
+    BotCommand(command="profile", description="📊 Мой ранг и статистика"),
+    BotCommand(command="settings", description="⚙️ Район и фильтры"),
+    BotCommand(command="top", description="🏆 Топ города"),
+    BotCommand(command="help", description="❓ Как пользоваться"),
+    BotCommand(command="rules", description="📜 Правила"),
+    BotCommand(command="forget", description="🧹 Удалить мой профиль"),
 )
 
 ADMIN_COMMANDS = (
-    BotCommand(command="stats", description="Сводка по боту"),
-    BotCommand(command="reports", description="Открытые жалобы"),
-    BotCommand(command="queue", description="Очередь поиска"),
-    BotCommand(command="ban", description="Забанить"),
-    BotCommand(command="unban", description="Разбанить"),
-    BotCommand(command="mute", description="Мут на минуты"),
-    BotCommand(command="find", description="Найти профиль"),
-    BotCommand(command="feedback", description="Фидбек владельцу"),
-    BotCommand(command="bc", description="Рассылка"),
+    BotCommand(command="stats", description="📈 Сводка по боту"),
+    BotCommand(command="reports", description="🚩 Открытые жалобы"),
+    BotCommand(command="queue", description="⏳ Очередь поиска"),
+    BotCommand(command="ban", description="⛔ Забанить"),
+    BotCommand(command="unban", description="✅ Разбанить"),
+    BotCommand(command="mute", description="🔇 Мут на минуты"),
+    BotCommand(command="find", description="🔎 Найти профиль"),
+    BotCommand(command="feedback", description="💌 Фидбек владельцу"),
+    BotCommand(command="bc", description="📣 Рассылка"),
 )
 
 _done: set[int] = set()

@@ -16,7 +16,7 @@ from .. import texts
 from ..actions import Ctx, break_pair, send_to
 from ..config import Config
 from ..db import Database
-from ..levels import level_for
+from ..levels import rank_for
 from ..matching import Matchmaker
 
 router = Router(name="admin")
@@ -60,14 +60,13 @@ async def cmd_stats(message: Message, ctx: Ctx, db: Database, mm: Matchmaker) ->
         return
     s = await db.stats()
     await ctx.reply(
-        f"<b>Анончат {texts.esc(ctx.cfg.city_short)} · сводка</b>\n\n"
-        f"Всего пользователей: <b>{s['users']}</b>\n"
-        f"Активны за 7 дней: <b>{s['active_week']}</b>\n"
-        f"Диалогов сыграно: <b>{s['dialogs']}</b>\n"
-        f"Сообщений переслано: <b>{s['messages']}</b>\n"
-        f"В очереди сейчас: <b>{mm.queue_size()}</b>\n"
-        f"Активных пар: <b>{mm.online_pairs()}</b>\n"
-        f"Открытых жалоб: <b>{s['open_reports']}</b>"
+        f"📈 <b>Анончат {texts.esc(ctx.cfg.city_short)} · сводка</b>\n\n"
+        f"👥 Пользователей: <b>{s['users']}</b>\n"
+        f"🟢 Активны за 7 дней: <b>{s['active_week']}</b>\n"
+        f"💬 Диалогов сыграно: <b>{s['dialogs']}</b>\n"
+        f"✉️ Сообщений переслано: <b>{s['messages']}</b>\n"
+        f"⏳ В очереди: <b>{mm.queue_size()}</b> · в парах: <b>{mm.online_pairs()}</b>\n"
+        f"🚩 Открытых жалоб: <b>{s['open_reports']}</b>"
     )
 
 
@@ -76,9 +75,12 @@ async def cmd_queue(message: Message, ctx: Ctx, mm: Matchmaker) -> None:
     if await _deny(ctx):
         return
     snap = mm.queue_snapshot(15)
-    lines = [f"Очередь: <b>{mm.queue_size()}</b> · пар: <b>{mm.online_pairs()}</b>", ""]
+    lines = [
+        f"⏳ <b>Очередь · {mm.queue_size()}</b> · в парах: {mm.online_pairs()}",
+        "",
+    ]
     for i, (uid, district) in enumerate(snap, start=1):
-        lines.append(f"{i}. <code>{uid}</code> · {texts.esc(district or 'район не указан')}")
+        lines.append(f"<code>{i}</code> <code>{uid}</code> · {texts.esc(district or 'район не указан')}")
     if not snap:
         lines.append("Пусто — никто не ждёт.")
     await ctx.reply("\n".join(lines))
@@ -184,13 +186,14 @@ async def cmd_find(message: Message, ctx: Ctx, db: Database) -> None:
     if not rows:
         await ctx.reply("Никого не нашёл.")
         return
-    lines = ["<b>Найдено</b>", ""]
+    lines = ["🔎 <b>Найдено</b>", ""]
     for r in rows:
-        info = level_for(int(r["xp"]))
+        rank = rank_for(int(r["messages"]))
         lines.append(
-            f"<code>{r['user_id']}</code> · в чате как <b>{texts.esc(nicklib.display(r['nickname'], int(r['user_id'])))}</b>"
+            f"<code>{r['user_id']}</code> · 🙋 <b>{texts.esc(nicklib.display(r['nickname'], int(r['user_id'])))}</b>"
             f" · {texts.esc(r['first_name'])} ({texts.esc(r['username'] or '-')})\n"
-            f"   уровень {info.level} · {info.xp} XP · диалогов {r['dialogs']} · жалоб {r['reports_received']}"
+            f"   {rank.name} · {rank.pretty(int(r['messages']))} сообщ. · ⭐ {rank.pretty(int(r['xp']))}"
+            f" · диалогов {r['dialogs']} · жалоб {r['reports_received']}"
             + (" · ⛔ бан" if r["banned"] else "")
         )
     await ctx.reply("\n".join(lines))
@@ -209,7 +212,7 @@ async def cmd_broadcast(message: Message, ctx: Ctx, db: Database, cfg: Config) -
     await ctx.reply(f"Рассылаю {len(ids)} адресатам…")
     sent = 0
     for uid in ids:
-        if await send_to(ctx.bot, uid, f"📣 {body}", K.menu_keyboard(cfg.emoji_pack_url), ctx.pack):
+        if await send_to(ctx.bot, uid, f"📣 {body}", K.menu_keyboard(), ctx.pack):
             sent += 1
         await asyncio.sleep(0.05)  # бережём лимиты Telegram
     await ctx.reply(f"Готово: доставлено {sent} из {len(ids)}.")
@@ -241,16 +244,16 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         if row is None:
             await ctx.ack("Нет такого профиля", alert=True)
             return
-        info = level_for(int(row["xp"]))
+        rank = rank_for(int(row["messages"]))
         await ctx.reply(
-            f"<code>{target}</code> · в чате как "
-            f"<b>{texts.esc(nicklib.display(row['nickname'], target))}</b> · "
-            f"{texts.esc(row['first_name'])} ({texts.esc(row['username'] or '-')})\n"
-            f"уровень {info.level} · {info.xp} XP · «{texts.esc(info.title)}»\n"
-            f"диалогов: {row['dialogs']} · сообщений: {row['messages']}\n"
-            f"👍 {row['good_ratings']} · 👎 {row['bad_ratings']} · жалоб: {row['reports_received']}\n"
-            f"{texts.esc(row['district'] or 'район не указан')} · "
-            f"создан {time.strftime('%d.%m.%Y', time.localtime(row['created_at']))}"
+            f"👤 <code>{target}</code> · 🙋 "
+            f"<b>{texts.esc(nicklib.display(row['nickname'], target))}</b>\n"
+            f"📛 {texts.esc(row['first_name'])} ({texts.esc(row['username'] or '-')})\n"
+            f"{rank.name} · {rank.pretty(int(row['messages']))} сообщ. · ⭐ {rank.pretty(int(row['xp']))}\n"
+            f"💬 диалогов: {row['dialogs']} · 👍 {row['good_ratings']} · 👎 {row['bad_ratings']}\n"
+            f"🚩 жалоб: {row['reports_received']} · "
+            f"{texts.esc(row['district'] or 'район не указан')}\n"
+            f"в чате с {time.strftime('%d.%m.%Y', time.localtime(row['created_at']))}"
             + ("\n⛔ в бане" if row["banned"] else "")
         )
         await ctx.ack("Показал профиль")
