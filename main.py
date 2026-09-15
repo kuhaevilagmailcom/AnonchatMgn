@@ -117,8 +117,10 @@ async def main() -> None:  # pragma: no cover
         await register_commands(bot, cfg)
         me = await bot.get_me()
         log.info("Анонимный чат %s запущен: @%s (id=%s)", cfg.city_short, me.username, me.id)
-        if not cfg.admin_ids:
-            log.warning("ADMIN_IDS пуст — команды модерации недоступны ни у кого.")
+        if cfg.admin_ids:
+            log.info("модераторы: %s · панель — командой /admin", cfg.admin_markup())
+        else:
+            log.warning("ADMIN_IDS пуст (или =none) — модерацией никто не управляет.")
         janitor_task = asyncio.create_task(janitor(mm))
 
     try:

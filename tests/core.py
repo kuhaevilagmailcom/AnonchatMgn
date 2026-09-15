@@ -21,9 +21,13 @@ def test_config_defaults(monkeypatch=None) -> None:
 
     from anonchat.config import Config
 
-    saved = {k: os.environ.get(k) for k in ("BOT_TOKEN", "CITY_NAME", "ADMIN_IDS", "AUTO_MUTE_REPORTS")}
+    saved = {
+        k: os.environ.get(k)
+        for k in ("BOT_TOKEN", "CITY_NAME", "ADMIN_IDS", "TELEGRAM_ADMIN_ID", "AUTO_MUTE_REPORTS")
+    }
     os.environ["BOT_TOKEN"] = "12:TEST"
     os.environ.pop("CITY_NAME", None)
+    os.environ.pop("TELEGRAM_ADMIN_ID", None)
     os.environ["ADMIN_IDS"] = "777, 888"
     try:
         cfg = Config.from_env(dotenv=".__no_such_env__.local")
@@ -32,6 +36,19 @@ def test_config_defaults(monkeypatch=None) -> None:
         assert cfg.auto_mute_reports == 3 and isinstance(cfg.auto_mute_reports, int)
         assert cfg.emoji_pack_url.startswith("https://t.me/addemoji/")
         assert cfg.max_message_len == 3000
+
+        # без ADMIN_IDS остаётся владелец из кода — так бот заводится на хостинге,
+        # где переменную забыли задать
+        os.environ["ADMIN_IDS"] = ""
+        assert Config.from_env(dotenv=".__no_such_env__.local").admin_ids == (8464597898,)
+        # алиас от панелей хостинга
+        os.environ.pop("ADMIN_IDS")
+        os.environ["TELEGRAM_ADMIN_ID"] = "4242"
+        assert Config.from_env(dotenv=".__no_such_env__.local").admin_ids == (4242,)
+        # явный отказ от админов (форк под своего владельца)
+        os.environ["ADMIN_IDS"] = "none"
+        assert Config.from_env(dotenv=".__no_such_env__.local").admin_ids == ()
+        os.environ["ADMIN_IDS"] = "777, 888"
 
         os.environ["CITY_NAME"] = "Челябинск"
         os.environ["AUTO_MUTE_REPORTS"] = "5"
