@@ -582,6 +582,17 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await onboard(C, 16)
 
     session.clear()
+    await press(A, "act:more")
+    await press(A, "act:support")
+    check("количество звёзд" in session.last_to(A), "поддержка спрашивает количество звёзд")
+    await send(A, "25")
+    invoice = next((item for item in reversed(session.outbox) if item["method"] == "sendInvoice"), None)
+    check(
+        bool(invoice and invoice["currency"] == "XTR" and invoice["prices"][0]["amount"] == 25),
+        "бот создаёт счёт Telegram Stars на введённую сумму",
+    )
+
+    session.clear()
     await press(A, "act:connect")
     check(mm.status(A) == "queued" and "Ищу собеседника" in session.last_to(A), "поиск ставит в очередь")
     await press(B, "act:connect")

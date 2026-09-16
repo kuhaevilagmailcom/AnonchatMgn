@@ -321,6 +321,21 @@ def test_contact_filter() -> None:
     assert not contains_contact("Привет, как дела?")
 
 
+def test_stars_payment_validation() -> None:
+    from types import SimpleNamespace
+
+    from anonchat.handlers.support import _valid_payload
+
+    good = SimpleNamespace(
+        invoice_payload="support:42:25:abcdef", from_user=SimpleNamespace(id=42),
+        currency="XTR", total_amount=25,
+    )
+    assert _valid_payload(good)
+    assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "currency": "RUB"}))
+    assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "total_amount": 24}))
+    assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "invoice_payload": "bad"}))
+
+
 def test_retry_after_retries_real_delivery() -> None:
     from aiogram.exceptions import TelegramRetryAfter
     from aiogram.methods import SendMessage

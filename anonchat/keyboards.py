@@ -26,6 +26,7 @@ CB_HELP = "act:help"
 CB_RULES = "act:rules"
 CB_TOP = "act:top"
 CB_MORE = "act:more"
+CB_SUPPORT = "act:support"
 CB_CONTINUE = "onboard:continue"
 CB_BLOCK = "rate:block"
 CB_NICK = "cfg:nick:ask"
@@ -121,9 +122,10 @@ def more_keyboard() -> InlineKeyboardMarkup:
     _button(b, "Топ", callback_data=CB_TOP, icon="stats")
     _button(b, "Правила", callback_data=CB_RULES, icon="ticket")
     _button(b, "Помощь", callback_data=CB_HELP, icon="support")
+    _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
     _button(b, "Удалить мои данные", callback_data="cfg:forget:ask", icon="delete", style="danger")
     _button(b, "Назад", callback_data=CB_MENU, icon="home")
-    b.adjust(2, 1, 1, 1)
+    b.adjust(2, 1, 1, 1, 1)
     return b.as_markup()
 
 

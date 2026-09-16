@@ -9,11 +9,13 @@ from .chat import router as chat_router
 from .menu import router as menu_router
 from .reports import router as reports_router
 from .settings import router as settings_router
+from .support import router as support_router
 
 
 def get_routers() -> list[Router]:
     return [
         settings_router,  # /profile, /settings, FSM «о себе»
+        support_router,   # добровольная поддержка через Telegram Stars
         reports_router,   # /report, FSM комментария жалобы
         admin_router,     # модерация
         menu_router,      # /start, кнопки меню, оценки

@@ -41,6 +41,7 @@ HELP = """❓ <b>Как пользоваться</b>
 📊 <code>/profile</code> — ранг и статистика
 ⚙️ <code>/settings</code> — район и фильтры
 🏆 <code>/top</code> — топ города
+⭐ <code>/support</code> — поддержать проект звёздами
 🧹 <code>/forget</code> — стереть профиль
 
 💬 Эмодзи для переписки: {pack}"""
@@ -127,6 +128,16 @@ REPORT_COMMENT_PROMPT = """🚩 Причина: <b>{reason}</b>
 REPORT_TAKEN = "✅ Жалоба <b>#{rid}</b> принята · {reason}"
 REPORT_DUPLICATE = "Ты уже отправил жалобу на этот диалог."
 CONTACT_BLOCKED = "Не отправляй личные контакты в анонимном чате."
+
+# ------------------------------------------------------------------ поддержка проекта
+SUPPORT_PROMPT = """<b>Поддержать проект</b>
+
+Введи количество звёзд от {min_stars} до {max_stars}."""
+SUPPORT_BAD_AMOUNT = "Введи целое число от {min_stars} до {max_stars}."
+SUPPORT_INVOICE_TITLE = "Поддержка AnonchatMgn"
+SUPPORT_INVOICE_DESCRIPTION = "Спасибо, что помогаешь проекту развиваться."
+SUPPORT_THANKS = "Спасибо за поддержку! Получено звёзд: <b>{stars}</b>."
+SUPPORT_PAYMENT_ERROR = "Не получилось проверить платёж. Попробуй создать счёт заново."
 REPORT_AUTO_MUTE = "\n🔇 Авто-мут на {mins} мин применён."
 MOD_CLOSED_DIALOG = "🛡 Модерация закрыла диалог."
 
