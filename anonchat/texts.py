@@ -128,6 +128,8 @@ REPORT_COMMENT_PROMPT = """🚩 Причина: <b>{reason}</b>
 REPORT_TAKEN = "✅ Жалоба <b>#{rid}</b> принята · {reason}"
 REPORT_DUPLICATE = "Ты уже отправил жалобу на этот диалог."
 CONTACT_BLOCKED = "Не отправляй личные контакты в анонимном чате."
+SEND_PROMPT = "Отправь username или ссылку командой: <code>/send @username</code>"
+SEND_EMPTY = "Укажи username или ссылку после команды: <code>/send @username</code>"
 
 # ------------------------------------------------------------------ поддержка проекта
 SUPPORT_PROMPT = """<b>Поддержать проект</b>

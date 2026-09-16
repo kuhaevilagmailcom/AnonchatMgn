@@ -315,9 +315,10 @@ def test_keyboard_styles_and_icons() -> None:
 def test_contact_filter() -> None:
     from anonchat.safety import contains_contact
 
-    for value in ("@username", "https://example.com", "t.me/test", "+7 999 123-45-67",
-                  "mail@example.com"):
+    for value in ("+7 999 123-45-67", "mail@example.com"):
         assert contains_contact(value), value
+    for value in ("@username", "https://example.com", "t.me/test"):
+        assert not contains_contact(value), value
     assert not contains_contact("Привет, как дела?")
 
 

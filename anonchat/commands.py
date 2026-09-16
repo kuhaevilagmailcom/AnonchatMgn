@@ -28,6 +28,8 @@ COMMANDS = (
     BotCommand(command="next", description="⏭ Следующий"),
     BotCommand(command="stop", description="⏹ Остановить диалог"),
     BotCommand(command="report", description="🚩 Пожаловаться"),
+    BotCommand(command="send", description="🔗 Отправить username или ссылку собеседнику"),
+    BotCommand(command="user", description="🔗 Отправить username собеседнику"),
     BotCommand(command="nick", description="🙋 Ник, который видят другие"),
     BotCommand(command="profile", description="📊 Мой ранг и статистика"),
     BotCommand(command="settings", description="⚙️ Район и фильтры"),

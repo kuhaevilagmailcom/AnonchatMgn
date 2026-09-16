@@ -603,13 +603,20 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     session.clear()
     await send(A, "@secret_user")
-    check(texts.CONTACT_BLOCKED in session.last_to(A) and session.to(B) == [], "@username не пересылается")
+    check("@secret_user" in session.last_to(B), "@username пересылается собеседнику")
     session.clear()
     await send(A, "+7 999 123-45-67")
     check(session.to(B) == [] and "контакты" in session.last_to(A), "телефон не пересылается")
     session.clear()
     await send(A, "https://example.com")
-    check(session.to(B) == [], "ссылка не пересылается")
+    check("https://example.com" in session.last_to(B), "ссылка пересылается собеседнику")
+
+    session.clear()
+    await send(A, "/send @explicit_user")
+    check("@explicit_user" in session.last_to(B), "/send отправляет username без текста команды")
+    session.clear()
+    await send(A, "/user https://t.me/example")
+    check("https://t.me/example" in session.last_to(B), "/user отправляет ссылку")
 
     for body, label in (
         ({"location": {"latitude": 53.4, "longitude": 58.9}}, "location"),

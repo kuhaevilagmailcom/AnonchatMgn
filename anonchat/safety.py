@@ -5,8 +5,7 @@ from __future__ import annotations
 import re
 
 _CONTACT_PATTERNS = (
-    re.compile(r"(?i)(?:https?://|t\.me/|telegram\.me/|www\.)"),
-    re.compile(r"(?<![\w.])@[a-z0-9_]{4,32}\b", re.I),
+    # Username и ссылки разрешены; телефон и email по-прежнему скрываем.
     re.compile(r"(?i)\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b"),
     re.compile(r"(?<!\d)(?:\+?7|8)[\s()\-]*\d{3}[\s()\-]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}(?!\d)"),
 )
