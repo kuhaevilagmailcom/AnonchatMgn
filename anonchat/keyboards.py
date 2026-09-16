@@ -187,9 +187,8 @@ def rating_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "👍 Норм", callback_data="rate:1", icon="bonus", style="success")
     _button(b, "Не зашло", callback_data="rate:0", icon="warn")
-    _button(b, "Больше не встречаться", callback_data=CB_BLOCK, icon="delete")
     _button(b, "Найти ещё", callback_data=CB_CONNECT, icon="view")
-    b.adjust(2, 1, 1)
+    b.adjust(2, 1)
     return b.as_markup()
 
 

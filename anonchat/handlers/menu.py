@@ -69,6 +69,23 @@ async def cmd_stop(message: Message, ctx: Ctx) -> None:
     await act_stop(ctx)
 
 
+@router.message(Command("unblock"))
+async def cmd_unblock(message: Message, ctx: Ctx, db: Database, cfg: Config) -> None:
+    if ctx.user_id not in cfg.admin_ids:
+        return
+    cleared = await db.clear_blocks(ctx.user_id)
+    if cleared:
+        await ctx.reply(
+            f"Готово — сбросил скрытых собеседников: {cleared}. Теперь они снова могут попасться в поиске.",
+            K.menu_keyboard(ctx.mm.status(ctx.user_id)),
+        )
+    else:
+        await ctx.reply(
+            "Скрытых собеседников нет — сбрасывать нечего.",
+            K.menu_keyboard(ctx.mm.status(ctx.user_id)),
+        )
+
+
 # ---------------------------------------------------------------------------------- кнопки меню
 @router.callback_query(F.data == K.CB_MENU)
 async def cb_menu(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:

@@ -40,8 +40,11 @@ COMMANDS = (
     BotCommand(command="forget", description="🧹 Удалить мой профиль"),
 )
 
-#: единственная админская команда, которую видно в меню
-ADMIN_VISIBLE = (BotCommand(command="admin", description="🛡 Панель модератора"),)
+#: админские команды, которые видны в меню модератора
+ADMIN_VISIBLE = (
+    BotCommand(command="admin", description="🛡 Панель модератора"),
+    BotCommand(command="unblock", description="🔓 Сбросить скрытых собеседников"),
+)
 
 #: работают, если ввести руками (и из панели), но в меню не показываются
 ADMIN_COMMANDS = (

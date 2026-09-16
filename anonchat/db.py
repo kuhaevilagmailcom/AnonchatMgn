@@ -312,6 +312,14 @@ class Database:
         )
         await self.db.commit()
 
+    async def clear_blocks(self, user_id: int) -> int:
+        cur = await self.db.execute(
+            "DELETE FROM blocks WHERE user_id = ? OR blocked_id = ?",
+            (user_id, user_id),
+        )
+        await self.db.commit()
+        return int(cur.rowcount or 0)
+
     async def excluded_partners(self, user_id: int, recent_seconds: int = 86400) -> set[int]:
         rows = await self._fetchall(
             """SELECT blocked_id AS uid FROM blocks WHERE user_id = ?
