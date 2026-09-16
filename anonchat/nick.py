@@ -5,6 +5,10 @@
 
 from __future__ import annotations
 
+import hashlib
+
+from .safety import contains_contact
+
 NICK_MIN = 2
 NICK_MAX = 24
 _ALLOWED_EXTRA = set("-_.!?()[]*+~:;='\" ")
@@ -24,6 +28,8 @@ def validate(raw: str) -> tuple[str, str | None]:
         return "", f"Коротко: минимум {NICK_MIN} символа."
     if len(nick) > NICK_MAX:
         return "", f"Длинно: максимум {NICK_MAX} символов (сейчас {len(nick)})."
+    if contains_contact(nick):
+        return "", "Не добавляй контакты, ссылки, телефон или почту."
     for ch in nick:
         if ch in _FORBIDDEN:
             return "", "Такие символы в нике запрещены: < > ` \\ / @ и перенос строки."
@@ -35,8 +41,10 @@ def validate(raw: str) -> tuple[str, str | None]:
 
 
 def auto_nick(user_id: int) -> str:
-    """Ник по умолчанию — чтобы в топе не мелькало настоящее имя."""
-    return f"Аноним-{abs(int(user_id)) % 10000:04d}"
+    """Стабильный случайно выглядящий номер, который не раскрывает часть Telegram ID."""
+    digest = hashlib.blake2s(f"anonchat-mgn:{int(user_id)}".encode(), digest_size=4).digest()
+    number = 1000 + int.from_bytes(digest, "big") % 9000
+    return f"Аноним-{number:04d}"
 
 
 def display(row_nickname: str | None, user_id: int) -> str:

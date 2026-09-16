@@ -122,7 +122,8 @@ def report_card(r) -> str:
         f"<b>{texts.esc(nicklib.display(r['target_nickname'], int(r['target_id'])))}</b>"
         f" ({texts.esc(r['target_name'] or '-')})\n"
         f"От: <code>{r['reporter_id']}</code>\n"
-        f"{texts.esc(r['comment']) if r['comment'] else '<i>без комментария</i>'}"
+        f"Последние сообщения:\n{texts.esc(r['context']) if r['context'] else '<i>нет контекста</i>'}\n\n"
+        f"Комментарий: {texts.esc(r['comment']) if r['comment'] else '<i>без комментария</i>'}"
     )
 
 

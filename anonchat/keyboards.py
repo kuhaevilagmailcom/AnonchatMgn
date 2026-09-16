@@ -25,6 +25,9 @@ CB_SETTINGS = "act:settings"
 CB_HELP = "act:help"
 CB_RULES = "act:rules"
 CB_TOP = "act:top"
+CB_MORE = "act:more"
+CB_CONTINUE = "onboard:continue"
+CB_BLOCK = "rate:block"
 CB_NICK = "cfg:nick:ask"
 
 
@@ -61,34 +64,66 @@ def menu_keyboard(status: str = "free", queue_size: int = 0, admin: bool = False
     """
     b = InlineKeyboardBuilder()
     if status == "paired":
-        _button(b, "Диалог идёт", callback_data=CB_CONNECT, icon="support")
         _button(b, "Следующий", callback_data=CB_NEXT, icon="next")
         _button(b, "Стоп", callback_data=CB_STOP, icon="check", style="danger")
-        _button(b, "Жалоба", callback_data=CB_REPORT, icon="warn", style="primary")
-        b.adjust(1, 2, 2)
+        _button(b, "Жалоба", callback_data=CB_REPORT, icon="warn")
+        b.adjust(1, 2)
         return b.as_markup()
 
     if status == "queued":
-        _button(b, f"В очереди · ждёт пары: {queue_size}", callback_data=CB_CONNECT, icon="refresh")
+        _button(b, "Отменить поиск", callback_data=CB_STOP, icon="check", style="danger")
+        _button(b, "Профиль", callback_data=CB_PROFILE, icon="profile")
+        _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
+        b.adjust(1, 2)
+        return b.as_markup()
     else:
-        _button(b, "Поиск собеседника", callback_data=CB_CONNECT, icon="view", style="success")
-
-    _button(b, "Следующий", callback_data=CB_NEXT, icon="next")
-    _button(b, "Стоп", callback_data=CB_STOP, icon="check", style="danger")
-
-    _button(b, "Жалоба", callback_data=CB_REPORT, icon="warn", style="primary")
+        _button(b, "Найти собеседника", callback_data=CB_CONNECT, icon="view", style="success")
     _button(b, "Профиль", callback_data=CB_PROFILE, icon="profile")
-
     _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
-    _button(b, "Топ", callback_data=CB_TOP, icon="stats")
-
-    _button(b, "Правила", callback_data=CB_RULES, icon="ticket")
-    _button(b, "Помощь", callback_data=CB_HELP, icon="support")
-    rows = [1, 2, 2, 2, 2]
+    _button(b, "Ещё", callback_data=CB_MORE, icon="add")
+    rows = [1, 2, 1]
     if admin:
         _button(b, "Панель модератора", callback_data=CB_ADMIN_PANEL, icon="bonus", style="primary")
         rows.append(1)
     b.adjust(*rows)
+    return b.as_markup()
+
+
+def continue_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Продолжить", callback_data=CB_CONTINUE, icon="next", style="success")
+    return b.as_markup()
+
+
+def age_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for age in range(13, 21):
+        _button(b, str(age), callback_data=f"onboard:age:{age}")
+    b.adjust(4, 4)
+    return b.as_markup()
+
+
+def chat_keyboard() -> InlineKeyboardMarkup:
+    return menu_keyboard("paired")
+
+
+def profile_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Изменить ник", callback_data=CB_NICK, icon="edit")
+    _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
+    _button(b, "Назад", callback_data=CB_MENU, icon="home")
+    b.adjust(1, 2)
+    return b.as_markup()
+
+
+def more_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Топ", callback_data=CB_TOP, icon="stats")
+    _button(b, "Правила", callback_data=CB_RULES, icon="ticket")
+    _button(b, "Помощь", callback_data=CB_HELP, icon="support")
+    _button(b, "Удалить мои данные", callback_data="cfg:forget:ask", icon="delete", style="danger")
+    _button(b, "Назад", callback_data=CB_MENU, icon="home")
+    b.adjust(2, 1, 1, 1)
     return b.as_markup()
 
 
@@ -107,19 +142,7 @@ def district_keyboard() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def gender_keyboard() -> InlineKeyboardMarkup:
-    b = InlineKeyboardBuilder()
-    _button(b, "Парень", callback_data="cfg:gender:m", icon="profile")
-    _button(b, "Девушка", callback_data="cfg:gender:f", icon="profile")
-    _button(b, "Не указывать", callback_data="cfg:gender:none", icon="check")
-    _button(b, "Назад", callback_data=CB_SETTINGS, icon="home")
-    b.adjust(2, 1, 1)
-    return b.as_markup()
-
-
-def settings_keyboard(
-    same_district: bool, district: str, nickname: str, has_about: bool
-) -> InlineKeyboardMarkup:
+def settings_keyboard(same_district: bool, district: str, nickname: str, has_about: bool) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, f"Ник: {nickname}", callback_data=CB_NICK, icon="profile")
     _button(b, f"Район: {district or 'не выбран'}", callback_data="cfg:district:ask", icon="geo")
@@ -129,25 +152,20 @@ def settings_keyboard(
         callback_data="cfg:same:toggle",
         icon="view",
     )
-    _button(
-        b, "Описание" if has_about else "Заполнить «о себе»",
-        callback_data="cfg:about:ask", icon="edit",
-    )
-    _button(b, "Пол в профиле", callback_data="cfg:gender:ask", icon="stars")
-    _button(b, "Сбросить настройки", callback_data="cfg:reset", icon="refresh")
+    _button(b, "Возраст", callback_data="cfg:age:ask", icon="stars")
     _button(b, "Удалить профиль", callback_data="cfg:forget:ask", icon="delete", style="danger")
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
-    b.adjust(1, 1, 1, 1, 1, 1, 1, 1)
+    b.adjust(1, 1, 1, 1, 1, 1)
     return b.as_markup()
 
 
 #: (подпись, код причины, иконка)
 REPORT_REASONS: tuple[tuple[str, str, str], ...] = (
-    ("Спам и реклама", "spam", "delete"),
-    ("Оскорбления", "insults", "warn"),
-    ("Контент 18+", "nsfw", "view"),
-    ("Выдаёт себя за другого", "fake", "profile"),
-    ("Деньги / мошенничество", "scam", "money"),
+    ("Оскорбления / травля", "insults", "warn"),
+    ("18+ контент", "nsfw", "view"),
+    ("Просит контакты / адрес", "contacts", "profile"),
+    ("Мошенничество", "scam", "money"),
+    ("Спам", "spam", "delete"),
     ("Другое", "other", "ticket"),
 )
 
@@ -165,10 +183,11 @@ def report_keyboard() -> InlineKeyboardMarkup:
 
 def rating_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    _button(b, "Хороший собеседник", callback_data="rate:1", icon="bonus", style="success")
+    _button(b, "👍 Норм", callback_data="rate:1", icon="bonus", style="success")
     _button(b, "Не зашло", callback_data="rate:0", icon="warn")
-    _button(b, "Искать ещё", callback_data=CB_CONNECT, icon="view")
-    b.adjust(1, 1, 1)
+    _button(b, "Больше не встречаться", callback_data=CB_BLOCK, icon="delete")
+    _button(b, "Найти ещё", callback_data=CB_CONNECT, icon="view")
+    b.adjust(2, 1, 1)
     return b.as_markup()
 
 

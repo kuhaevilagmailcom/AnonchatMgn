@@ -51,7 +51,7 @@ async def open_report(ctx: Ctx, edit: bool = True) -> None:
         return
     if edit and await ctx.edit(texts.REPORT_INTRO, kb):
         return
-    await ctx.reply(texts.REPORT_INTRO, kb)
+    await ctx.screen("07_report.png", texts.REPORT_INTRO, kb)
 
 
 # ---------------------------------------------------------------------------------- причина
@@ -98,7 +98,19 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
         await ctx.reply(texts.REPORT_NO_TARGET, markup=K.menu_keyboard())
         return
 
-    report_id, day_count = await db.add_report(ctx.user_id, partner, reason, comment)
+    dialog = mm.dialog_stats(ctx.user_id)
+    dialog_key = str(dialog.get("dialog_key", ""))
+    history = dialog.get("history", []) or []
+    context = "\n".join(
+        f"— {'жалующийся' if int(uid) == ctx.user_id else 'собеседник'}: {text}"
+        for uid, text in history[-10:]
+    )
+    report_id, day_count = await db.add_report(
+        ctx.user_id, partner, reason, comment, dialog_key=dialog_key, context=context
+    )
+    if report_id is None:
+        await ctx.reply(texts.REPORT_DUPLICATE, markup=K.menu_keyboard("paired"))
+        return
     target_row = await db.get_user(partner)
     # карточка — только для модератора: здесь настоящие данные уместны
     target_name = (target_row["first_name"] if target_row else "собеседник") or "собеседник"
@@ -111,13 +123,14 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
         f"На: <code>{partner}</code> · в чате как <b>{texts.esc(target_nick)}</b> · "
         f"{texts.esc(target_name)} ({texts.esc(target_login)})\n"
         f"От: <code>{ctx.user_id}</code>\n"
-        f"{texts.esc(comment) if comment else '<i>без комментария</i>'}\n"
+        f"Последние сообщения:\n{texts.esc(context) if context else '<i>нет текстового контекста</i>'}\n\n"
+        f"Комментарий: {texts.esc(comment) if comment else '<i>без комментария</i>'}\n"
         f"Жалоб на него за сутки: <b>{day_count}</b> · {time.strftime('%d.%m %H:%M')}"
     )
     await notify_admins(ctx, card, K.admin_report_keyboard(report_id))
 
     auto = ""
-    if day_count >= cfg.auto_mute_reports:
+    if cfg.auto_mute_reports > 0 and day_count >= cfg.auto_mute_reports:
         until = await db.set_mute(partner, cfg.auto_mute_minutes)
         mins = max(1, int((until - time.time()) // 60))
         await send_to(ctx.bot, partner, texts.MUTED.format(mins=mins), None, ctx.pack)

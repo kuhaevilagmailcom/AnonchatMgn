@@ -11,11 +11,6 @@ from typing import Any
 #: панели хостинга называют переменную с токеном по-разному — принимаем любой вариант
 _TOKEN_KEYS = ("BOT_TOKEN", "TELEGRAM_BOT_TOKEN", "TELEGRAM_TOKEN", "BOT_KEY", "TOKEN")
 
-#: владелец МГН-чата. `.env` в репозиторий не попадает, поэтому на хостинге админ
-#: определяется и без ADMIN_IDS; своя переменная окружения всегда приоритетнее
-DEFAULT_ADMIN_IDS: tuple[int, ...] = (8464597898,)
-
-
 def _load_dotenv(path: Path) -> None:
     """Мини-загрузчик .env без внешних зависимостей."""
     if not path.exists():
@@ -40,15 +35,11 @@ def _parse_ids(raw: str) -> tuple[int, ...]:
 
 
 def _admin_ids(env: Any = os.getenv) -> tuple[int, ...]:
-    """ADMIN_IDS (или TELEGRAM_ADMIN_ID); пусто — владелец из DEFAULT_ADMIN_IDS.
-
-    `ADMIN_IDS=none` — админов нет вовсе: полезно, когда форк ставят под своего владельца
-    и не хотят, чтобы чужой id остался в панели.
-    """
+    """ADMIN_IDS (или TELEGRAM_ADMIN_ID). Реальных id в исходниках нет."""
     raw = (env("ADMIN_IDS", "") or env("TELEGRAM_ADMIN_ID", "") or "").strip()
     if raw.lower() in {"none", "off", "no"}:
         return ()
-    return _parse_ids(raw) or DEFAULT_ADMIN_IDS
+    return _parse_ids(raw)
 
 
 def _find_token(cli: str | None = None) -> str:

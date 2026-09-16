@@ -23,6 +23,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Chat, Message, Update, User
 
 from anonchat import commands as commands_mod
+from anonchat import texts
 from anonchat.commands import register_common
 from anonchat.config import Config
 from anonchat.db import Database
@@ -69,6 +70,7 @@ class RecordingSession(BaseSession):
             date=1_700_000_000,
             chat=Chat(id=int(data.get("chat_id", 0)), type="private"),
             text=data.get("text"),
+            caption=data.get("caption"),
         )
 
     # ------------------------------------------------------------------ helpers
@@ -76,7 +78,7 @@ class RecordingSession(BaseSession):
         return [m for m in self.outbox if m.get("chat_id") == chat_id]
 
     def texts_to(self, chat_id: int) -> list[str]:
-        return [str(m.get("text", "")) for m in self.to(chat_id)]
+        return [str(m.get("text") or m.get("caption") or "") for m in self.to(chat_id)]
 
     def last_to(self, chat_id: int) -> str:
         texts = self.texts_to(chat_id)
@@ -515,13 +517,145 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     print("\nflow test passed")
 
 
+async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
+    """Новый мобильный сценарий: онбординг, безопасность, жалобы, recent/block и FSM."""
+    tmp = Path(tempfile.mkdtemp())
+    cfg = Config(
+        bot_token="42:TEST", admin_ids=(ADMIN,), db_path=tmp / "flow-modern.db",
+        auto_mute_reports=0,
+    )
+    db = await Database(cfg.db_path).start()
+    if holder is not None:
+        holder["db"] = db
+    mm = Matchmaker()
+    session = RecordingSession()
+    bot = Bot(cfg.bot_token, session=session, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    dp = Dispatcher(storage=MemoryStorage())
+    pack = EmojiPack(cfg.emoji_pack_url)
+    for observer in (dp.message, dp.callback_query):
+        observer.outer_middleware(Throttling(cfg, limit=200))
+        observer.middleware(DataContext(cfg, db, mm, pack))
+    for router in get_routers():
+        dp.include_router(router)
+
+    step = 1000
+
+    async def send(uid: int, text: str) -> None:
+        nonlocal step
+        step += 1
+        await dp.feed_update(bot, msg_update(bot, uid, text, step))
+
+    async def press(uid: int, data: str) -> None:
+        nonlocal step
+        step += 1
+        await dp.feed_update(bot, cb_update(bot, uid, data, step))
+
+    async def payload(uid: int, **content: Any) -> None:
+        nonlocal step
+        step += 1
+        message = {
+            "message_id": step, "date": 1_700_000_000,
+            "chat": {"id": uid, "type": "private", "first_name": f"U{uid}"},
+            "from": {"id": uid, "is_bot": False, "first_name": f"U{uid}"},
+            **content,
+        }
+        await dp.feed_update(bot, Update.model_validate(
+            {"update_id": step, "message": message}, context={"bot": bot}
+        ))
+
+    def check(value: bool, label: str) -> None:
+        if not value:
+            raise AssertionError(f"{label}\noutbox={session.outbox[-8:]}")
+        print(f"  ok  {label}")
+
+    async def onboard(uid: int, age: int) -> None:
+        await send(uid, "/start")
+        check("Анонимный чат" in session.last_to(uid), "первый запуск показывает короткое приветствие")
+        await press(uid, "onboard:continue")
+        check("Сколько тебе лет" in session.last_to(uid), "после продолжения бот спрашивает возраст")
+        await press(uid, f"onboard:age:{age}")
+        row = await db.get_user(uid)
+        check(bool(row and row["age"] == age and row["nickname"]), "возраст и случайный ник сохранены")
+
+    await onboard(A, 17)
+    await onboard(B, 18)
+    await onboard(C, 16)
+
+    session.clear()
+    await press(A, "act:connect")
+    check(mm.status(A) == "queued" and "Ищу собеседника" in session.last_to(A), "поиск ставит в очередь")
+    await press(B, "act:connect")
+    check(mm.partner(A) == B, "возраст не разделяет очередь")
+    check("Собеседник найден" in session.last_to(A), "экран найденного собеседника отправлен")
+    check("U1002" not in session.last_to(A) and str(B) not in session.last_to(A),
+          "Telegram-имя и id не попадают собеседнику")
+
+    session.clear()
+    await send(A, "@secret_user")
+    check(texts.CONTACT_BLOCKED in session.last_to(A) and session.to(B) == [], "@username не пересылается")
+    session.clear()
+    await send(A, "+7 999 123-45-67")
+    check(session.to(B) == [] and "контакты" in session.last_to(A), "телефон не пересылается")
+    session.clear()
+    await send(A, "https://example.com")
+    check(session.to(B) == [], "ссылка не пересылается")
+
+    for body, label in (
+        ({"location": {"latitude": 53.4, "longitude": 58.9}}, "location"),
+        ({"contact": {"phone_number": "+79991234567", "first_name": "X"}}, "contact"),
+        ({"document": {"file_id": "f", "file_unique_id": "u"}}, "документ"),
+    ):
+        session.clear()
+        await payload(A, **body)
+        check(session.to(B) == [], f"{label} не пересылается")
+
+    await send(A, "обычное сообщение")
+    await send(B, "ответ")
+    await press(A, "act:report")
+    await press(A, "rep:spam")
+    await send(A, "мешает общаться")
+    reports = await db.list_reports("new")
+    check(len(reports) == 1 and "обычное сообщение" in reports[0]["context"],
+          "жалоба сохраняет только последние сообщения как контекст")
+    check(await db.is_restricted(B) is None, "AUTO_MUTE_REPORTS=0 полностью отключает авто-мут")
+    await press(A, "act:report")
+    await press(A, "rep:spam")
+    await send(A, "повтор")
+    check(len(await db.list_reports("new")) == 1 and texts.REPORT_DUPLICATE in session.last_to(A),
+          "повторная жалоба на тот же диалог не считается")
+
+    await send(A, "/stop")
+    await press(A, "rate:block")
+    check(B in await db.excluded_partners(A), "блок-лист сохраняет пару")
+    await press(A, "act:connect")
+    await press(B, "act:connect")
+    check(mm.partner(A) != B, "заблокированные и недавние собеседники не соединяются снова")
+    await press(C, "act:connect")
+    check(mm.partner(A) == C, "очередь выбирает следующего подходящего пользователя")
+
+    await send(A, "/stop")
+    await press(A, "cfg:nick:ask")
+    await press(A, "act:menu")
+    old_nick = (await db.get_user(A))["nickname"]
+    await send(A, "это обычный текст")
+    check((await db.get_user(A))["nickname"] == old_nick, "выход в меню очищает FSM ввода")
+
+    await db.set_ban(C, True, "тест")
+    await db.forget_user(C)
+    check(await db.is_restricted(C) == "banned", "/forget не снимает действующий бан")
+
+    await bot.session.close()
+    await db.close()
+    print("\nmodern flow test passed")
+
+
 def test_flow() -> None:
     """Гарантированно закрываем БД: иначе worker-поток aiosqlite вешает процесс при упавшем асерте."""
     holder: dict[str, Any] = {}
 
     async def guarded() -> None:
         try:
-            await run_flow(holder)
+            await run_flow_modern(holder)
         finally:
             db = holder.get("db")
             if db is not None:

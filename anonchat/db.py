@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
     first_name       TEXT,
     nickname         TEXT    NOT NULL DEFAULT '',
     nick_key         TEXT    NOT NULL DEFAULT '',
+    age              INTEGER NOT NULL DEFAULT 0,
     created_at       INTEGER NOT NULL DEFAULT 0,
     last_seen        INTEGER NOT NULL DEFAULT 0,
     xp               INTEGER NOT NULL DEFAULT 0,
@@ -53,9 +54,18 @@ CREATE TABLE IF NOT EXISTS reports (
     target_id   INTEGER NOT NULL,
     reason      TEXT    NOT NULL,
     comment     TEXT    NOT NULL DEFAULT '',
+    dialog_key  TEXT    NOT NULL DEFAULT '',
+    context     TEXT    NOT NULL DEFAULT '',
     status      TEXT    NOT NULL DEFAULT 'new',
     handled_by  INTEGER,
     handled_at  INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS blocks (
+    user_id     INTEGER NOT NULL,
+    blocked_id  INTEGER NOT NULL,
+    created_at  INTEGER NOT NULL,
+    PRIMARY KEY (user_id, blocked_id)
 );
 
 CREATE TABLE IF NOT EXISTS kv (
@@ -67,12 +77,20 @@ CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_reports_target ON reports(target_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_users_xp ON users(xp DESC);
 CREATE INDEX IF NOT EXISTS idx_users_messages ON users(messages DESC);
+CREATE INDEX IF NOT EXISTS idx_matches_recent ON matches(ended_at, user_a, user_b);
+CREATE INDEX IF NOT EXISTS idx_blocks_reverse ON blocks(blocked_id, user_id);
 """
 
 #: колонки, которых не было в ранних версиях схемы — догоняем их на лету
 _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("nickname", "ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT ''"),
     ("nick_key", "ALTER TABLE users ADD COLUMN nick_key TEXT NOT NULL DEFAULT ''"),
+    ("age", "ALTER TABLE users ADD COLUMN age INTEGER NOT NULL DEFAULT 0"),
+)
+
+_REPORT_MIGRATIONS: tuple[tuple[str, str], ...] = (
+    ("dialog_key", "ALTER TABLE reports ADD COLUMN dialog_key TEXT NOT NULL DEFAULT ''"),
+    ("context", "ALTER TABLE reports ADD COLUMN context TEXT NOT NULL DEFAULT ''"),
 )
 
 
@@ -105,6 +123,15 @@ class Database:
             if name not in cols:
                 await self.db.execute(sql)
                 added = True
+        async with self.db.execute("PRAGMA table_info(reports)") as cur:
+            report_cols = {row[1] for row in await cur.fetchall()}
+        for name, sql in _REPORT_MIGRATIONS:
+            if name not in report_cols:
+                await self.db.execute(sql)
+        await self.db.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_dialog_once "
+            "ON reports(reporter_id, target_id, dialog_key) WHERE dialog_key <> ''"
+        )
         if added or "nick_key" in cols:
             await self._backfill_nick_keys()
 
@@ -179,7 +206,7 @@ class Database:
         await self.db.commit()
 
     async def set_profile(self, user_id: int, **fields: Any) -> None:
-        allowed = {"district", "gender", "same_district", "about", "nickname"}
+        allowed = {"age", "district", "gender", "same_district", "about", "nickname"}
         if "nickname" in fields:
             fields["nick_key"] = str(fields["nickname"] or "").strip().casefold()
         keys = [k for k in fields if k in allowed]
@@ -252,14 +279,19 @@ class Database:
         return until
 
     async def add_report(
-        self, reporter_id: int, target_id: int, reason: str, comment: str
-    ) -> tuple[int, int]:
-        """Возвращает (id жалобы, сколько жалоб на цели за сутки)."""
-        cur = await self.db.execute(
-            """INSERT INTO reports (created_at, reporter_id, target_id, reason, comment)
-               VALUES (?, ?, ?, ?, ?)""",
-            (now(), reporter_id, target_id, reason, comment),
-        )
+        self, reporter_id: int, target_id: int, reason: str, comment: str,
+        dialog_key: str = "", context: str = "",
+    ) -> tuple[int | None, int]:
+        """Одна жалоба участника на один диалог; порог считает разных отправителей."""
+        try:
+            cur = await self.db.execute(
+                """INSERT INTO reports
+                   (created_at, reporter_id, target_id, reason, comment, dialog_key, context)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (now(), reporter_id, target_id, reason, comment, dialog_key, context),
+            )
+        except aiosqlite.IntegrityError:
+            return None, 0
         await self.db.execute(
             "UPDATE users SET reports_received = reports_received + 1 WHERE user_id = ?", (target_id,)
         )
@@ -268,10 +300,28 @@ class Database:
         )
         await self.db.commit()
         day = await self._fetchone(
-            "SELECT COUNT(*) AS c FROM reports WHERE target_id = ? AND created_at > ?",
+            "SELECT COUNT(DISTINCT reporter_id) AS c FROM reports WHERE target_id = ? AND created_at > ?",
             (target_id, now() - 86400),
         )
         return int(cur.lastrowid), int(day["c"]) if day else 1
+
+    async def block_user(self, user_id: int, blocked_id: int) -> None:
+        await self.db.execute(
+            "INSERT OR IGNORE INTO blocks(user_id, blocked_id, created_at) VALUES (?, ?, ?)",
+            (user_id, blocked_id, now()),
+        )
+        await self.db.commit()
+
+    async def excluded_partners(self, user_id: int, recent_seconds: int = 86400) -> set[int]:
+        rows = await self._fetchall(
+            """SELECT blocked_id AS uid FROM blocks WHERE user_id = ?
+               UNION SELECT user_id AS uid FROM blocks WHERE blocked_id = ?
+               UNION SELECT CASE WHEN user_a = ? THEN user_b ELSE user_a END AS uid
+                     FROM matches
+                     WHERE (user_a = ? OR user_b = ?) AND ended_at > ?""",
+            (user_id, user_id, user_id, user_id, user_id, now() - recent_seconds),
+        )
+        return {int(row["uid"]) for row in rows}
 
     async def list_reports(self, status: str = "new", limit: int = 20) -> list[aiosqlite.Row]:
         return await self._fetchall(
@@ -319,11 +369,17 @@ class Database:
         row = await self._fetchone("SELECT user_a, user_b FROM matches WHERE id = ?", (match_id,))
         if row is None:
             return None
-        partner = row["user_b"] if row["user_a"] == user_id else row["user_a"]
-        column = "rating_a" if row["user_a"] == user_id else "rating_b"
-        await self.db.execute(
-            f"UPDATE matches SET {column} = ? WHERE id = ?", (value, match_id)
+        if row["user_a"] == user_id:
+            partner, column = row["user_b"], "rating_a"
+        elif row["user_b"] == user_id:
+            partner, column = row["user_a"], "rating_b"
+        else:
+            return None
+        cur = await self.db.execute(
+            f"UPDATE matches SET {column} = ? WHERE id = ? AND {column} IS NULL", (value, match_id)
         )
+        if cur.rowcount == 0:
+            return None
         await self.db.execute(
             "UPDATE users SET good_ratings = good_ratings + ? WHERE user_id = ?",
             (1 if value else 0, partner),
@@ -362,11 +418,12 @@ class Database:
         }
 
     async def top(self, limit: int = 10) -> list[aiosqlite.Row]:
-        """Ранг считается по сообщениям, поэтому и топ — по сообщениям (опыт только как tie-break)."""
+        """Активность с упором на диалоги и оценки; спам в одном чате быстро упирается в лимит."""
         return await self._fetchall(
             """SELECT user_id, nickname, messages, xp, dialogs, good_ratings
                FROM users WHERE banned = 0
-               ORDER BY messages DESC, xp DESC LIMIT ?""",
+               ORDER BY (dialogs * 10 + good_ratings * 5 + MIN(messages, dialogs * 40 + 20)) DESC,
+                        xp DESC LIMIT ?""",
             (limit,),
         )
 
@@ -401,12 +458,20 @@ class Database:
         await self.db.commit()
 
     async def forget_user(self, user_id: int) -> None:
-        """Полное стирание профиля и следов о нём (/forget, «право на забвение»)."""
-        await self.db.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
-        await self.db.execute("DELETE FROM matches WHERE user_a = ? OR user_b = ?", (user_id, user_id))
-        await self.db.execute(
-            "DELETE FROM reports WHERE reporter_id = ? OR target_id = ?", (user_id, user_id)
-        )
+        """Стирает профиль, но сохраняет действующий бан/мут и модерационные доказательства."""
+        row = await self.get_user(user_id)
+        restricted = bool(row and (row["banned"] or int(row["mute_until"] or 0) > now()))
+        if restricted:
+            await self.db.execute(
+                """UPDATE users SET username=NULL, first_name='Удалённый пользователь', nickname='',
+                   nick_key='', age=0, xp=0, messages=0, dialogs=0, good_ratings=0,
+                   bad_ratings=0, reports_sent=0, district='', gender='', same_district=0,
+                   about='', last_seen=0 WHERE user_id=?""",
+                (user_id,),
+            )
+        else:
+            await self.db.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+        # История диалогов/жалоб нужна для блокировок и открытой модерации; личные поля там не хранятся.
         await self.db.commit()
 
     async def find_user_ids(self, name: str, limit: int = 10) -> list[aiosqlite.Row]:

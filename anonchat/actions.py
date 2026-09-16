@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from aiogram import Bot
@@ -18,16 +19,21 @@ from aiogram.exceptions import (
     TelegramForbiddenError,
     TelegramRetryAfter,
 )
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardMarkup, Message
 
 from . import nick as nicklib
 from . import texts
 from .config import Config
 from .db import Database
-from .keyboards import menu_keyboard, rating_keyboard
+from .keyboards import (
+    back_menu_keyboard, chat_keyboard, continue_keyboard, menu_keyboard,
+    profile_keyboard, rating_keyboard,
+)
 from .levels import rank_for
 from .matching import Matchmaker
 from .pack import EmojiPack
+
+ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "menu"
 
 
 @dataclass(slots=True)
@@ -62,10 +68,15 @@ class Ctx:
     async def edit(self, text: str, markup: InlineKeyboardMarkup | None = None) -> bool:
         if not isinstance(self.event, CallbackQuery) or self.event.message is None:
             return False
+        message = self.event.message
+        has_media = bool(getattr(message, "photo", None))
         for attempt in range(2):
             body = self.pack.wrap(text) if attempt == 0 else self.pack.strip(text)
             try:
-                await self.event.message.edit_text(text=body, reply_markup=markup)
+                if has_media:
+                    await message.edit_caption(caption=body, reply_markup=markup)
+                else:
+                    await message.edit_text(text=body, reply_markup=markup)
                 return True
             except TelegramBadRequest as exc:
                 if attempt == 0 and self.pack.accept(exc):
@@ -74,6 +85,26 @@ class Ctx:
             except TelegramAPIError:
                 return False
         return False
+
+    async def screen(self, image: str, caption: str, markup: InlineKeyboardMarkup | None = None) -> Message | None:
+        """Основной экран: фирменное изображение + короткая подпись."""
+        target = self.event.message if isinstance(self.event, CallbackQuery) else self.event
+        if target is None:
+            return None
+        path = ASSET_DIR / image
+        if not path.exists():
+            return await self.reply(caption, markup)
+        try:
+            return await target.answer_photo(FSInputFile(path), caption=self.pack.wrap(caption), reply_markup=markup)
+        except TelegramBadRequest as exc:
+            if self.pack.accept(exc):
+                try:
+                    return await target.answer_photo(FSInputFile(path), caption=self.pack.strip(caption), reply_markup=markup)
+                except TelegramAPIError:
+                    return None
+            return None
+        except TelegramAPIError:
+            return None
 
     # ------------------------------------------------------------------ профиль
     @property
@@ -89,7 +120,6 @@ class Ctx:
         me = self.me
         return {
             "district": (me["district"] if me else "") or "",
-            "gender": (me["gender"] if me else "") or "",
             "same_district": bool(me["same_district"]) if me else False,
         }
 
@@ -99,6 +129,11 @@ class Ctx:
             return self.nick
         if not (self.me["nickname"] or "").strip():
             auto = nicklib.auto_nick(self.user_id)
+            for salt in range(32):
+                candidate = nicklib.auto_nick(self.user_id + salt * 1_000_003)
+                if not await self.db.nickname_taken(candidate, except_user_id=self.user_id):
+                    auto = candidate
+                    break
             await self.db.set_profile(self.user_id, nickname=auto)
             self.me = await self.db.get_user(self.user_id)
         return self.nick
@@ -139,7 +174,7 @@ class Ctx:
 async def _send_text(
     target: Message, text: str, markup: InlineKeyboardMarkup | None, pack: EmojiPack, **kw: Any
 ) -> Message | None:
-    for attempt in range(2):
+    for attempt in range(3):
         body = pack.wrap(text) if attempt == 0 else pack.strip(text)
         try:
             return await target.answer(text=body, reply_markup=markup, **kw)
@@ -170,10 +205,8 @@ async def send_to(
                 continue
             return False
         except TelegramRetryAfter as exc:
-            if attempt == 0:
-                await asyncio.sleep(min(float(exc.retry_after) + 0.3, 3.0))
-                continue
-            return True
+            await asyncio.sleep(max(0.0, float(exc.retry_after)))
+            continue
         except (TelegramForbiddenError, TelegramAPIError):
             return False
     return False
@@ -184,46 +217,65 @@ async def send_copy_to(bot: Bot, message: Message, chat_id: int) -> bool:
         await bot.send_chat_action(chat_id, "typing")
     except TelegramAPIError:
         pass
-    try:
-        await message.send_copy(chat_id=chat_id)
-        return True
-    except TelegramRetryAfter:
-        return True
-    except (TelegramForbiddenError, TelegramAPIError):
-        return False
+    for _ in range(3):
+        try:
+            await message.send_copy(chat_id=chat_id)
+            return True
+        except TelegramRetryAfter as exc:
+            await asyncio.sleep(max(0.0, float(exc.retry_after)))
+        except (TelegramForbiddenError, TelegramAPIError):
+            return False
+    return False
+
+
+async def send_screen_to(
+    bot: Bot, chat_id: int, image: str, caption: str,
+    markup: InlineKeyboardMarkup | None = None, pack: EmojiPack | None = None,
+) -> bool:
+    path = ASSET_DIR / image
+    if not path.exists():
+        return await send_to(bot, chat_id, caption, markup, pack)
+    for attempt in range(2):
+        body = pack.wrap(caption) if pack and attempt == 0 else (pack.strip(caption) if pack else caption)
+        try:
+            await bot.send_photo(chat_id, FSInputFile(path), caption=body, reply_markup=markup)
+            return True
+        except TelegramBadRequest as exc:
+            if attempt == 0 and pack is not None and pack.accept(exc):
+                continue
+            return False
+        except TelegramRetryAfter as exc:
+            await asyncio.sleep(max(0.0, float(exc.retry_after)))
+        except (TelegramForbiddenError, TelegramAPIError):
+            return False
+    return False
 
 
 # --------------------------------------------------------------------- экраны
 async def show_menu(ctx: Ctx, edit: bool = True) -> None:
     status = ctx.mm.status(ctx.user_id)
-    rank = rank_for(int(ctx.me["messages"]) if ctx.me else 0)
     state = {
         "paired": texts.STATUS_PAIRED,
         "queued": texts.STATUS_QUEUED,
     }.get(status, texts.STATUS_FREE)
 
     body = (
-        f"🧲 <b>{texts.esc(ctx.cfg.city)}</b>\n"
-        f"🙋 <b>{texts.esc(ctx.nick)}</b> · {rank.name}\n"
-        f"<code>{rank.bar}</code> <i>{rank.pretty(rank.messages)} сообщ.</i>\n\n"
+        f"<b>{texts.esc(ctx.nick)}</b>\n\n"
         f"{state}"
     )
     kb = menu_keyboard(status, ctx.mm.queue_size(), admin=ctx.is_admin)
     if edit and await ctx.edit(body, kb):
         return
-    await ctx.reply(body, kb)
+    await ctx.screen("01_main_menu.png", body, kb)
 
 
 async def show_welcome(ctx: Ctx) -> None:
-    nick = await ctx.ensure_nick()
-    await ctx.reply(
-        texts.WELCOME.format(
-            city=texts.esc(ctx.cfg.city),
-            nick=texts.esc(nick),
-            nick_hint=texts.NICK_HINT,
-        ),
-        markup=menu_keyboard(ctx.mm.status(ctx.user_id), ctx.mm.queue_size()),
-    )
+    if ctx.me is not None and int(ctx.me["age"] or 0) == 0:
+        await ctx.screen("01_main_menu.png", texts.WELCOME.format(city=texts.esc(ctx.cfg.city)),
+                         continue_keyboard())
+        return
+    await ctx.ensure_nick()
+    await show_menu(ctx, edit=False)
 
 
 async def show_help(ctx: Ctx) -> None:
@@ -234,13 +286,13 @@ async def show_help(ctx: Ctx) -> None:
 
 
 async def show_rules(ctx: Ctx) -> None:
-    await ctx.reply(texts.RULES, markup=menu_keyboard(ctx.mm.status(ctx.user_id)))
+    await ctx.screen("06_rules.png", texts.RULES, back_menu_keyboard())
 
 
 async def show_top(ctx: Ctx) -> None:
     if await ctx.dialog_locked():
         return
-    rows = await ctx.db.top(10)
+    rows = await ctx.db.top(5)
     if not rows:
         await ctx.reply("🏆 Топ пуст — начни общаться первым.", markup=menu_keyboard())
         return
@@ -256,7 +308,7 @@ async def show_top(ctx: Ctx) -> None:
             f" — {rank.pretty(messages)} сообщ. · {texts.esc(rank.title)}"
         )
     lines += ["", "<i>Ники участники придумывают сами.</i>"]
-    await ctx.reply("\n".join(lines), markup=menu_keyboard())
+    await ctx.screen("08_top.png", "\n".join(lines), back_menu_keyboard())
 
 
 async def show_profile(ctx: Ctx) -> None:
@@ -289,14 +341,14 @@ async def show_profile(ctx: Ctx) -> None:
         "",
         f"💬 Сообщений: <b>{rank.pretty(messages)}</b> · диалогов: {me['dialogs']}",
         f"⭐ Опыт: {rank.pretty(int(me['xp']))} · оценки 👍 {me['good_ratings']} / 👎 {me['bad_ratings']}",
-        f"🚩 Жалоб на тебя: {me['reports_received']}",
+        f"Возраст: <b>{me['age']}</b>",
         f"📍 {texts.esc(me['district']) if me['district'] else 'район не указан'}"
         f" · ищу: {texts.PROFILE_SEARCH['own' if me['same_district'] else 'city']}",
         f"✍️ {about}",
         "",
         texts.PROFILE_STATUS.get(status, ""),
     ]
-    await ctx.reply("\n".join(lines), markup=menu_keyboard(status))
+    await ctx.screen("04_profile.png", "\n".join(lines), profile_keyboard())
 
 
 # --------------------------------------------------------------------- ники
@@ -330,24 +382,14 @@ async def set_nick(ctx: Ctx, raw: str) -> tuple[bool, str]:
 
 # --------------------------------------------------------------------- пары
 def partner_card(row: Any, user_id: int) -> str:
-    """Публичная карточка найденного собеседника: ник, ранг, сообщения, опыт, оценки, жалобы.
+    """Публичная карточка: никаких Telegram-данных и модерационной статистики.
 
     Настоящие имя и @username сюда не попадают намеренно — только то, что человек
     выбрал и показал сам.
     """
     if row is None:
         return f"🙂 <b>{texts.esc(nicklib.display('', user_id))}</b>"
-    messages = int(row["messages"])
-    rank = rank_for(messages)
-    return texts.MATCHED_CARD.format(
-        nick=texts.esc(nicklib.display(row["nickname"], user_id)),
-        rank=rank.name,
-        messages=rank.pretty(messages),
-        xp=rank.pretty(int(row["xp"])),
-        good=int(row["good_ratings"]),
-        bad=int(row["bad_ratings"]),
-        reports=int(row["reports_received"]),
-    )
+    return texts.MATCHED_CARD.format(nick=texts.esc(nicklib.display(row["nickname"], user_id)))
 
 
 def matched_text(card: str, you: str) -> str:
@@ -366,11 +408,14 @@ async def announce_pair(ctx: Ctx, user_id: int, partner_id: int) -> bool:
         else nicklib.display("", partner_id)
     my_nick = nicklib.display(my_row["nickname"], user_id) if my_row else ctx.nick
 
-    if not await send_to(
-        ctx.bot, partner_id, matched_text(partner_card(my_row, user_id), partner_nick), None, ctx.pack
+    found_kb = chat_keyboard()
+    if not await send_screen_to(
+        ctx.bot, partner_id, "03_found.png",
+        matched_text(partner_card(my_row, user_id), partner_nick), found_kb, ctx.pack
     ):
         return False
-    await send_to(ctx.bot, user_id, matched_text(partner_card(partner_row, partner_id), my_nick), None, ctx.pack)
+    await send_screen_to(ctx.bot, user_id, "03_found.png",
+                         matched_text(partner_card(partner_row, partner_id), my_nick), found_kb, ctx.pack)
     return True
 
 
@@ -448,14 +493,16 @@ async def act_connect(ctx: Ctx) -> None:
         await ctx.reply(texts.ALREADY_PAIRED, markup=menu_keyboard("paired"))
         return
     if status == "queued":
-        await ctx.reply(
+        await ctx.screen(
+            "02_search.png",
             texts.QUEUED.format(city=texts.esc(ctx.cfg.city), pos=ctx.mm.position(ctx.user_id) or 1,
                                 size=ctx.mm.queue_size()),
-            markup=menu_keyboard("queued", ctx.mm.queue_size()),
+            menu_keyboard("queued", ctx.mm.queue_size()),
         )
         return
 
     prefs = ctx.prefs
+    prefs["excluded"] = await ctx.db.excluded_partners(ctx.user_id)
     for _ in range(8):
         outcome, payload = ctx.mm.connect(ctx.user_id, **prefs)
         if outcome == "paired":
@@ -465,10 +512,11 @@ async def act_connect(ctx: Ctx) -> None:
             ctx.mm.forget(payload)
             continue
         if outcome == "queued":
-            await ctx.reply(
+            await ctx.screen(
+                "02_search.png",
                 texts.QUEUED.format(city=texts.esc(ctx.cfg.city), pos=payload or 1,
                                     size=ctx.mm.queue_size()),
-                markup=menu_keyboard("queued", ctx.mm.queue_size()),
+                menu_keyboard("queued", ctx.mm.queue_size()),
             )
             await ctx.ack("Ты в очереди")
             return
@@ -500,12 +548,15 @@ async def act_stop(ctx: Ctx) -> None:
 
 
 async def apply_rating(ctx: Ctx, positive: bool) -> None:
-    entry = ctx.mm.pop_rating(ctx.user_id)
+    entry = ctx.mm.pending_rating(ctx.user_id)
     if entry is None:
         await ctx.ack(texts.RATING_STALE, alert=True)
         return
     match_id, partner = entry
-    await ctx.db.rate_dialog(match_id, ctx.user_id, 1 if positive else 0)
+    rated_partner = await ctx.db.rate_dialog(match_id, ctx.user_id, 1 if positive else 0)
+    if rated_partner is None:
+        await ctx.ack(texts.RATING_STALE, alert=True)
+        return
     if positive:
         await ctx.db.award_xp(partner, ctx.cfg.xp_good_rating)
         await send_to(ctx.bot, partner, texts.RATING_DONE_GOOD.format(xp=ctx.cfg.xp_good_rating),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from .. import keyboards as K
@@ -22,6 +23,7 @@ from ..actions import (
 )
 from ..commands import ensure_for_admin
 from ..config import Config
+from ..db import Database
 
 router = Router(name="menu")
 
@@ -69,12 +71,44 @@ async def cmd_stop(message: Message, ctx: Ctx) -> None:
 
 # ---------------------------------------------------------------------------------- кнопки меню
 @router.callback_query(F.data == K.CB_MENU)
-async def cb_menu(event: CallbackQuery, ctx: Ctx) -> None:
+async def cb_menu(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
+    await state.clear()
     await show_menu(ctx)
+
+
+@router.callback_query(F.data == K.CB_CONTINUE)
+async def cb_continue(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
+    await state.clear()
+    await ctx.edit("<b>Сколько тебе лет?</b>", K.age_keyboard())
+
+
+@router.callback_query(F.data.startswith("onboard:age:"))
+async def cb_age(event: CallbackQuery, ctx: Ctx, db: Database, state: FSMContext) -> None:
+    try:
+        age = int((event.data or "").rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        age = 0
+    if age not in range(13, 21):
+        await ctx.ack("Выбери возраст от 13 до 20", alert=True)
+        return
+    await db.set_profile(ctx.user_id, age=age)
+    ctx.me = await db.get_user(ctx.user_id)
+    await ctx.ensure_nick()
+    await state.clear()
+    await show_menu(ctx)
+
+
+@router.callback_query(F.data == K.CB_MORE)
+async def cb_more(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
+    await state.clear()
+    await ctx.edit("<b>Ещё</b>", K.more_keyboard())
 
 
 @router.callback_query(F.data == K.CB_CONNECT)
 async def cb_connect(event: CallbackQuery, ctx: Ctx) -> None:
+    if ctx.me is not None and int(ctx.me["age"] or 0) == 0:
+        await ctx.edit("<b>Сколько тебе лет?</b>", K.age_keyboard())
+        return
     await act_connect(ctx)
 
 
@@ -85,7 +119,12 @@ async def cb_next(event: CallbackQuery, ctx: Ctx) -> None:
 
 @router.callback_query(F.data == K.CB_STOP)
 async def cb_stop(event: CallbackQuery, ctx: Ctx, cfg: Config) -> None:
-    if ctx.mm.status(ctx.user_id) != "paired":
+    status = ctx.mm.status(ctx.user_id)
+    if status == "queued":
+        ctx.mm.forget(ctx.user_id)
+        await show_menu(ctx)
+        return
+    if status != "paired":
         await ctx.reply(texts.NO_DIALOG, markup=K.menu_keyboard())
         return
     await ctx.edit(
@@ -134,6 +173,17 @@ async def cb_rate_good(event: CallbackQuery, ctx: Ctx) -> None:
 @router.callback_query(F.data == "rate:0")
 async def cb_rate_bad(event: CallbackQuery, ctx: Ctx) -> None:
     await apply_rating(ctx, positive=False)
+
+
+@router.callback_query(F.data == K.CB_BLOCK)
+async def cb_block(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    partner = ctx.mm.rating_partner(ctx.user_id)
+    if partner is None:
+        await ctx.ack("Этот разговор уже закрыт", alert=True)
+        return
+    await db.block_user(ctx.user_id, partner)
+    await ctx.ack("Больше не попадёт в поиск")
+    await ctx.reply("Готово.", markup=K.menu_keyboard())
 
 
 @router.callback_query(F.data.startswith("rate:"))

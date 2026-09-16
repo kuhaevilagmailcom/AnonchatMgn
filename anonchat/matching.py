@@ -15,14 +15,15 @@ from dataclasses import dataclass, field
 class Candidate:
     user_id: int
     district: str = ""
-    gender: str = ""
     same_district: bool = False
+    excluded: set[int] = field(default_factory=set)
     joined_at: float = field(default_factory=time.time)
 
-    def refresh(self, district: str, gender: str, same_district: bool) -> None:
+    def refresh(self, district: str, same_district: bool, excluded: set[int] | None = None) -> None:
         self.district = district or ""
-        self.gender = gender or ""
         self.same_district = bool(same_district)
+        if excluded is not None:
+            self.excluded = set(excluded)
 
 
 @dataclass(slots=True)
@@ -31,6 +32,7 @@ class Pair:
     b: int
     started_at: float = field(default_factory=time.time)
     counts: dict[int, int] = field(default_factory=dict)
+    history: list[tuple[int, str]] = field(default_factory=list)
 
     def partner_of(self, user_id: int) -> int:
         return self.b if user_id == self.a else self.a
@@ -46,6 +48,8 @@ class Pair:
 
 def compatible(x: Candidate, y: Candidate) -> bool:
     """Оба хотят «только свой район» и оба его указали — тогда районы должны совпасть."""
+    if y.user_id in x.excluded or x.user_id in y.excluded:
+        return False
     if x.same_district and y.same_district and x.district and y.district:
         return x.district == y.district
     return True
@@ -111,17 +115,18 @@ class Matchmaker:
                 return other.user_id
         return None
 
-    def connect(self, user_id: int, *, district: str = "", gender: str = "", same_district: bool = False):
+    def connect(self, user_id: int, *, district: str = "", same_district: bool = False,
+                excluded: set[int] | None = None):
         """Возвращает ('paired', partner_id) | ('queued', position) | ('full', None)."""
         if user_id in self._pairs:
             return "paired", self.partner(user_id)
         if user_id in self._queue:
-            self._queue[user_id].refresh(district, gender, same_district)
+            self._queue[user_id].refresh(district, same_district, excluded)
             return "queued", self.position(user_id)
         if len(self._queue) >= self.queue_limit:
             return "full", None
 
-        me = Candidate(user_id, district, gender, same_district)
+        me = Candidate(user_id, district, same_district, set(excluded or ()))
         # сначала пытаемся дать собеседника НОВОМУ, потом — кому-то из ожидающих
         partner_id = self._pick(me)
         if partner_id is not None:
@@ -150,9 +155,9 @@ class Matchmaker:
             self._pair(a, b)
         return pairs
 
-    def refresh(self, user_id: int, *, district: str, gender: str, same_district: bool) -> list[tuple[int, int]]:
+    def refresh(self, user_id: int, *, district: str, same_district: bool) -> list[tuple[int, int]]:
         if user_id in self._queue:
-            self._queue[user_id].refresh(district, gender, same_district)
+            self._queue[user_id].refresh(district, same_district)
             return self.sweep()
         return []
 
@@ -204,7 +209,16 @@ class Matchmaker:
             "partner": pair.partner_of(user_id),
             "started_at": pair.started_at,
             "counts": dict(pair.counts),
+            "dialog_key": f"{min(pair.a, pair.b)}:{max(pair.a, pair.b)}:{int(pair.started_at)}",
+            "history": list(pair.history),
         }
+
+    def record_text(self, user_id: int, text: str) -> None:
+        pair = self._pairs.get(user_id)
+        if pair is None or not text:
+            return
+        pair.history.append((user_id, text[:500]))
+        del pair.history[:-10]
 
     def is_paired_with(self, user_id: int, other_id: int) -> bool:
         partner = self.partner(user_id)
@@ -226,6 +240,20 @@ class Matchmaker:
         if time.time() - ts > self.rating_ttl:
             return None
         return match_id, partner
+
+    def rating_partner(self, user_id: int) -> int | None:
+        entry = self._pending_rating.get(user_id)
+        if entry is None:
+            return None
+        _, partner, ts = entry
+        return partner if time.time() - ts <= self.rating_ttl else None
+
+    def pending_rating(self, user_id: int) -> tuple[int, int] | None:
+        entry = self._pending_rating.get(user_id)
+        if entry is None:
+            return None
+        match_id, partner, ts = entry
+        return (match_id, partner) if time.time() - ts <= self.rating_ttl else None
 
     def drop_stale_ratings(self) -> int:
         deadline = time.time() - self.rating_ttl

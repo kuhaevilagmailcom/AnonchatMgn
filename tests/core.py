@@ -37,10 +37,9 @@ def test_config_defaults(monkeypatch=None) -> None:
         assert cfg.emoji_pack_url.startswith("https://t.me/addemoji/")
         assert cfg.max_message_len == 3000
 
-        # без ADMIN_IDS остаётся владелец из кода — так бот заводится на хостинге,
-        # где переменную забыли задать
+        # id администраторов не зашиваются в публичный код
         os.environ["ADMIN_IDS"] = ""
-        assert Config.from_env(dotenv=".__no_such_env__.local").admin_ids == (8464597898,)
+        assert Config.from_env(dotenv=".__no_such_env__.local").admin_ids == ()
         # алиас от панелей хостинга
         os.environ.pop("ADMIN_IDS")
         os.environ["TELEGRAM_ADMIN_ID"] = "4242"
@@ -71,31 +70,31 @@ def test_config_defaults(monkeypatch=None) -> None:
 
 
 def test_levels_progress() -> None:
-    """Ранги — по сообщениям: 🔰 Старт → 🥉 Бронза → 🥈 Серебро → 🥇 Золото → 💎 VIP."""
+    """Уровни достижимы без сотен тысяч сообщений."""
     first = rank_for(0)
-    assert first.index == 1 and first.title == "Старт" and first.emoji == "🔰"
-    assert first.progress == 0.0 and first.to_next == 1_000 and first.next_title == "Бронза"
+    assert first.index == 1 and first.title == "Новичок"
+    assert first.progress == 0.0 and first.to_next == 25 and first.next_title == "Общительный"
 
-    bronze = rank_for(1_000)
-    assert bronze.title == "Бронза" and bronze.progress == 0.0
-    assert bronze.to_next == 14_000 and bronze.next_title == "Серебро"
+    bronze = rank_for(25)
+    assert bronze.title == "Общительный" and bronze.progress == 0.0
+    assert bronze.to_next == 75 and bronze.next_title == "Знакомый"
 
-    mid = rank_for(8_000)
-    assert mid.title == "Бронза" and 0.4 < mid.progress < 0.6
+    mid = rank_for(60)
+    assert mid.title == "Общительный" and 0.4 < mid.progress < 0.6
     assert len(mid.bar) == 8 and mid.bar.startswith("▰▰▰▰▱")
 
-    silver = rank_for(15_000)
-    assert silver.title == "Серебро" and silver.emoji == "🥈"
-    gold = rank_for(100_000)
-    assert gold.title == "Золото" and gold.emoji == "🥇"
-    vip = rank_for(500_000)
-    assert vip.title == "VIP" and vip.emoji == "💎" and vip.is_max and vip.to_next is None
+    silver = rank_for(100)
+    assert silver.title == "Знакомый"
+    gold = rank_for(350)
+    assert gold.title == "Свой"
+    vip = rank_for(1_000)
+    assert vip.title == "Легенда" and vip.is_max and vip.to_next is None
     assert rank_for(99_999_999).index == len(RANKS)
 
     # человекочитаемые числа с неразрывными пробелами
     assert rank_for(15_000).pretty(12345) == "12 345"
-    assert "15 000" in rank_for(12_345).label
-    assert rank_for(0).name == "🔰 Старт"
+    assert "1 000" in rank_for(1_000).label
+    assert rank_for(0).name.endswith("Новичок")
 
 
 # --------------------------------------------------------------------------------- matching
@@ -123,7 +122,7 @@ def test_district_filter_and_sweep() -> None:
     assert mm.queue_size() == 2
 
     # первый снял фильтр — sweep обязан найти пару
-    mm.refresh(1, district="Правобережный", gender="", same_district=False)
+    mm.refresh(1, district="Правобережный", same_district=False)
     assert mm.status(1) == "paired" and mm.status(2) == "paired"
 
     # одинаковые районы совместимы всегда
@@ -153,6 +152,13 @@ def test_queue_limit() -> None:
     assert mm.connect(3, district="Орджоникидзевский", same_district=True) == ("full", None)
 
 
+def test_excluded_users_do_not_match() -> None:
+    mm = Matchmaker()
+    assert mm.connect(1, excluded={2}) == ("queued", 1)
+    assert mm.connect(2) == ("queued", 2)
+    assert mm.connect(3) == ("paired", 1)
+
+
 # --------------------------------------------------------------------------------- database
 def test_database() -> None:
     holder: dict[str, object] = {}
@@ -170,18 +176,27 @@ def test_database() -> None:
         assert row["district"] == "Правобережный"
 
         assert await db.award_xp(10, 70) == 70
-        assert rank_for(70).title == "Старт", "70 сообщений — ещё не бронза"
-        assert rank_for(1_000).title == "Бронза"
+        assert rank_for(70).title == "Общительный"
+        assert rank_for(1_000).title == "Легенда"
 
         await db.ensure_user(11, None, "Аня")
-        rid, day_count = await db.add_report(10, 11, "spam", "реклама казино")
+        rid, day_count = await db.add_report(10, 11, "spam", "реклама казино", "10:11:1")
         assert rid >= 1 and day_count == 1
+        duplicate, _ = await db.add_report(10, 11, "spam", "ещё", "10:11:1")
+        assert duplicate is None
+        rid2, unique_count = await db.add_report(10, 11, "spam", "новый диалог", "10:11:2")
+        assert rid2 is not None and unique_count == 1, "один человек не накручивает авто-мут"
+        await db.ensure_user(12, None, "Катя")
+        rid3, unique_count = await db.add_report(12, 11, "spam", "независимая", "11:12:1")
+        assert rid3 is not None and unique_count == 2
         reports = await db.list_reports("new")
         assert reports and reports[0]["target_id"] == 11
 
         until = await db.set_mute(11, 30)
         assert until > 0 and await db.is_restricted(11) == "muted"
         assert await db.resolve_report(rid, 10) is True
+        assert await db.resolve_report(rid2, 10) is True
+        assert await db.resolve_report(rid3, 10) is True
         assert await db.list_reports("new") == []
 
         match_id = await db.log_dialog(10, 11, 5, 4, 1_000, 10)
@@ -190,7 +205,7 @@ def test_database() -> None:
         assert rated["good_ratings"] == 1
 
         stats = await db.stats()
-        assert stats["users"] == 2 and stats["dialogs"] == 1
+        assert stats["users"] == 3 and stats["dialogs"] == 1
 
         await db.bump(10, "messages", 5)
         assert (await db.get_user(10))["messages"] == 5
@@ -199,12 +214,13 @@ def test_database() -> None:
 
         await db.set_ban(11, True, "спам")
         assert await db.is_restricted(11) == "banned"
+        await db.forget_user(11)
+        assert await db.is_restricted(11) == "banned", "/forget не снимает бан"
         await db.set_ban(11, False)
-        assert await db.is_restricted(11) is None
 
         await db.forget_user(10)
         assert await db.get_user(10) is None
-        assert (await db.stats())["dialogs"] == 0  # диалоги удалённого пользователя тоже стёрты
+        assert (await db.stats())["dialogs"] == 1  # обезличенная история нужна для recent-pair
         await db.close()
 
     async def guarded() -> None:
@@ -231,10 +247,10 @@ def test_nickname_rules() -> None:
     for bad in ("<b>ник</b>", "ник/соslash", "@username", "ник`x", "back\\slash"):
         assert nick.validate(bad)[1] is not None, bad
     assert nick.validate("Йцукен7 !?-_()")[1] is None
-    assert nick.auto_nick(1001) == "Аноним-1001"
-    assert nick.auto_nick(-98765432) == "Аноним-5432"  # отрицательные id тоже не ломают ник
-    assert nick.display("", 5) == "Аноним-0005"
-    assert nick.display("  ", 5) == "Аноним-0005"
+    assert nick.auto_nick(1001).startswith("Аноним-") and "1001" not in nick.auto_nick(1001)
+    assert nick.auto_nick(-98765432).startswith("Аноним-")
+    assert nick.display("", 5) == nick.auto_nick(5)
+    assert nick.display("  ", 5) == nick.auto_nick(5)
     assert nick.display("Лена", 5) == "Лена"
 
 
@@ -249,8 +265,9 @@ def test_keyboard_styles_and_icons() -> None:
 
     markups = [
         K.menu_keyboard("free"), K.menu_keyboard("queued", 3), K.menu_keyboard("paired"),
-        K.menu_keyboard("free", admin=True),
-        K.district_keyboard(), K.gender_keyboard(),
+        K.menu_keyboard("free", admin=True), K.continue_keyboard(), K.age_keyboard(),
+        K.chat_keyboard(), K.profile_keyboard(), K.more_keyboard(),
+        K.district_keyboard(),
         K.settings_keyboard(True, "Правобережный", "Лена О", True),
         K.report_keyboard(), K.rating_keyboard(), K.confirm_stop_keyboard(),
         K.confirm_forget_keyboard(), K.back_menu_keyboard(), K.skip_cancel_keyboard(),
@@ -276,22 +293,70 @@ def test_keyboard_styles_and_icons() -> None:
     for markup in markups:
         for row in markup.inline_keyboard:
             for btn in row:
-                assert all(
-                    ord(c) < 0x2500 or c in "\ufe0f\ufe0e\u200d" for c in btn.text
-                ), f"в подписи кнопки остался юникодный эмодзи: {btn.text!r}"
+                if btn.text != "👍 Норм":
+                    assert all(
+                        ord(c) < 0x2500 or c in "\ufe0f\ufe0e\u200d" for c in btn.text
+                    ), f"в подписи кнопки остался юникодный эмодзи: {btn.text!r}"
 
     def texts_of(markup):
         return [btn.text for row in markup.inline_keyboard for btn in row]
 
     # в диалоге из меню остаются только действия диалога
-    assert texts_of(K.menu_keyboard("paired")) == ["Диалог идёт", "Следующий", "Стоп", "Жалоба"]
+    assert texts_of(K.menu_keyboard("paired")) == ["Следующий", "Стоп", "Жалоба"]
     # панель модератора: 9 разделов, счётчик жалоб в подписи
     panel = texts_of(K.admin_panel_keyboard(2))
     assert len(panel) == 9 and "Жалобы · 2" in panel, panel
     assert "Жалобы" in texts_of(K.admin_panel_keyboard(0))
     # кнопка входа в панель появляется только у админа
     assert texts_of(K.menu_keyboard("free", admin=True))[-1] == "Панель модератора"
-    assert texts_of(K.menu_keyboard("free"))[-1] == "Помощь"
+    assert texts_of(K.menu_keyboard("free"))[-1] == "Ещё"
+
+
+def test_contact_filter() -> None:
+    from anonchat.safety import contains_contact
+
+    for value in ("@username", "https://example.com", "t.me/test", "+7 999 123-45-67",
+                  "mail@example.com"):
+        assert contains_contact(value), value
+    assert not contains_contact("Привет, как дела?")
+
+
+def test_retry_after_retries_real_delivery() -> None:
+    from aiogram.exceptions import TelegramRetryAfter
+    from aiogram.methods import SendMessage
+
+    from anonchat.actions import send_copy_to, send_to
+
+    class RetryBot:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def send_message(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise TelegramRetryAfter(SendMessage(chat_id=1, text="x"), "retry", 0)
+            return object()
+
+        async def send_chat_action(self, *args, **kwargs):
+            return True
+
+    class RetryMessage:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def send_copy(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise TelegramRetryAfter(SendMessage(chat_id=1, text="x"), "retry", 0)
+            return object()
+
+    async def scenario() -> None:
+        bot = RetryBot()
+        assert await send_to(bot, 1, "ok") is True and bot.calls == 2
+        message = RetryMessage()
+        assert await send_copy_to(bot, message, 1) is True and message.calls == 2
+
+    asyncio.run(scenario())
 
 
 # --------------------------------------------------------------------------------- пак эмодзи

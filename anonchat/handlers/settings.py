@@ -14,6 +14,7 @@ from .. import texts
 from ..actions import Ctx, announce_pairs, forget_everything, set_nick, show_menu, show_profile
 from ..db import Database
 from ..matching import Matchmaker
+from ..safety import contains_contact
 
 router = Router(name="settings")
 
@@ -30,8 +31,7 @@ DISTRICTS = {
     "ordz": "Орджоникидзевский",
 }
 
-GENDERS = {"m": "👨 парень", "f": "👩 девушка", "none": ""}
-ABOUT_MAX = 120
+ABOUT_MAX = 80
 
 
 class ProfileStates(StatesGroup):
@@ -51,7 +51,6 @@ async def _apply(ctx: Ctx, db: Database, mm: Matchmaker, **fields) -> None:
     pairs = mm.refresh(
         ctx.user_id,
         district=me["district"],
-        gender=me["gender"],
         same_district=bool(me["same_district"]),
     )
     if pairs:
@@ -63,20 +62,26 @@ async def settings_screen(ctx: Ctx, edit: bool = True) -> None:
         return
     me = ctx.me
     district = (me["district"] if me else "") or ""
-    gender = (me["gender"] if me else "") or "не указан"
     same = bool(me["same_district"]) if me else False
     body = (
         f"{texts.SETTINGS_TITLE}\n\n"
         f"🙋 Ник: <b>{texts.esc(ctx.nick)}</b>\n"
         f"📍 Район: <b>{texts.esc(district or 'не выбран')}</b>\n"
-        f"👤 Пол в профиле: <b>{texts.esc(gender)}</b>\n"
+        f"Возраст: <b>{int(me['age']) if me else '—'}</b>\n"
         f"🧭 Ищу: <b>{'только свой район' if same else 'весь ' + texts.esc(ctx.cfg.city_short)}</b>\n\n"
         f"{texts.SETTINGS_NOTE}"
     )
     kb = K.settings_keyboard(same, district, ctx.nick, bool(me and me["about"]))
     if edit and await ctx.edit(body, kb):
         return
-    await ctx.reply(body, kb)
+    await ctx.screen("05_settings.png", body, kb)
+
+
+@router.callback_query(F.data == "cfg:age:ask")
+async def cb_age_ask(event: CallbackQuery, ctx: Ctx) -> None:
+    if await ctx.dialog_locked():
+        return
+    await ctx.edit("<b>Сколько тебе лет?</b>", K.age_keyboard())
 
 
 # ---------------------------------------------------------------------------------- экран настроек
@@ -147,27 +152,6 @@ async def cb_district(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmak
     await settings_screen(ctx)
 
 
-# ---------------------------------------------------------------------------------- пол
-@router.callback_query(F.data == "cfg:gender:ask")
-async def cb_gender_ask(event: CallbackQuery, ctx: Ctx) -> None:
-    if await ctx.dialog_locked():
-        return
-    await ctx.edit(
-        "Кого указать в профиле? На подбор не влияет — просто строчка для тебя.",
-        K.gender_keyboard(),
-    )
-
-
-@router.callback_query(F.data.startswith("cfg:gender:"))
-async def cb_gender(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker) -> None:
-    if await ctx.dialog_locked():
-        return
-    key = event.data.split(":", 2)[2]
-    await _apply(ctx, db, mm, gender=GENDERS.get(key, ""))
-    await ctx.ack("Обновлено")
-    await settings_screen(ctx)
-
-
 # ---------------------------------------------------------------------------------- «только мой район»
 @router.callback_query(F.data == "cfg:same:toggle")
 async def cb_same_toggle(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker) -> None:
@@ -196,6 +180,10 @@ async def about_text(message: Message, ctx: Ctx, state: FSMContext, db: Database
         await message.answer(texts.DIALOG_LOCKED)
         return
     raw = (message.text or "").strip()
+    if raw not in {"-", "—", "--"} and contains_contact(raw):
+        await message.answer(texts.CONTACT_BLOCKED)
+        await state.set_state(ProfileStates.text)
+        return
     value = "" if raw in {"-", "—", "--"} else raw[:ABOUT_MAX]
     await db.set_profile(ctx.user_id, about=value)
     await state.clear()
@@ -208,7 +196,7 @@ async def about_text(message: Message, ctx: Ctx, state: FSMContext, db: Database
 async def cb_reset(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker) -> None:
     if await ctx.dialog_locked():
         return
-    await _apply(ctx, db, mm, district="", gender="", same_district=0, about="")
+    await _apply(ctx, db, mm, district="", same_district=0, about="")
     await ctx.reply(texts.RESET_DONE)
     await settings_screen(ctx, edit=False)
 

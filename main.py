@@ -120,7 +120,7 @@ async def main() -> None:  # pragma: no cover
         if cfg.admin_ids:
             log.info("модераторы: %s · панель — командой /admin", cfg.admin_markup())
         else:
-            log.warning("ADMIN_IDS пуст (или =none) — модерацией никто не управляет.")
+            log.warning("Администраторы не настроены.")
         janitor_task = asyncio.create_task(janitor(mm))
 
     try:

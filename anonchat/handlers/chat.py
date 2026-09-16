@@ -15,6 +15,7 @@ from ..config import Config
 from ..db import Database
 from ..matching import Matchmaker
 from ..pack import EmojiPack
+from ..safety import contains_contact
 
 router = Router(name="chat")
 
@@ -25,12 +26,10 @@ ALLOWED_TYPES = frozenset(
         "photo",
         "video",
         "audio",
-        "document",
         "sticker",
         "animation",
         "voice",
         "video_note",
-        "location",
         "poll",
         "dice",
     }
@@ -68,6 +67,11 @@ async def relay_to_partner(
         await ctx.reply(texts.UNKNOWN_TYPE)
         return
 
+    payload_text = (message.text or message.caption or "").strip()
+    if payload_text and contains_contact(payload_text):
+        await ctx.reply(texts.CONTACT_BLOCKED)
+        return
+
     result = mm.count_message(ctx.user_id)
     if result is None:
         await ctx.reply(
@@ -92,4 +96,6 @@ async def relay_to_partner(
             markup=K.menu_keyboard(),
         )
         return
+    if message.text:
+        mm.record_text(ctx.user_id, message.text)
     # молча: человек знает, что написал в анонимный чат, подтверждений не просил
