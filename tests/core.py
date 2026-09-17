@@ -34,6 +34,9 @@ def test_config_defaults(monkeypatch=None) -> None:
         assert cfg.city == "Магнитогорск" and cfg.city_short == "МГН"
         assert cfg.admin_ids == (777, 888)
         assert cfg.auto_mute_reports == 3 and isinstance(cfg.auto_mute_reports, int)
+        assert cfg.drop_pending_updates is False
+        assert cfg.report_context_retention_days == 7
+        assert cfg.premium_price_stars == 129 and cfg.premium_days == 30
         assert cfg.emoji_pack_url.startswith("https://t.me/addemoji/")
         assert cfg.max_message_len == 3000
 
@@ -171,7 +174,7 @@ def test_database() -> None:
         row = await db.ensure_user(10, "petr", "Пётр")
         assert row["xp"] == 0 and row["district"] == ""
 
-        await db.set_profile(10, district="Правобережный", about="люблю ММК и тишину")
+        await db.set_profile(10, district="Правобережный")
         row = await db.get_user(10)
         assert row["district"] == "Правобережный"
 
@@ -185,6 +188,19 @@ def test_database() -> None:
         assert await db.award_referral(11, 10, 50) is False
         assert await db.award_referral(21, 21, 50) is False
 
+        created, premium_until = await db.record_payment(
+            10, "premium", 129, "charge-1", "", "premium:10:30:x", 30
+        )
+        assert created and premium_until > 0
+        duplicate, duplicate_until = await db.record_payment(
+            10, "premium", 129, "charge-1", "", "premium:10:30:x", 30
+        )
+        assert duplicate is False and duplicate_until == premium_until
+        created2, extended = await db.record_payment(
+            10, "premium", 129, "charge-2", "", "premium:10:30:y", 30
+        )
+        assert created2 and extended == premium_until + 30 * 86400
+
         await db.ensure_user(11, None, "Аня")
         rid, day_count = await db.add_report(10, 11, "spam", "реклама казино", "10:11:1")
         assert rid >= 1 and day_count == 1
@@ -193,6 +209,11 @@ def test_database() -> None:
         rid2, unique_count = await db.add_report(10, 11, "spam", "новый диалог", "10:11:2")
         assert rid2 is not None and unique_count == 1, "один человек не накручивает авто-мут"
         await db.ensure_user(12, None, "Катя")
+        await db.block_user(10, 11)
+        await db.block_user(12, 10)
+        assert await db.clear_blocks(10) == 1
+        excluded = await db.excluded_partners(10, recent_seconds=0)
+        assert 11 not in excluded and 12 in excluded
         rid3, unique_count = await db.add_report(12, 11, "spam", "независимая", "11:12:1")
         assert rid3 is not None and unique_count == 2
         reports = await db.list_reports("new")
@@ -204,6 +225,10 @@ def test_database() -> None:
         assert await db.resolve_report(rid2, 10) is True
         assert await db.resolve_report(rid3, 10) is True
         assert await db.list_reports("new") == []
+        await db.db.execute("UPDATE reports SET context='private', handled_at=1 WHERE id=?", (rid,))
+        await db.db.commit()
+        assert await db.cleanup_report_context(7) == 1
+        assert (await db.get_report(rid))["context"] == ""
 
         match_id = await db.log_dialog(10, 11, 5, 4, 1_000, 10)
         assert await db.rate_dialog(match_id, 10, 1) == 11
@@ -222,7 +247,14 @@ def test_database() -> None:
         assert await db.is_restricted(11) == "banned"
         await db.forget_user(11)
         assert await db.is_restricted(11) == "banned", "/forget не снимает бан"
+        deleted = await db.ensure_user(11, "restored", "Настоящее имя")
+        assert deleted["username"] is None and deleted["first_name"] == "Удалённый пользователь"
+        assert deleted["profile_deleted"] == 1
         await db.set_ban(11, False)
+
+        await db.set_mute(12, 30)
+        await db.forget_user(12)
+        assert await db.is_restricted(12) == "muted", "/forget не снимает действующий мут"
 
         await db.forget_user(10)
         assert await db.get_user(10) is None
@@ -258,6 +290,9 @@ def test_nickname_rules() -> None:
     assert nick.display("", 5) == nick.auto_nick(5)
     assert nick.display("  ", 5) == nick.auto_nick(5)
     assert nick.display("Лена", 5) == "Лена"
+    assert nick.display("Лена", 5, 2_000, timestamp=1_000) == "Лена ✦"
+    assert nick.display("Лена", 5, 500, timestamp=1_000) == "Лена"
+    assert nick.validate("Лена ✦")[1] is not None
 
 
 # --------------------------------------------------------------------------------- кнопки
@@ -274,9 +309,10 @@ def test_keyboard_styles_and_icons() -> None:
         K.menu_keyboard("free", admin=True), K.continue_keyboard(), K.age_keyboard(),
         K.chat_keyboard(), K.profile_keyboard(), K.more_keyboard(),
         K.district_keyboard(),
-        K.settings_keyboard(True, "Правобережный", "Лена О", True),
+        K.settings_keyboard(True, "Правобережный", "Лена О"),
         K.report_keyboard(), K.rating_keyboard(), K.confirm_stop_keyboard(),
-        K.confirm_forget_keyboard(), K.back_menu_keyboard(), K.skip_cancel_keyboard(),
+        K.confirm_forget_keyboard(), K.confirm_blocks_keyboard(), K.premium_keyboard(False, 129),
+        K.contact_confirm_keyboard(), K.back_menu_keyboard(), K.skip_cancel_keyboard(),
         K.admin_report_keyboard(1), K.admin_panel_keyboard(3), K.panel_back_keyboard(),
         K.panel_cancel_keyboard(),
     ]
@@ -299,7 +335,7 @@ def test_keyboard_styles_and_icons() -> None:
     for markup in markups:
         for row in markup.inline_keyboard:
             for btn in row:
-                if btn.text != "👍 Норм":
+                if btn.text != "👍 Норм" and "⭐" not in btn.text:
                     assert all(
                         ord(c) < 0x2500 or c in "\ufe0f\ufe0e\u200d" for c in btn.text
                     ), f"в подписи кнопки остался юникодный эмодзи: {btn.text!r}"
@@ -321,7 +357,7 @@ def test_keyboard_styles_and_icons() -> None:
 def test_contact_filter() -> None:
     from anonchat.safety import contains_contact
 
-    for value in ("+7 999 123-45-67", "mail@example.com"):
+    for value in ("+7 999 123-45-67", "mail@example.com", "ул. Ленина 10"):
         assert contains_contact(value), value
     for value in ("@username", "https://example.com", "t.me/test"):
         assert not contains_contact(value), value
@@ -331,23 +367,31 @@ def test_contact_filter() -> None:
 def test_stars_payment_validation() -> None:
     from types import SimpleNamespace
 
+    from anonchat.config import Config
     from anonchat.handlers.support import _valid_payload
+
+    cfg = Config(bot_token="1:T", premium_price_stars=129, premium_days=30)
 
     good = SimpleNamespace(
         invoice_payload="support:42:25:abcdef", from_user=SimpleNamespace(id=42),
         currency="XTR", total_amount=25,
     )
-    assert _valid_payload(good)
-    assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "currency": "RUB"}))
-    assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "total_amount": 24}))
-    assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "invoice_payload": "bad"}))
+    assert _valid_payload(good, cfg)
+    premium = SimpleNamespace(
+        invoice_payload="premium:42:30:abcdef", from_user=SimpleNamespace(id=42),
+        currency="XTR", total_amount=129,
+    )
+    assert _valid_payload(premium, cfg)
+    assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "currency": "RUB"}), cfg)
+    assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "total_amount": 24}), cfg)
+    assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "invoice_payload": "bad"}), cfg)
 
 
 def test_retry_after_retries_real_delivery() -> None:
     from aiogram.exceptions import TelegramRetryAfter
     from aiogram.methods import SendMessage
 
-    from anonchat.actions import send_copy_to, send_to
+    from anonchat.actions import DeliveryResult, send_copy_to, send_to
 
     class RetryBot:
         def __init__(self) -> None:
@@ -374,40 +418,111 @@ def test_retry_after_retries_real_delivery() -> None:
 
     async def scenario() -> None:
         bot = RetryBot()
-        assert await send_to(bot, 1, "ok") is True and bot.calls == 2
+        assert await send_to(bot, 1, "ok") is DeliveryResult.DELIVERED and bot.calls == 2
         message = RetryMessage()
-        assert await send_copy_to(bot, message, 1) is True and message.calls == 2
+        assert await send_copy_to(bot, message, 1) is DeliveryResult.DELIVERED and message.calls == 2
+
+    asyncio.run(scenario())
+
+
+def test_delivery_results() -> None:
+    from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError
+    from aiogram.methods import SendMessage
+
+    from anonchat.actions import DeliveryResult, send_to
+
+    class ErrorBot:
+        def __init__(self, exc: Exception) -> None:
+            self.exc = exc
+
+        async def send_message(self, *args, **kwargs):
+            raise self.exc
+
+    async def scenario() -> None:
+        method = SendMessage(chat_id=1, text="x")
+        forbidden = ErrorBot(TelegramForbiddenError(method, "bot was blocked"))
+        temporary = ErrorBot(TelegramAPIError(method, "temporary failure"))
+        assert await send_to(forbidden, 1, "x") is DeliveryResult.UNAVAILABLE
+        assert await send_to(temporary, 1, "x") is DeliveryResult.TEMP_ERROR
+
+    asyncio.run(scenario())
+
+
+def test_screen_fallback_without_image() -> None:
+    from types import SimpleNamespace
+
+    from anonchat.actions import Ctx
+    from anonchat.config import Config
+    from anonchat.matching import Matchmaker
+    from anonchat.pack import EmojiPack
+
+    class Target:
+        def __init__(self) -> None:
+            self.sent = ""
+
+        async def answer(self, text: str, **kwargs):
+            self.sent = text
+            return self
+
+    async def scenario() -> None:
+        target = Target()
+        ctx = Ctx(
+            bot=SimpleNamespace(), db=SimpleNamespace(), mm=Matchmaker(),
+            cfg=Config(bot_token="1:T"), pack=EmojiPack(), event=target, user_id=1,
+        )
+        await ctx.render_screen("missing-screen.png", "fallback text")
+        assert "fallback text" in target.sent
+
+    asyncio.run(scenario())
+
+
+def test_database_open_error_is_explicit() -> None:
+    async def scenario() -> None:
+        root = Path(tempfile.mkdtemp())
+        parent_file = root / "not-a-directory"
+        parent_file.write_text("x", encoding="utf-8")
+        try:
+            await Database(parent_file / "bot.db").start()
+        except RuntimeError as exc:
+            assert "SQLite" in str(exc)
+        else:
+            raise AssertionError("недоступный production DB path обязан завершать запуск")
+
+    asyncio.run(scenario())
+
+
+def test_premium_persists_restart() -> None:
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "premium.db"
+        db = await Database(path).start()
+        await db.ensure_user(77, None, "Тест")
+        created, premium_until = await db.record_payment(
+            77, "premium", 129, "persist-charge", "", "premium:77:30:x", 30
+        )
+        assert created and premium_until > 0
+        await db.close()
+        reopened = await Database(path).start()
+        try:
+            assert int((await reopened.get_user(77))["premium_until"]) == premium_until
+        finally:
+            await reopened.close()
 
     asyncio.run(scenario())
 
 
 # --------------------------------------------------------------------------------- пак эмодзи
 def test_pack_emoji() -> None:
-    from types import SimpleNamespace
-
     from anonchat.pack import ICONS, PACK, EmojiPack
-
-    def fake_message(text: str, emoji_id: str, length: int) -> SimpleNamespace:
-        entity = SimpleNamespace(type="custom_emoji", offset=0, length=length, custom_emoji_id=emoji_id)
-        return SimpleNamespace(text=text, entities=[entity])
 
     # id пака зашиты в код: премиум-эмодзи работают с первого сообщения, ничего ждать не надо
     assert len(PACK) >= 20 and len(ICONS) == len(PACK)
     assert all(emoji_id.isdigit() for emoji_id, _, _ in PACK.values()), "custom_emoji_id — цифры"
     fresh = EmojiPack()
     assert fresh.wrap("📊 Профиль") == '<tg-emoji emoji-id="5231200819986047254">📊</tg-emoji> Профиль'
-    assert fresh.extra() == 0 and fresh.as_pairs() == [], "встроенное в код в базу не пишем"
 
     pack = EmojiPack("https://t.me/addemoji/NewsEmoji")
     assert pack.wrap("🧲 старт") == "🧲 старт"  # магнита в паке нет — остаётся юникодом
-
-    assert pack.harvest(fake_message("🧲 привет", "AAA111", 2)) == ["🧲"]
-    assert pack.has("🧲") and pack.extra() == 1
-    assert pack.harvest(fake_message("🧲 ещё раз", "AAA222", 2)) == []  # символ уже известен
-    assert pack.as_pairs() == [("🧲", "AAA222")], "id обновляем на последний увиденный"
-
-    assert pack.wrap("🧲 старт") == '<tg-emoji emoji-id="AAA222">🧲</tg-emoji> старт'
-    assert pack.strip(pack.wrap("🧲 старт")).startswith("🧲 старт")
+    assert not hasattr(pack, "harvest"), "сообщения пользователей не меняют UI emoji"
 
     # алиасы: в тексте «✅», в паке этот же знак «✔️» — внутрь тега у канонический символ
     aliased = pack.wrap("✅ готово")
@@ -417,19 +532,8 @@ def test_pack_emoji() -> None:
     twice = pack.wrap("📊 и ещё 📊")
     assert twice.count("<tg-emoji") == 1, twice
 
-    # ZWJ-последовательность целиком, а не по половинкам (🙋‍♂️ = 5 единиц UTF-16)
-    pack.harvest(fake_message("🙋‍♂️ хай", "BBB333", 5))
-    wrapped = pack.wrap("🙋‍♂️ и ещё 🧲")
-    assert 'emoji-id="BBB333">🙋‍♂️<' in wrapped, wrapped
-
-    # битая длина у entity не должна ронять бота и резать эмодзи пополам
-    broken = EmojiPack()
-    broken.harvest(fake_message("🙋‍♂️ хай", "XXX", 3))
-    assert broken.extra() == 0, "осколки ZWJ-последовательности не запоминаем"
-
     # лимит подмены: украшаем максимум N эмодзи в сообщении, начиная с заголовка
-    pack.load([("✨", "CCC"), ("🕓", "DDD"), ("⏳", "EEE")])
-    limited = pack.wrap("✨🕓⏳🧲", limit=2)
+    limited = pack.wrap("📊⭐⚙️💬", limit=2)
     assert limited.count("<tg-emoji") == 2, limited
 
     # Telegram запретил тег — откатываемся и больше не пробуем

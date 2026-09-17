@@ -1,4 +1,4 @@
-"""Настройки подбора: ник, район, «только свой район», пол, «о себе» и удаление профиля."""
+"""Настройки профиля: ник, возраст, район, фильтр и удаление данных."""
 
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ from .. import texts
 from ..actions import Ctx, announce_pairs, forget_everything, set_nick, show_menu, show_profile
 from ..db import Database
 from ..matching import Matchmaker
-from ..safety import contains_contact
 
 router = Router(name="settings")
 
@@ -31,14 +30,8 @@ DISTRICTS = {
     "ordz": "Орджоникидзевский",
 }
 
-ABOUT_MAX = 80
-
-
 class ProfileStates(StatesGroup):
-    """Один FSM на весь ввод текста: ник или «о себе» — уточняем состоянием."""
-
     nick = State()
-    text = State()
 
 
 async def _apply(ctx: Ctx, db: Database, mm: Matchmaker, **fields) -> None:
@@ -57,7 +50,7 @@ async def _apply(ctx: Ctx, db: Database, mm: Matchmaker, **fields) -> None:
         await announce_pairs(ctx.bot, ctx.cfg, mm, pairs, ctx.pack, db)
 
 
-async def settings_screen(ctx: Ctx, edit: bool = True) -> None:
+async def settings_screen(ctx: Ctx) -> None:
     if await ctx.dialog_locked():
         return
     me = ctx.me
@@ -71,10 +64,8 @@ async def settings_screen(ctx: Ctx, edit: bool = True) -> None:
         f"🧭 Ищу: <b>{'только свой район' if same else 'весь ' + texts.esc(ctx.cfg.city_short)}</b>\n\n"
         f"{texts.SETTINGS_NOTE}"
     )
-    kb = K.settings_keyboard(same, district, ctx.nick, bool(me and me["about"]))
-    if edit and await ctx.edit(body, kb):
-        return
-    await ctx.screen("05_settings.png", body, kb)
+    kb = K.settings_keyboard(same, district, ctx.nick)
+    await ctx.render_screen("05_settings.png", body, kb)
 
 
 @router.callback_query(F.data == "cfg:age:ask")
@@ -87,7 +78,7 @@ async def cb_age_ask(event: CallbackQuery, ctx: Ctx) -> None:
 # ---------------------------------------------------------------------------------- экран настроек
 @router.message(Command("settings", "config"))
 async def cmd_settings(message: Message, ctx: Ctx) -> None:
-    await settings_screen(ctx, edit=False)
+    await settings_screen(ctx)
 
 
 @router.callback_query(F.data == K.CB_SETTINGS)
@@ -119,7 +110,7 @@ async def cb_nick_ask(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None
     await ctx.edit(_nick_prompt(ctx), K.back_menu_keyboard())
 
 
-@router.message(ProfileStates.nick, F.text)
+@router.message(ProfileStates.nick, F.text, ~F.text.startswith("/"))
 async def nick_text(message: Message, ctx: Ctx, state: FSMContext) -> None:
     if ctx.mm.status(ctx.user_id) == "paired":
         await state.clear()  # иначе текст диалога съедается вводом ника
@@ -131,7 +122,7 @@ async def nick_text(message: Message, ctx: Ctx, state: FSMContext) -> None:
         await state.set_state(ProfileStates.nick)  # даём шанс перебрать ник
         return
     await state.clear()
-    await settings_screen(ctx, edit=False)
+    await settings_screen(ctx)
 
 
 # ---------------------------------------------------------------------------------- район
@@ -164,41 +155,31 @@ async def cb_same_toggle(event: CallbackQuery, ctx: Ctx, db: Database, mm: Match
     await settings_screen(ctx)
 
 
-# ---------------------------------------------------------------------------------- «о себе»
-@router.callback_query(F.data == "cfg:about:ask")
-async def cb_about_ask(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
-    if await ctx.dialog_locked():
-        return
-    await state.set_state(ProfileStates.text)
-    await ctx.edit(texts.ABOUT_PROMPT.format(limit=ABOUT_MAX), K.back_menu_keyboard())
-
-
-@router.message(ProfileStates.text, F.text)
-async def about_text(message: Message, ctx: Ctx, state: FSMContext, db: Database) -> None:
-    if ctx.mm.status(ctx.user_id) == "paired":
-        await state.clear()
-        await message.answer(texts.DIALOG_LOCKED)
-        return
-    raw = (message.text or "").strip()
-    if raw not in {"-", "—", "--"} and contains_contact(raw):
-        await message.answer(texts.CONTACT_BLOCKED)
-        await state.set_state(ProfileStates.text)
-        return
-    value = "" if raw in {"-", "—", "--"} else raw[:ABOUT_MAX]
-    await db.set_profile(ctx.user_id, about=value)
-    await state.clear()
-    await message.answer(texts.ABOUT_SAVED if value else texts.ABOUT_CLEANED)
-    await show_menu(ctx, edit=False)
-
-
 # ---------------------------------------------------------------------------------- сброс / удаление
 @router.callback_query(F.data == "cfg:reset")
 async def cb_reset(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker) -> None:
     if await ctx.dialog_locked():
         return
-    await _apply(ctx, db, mm, district="", same_district=0, about="")
+    await _apply(ctx, db, mm, district="", same_district=0)
     await ctx.reply(texts.RESET_DONE)
-    await settings_screen(ctx, edit=False)
+    await settings_screen(ctx)
+
+
+@router.callback_query(F.data == "cfg:blocks:ask")
+async def cb_blocks_ask(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.edit("Вернуть в поиск всех скрытых людей?", K.confirm_blocks_keyboard())
+
+
+@router.callback_query(F.data == "cfg:blocks:yes")
+async def cb_blocks_yes(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    await db.clear_blocks(ctx.user_id)
+    await ctx.ack("Скрытые собеседники сброшены")
+    await settings_screen(ctx)
+
+
+@router.callback_query(F.data == "cfg:blocks:no")
+async def cb_blocks_no(event: CallbackQuery, ctx: Ctx) -> None:
+    await settings_screen(ctx)
 
 
 @router.callback_query(F.data == "cfg:forget:ask")
@@ -251,4 +232,4 @@ async def cmd_cancel(message: Message, ctx: Ctx, state: FSMContext) -> None:
         await ctx.reply("Нечего отменять.")
         return
     await state.clear()
-    await show_menu(ctx, edit=False)
+    await show_menu(ctx)

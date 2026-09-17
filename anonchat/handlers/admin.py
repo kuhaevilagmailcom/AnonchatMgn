@@ -20,7 +20,7 @@ from aiogram.types import CallbackQuery, Message
 from .. import keyboards as K
 from .. import nick as nicklib
 from .. import texts
-from ..actions import Ctx, break_pair, send_to
+from ..actions import Ctx, DeliveryResult, break_pair, send_to
 from ..config import Config
 from ..db import Database
 from ..levels import rank_for
@@ -104,7 +104,7 @@ async def find_text(db: Database, query: str) -> str:
         rank = rank_for(int(r["messages"]))
         lines.append(
             f"<code>{r['user_id']}</code> · 🙋 "
-            f"<b>{texts.esc(nicklib.display(r['nickname'], int(r['user_id'])))}</b>"
+            f"<b>{texts.esc(nicklib.display(r['nickname'], int(r['user_id']), r['premium_until']))}</b>"
             f" · {texts.esc(r['first_name'])} ({texts.esc(r['username'] or '-')})\n"
             f"   {rank.name} · {rank.pretty(int(r['messages']))} сообщ. · ⭐ {rank.pretty(int(r['xp']))}"
             f" · диалогов {r['dialogs']} · жалоб {r['reports_received']}"
@@ -119,7 +119,7 @@ def report_card(r) -> str:
         f"🚩 <b>Жалоба #{r['id']}</b> · {time.strftime('%d.%m %H:%M', time.localtime(r['created_at']))}\n"
         f"Причина: <b>{texts.esc(r['reason'])}</b>\n"
         f"На: <code>{r['target_id']}</code> · в чате как "
-        f"<b>{texts.esc(nicklib.display(r['target_nickname'], int(r['target_id'])))}</b>"
+        f"<b>{texts.esc(nicklib.display(r['target_nickname'], int(r['target_id']), r['target_premium_until'] or 0))}</b>"
         f" ({texts.esc(r['target_name'] or '-')})\n"
         f"От: <code>{r['reporter_id']}</code>\n"
         f"Последние сообщения:\n{texts.esc(r['context']) if r['context'] else '<i>нет контекста</i>'}\n\n"
@@ -134,11 +134,12 @@ async def who_text(db: Database, uid: int) -> str | None:
     rank = rank_for(int(row["messages"]))
     return (
         f"👤 <code>{uid}</code> · 🙋 "
-        f"<b>{texts.esc(nicklib.display(row['nickname'], uid))}</b>\n"
+        f"<b>{texts.esc(nicklib.display(row['nickname'], uid, row['premium_until']))}</b>\n"
         f"📛 {texts.esc(row['first_name'])} ({texts.esc(row['username'] or '-')})\n"
         f"{rank.name} · {rank.pretty(int(row['messages']))} сообщ. · ⭐ {rank.pretty(int(row['xp']))}\n"
         f"💬 диалогов: {row['dialogs']} · 👍 {row['good_ratings']} · 👎 {row['bad_ratings']}\n"
         f"🚩 жалоб: {row['reports_received']} · {texts.esc(row['district'] or 'район не указан')}\n"
+        f"АНОН+: {'до ' + time.strftime('%d.%m.%Y', time.localtime(row['premium_until'])) if nicklib.is_premium(row['premium_until']) else 'нет'}\n"
         f"в чате с {time.strftime('%d.%m.%Y', time.localtime(row['created_at']))}"
         + ("\n⛔ в бане" if row["banned"] else "")
     )
@@ -176,7 +177,7 @@ async def do_broadcast(ctx: Ctx, db: Database, body: str) -> str:
     await ctx.reply(texts.PANEL_BC_PROGRESS.format(total=len(ids)))
     sent = 0
     for uid in ids:
-        if await send_to(ctx.bot, uid, f"📣 {body}", K.menu_keyboard(), ctx.pack):
+        if await send_to(ctx.bot, uid, f"📣 {body}", K.menu_keyboard(), ctx.pack) is DeliveryResult.DELIVERED:
             sent += 1
         await asyncio.sleep(0.05)  # бережём лимиты Telegram
     return texts.PANEL_BC_DONE.format(sent=sent, total=len(ids))
@@ -198,6 +199,7 @@ class AdminStates(StatesGroup):
 
 
 async def panel_screen(ctx: Ctx, db: Database, mm: Matchmaker, edit: bool = True) -> None:
+    await db.cleanup_report_context(ctx.cfg.report_context_retention_days)
     s = await db.stats()
     body = (
         f"{texts.PANEL_TITLE.format(city=texts.esc(ctx.cfg.city))}\n\n"
@@ -379,7 +381,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
     await ctx.ack("Не понимаю кнопку")
 
 
-@router.message(AdminStates.await_input, F.text)
+@router.message(AdminStates.await_input, F.text, ~F.text.startswith("/"))
 async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, cfg: Config,
                       state: FSMContext) -> None:
     """Ввод после кнопки панели: id, id+причина, id+минуты или текст рассылки."""

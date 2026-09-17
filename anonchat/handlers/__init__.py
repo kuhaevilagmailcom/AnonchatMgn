@@ -14,7 +14,7 @@ from .support import router as support_router
 
 def get_routers() -> list[Router]:
     return [
-        settings_router,  # /profile, /settings, FSM «о себе»
+        settings_router,  # /profile, /settings, FSM ника
         support_router,   # добровольная поддержка через Telegram Stars
         reports_router,   # /report, FSM комментария жалобы
         admin_router,     # модерация

@@ -6,13 +6,14 @@
 from __future__ import annotations
 
 import hashlib
+import time
 
 from .safety import contains_contact
 
 NICK_MIN = 2
 NICK_MAX = 24
 _ALLOWED_EXTRA = set("-_.!?()[]*+~:;='\" ")
-_FORBIDDEN = set("<>`\\/@\t\n\r")
+_FORBIDDEN = set("<>`\\/@\t\n\r✦✧★☆")
 
 
 def normalize(raw: str) -> str:
@@ -47,6 +48,18 @@ def auto_nick(user_id: int) -> str:
     return f"Аноним-{number:04d}"
 
 
-def display(row_nickname: str | None, user_id: int) -> str:
+def is_premium(premium_until: int, timestamp: int | None = None) -> bool:
+    return int(premium_until or 0) > int(timestamp if timestamp is not None else time.time())
+
+
+def display(
+    row_nickname: str | None,
+    user_id: int,
+    premium_until: int = 0,
+    timestamp: int | None = None,
+) -> str:
     nick = normalize(row_nickname or "")
-    return nick or auto_nick(user_id)
+    value = nick or auto_nick(user_id)
+    if is_premium(premium_until, timestamp):
+        return f"{value} ✦"
+    return value

@@ -31,7 +31,9 @@ CREATE TABLE IF NOT EXISTS users (
     about            TEXT    NOT NULL DEFAULT '',
     banned           INTEGER NOT NULL DEFAULT 0,
     ban_reason       TEXT    NOT NULL DEFAULT '',
-    mute_until       INTEGER NOT NULL DEFAULT 0
+    mute_until       INTEGER NOT NULL DEFAULT 0,
+    premium_until    INTEGER NOT NULL DEFAULT 0,
+    profile_deleted  INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS matches (
@@ -75,6 +77,17 @@ CREATE TABLE IF NOT EXISTS referrals (
     created_at  INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS payments (
+    id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id                    INTEGER NOT NULL,
+    kind                       TEXT NOT NULL,
+    stars                      INTEGER NOT NULL,
+    telegram_payment_charge_id TEXT NOT NULL UNIQUE,
+    provider_payment_charge_id TEXT NOT NULL DEFAULT '',
+    created_at                 INTEGER NOT NULL,
+    payload                    TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS kv (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -86,6 +99,8 @@ CREATE INDEX IF NOT EXISTS idx_users_xp ON users(xp DESC);
 CREATE INDEX IF NOT EXISTS idx_users_messages ON users(messages DESC);
 CREATE INDEX IF NOT EXISTS idx_matches_recent ON matches(ended_at, user_a, user_b);
 CREATE INDEX IF NOT EXISTS idx_blocks_reverse ON blocks(blocked_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id, created_at);
 """
 
 #: колонки, которых не было в ранних версиях схемы — догоняем их на лету
@@ -93,6 +108,8 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("nickname", "ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT ''"),
     ("nick_key", "ALTER TABLE users ADD COLUMN nick_key TEXT NOT NULL DEFAULT ''"),
     ("age", "ALTER TABLE users ADD COLUMN age INTEGER NOT NULL DEFAULT 0"),
+    ("premium_until", "ALTER TABLE users ADD COLUMN premium_until INTEGER NOT NULL DEFAULT 0"),
+    ("profile_deleted", "ALTER TABLE users ADD COLUMN profile_deleted INTEGER NOT NULL DEFAULT 0"),
 )
 
 _REPORT_MIGRATIONS: tuple[tuple[str, str], ...] = (
@@ -112,13 +129,19 @@ class Database:
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> "Database":
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._db = await aiosqlite.connect(self.path)
-        self._db.row_factory = aiosqlite.Row
-        await self._db.execute("PRAGMA journal_mode=WAL")
-        await self._db.executescript(SCHEMA)
-        await self._migrate()
-        await self._db.commit()
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._db = await aiosqlite.connect(self.path)
+            self._db.row_factory = aiosqlite.Row
+            await self._db.execute("PRAGMA journal_mode=WAL")
+            await self._db.executescript(SCHEMA)
+            await self._migrate()
+            await self._db.commit()
+        except (OSError, aiosqlite.Error) as exc:
+            if self._db is not None:
+                await self._db.close()
+                self._db = None
+            raise RuntimeError(f"Не удалось открыть SQLite {self.path}: {exc}") from exc
         return self
 
     async def _migrate(self) -> None:
@@ -174,6 +197,18 @@ class Database:
 
     # ------------------------------------------------------------------ users
     async def ensure_user(self, user_id: int, username: str | None, first_name: str) -> aiosqlite.Row:
+        existing = await self.get_user(user_id)
+        if existing is not None and existing["profile_deleted"]:
+            restricted = bool(existing["banned"] or int(existing["mute_until"] or 0) > now())
+            if restricted:
+                return existing
+        if (
+            existing is not None
+            and existing["username"] == username
+            and existing["first_name"] == first_name
+            and int(existing["last_seen"] or 0) >= now() - 60
+        ):
+            return existing
         await self.db.execute(
             """
             INSERT INTO users (user_id, username, first_name, created_at, last_seen)
@@ -181,7 +216,8 @@ class Database:
             ON CONFLICT(user_id) DO UPDATE SET
                 username   = excluded.username,
                 first_name = excluded.first_name,
-                last_seen  = excluded.last_seen
+                last_seen  = excluded.last_seen,
+                profile_deleted = 0
             """,
             (user_id, username, first_name, now(), now()),
         )
@@ -208,12 +244,8 @@ class Database:
         )
         return int(row["user_id"]) if row else None
 
-    async def touch(self, user_id: int) -> None:
-        await self.db.execute("UPDATE users SET last_seen = ? WHERE user_id = ?", (now(), user_id))
-        await self.db.commit()
-
     async def set_profile(self, user_id: int, **fields: Any) -> None:
-        allowed = {"age", "district", "gender", "same_district", "about", "nickname"}
+        allowed = {"age", "district", "same_district", "nickname"}
         if "nickname" in fields:
             fields["nick_key"] = str(fields["nickname"] or "").strip().casefold()
         keys = [k for k in fields if k in allowed]
@@ -264,6 +296,41 @@ class Database:
         )
         await self.db.commit()
         return True
+
+    async def record_payment(
+        self,
+        user_id: int,
+        kind: str,
+        stars: int,
+        telegram_charge_id: str,
+        provider_charge_id: str,
+        payload: str,
+        premium_days: int = 0,
+    ) -> tuple[bool, int]:
+        try:
+            await self.db.execute(
+                """INSERT INTO payments
+                   (user_id, kind, stars, telegram_payment_charge_id,
+                    provider_payment_charge_id, created_at, payload)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (user_id, kind, stars, telegram_charge_id, provider_charge_id, now(), payload),
+            )
+        except aiosqlite.IntegrityError:
+            await self.db.rollback()
+            row = await self.get_user(user_id)
+            return False, int(row["premium_until"] or 0) if row else 0
+
+        premium_until = 0
+        if kind == "premium" and premium_days > 0:
+            row = await self.get_user(user_id)
+            current = int(row["premium_until"] or 0) if row else 0
+            premium_until = max(now(), current) + premium_days * 86400
+            await self.db.execute(
+                "UPDATE users SET premium_until = ? WHERE user_id = ?",
+                (premium_until, user_id),
+            )
+        await self.db.commit()
+        return True, premium_until
 
     # ------------------------------------------------------------------ moderation
     async def is_restricted(self, user_id: int) -> str | None:
@@ -340,8 +407,8 @@ class Database:
 
     async def clear_blocks(self, user_id: int) -> int:
         cur = await self.db.execute(
-            "DELETE FROM blocks WHERE user_id = ? OR blocked_id = ?",
-            (user_id, user_id),
+            "DELETE FROM blocks WHERE user_id = ?",
+            (user_id,),
         )
         await self.db.commit()
         return int(cur.rowcount or 0)
@@ -360,7 +427,7 @@ class Database:
     async def list_reports(self, status: str = "new", limit: int = 20) -> list[aiosqlite.Row]:
         return await self._fetchall(
             """SELECT r.*, t.username AS target_username, t.first_name AS target_name,
-                      t.nickname AS target_nickname
+                      t.nickname AS target_nickname, t.premium_until AS target_premium_until
                FROM reports r LEFT JOIN users t ON t.user_id = r.target_id
                WHERE r.status = ? ORDER BY r.created_at DESC LIMIT ?""",
             (status, limit),
@@ -369,7 +436,7 @@ class Database:
     async def get_report(self, report_id: int) -> aiosqlite.Row | None:
         return await self._fetchone(
             """SELECT r.*, t.username AS target_username, t.first_name AS target_name,
-                      t.nickname AS target_nickname
+                      t.nickname AS target_nickname, t.premium_until AS target_premium_until
                FROM reports r LEFT JOIN users t ON t.user_id = r.target_id WHERE r.id = ?""",
             (report_id,),
         )
@@ -382,6 +449,15 @@ class Database:
         )
         await self.db.commit()
         return cur.rowcount > 0
+
+    async def cleanup_report_context(self, retention_days: int = 7) -> int:
+        cutoff = now() - max(0, retention_days) * 86400
+        cur = await self.db.execute(
+            "UPDATE reports SET context = '' WHERE status = 'done' AND handled_at < ? AND context <> ''",
+            (cutoff,),
+        )
+        await self.db.commit()
+        return int(cur.rowcount or 0)
 
     # ------------------------------------------------------------------ dialogs
     async def log_dialog(
@@ -454,7 +530,7 @@ class Database:
     async def top(self, limit: int = 10) -> list[aiosqlite.Row]:
         """Активность с упором на диалоги и оценки; спам в одном чате быстро упирается в лимит."""
         return await self._fetchall(
-            """SELECT user_id, nickname, messages, xp, dialogs, good_ratings
+            """SELECT user_id, nickname, messages, xp, dialogs, good_ratings, premium_until
                FROM users WHERE banned = 0
                ORDER BY (dialogs * 10 + good_ratings * 5 + MIN(messages, dialogs * 40 + 20)) DESC,
                         xp DESC LIMIT ?""",
@@ -472,6 +548,10 @@ class Database:
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             (key, value),
         )
+        await self.db.commit()
+
+    async def delete_kv(self, key: str) -> None:
+        await self.db.execute("DELETE FROM kv WHERE key = ?", (key,))
         await self.db.commit()
 
     async def bump(self, user_id: int, column: str, amount: int = 1) -> None:
@@ -500,7 +580,7 @@ class Database:
                 """UPDATE users SET username=NULL, first_name='Удалённый пользователь', nickname='',
                    nick_key='', age=0, xp=0, messages=0, dialogs=0, good_ratings=0,
                    bad_ratings=0, reports_sent=0, district='', gender='', same_district=0,
-                   about='', last_seen=0 WHERE user_id=?""",
+                   about='', last_seen=0, premium_until=0, profile_deleted=1 WHERE user_id=?""",
                 (user_id,),
             )
         else:
@@ -511,7 +591,8 @@ class Database:
     async def find_user_ids(self, name: str, limit: int = 10) -> list[aiosqlite.Row]:
         like = f"%{name.lstrip('@')}%"
         return await self._fetchall(
-            "SELECT user_id, username, first_name, nickname, messages, xp, dialogs, reports_received, banned "
+            "SELECT user_id, username, first_name, nickname, messages, xp, dialogs, reports_received, "
+            "banned, premium_until "
             "FROM users "
             "WHERE username LIKE ? OR first_name LIKE ? OR nickname LIKE ? LIMIT ?",
             (like, like, like, limit),

@@ -27,6 +27,7 @@ CB_RULES = "act:rules"
 CB_TOP = "act:top"
 CB_MORE = "act:more"
 CB_SUPPORT = "act:support"
+CB_PREMIUM = "act:premium"
 CB_CONTINUE = "onboard:continue"
 CB_BLOCK = "rate:block"
 CB_NICK = "cfg:nick:ask"
@@ -122,10 +123,11 @@ def more_keyboard() -> InlineKeyboardMarkup:
     _button(b, "Топ", callback_data=CB_TOP, icon="stats")
     _button(b, "Правила", callback_data=CB_RULES, icon="ticket")
     _button(b, "Помощь", callback_data=CB_HELP, icon="support")
+    _button(b, "АНОН+", callback_data=CB_PREMIUM, icon="bonus")
     _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
     _button(b, "Удалить мои данные", callback_data="cfg:forget:ask", icon="delete", style="danger")
     _button(b, "Назад", callback_data=CB_MENU, icon="home")
-    b.adjust(2, 1, 1, 1, 1)
+    b.adjust(2, 1, 1, 1, 1, 1)
     return b.as_markup()
 
 
@@ -144,7 +146,7 @@ def district_keyboard() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def settings_keyboard(same_district: bool, district: str, nickname: str, has_about: bool) -> InlineKeyboardMarkup:
+def settings_keyboard(same_district: bool, district: str, nickname: str) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, f"Ник: {nickname}", callback_data=CB_NICK, icon="profile")
     _button(b, f"Район: {district or 'не выбран'}", callback_data="cfg:district:ask", icon="geo")
@@ -155,9 +157,10 @@ def settings_keyboard(same_district: bool, district: str, nickname: str, has_abo
         icon="view",
     )
     _button(b, "Возраст", callback_data="cfg:age:ask", icon="stars")
+    _button(b, "Сбросить скрытых", callback_data="cfg:blocks:ask", icon="refresh")
     _button(b, "Удалить профиль", callback_data="cfg:forget:ask", icon="delete", style="danger")
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
-    b.adjust(1, 1, 1, 1, 1, 1)
+    b.adjust(1, 1, 1, 1, 1, 1, 1)
     return b.as_markup()
 
 
@@ -187,8 +190,9 @@ def rating_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "👍 Норм", callback_data="rate:1", icon="bonus", style="success")
     _button(b, "Не зашло", callback_data="rate:0", icon="warn")
+    _button(b, "Больше не встречаться", callback_data=CB_BLOCK, icon="delete")
     _button(b, "Найти ещё", callback_data=CB_CONNECT, icon="view")
-    b.adjust(2, 1)
+    b.adjust(2, 1, 1)
     return b.as_markup()
 
 
@@ -204,6 +208,36 @@ def confirm_forget_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "Да, удалить всё", callback_data="cfg:forget:yes", icon="delete", style="danger")
     _button(b, "Отмена", callback_data="cfg:forget:no", icon="check")
+    b.adjust(2)
+    return b.as_markup()
+
+
+def confirm_blocks_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Да", callback_data="cfg:blocks:yes", icon="check", style="danger")
+    _button(b, "Отмена", callback_data="cfg:blocks:no", icon="home")
+    b.adjust(2)
+    return b.as_markup()
+
+
+def premium_keyboard(active: bool, price: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(
+        b,
+        f"{'Продлить' if active else 'Получить АНОН+'} · {price} ⭐",
+        callback_data="premium:buy",
+        icon="stars",
+        style="success",
+    )
+    _button(b, "Назад", callback_data=CB_MORE, icon="home")
+    b.adjust(1, 1)
+    return b.as_markup()
+
+
+def contact_confirm_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Отправить", callback_data="contact:send", icon="check", style="success")
+    _button(b, "Отмена", callback_data="contact:cancel", icon="home")
     b.adjust(2)
     return b.as_markup()
 

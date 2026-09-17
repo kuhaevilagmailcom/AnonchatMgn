@@ -8,11 +8,8 @@
   картинка пака);
 * в **кнопку** — полем ``icon_custom_emoji_id`` (работает и у inline-, и у reply-кнопок).
 
-id нельзя «скачать» со страницы пака — бот узнаёт их только из чужих сообщений.
-Поэтому таблица ``PACK`` ниже — это id того же пака NewsEmoji, которые уже собраны
-и обкатаны в ``limuzinov_shop_bot`` (22 эмодзи), а ``harvest()`` доращивает её прямо
-в рантайме: стоит участнику прислать боту эмодзи, которого в таблице нет, — он
-запомнится и уедет в БД (``kv["emoji_ids"]``).
+Таблица ``PACK`` ниже фиксирована в коде: сообщения пользователей никогда не меняют
+оформление интерфейса бота.
 
 Алиасы нужны, чтобы не переписывать тексты: в них ``✅``, а в паке этот же знак
 называется ``✔️`` — пишем одно, показываем другое.
@@ -21,16 +18,9 @@ id нельзя «скачать» со страницы пака — бот у�
 from __future__ import annotations
 
 import re
-from typing import Iterable
-
-from aiogram.types import Message
 
 TG_EMOJI_OPEN = re.compile(r"<tg-emoji[^>]*>")
 TG_EMOJI_CLOSE = re.compile(r"</tg-emoji>")
-
-#: обрезают эмодзи-последовательность пополам: ZWJ с любой стороны, вариационный селектор в начале
-_ZWJ = "\u200d"
-_JOINERS = ("\u200d", "\ufe0f", "\ufe0e")
 
 #: сколько эмодзи пака в одном сообщении бота. Больше — уже карнавал.
 MAX_WRAP_PER_MESSAGE = 5
@@ -74,60 +64,11 @@ class EmojiPack:
         for _name, (emoji_id, canonical, aliases) in PACK.items():
             for glyph in (canonical, *aliases):
                 self._map.setdefault(glyph, (emoji_id, canonical))
-        #: что приехало из кода — в базу не пишем; сохраняем только «подсмотренное» из чатов
-        self._seed = set(self._map)
-
-    # ------------------------------------------------------------------ store
-    def load(self, pairs: Iterable[tuple[str, str]]) -> None:
-        """Догнать таблицу id, сохранёнными в БД (подсмотренными из сообщений)."""
-        for emoji, emoji_id in pairs:
-            if emoji and emoji_id:
-                self._map.setdefault(str(emoji), (str(emoji_id), str(emoji)))
-
-    def as_pairs(self) -> list[tuple[str, str]]:
-        return [
-            (glyph, emoji_id)
-            for glyph, (emoji_id, _) in self._map.items()
-            if glyph not in self._seed
-        ]
-
     def known(self) -> int:
         return len(self._map)
 
-    def extra(self) -> int:
-        """Сколько id добавилось из чатов поверх встроенной таблицы пака."""
-        return len(self._map) - len(self._seed)
-
     def has(self, emoji: str) -> bool:
         return emoji in self._map
-
-    # ------------------------------------------------------------------ harvest
-    def harvest(self, message: Message) -> list[str]:
-        """Запомнить кастомные эмодзи из сообщения пользователя. Возвращает новые символы."""
-        found: list[str] = []
-        for entity in message.entities or []:
-            emoji_id = getattr(entity, "custom_emoji_id", None)
-            if entity.type != "custom_emoji" or not emoji_id:
-                continue
-            offset = int(entity.offset)
-            length = int(entity.length)
-            raw = message.text or ""
-            # offset/length Telegram отдаёт в UTF-16 — режем по тому же представлению
-            chunk = raw.encode("utf-16-le")[offset * 2 : (offset + length) * 2].decode(
-                "utf-16-le", errors="ignore"
-            )
-            if not chunk:
-                continue
-            try:
-                chunk.encode("utf-16-be")  # отбрасываем «половинки» ZWJ-последовательностей
-            except UnicodeEncodeError:
-                continue
-            if chunk.startswith(_JOINERS) or chunk.endswith(_ZWJ):
-                continue  # обрезанная последовательность — такой эмодзи не запоминаем
-            if chunk not in self._map:
-                found.append(chunk)
-            self._map[chunk] = (str(emoji_id), chunk)
-        return found
 
     # ------------------------------------------------------------------ render
     def wrap(self, text: str, limit: int = MAX_WRAP_PER_MESSAGE) -> str:

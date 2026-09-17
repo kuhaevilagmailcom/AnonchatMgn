@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import tempfile
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
@@ -56,7 +55,7 @@ def _find_token(cli: str | None = None) -> str:
 
 
 def _pick_db_path(raw: str) -> Path:
-    """Там, где файловая система READ ONLY (некоторые панели), пишем во временный каталог."""
+    """Проверяет путь заранее: production не должен молча переходить на временную БД."""
     path = Path(raw)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -64,10 +63,12 @@ def _pick_db_path(raw: str) -> Path:
         probe.write_text("ok", encoding="utf-8")
         probe.unlink()
         return path
-    except OSError:
-        fallback = Path(tempfile.gettempdir()) / "anonchat_mgn.db"
-        print(f"[anonchat] {path} недоступен для записи, беру {fallback}")
-        return fallback
+    except OSError as exc:
+        raise RuntimeError(f"SQLite недоступна для записи: {path}: {exc}") from exc
+
+
+def _bool(value: str) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 @dataclass(slots=True)
@@ -87,6 +88,12 @@ class Config:
     menu_rate_limit: int = 12            # команд/нажатий в минуту
     auto_mute_reports: int = 3           # жалоб за сутки -> авто-мут
     auto_mute_minutes: int = 60
+    report_context_retention_days: int = 7
+    drop_pending_updates: bool = False
+
+    # Telegram Stars
+    premium_price_stars: int = 129
+    premium_days: int = 30
 
     # matching
     queue_soft_limit: int = 500          # сколько максимум держим в очереди
@@ -109,15 +116,28 @@ class Config:
         return cls(
             bot_token=_find_token(token_arg),
             admin_ids=_admin_ids(env),
-            db_path=_pick_db_path(env("DB_PATH", str(cls._default("db_path")))),
+            db_path=_pick_db_path(
+                env("DATABASE_PATH", env("DB_PATH", str(cls._default("db_path"))))
+            ),
             city=env("CITY_NAME", cls._default("city")),
             city_short=env("CITY_SHORT", cls._default("city_short")),
             emoji_pack_url=env("EMOJI_PACK_URL", cls._default("emoji_pack_url")),
             auto_mute_reports=int(env("AUTO_MUTE_REPORTS", str(cls._default("auto_mute_reports")))),
             auto_mute_minutes=int(env("AUTO_MUTE_MINUTES", str(cls._default("auto_mute_minutes")))),
-            inchat_rate_limit=int(env("INCHAT_RATE_LIMIT", str(cls._default("inchat_rate_limit")))),
+            report_context_retention_days=int(
+                env("REPORT_CONTEXT_RETENTION_DAYS", str(cls._default("report_context_retention_days")))
+            ),
+            drop_pending_updates=_bool(env("DROP_PENDING_UPDATES", "false")),
+            premium_price_stars=int(
+                env("PREMIUM_PRICE_STARS", str(cls._default("premium_price_stars")))
+            ),
+            premium_days=int(env("PREMIUM_DAYS", str(cls._default("premium_days")))),
+            inchat_rate_limit=int(
+                env("MESSAGE_RATE_LIMIT", env("INCHAT_RATE_LIMIT", str(cls._default("inchat_rate_limit"))))
+            ),
+            menu_rate_limit=int(env("MENU_RATE_LIMIT", str(cls._default("menu_rate_limit")))),
             max_message_len=int(env("MAX_MESSAGE_LEN", str(cls._default("max_message_len")))),
-            debug=env("DEBUG", "").lower() in {"1", "true", "yes"},
+            debug=_bool(env("DEBUG", "false")),
         )
 
     @property

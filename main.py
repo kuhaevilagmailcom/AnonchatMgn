@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 
 from aiogram import Bot, Dispatcher
@@ -58,8 +57,9 @@ def build(cfg: Config) -> tuple[Bot, Dispatcher, Database, Matchmaker, EmojiPack
     dp = Dispatcher(storage=MemoryStorage())
 
     for observer in (dp.message, dp.callback_query):
-        observer.outer_middleware(Throttling(cfg, limit=cfg.inchat_rate_limit))
+        observer.outer_middleware(Throttling(cfg))
         observer.middleware(DataContext(cfg, db, mm, pack))
+    dp.pre_checkout_query.middleware(DataContext(cfg, db, mm, pack))
 
     for router in get_routers():
         dp.include_router(router)
@@ -69,21 +69,6 @@ def build(cfg: Config) -> tuple[Bot, Dispatcher, Database, Matchmaker, EmojiPack
         log.exception("Необработанная ошибка: %s", event.exception)
 
     return bot, dp, db, mm, pack
-
-
-async def load_pack(db: Database, pack: EmojiPack) -> None:
-    """Достаём из базы id эмодзи городского пака, которые бот подсмотрел у участников."""
-    raw = await db.get_kv("emoji_ids")
-    if not raw:
-        return
-    try:
-        pairs = json.loads(raw)
-    except (ValueError, TypeError):
-        log.warning("kv.emoji_ids повреждён — начинаю с чистого листа")
-        return
-    if isinstance(pairs, list):
-        pack.load([tuple(item) for item in pairs if isinstance(item, (list, tuple)) and len(item) == 2])
-        log.info("эмодзи из пака города: %d шт.", pack.known())
 
 
 async def register_commands(bot: Bot, cfg: Config) -> None:
@@ -103,7 +88,7 @@ async def main() -> None:  # pragma: no cover
 
     bot, dp, database, mm, pack = build(cfg)
     await database.start()
-    await load_pack(database, pack)
+    await database.cleanup_report_context(cfg.report_context_retention_days)
 
     janitor_task: asyncio.Task | None = None
 
@@ -111,7 +96,7 @@ async def main() -> None:  # pragma: no cover
     async def on_startup(bot: Bot) -> None:
         nonlocal janitor_task
         try:
-            await bot.delete_webhook(drop_pending_updates=True)
+            await bot.delete_webhook(drop_pending_updates=cfg.drop_pending_updates)
         except TelegramAPIError as exc:
             log.warning("delete_webhook не сработал: %s", exc)
         await register_commands(bot, cfg)

@@ -37,14 +37,15 @@ COMMANDS = (
     BotCommand(command="help", description="❓ Как пользоваться"),
     BotCommand(command="rules", description="📜 Правила"),
     BotCommand(command="support", description="⭐ Поддержать проект"),
+    BotCommand(command="premium", description="✦ АНОН+"),
     BotCommand(command="ref", description="🎁 Пригласить друга и получить опыт"),
+    BotCommand(command="unblock", description="🔓 Сбросить скрытых собеседников"),
     BotCommand(command="forget", description="🧹 Удалить мой профиль"),
 )
 
 #: админские команды, которые видны в меню модератора
 ADMIN_VISIBLE = (
     BotCommand(command="admin", description="🛡 Панель модератора"),
-    BotCommand(command="unblock", description="🔓 Сбросить скрытых собеседников"),
 )
 
 #: работают, если ввести руками (и из панели), но в меню не показываются

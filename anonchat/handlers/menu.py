@@ -32,7 +32,10 @@ REFERRAL_XP = 50
 
 # ---------------------------------------------------------------------------------- команды
 @router.message(CommandStart())
-async def cmd_start(message: Message, ctx: Ctx, cfg: Config, is_new_user: bool) -> None:
+async def cmd_start(
+    message: Message, ctx: Ctx, cfg: Config, is_new_user: bool, state: FSMContext
+) -> None:
+    await state.clear()
     parts = (message.text or "").split(maxsplit=1)
     if is_new_user and len(parts) == 2 and parts[1].startswith("ref_"):
         raw_referrer = parts[1][4:]
@@ -66,7 +69,8 @@ async def cmd_referral(message: Message, ctx: Ctx) -> None:
 
 
 @router.message(Command("help"))
-async def cmd_help(message: Message, ctx: Ctx) -> None:
+async def cmd_help(message: Message, ctx: Ctx, state: FSMContext) -> None:
+    await state.clear()
     await show_help(ctx)
 
 
@@ -96,9 +100,7 @@ async def cmd_stop(message: Message, ctx: Ctx) -> None:
 
 
 @router.message(Command("unblock"))
-async def cmd_unblock(message: Message, ctx: Ctx, db: Database, cfg: Config) -> None:
-    if ctx.user_id not in cfg.admin_ids:
-        return
+async def cmd_unblock(message: Message, ctx: Ctx, db: Database) -> None:
     cleared = await db.clear_blocks(ctx.user_id)
     if cleared:
         await ctx.reply(

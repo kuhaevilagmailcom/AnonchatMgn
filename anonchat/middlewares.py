@@ -50,9 +50,7 @@ class DataContext(BaseMiddleware):
             me = await self.db.get_user(user.id)
             if me is None:
                 data["is_new_user"] = True
-                me = await self.db.ensure_user(user.id, user.username, user.first_name)
-            elif me["last_seen"] < int(time.time()) - 60:
-                await self.db.touch(user.id)
+            me = await self.db.ensure_user(user.id, user.username, user.first_name)
             data["is_admin"] = user.id in self.config.admin_ids
         data["me"] = me
 
@@ -73,11 +71,13 @@ class DataContext(BaseMiddleware):
 class Throttling(BaseMiddleware):
     """Скользящее окно: не больше `limit` апдейтов в минуту на пользователя."""
 
-    def __init__(self, config: Config | None = None, limit: int = 40, window: float = 60.0) -> None:
+    def __init__(
+        self, config: Config | None = None, limit: int | None = None, window: float = 60.0
+    ) -> None:
         self.config = config
-        self.limit = max(5, limit)
+        self.limit = max(5, limit) if limit is not None else None
         self.window = window
-        self._hits: dict[int, deque[float]] = {}
+        self._hits: dict[tuple[int, str], deque[float]] = {}
 
     async def __call__(self, handler, event: TelegramObject, data: dict):
         cfg = self.config or data.get("cfg")
@@ -85,12 +85,17 @@ class Throttling(BaseMiddleware):
         if user is None or user.is_bot or (cfg and user.id in cfg.admin_ids):
             return await handler(event, data)
 
-        bucket = self._hits.setdefault(user.id, deque())
+        is_menu = isinstance(event, CallbackQuery) or (
+            isinstance(event, Message) and bool(event.text) and event.text.startswith("/")
+        )
+        limit = self.limit or (cfg.menu_rate_limit if is_menu else cfg.inchat_rate_limit)
+        kind = "menu" if is_menu else "message"
+        bucket = self._hits.setdefault((user.id, kind), deque())
         ts = time.monotonic()
         while bucket and ts - bucket[0] > self.window:
             bucket.popleft()
 
-        if len(bucket) >= self.limit:
+        if len(bucket) >= limit:
             if isinstance(event, CallbackQuery):
                 await event.answer("Слишком быстро — подожди секунду.", show_alert=True)
             elif isinstance(event, Message):
@@ -100,6 +105,6 @@ class Throttling(BaseMiddleware):
         bucket.append(ts)
         if len(self._hits) > 5000:  # самочищаемся, чтобы не расти бесконечно
             cutoff = ts - self.window
-            for uid in [u for u, b in self._hits.items() if not b or b[-1] < cutoff]:
-                self._hits.pop(uid, None)
+            for key in [k for k, b in self._hits.items() if not b or b[-1] < cutoff]:
+                self._hits.pop(key, None)
         return await handler(event, data)

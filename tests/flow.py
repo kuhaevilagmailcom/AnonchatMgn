@@ -19,8 +19,9 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.base import BaseSession
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import Chat, Message, Update, User
+from aiogram.types import Chat, Message, PhotoSize, Update, User
 
 from anonchat import commands as commands_mod
 from anonchat import texts
@@ -34,7 +35,7 @@ from anonchat.pack import ICONS as PACK_ICONS
 from anonchat.pack import EmojiPack
 
 ADMIN = 999
-A, B, C = 1001, 1002, 1003
+A, B, C, D, E = 1001, 1002, 1003, 1004, 1005
 
 
 class RecordingSession(BaseSession):
@@ -45,6 +46,7 @@ class RecordingSession(BaseSession):
         self.outbox: list[dict[str, Any]] = []
         #: setMyCommands переживают clear() — проверяем, что именно уехало в Telegram
         self.menus: list[dict[str, Any]] = []
+        self.fail_once: dict[str, str] = {}
         self._mid = 0
 
     async def close(self) -> None:  # pragma: no cover
@@ -55,6 +57,11 @@ class RecordingSession(BaseSession):
 
     async def make_request(self, bot: Bot, method: Any, timeout: int | None = None) -> Any:
         name = method.__api_method__
+        failure = self.fail_once.pop(name, "")
+        if failure == "temp":
+            raise TelegramAPIError(method, "temporary failure")
+        if failure == "forbidden":
+            raise TelegramForbiddenError(method, "bot was blocked")
         data = method.model_dump(exclude_none=True, by_alias=True)
         self.outbox.append({"method": name, **data})
         if name == "setMyCommands":
@@ -65,6 +72,15 @@ class RecordingSession(BaseSession):
         if name in {"getUpdates", "deleteWebhook", "setMyCommands", "answerCallbackQuery"}:
             return True if name == "answerCallbackQuery" else []
         self._mid += 1
+        if name in {"sendPhoto", "editMessageMedia"}:
+            media = data.get("media") if isinstance(data.get("media"), dict) else {}
+            return Message(
+                message_id=self._mid,
+                date=1_700_000_000,
+                chat=Chat(id=int(data.get("chat_id", 0)), type="private"),
+                photo=[PhotoSize(file_id=f"PHOTO{self._mid}", file_unique_id=f"P{self._mid}", width=1, height=1)],
+                caption=data.get("caption") or media.get("caption"),
+            )
         return Message(
             message_id=self._mid,
             date=1_700_000_000,
@@ -78,7 +94,11 @@ class RecordingSession(BaseSession):
         return [m for m in self.outbox if m.get("chat_id") == chat_id]
 
     def texts_to(self, chat_id: int) -> list[str]:
-        return [str(m.get("text") or m.get("caption") or "") for m in self.to(chat_id)]
+        values = []
+        for item in self.to(chat_id):
+            media = item.get("media") if isinstance(item.get("media"), dict) else {}
+            values.append(str(item.get("text") or item.get("caption") or media.get("caption") or ""))
+        return values
 
     def last_to(self, chat_id: int) -> str:
         texts = self.texts_to(chat_id)
@@ -118,7 +138,10 @@ def cb_update(bot: Bot, uid: int, data: str, update_id: int) -> Update:
                 "date": 1_700_000_000,
                 "chat": {"id": uid, "type": "private", "first_name": f"U{uid}"},
                 "from": {"id": uid, "is_bot": False, "first_name": f"U{uid}"},
-                "text": "меню",
+                "caption": "меню",
+                "photo": [
+                    {"file_id": "CURRENT_PHOTO", "file_unique_id": "CURRENT", "width": 1, "height": 1}
+                ],
             },
         },
     }
@@ -582,6 +605,19 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await onboard(C, 16)
 
     session.clear()
+    await press(A, "act:settings")
+    check(session.outbox[-1]["method"] == "editMessageMedia", "главное меню в настройки меняет картинку")
+    first_settings_file = await db.get_kv("menu_file_id:05_settings.png")
+    check(bool(first_settings_file), "file_id экрана сохраняется в SQLite")
+    await press(A, "act:profile")
+    check(session.outbox[-1]["method"] == "editMessageMedia", "настройки в профиль меняет картинку")
+    await press(A, "act:rules")
+    check(session.outbox[-1]["method"] == "editMessageMedia", "профиль в правила меняет картинку")
+    await press(A, "act:settings")
+    media = session.outbox[-1].get("media", {})
+    check(media.get("media") == first_settings_file, "повторный экран использует cached file_id")
+
+    session.clear()
     await press(A, "act:more")
     await press(A, "act:support")
     check("количество звёзд" in session.last_to(A), "поддержка спрашивает количество звёзд")
@@ -591,6 +627,22 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
         bool(invoice and invoice["currency"] == "XTR" and invoice["prices"][0]["amount"] == 25),
         "бот создаёт счёт Telegram Stars на введённую сумму",
     )
+
+    premium_payment = {
+        "currency": "XTR",
+        "total_amount": cfg.premium_price_stars,
+        "invoice_payload": f"premium:{A}:{cfg.premium_days}:nonce",
+        "telegram_payment_charge_id": "premium-charge-1",
+        "provider_payment_charge_id": "",
+    }
+    await payload(A, successful_payment=premium_payment)
+    premium_until = int((await db.get_user(A))["premium_until"])
+    check(premium_until > 0, "successful payment начисляет АНОН+")
+    await payload(A, successful_payment=premium_payment)
+    check(int((await db.get_user(A))["premium_until"]) == premium_until,
+          "duplicate charge ID не продлевает АНОН+ повторно")
+    await send(A, "/profile")
+    check("✦" in session.last_to(A), "активный АНОН+ показывает premium marker")
 
     session.clear()
     await press(A, "act:connect")
@@ -603,7 +655,7 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     session.clear()
     await send(A, "@secret_user")
-    check("@secret_user" in session.last_to(B), "@username пересылается собеседнику")
+    check(session.to(B) == [] and "контакты" in session.last_to(A), "обычный @username не пересылается")
     session.clear()
     await send(A, "+7 999 123-45-67")
     check(session.to(B) == [] and "контакты" in session.last_to(A), "телефон не пересылается")
@@ -613,10 +665,14 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     session.clear()
     await send(A, "/send @explicit_user")
-    check("@explicit_user" in session.last_to(B), "/send отправляет username без текста команды")
+    check("поделиться контактом" in session.last_to(A), "/send просит подтверждение")
+    check(session.to(B) == [], "до подтверждения username не отправлен")
+    await press(A, "contact:send")
+    check("@explicit_user" in session.last_to(B), "подтверждённый username отправлен")
     session.clear()
     await send(A, "/user https://t.me/example")
-    check("https://t.me/example" in session.last_to(B), "/user отправляет ссылку")
+    await press(A, "contact:send")
+    check("https://t.me/example" in session.last_to(B), "/user отправляет подтверждённую ссылку")
 
     for body, label in (
         ({"location": {"latitude": 53.4, "longitude": 58.9}}, "location"),
@@ -643,8 +699,10 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
           "повторная жалоба на тот же диалог не считается")
 
     await send(A, "/stop")
+    session.clear()
     await press(A, "rate:block")
     check(B in await db.excluded_partners(A), "блок-лист сохраняет пару")
+    check(session.to(B) == [], "собеседник не получает уведомление о блоке")
     await press(A, "act:connect")
     await press(B, "act:connect")
     check(mm.partner(A) != B, "заблокированные и недавние собеседники не соединяются снова")
@@ -652,6 +710,15 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(mm.partner(A) == C, "очередь выбирает следующего подходящего пользователя")
 
     await send(A, "/stop")
+    await press(A, "act:settings")
+    await press(A, "cfg:blocks:ask")
+    await press(A, "cfg:blocks:yes")
+    check(B not in await db.excluded_partners(A, recent_seconds=0), "пользователь сбрасывает свой block list")
+    await press(A, "cfg:nick:ask")
+    await send(A, "/start")
+    old_nick = (await db.get_user(A))["nickname"]
+    await send(A, "не новый ник")
+    check((await db.get_user(A))["nickname"] == old_nick, "/start очищает FSM ввода ника")
     await press(A, "cfg:nick:ask")
     await press(A, "act:menu")
     old_nick = (await db.get_user(A))["nickname"]
@@ -661,6 +728,21 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await db.set_ban(C, True, "тест")
     await db.forget_user(C)
     check(await db.is_restricted(C) == "banned", "/forget не снимает действующий бан")
+
+    await onboard(D, 17)
+    await onboard(E, 18)
+    for uid in (A, B, C, ADMIN, D, E):
+        mm.forget(uid)
+    await press(D, "act:connect")
+    await press(E, "act:connect")
+    session.fail_once["sendMessage"] = "temp"
+    await send(D, "временная ошибка")
+    check(mm.partner(D) == E, "TEMP_ERROR не разрывает пару")
+    check(mm.dialog_stats(D).get("counts", {}).get(D, 0) == 0, "TEMP_ERROR откатывает count_message")
+    check("Попробуй ещё раз" in session.last_to(D), "при TEMP_ERROR пользователь видит короткую ошибку")
+    session.fail_once["sendMessage"] = "forbidden"
+    await send(D, "недоступен")
+    check(mm.status(D) == "free" and mm.status(E) == "free", "UNAVAILABLE разрывает пару")
 
     await bot.session.close()
     await db.close()

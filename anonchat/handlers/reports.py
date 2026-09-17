@@ -35,7 +35,7 @@ async def notify_admins(ctx: Ctx, body: str, markup=None) -> None:
 # ---------------------------------------------------------------------------------- старт жалобы
 @router.message(Command("report", "complain", "жалоба"))
 async def cmd_report(message: Message, ctx: Ctx) -> None:
-    await open_report(ctx, edit=False)
+    await open_report(ctx)
 
 
 @router.callback_query(F.data == K.CB_REPORT)
@@ -43,15 +43,13 @@ async def cb_report(event: CallbackQuery, ctx: Ctx) -> None:
     await open_report(ctx)
 
 
-async def open_report(ctx: Ctx, edit: bool = True) -> None:
+async def open_report(ctx: Ctx) -> None:
     partner = ctx.mm.partner(ctx.user_id)
     kb = K.report_keyboard()
     if partner is None:
         await ctx.reply(texts.REPORT_NO_TARGET, markup=K.menu_keyboard())
         return
-    if edit and await ctx.edit(texts.REPORT_INTRO, kb):
-        return
-    await ctx.screen("07_report.png", texts.REPORT_INTRO, kb)
+    await ctx.render_screen("07_report.png", texts.REPORT_INTRO, kb)
 
 
 # ---------------------------------------------------------------------------------- причина
@@ -81,7 +79,7 @@ async def cb_reason(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
 
 
 # ---------------------------------------------------------------------------------- текст жалобы
-@router.message(ReportStates.comment, F.text)
+@router.message(ReportStates.comment, F.text, ~F.text.startswith("/"))
 async def report_comment(message: Message, ctx: Ctx, state: FSMContext) -> None:
     data = await state.get_data()
     await finish_report(ctx, state, data.get("reason", "other"), (message.text or "").strip()[:500])
@@ -115,7 +113,11 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
     # карточка — только для модератора: здесь настоящие данные уместны
     target_name = (target_row["first_name"] if target_row else "собеседник") or "собеседник"
     target_login = f"@{target_row['username']}" if target_row and target_row["username"] else "без юзернейма"
-    target_nick = nicklib.display(target_row["nickname"] if target_row else "", partner)
+    target_nick = nicklib.display(
+        target_row["nickname"] if target_row else "",
+        partner,
+        target_row["premium_until"] if target_row else 0,
+    )
 
     card = (
         f"🚩 <b>Жалоба #{report_id}</b>\n"

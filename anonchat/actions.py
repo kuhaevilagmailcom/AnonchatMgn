@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +20,13 @@ from aiogram.exceptions import (
     TelegramForbiddenError,
     TelegramRetryAfter,
 )
-from aiogram.types import CallbackQuery, FSInputFile, InlineKeyboardMarkup, Message
+from aiogram.types import (
+    CallbackQuery,
+    FSInputFile,
+    InlineKeyboardMarkup,
+    InputMediaPhoto,
+    Message,
+)
 
 from . import nick as nicklib
 from . import texts
@@ -34,6 +41,12 @@ from .matching import Matchmaker
 from .pack import EmojiPack
 
 ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "menu"
+
+
+class DeliveryResult(Enum):
+    DELIVERED = "delivered"
+    TEMP_ERROR = "temp_error"
+    UNAVAILABLE = "unavailable"
 
 
 @dataclass(slots=True)
@@ -86,25 +99,49 @@ class Ctx:
                 return False
         return False
 
-    async def screen(self, image: str, caption: str, markup: InlineKeyboardMarkup | None = None) -> Message | None:
-        """Основной экран: фирменное изображение + короткая подпись."""
+    async def render_screen(
+        self, image: str, caption: str, markup: InlineKeyboardMarkup | None = None
+    ) -> Message | None:
+        """Меняет картинку, подпись и клавиатуру одним экраном; при ошибке отправляет новый."""
         target = self.event.message if isinstance(self.event, CallbackQuery) else self.event
         if target is None:
             return None
         path = ASSET_DIR / image
         if not path.exists():
+            if await self.edit(caption, markup):
+                return target
             return await self.reply(caption, markup)
-        try:
-            return await target.answer_photo(FSInputFile(path), caption=self.pack.wrap(caption), reply_markup=markup)
-        except TelegramBadRequest as exc:
-            if self.pack.accept(exc):
+
+        key = f"menu_file_id:{image}"
+        cached = await self.db.get_kv(key)
+        sources: list[str | FSInputFile] = ([cached] if cached else []) + [FSInputFile(path)]
+        for source in sources:
+            for wrapped in (True, False):
+                body = self.pack.wrap(caption) if wrapped else self.pack.strip(caption)
                 try:
-                    return await target.answer_photo(FSInputFile(path), caption=self.pack.strip(caption), reply_markup=markup)
+                    if isinstance(self.event, CallbackQuery) and getattr(target, "photo", None):
+                        result = await target.edit_media(
+                            InputMediaPhoto(media=source, caption=body), reply_markup=markup
+                        )
+                    else:
+                        result = await target.answer_photo(source, caption=body, reply_markup=markup)
+                    if isinstance(result, Message) and result.photo:
+                        await self.db.set_kv(key, result.photo[-1].file_id)
+                    return result if isinstance(result, Message) else target
+                except TelegramBadRequest as exc:
+                    if wrapped and self.pack.accept(exc):
+                        continue
+                    break
                 except TelegramAPIError:
-                    return None
-            return None
-        except TelegramAPIError:
-            return None
+                    break
+            if isinstance(source, str):
+                await self.db.delete_kv(key)
+        return await self.reply(caption, markup)
+
+    async def screen(
+        self, image: str, caption: str, markup: InlineKeyboardMarkup | None = None
+    ) -> Message | None:
+        return await self.render_screen(image, caption, markup)
 
     # ------------------------------------------------------------------ профиль
     @property
@@ -113,7 +150,11 @@ class Ctx:
 
     @property
     def nick(self) -> str:
-        return nicklib.display(self.me["nickname"] if self.me else "", self.user_id)
+        return nicklib.display(
+            self.me["nickname"] if self.me else "",
+            self.user_id,
+            self.me["premium_until"] if self.me else 0,
+        )
 
     @property
     def prefs(self) -> dict[str, Any]:
@@ -191,28 +232,30 @@ async def send_to(
     text: str,
     markup: InlineKeyboardMarkup | None = None,
     pack: EmojiPack | None = None,
-) -> bool:
-    """Доставка собеседнику. False — пользователь недоступен (заблокировал бота)."""
+) -> DeliveryResult:
     if not chat_id:
-        return False
+        return DeliveryResult.UNAVAILABLE
     for attempt in range(2):
         body = pack.wrap(text) if (pack and attempt == 0) else text
         try:
             await bot.send_message(chat_id, body, reply_markup=markup)
-            return True
+            return DeliveryResult.DELIVERED
         except TelegramBadRequest as exc:
             if attempt == 0 and pack is not None and pack.accept(exc):
                 continue
-            return False
+            message = str(exc).lower()
+            return DeliveryResult.UNAVAILABLE if "chat not found" in message else DeliveryResult.TEMP_ERROR
         except TelegramRetryAfter as exc:
             await asyncio.sleep(max(0.0, float(exc.retry_after)))
             continue
-        except (TelegramForbiddenError, TelegramAPIError):
-            return False
-    return False
+        except TelegramForbiddenError:
+            return DeliveryResult.UNAVAILABLE
+        except TelegramAPIError:
+            return DeliveryResult.TEMP_ERROR
+    return DeliveryResult.TEMP_ERROR
 
 
-async def send_copy_to(bot: Bot, message: Message, chat_id: int) -> bool:
+async def send_copy_to(bot: Bot, message: Message, chat_id: int) -> DeliveryResult:
     try:
         await bot.send_chat_action(chat_id, "typing")
     except TelegramAPIError:
@@ -220,39 +263,57 @@ async def send_copy_to(bot: Bot, message: Message, chat_id: int) -> bool:
     for _ in range(3):
         try:
             await message.send_copy(chat_id=chat_id)
-            return True
+            return DeliveryResult.DELIVERED
         except TelegramRetryAfter as exc:
             await asyncio.sleep(max(0.0, float(exc.retry_after)))
-        except (TelegramForbiddenError, TelegramAPIError):
-            return False
-    return False
+        except TelegramForbiddenError:
+            return DeliveryResult.UNAVAILABLE
+        except TelegramBadRequest as exc:
+            return DeliveryResult.UNAVAILABLE if "chat not found" in str(exc).lower() else DeliveryResult.TEMP_ERROR
+        except TelegramAPIError:
+            return DeliveryResult.TEMP_ERROR
+    return DeliveryResult.TEMP_ERROR
 
 
 async def send_screen_to(
     bot: Bot, chat_id: int, image: str, caption: str,
     markup: InlineKeyboardMarkup | None = None, pack: EmojiPack | None = None,
-) -> bool:
+    db: Database | None = None,
+) -> DeliveryResult:
     path = ASSET_DIR / image
     if not path.exists():
         return await send_to(bot, chat_id, caption, markup, pack)
+    key = f"menu_file_id:{image}"
+    cached = await db.get_kv(key) if db else ""
+    photo: str | FSInputFile = cached or FSInputFile(path)
     for attempt in range(2):
         body = pack.wrap(caption) if pack and attempt == 0 else (pack.strip(caption) if pack else caption)
         try:
-            await bot.send_photo(chat_id, FSInputFile(path), caption=body, reply_markup=markup)
-            return True
+            sent = await bot.send_photo(chat_id, photo, caption=body, reply_markup=markup)
+            if db and sent.photo:
+                await db.set_kv(key, sent.photo[-1].file_id)
+            return DeliveryResult.DELIVERED
         except TelegramBadRequest as exc:
             if attempt == 0 and pack is not None and pack.accept(exc):
                 continue
-            return False
+            if cached:
+                await db.delete_kv(key)
+                cached = ""
+                photo = FSInputFile(path)
+                continue
+            message = str(exc).lower()
+            return DeliveryResult.UNAVAILABLE if "chat not found" in message else DeliveryResult.TEMP_ERROR
         except TelegramRetryAfter as exc:
             await asyncio.sleep(max(0.0, float(exc.retry_after)))
-        except (TelegramForbiddenError, TelegramAPIError):
-            return False
-    return False
+        except TelegramForbiddenError:
+            return DeliveryResult.UNAVAILABLE
+        except TelegramAPIError:
+            return DeliveryResult.TEMP_ERROR
+    return DeliveryResult.TEMP_ERROR
 
 
 # --------------------------------------------------------------------- экраны
-async def show_menu(ctx: Ctx, edit: bool = True) -> None:
+async def show_menu(ctx: Ctx) -> None:
     status = ctx.mm.status(ctx.user_id)
     state = {
         "paired": texts.STATUS_PAIRED,
@@ -264,29 +325,31 @@ async def show_menu(ctx: Ctx, edit: bool = True) -> None:
         f"{state}"
     )
     kb = menu_keyboard(status, ctx.mm.queue_size(), admin=ctx.is_admin)
-    if edit and await ctx.edit(body, kb):
-        return
-    await ctx.screen("01_main_menu.png", body, kb)
+    image = {"paired": "03_found.png", "queued": "02_search.png"}.get(status, "01_main_menu.png")
+    await ctx.render_screen(image, body, kb)
 
 
 async def show_welcome(ctx: Ctx) -> None:
     if ctx.me is not None and int(ctx.me["age"] or 0) == 0:
-        await ctx.screen("01_main_menu.png", texts.WELCOME.format(city=texts.esc(ctx.cfg.city)),
-                         continue_keyboard())
+        await ctx.render_screen(
+            "01_main_menu.png",
+            texts.WELCOME.format(city=texts.esc(ctx.cfg.city)),
+            continue_keyboard(),
+        )
         return
     await ctx.ensure_nick()
-    await show_menu(ctx, edit=False)
+    await show_menu(ctx)
 
 
 async def show_help(ctx: Ctx) -> None:
     await ctx.reply(
-        texts.HELP.format(pack=ctx.cfg.emoji_pack_url),
+        texts.HELP,
         markup=menu_keyboard(ctx.mm.status(ctx.user_id)),
     )
 
 
 async def show_rules(ctx: Ctx) -> None:
-    await ctx.screen("06_rules.png", texts.RULES, back_menu_keyboard())
+    await ctx.render_screen("06_rules.png", texts.RULES, back_menu_keyboard())
 
 
 async def show_top(ctx: Ctx) -> None:
@@ -304,11 +367,10 @@ async def show_top(ctx: Ctx) -> None:
         # медали только за места: ранг подписываем словом, иначе 🥇/🥈 слипаются с 🥇 Серебро
         place = medals.get(i, f"<code>{i}</code>")
         lines.append(
-            f"{place} <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id'])))}</b>"
-            f" — {rank.pretty(messages)} сообщ. · {texts.esc(rank.title)}"
+            f"{place} <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id']), row['premium_until']))}</b>"
         )
     lines += ["", "<i>Ники участники придумывают сами.</i>"]
-    await ctx.screen("08_top.png", "\n".join(lines), back_menu_keyboard())
+    await ctx.render_screen("08_top.png", "\n".join(lines), back_menu_keyboard())
 
 
 async def show_profile(ctx: Ctx) -> None:
@@ -320,35 +382,23 @@ async def show_profile(ctx: Ctx) -> None:
     me = ctx.me
     messages = int(me["messages"])
     rank = rank_for(messages)
-    status = ctx.mm.status(ctx.user_id)
-    about = texts.esc(me["about"]) if me["about"] else texts.PROFILE_ABOUT_EMPTY
-
-    progress = f"<code>{rank.bar}</code>"
-    if rank.is_max:
-        progress += f" <i>максимальный ранг</i>"
-    else:
-        progress += (
-            f" <i>{rank.pretty(messages)} / {rank.pretty(rank.next_need or 0)}"
-            f" · до «{texts.esc(rank.next_title)}» ещё {rank.pretty(rank.to_next or 0)}</i>"
-        )
-
     lines = [
-        texts.PROFILE_TITLE.format(city=texts.esc(ctx.cfg.city)),
+        f"<b>{texts.esc(ctx.nick)}</b>",
+        f"{rank.emoji} {texts.esc(rank.title)}",
         "",
-        f"🙋 <b>{texts.esc(ctx.nick)}</b>",
-        f"{rank.emoji} <b>{texts.esc(rank.title)}</b>",
-        progress,
-        "",
-        f"💬 Сообщений: <b>{rank.pretty(messages)}</b> · диалогов: {me['dialogs']}",
-        f"⭐ Опыт: {rank.pretty(int(me['xp']))} · оценки 👍 {me['good_ratings']} / 👎 {me['bad_ratings']}",
+        f"Диалогов: <b>{me['dialogs']}</b>",
+        f"👍 {me['good_ratings']}   👎 {me['bad_ratings']}",
         f"Возраст: <b>{me['age']}</b>",
-        f"📍 {texts.esc(me['district']) if me['district'] else 'район не указан'}"
-        f" · ищу: {texts.PROFILE_SEARCH['own' if me['same_district'] else 'city']}",
-        f"✍️ {about}",
-        "",
-        texts.PROFILE_STATUS.get(status, ""),
+        f"Район: <b>{texts.esc(me['district']) if me['district'] else 'не указан'}</b>",
     ]
-    await ctx.screen("04_profile.png", "\n".join(lines), profile_keyboard())
+    if nicklib.is_premium(me["premium_until"]):
+        until = time.strftime("%d.%m.%Y", time.localtime(int(me["premium_until"])))
+        lines += [
+            "",
+            f"АНОН+ активен до {until}",
+            f"Сообщений: {rank.pretty(messages)} · Опыт: {rank.pretty(int(me['xp']))}",
+        ]
+    await ctx.render_screen("04_profile.png", "\n".join(lines), profile_keyboard())
 
 
 # --------------------------------------------------------------------- ники
@@ -389,7 +439,9 @@ def partner_card(row: Any, user_id: int) -> str:
     """
     if row is None:
         return f"🙂 <b>{texts.esc(nicklib.display('', user_id))}</b>"
-    return texts.MATCHED_CARD.format(nick=texts.esc(nicklib.display(row["nickname"], user_id)))
+    return texts.MATCHED_CARD.format(
+        nick=texts.esc(nicklib.display(row["nickname"], user_id, row["premium_until"]))
+    )
 
 
 def matched_text(card: str, you: str) -> str:
@@ -404,18 +456,19 @@ async def announce_pair(ctx: Ctx, user_id: int, partner_id: int) -> bool:
     """
     partner_row = await ctx.db.get_user(partner_id)
     my_row = await ctx.db.get_user(user_id)
-    partner_nick = nicklib.display(partner_row["nickname"], partner_id) if partner_row \
+    partner_nick = nicklib.display(partner_row["nickname"], partner_id, partner_row["premium_until"]) if partner_row \
         else nicklib.display("", partner_id)
-    my_nick = nicklib.display(my_row["nickname"], user_id) if my_row else ctx.nick
+    my_nick = nicklib.display(my_row["nickname"], user_id, my_row["premium_until"]) if my_row else ctx.nick
 
     found_kb = chat_keyboard()
-    if not await send_screen_to(
+    result = await send_screen_to(
         ctx.bot, partner_id, "03_found.png",
-        matched_text(partner_card(my_row, user_id), partner_nick), found_kb, ctx.pack
-    ):
+        matched_text(partner_card(my_row, user_id), partner_nick), found_kb, ctx.pack, ctx.db
+    )
+    if result is DeliveryResult.UNAVAILABLE:
         return False
     await send_screen_to(ctx.bot, user_id, "03_found.png",
-                         matched_text(partner_card(partner_row, partner_id), my_nick), found_kb, ctx.pack)
+                         matched_text(partner_card(partner_row, partner_id), my_nick), found_kb, ctx.pack, ctx.db)
     return True
 
 
@@ -433,13 +486,20 @@ async def announce_pairs(
     for a, b in pairs:
         row_a = await db.get_user(a) if db else None
         row_b = await db.get_user(b) if db else None
-        nick_a = nicklib.display(row_a["nickname"], a) if row_a else nicklib.display("", a)
-        nick_b = nicklib.display(row_b["nickname"], b) if row_b else nicklib.display("", b)
-        if not await send_to(bot, b, matched_text(partner_card(row_a, a), nick_b), None, pack):
+        nick_a = nicklib.display(row_a["nickname"], a, row_a["premium_until"]) if row_a else nicklib.display("", a)
+        nick_b = nicklib.display(row_b["nickname"], b, row_b["premium_until"]) if row_b else nicklib.display("", b)
+        result = await send_screen_to(
+            bot, b, "03_found.png", matched_text(partner_card(row_a, a), nick_b),
+            chat_keyboard(), pack, db,
+        )
+        if result is DeliveryResult.UNAVAILABLE:
             mm.forget(b)
             await send_to(bot, a, texts.PARTNER_LEFT, kb, pack)
             continue
-        await send_to(bot, a, matched_text(partner_card(row_b, b), nick_a), None, pack)
+        await send_screen_to(
+            bot, a, "03_found.png", matched_text(partner_card(row_b, b), nick_a),
+            chat_keyboard(), pack, db,
+        )
         made += 1
     return made
 
@@ -493,7 +553,7 @@ async def act_connect(ctx: Ctx) -> None:
         await ctx.reply(texts.ALREADY_PAIRED, markup=menu_keyboard("paired"))
         return
     if status == "queued":
-        await ctx.screen(
+        await ctx.render_screen(
             "02_search.png",
             texts.QUEUED.format(city=texts.esc(ctx.cfg.city), pos=ctx.mm.position(ctx.user_id) or 1,
                                 size=ctx.mm.queue_size()),
@@ -512,7 +572,7 @@ async def act_connect(ctx: Ctx) -> None:
             ctx.mm.forget(payload)
             continue
         if outcome == "queued":
-            await ctx.screen(
+            await ctx.render_screen(
                 "02_search.png",
                 texts.QUEUED.format(city=texts.esc(ctx.cfg.city), pos=payload or 1,
                                     size=ctx.mm.queue_size()),
@@ -540,9 +600,13 @@ async def act_next(ctx: Ctx) -> None:
 
 
 async def act_stop(ctx: Ctx) -> None:
-    if ctx.mm.status(ctx.user_id) != "paired":
+    if ctx.mm.status(ctx.user_id) == "queued":
         ctx.mm.forget(ctx.user_id)
-        await ctx.reply(texts.NO_DIALOG, markup=menu_keyboard())
+        await ctx.ack("Поиск остановлен")
+        await show_menu(ctx)
+        return
+    if ctx.mm.status(ctx.user_id) != "paired":
+        await show_menu(ctx)
         return
     await _end_dialog(ctx, ended_by=ctx.user_id, note=texts.DIALOG_STOPPED, notify_partner=texts.PARTNER_LEFT)
 
