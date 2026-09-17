@@ -179,6 +179,12 @@ def test_database() -> None:
         assert rank_for(70).title == "Общительный"
         assert rank_for(1_000).title == "Легенда"
 
+        await db.ensure_user(11, "friend", "Друг")
+        assert await db.award_referral(11, 10, 50) is True
+        assert (await db.get_user(10))["xp"] == 120
+        assert await db.award_referral(11, 10, 50) is False
+        assert await db.award_referral(21, 21, 50) is False
+
         await db.ensure_user(11, None, "Аня")
         rid, day_count = await db.add_report(10, 11, "spam", "реклама казино", "10:11:1")
         assert rid >= 1 and day_count == 1

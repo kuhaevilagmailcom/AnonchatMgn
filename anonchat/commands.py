@@ -37,6 +37,7 @@ COMMANDS = (
     BotCommand(command="help", description="❓ Как пользоваться"),
     BotCommand(command="rules", description="📜 Правила"),
     BotCommand(command="support", description="⭐ Поддержать проект"),
+    BotCommand(command="ref", description="🎁 Пригласить друга и получить опыт"),
     BotCommand(command="forget", description="🧹 Удалить мой профиль"),
 )
 

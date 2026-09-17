@@ -15,6 +15,7 @@ from ..actions import (
     act_next,
     act_stop,
     apply_rating,
+    send_to,
     show_help,
     show_menu,
     show_rules,
@@ -26,17 +27,42 @@ from ..config import Config
 from ..db import Database
 
 router = Router(name="menu")
+REFERRAL_XP = 50
 
 
 # ---------------------------------------------------------------------------------- команды
 @router.message(CommandStart())
-async def cmd_start(message: Message, ctx: Ctx, cfg: Config) -> None:
+async def cmd_start(message: Message, ctx: Ctx, cfg: Config, is_new_user: bool) -> None:
+    parts = (message.text or "").split(maxsplit=1)
+    if is_new_user and len(parts) == 2 and parts[1].startswith("ref_"):
+        raw_referrer = parts[1][4:]
+        if raw_referrer.isdigit():
+            referrer_id = int(raw_referrer)
+            if await ctx.db.award_referral(ctx.user_id, referrer_id, REFERRAL_XP):
+                await send_to(
+                    ctx.bot,
+                    referrer_id,
+                    f"🎁 По твоей ссылке пришёл новый пользователь · +{REFERRAL_XP} ⭐",
+                    pack=ctx.pack,
+                )
     if ctx.user_id in cfg.admin_ids:
         # при первом /start админа Telegram уже позволяет поставить его личное меню модератора
         await ensure_for_admin(ctx.bot, cfg, ctx.user_id)
     await show_welcome(ctx)
     if ctx.mm.status(ctx.user_id) == "queued":
         await ctx.reply("⏳ Ты всё ещё в очереди — найду пару автоматически.")
+
+
+@router.message(Command("ref", "invite"))
+async def cmd_referral(message: Message, ctx: Ctx) -> None:
+    bot = await ctx.bot.get_me()
+    link = f"https://t.me/{bot.username}?start=ref_{ctx.user_id}"
+    await ctx.reply(
+        "<b>Пригласи друга</b>\n\n"
+        f"За каждого нового пользователя ты получишь <b>+{REFERRAL_XP} опыта</b>.\n\n"
+        f"Твоя ссылка:\n<code>{link}</code>",
+        K.menu_keyboard(ctx.mm.status(ctx.user_id)),
+    )
 
 
 @router.message(Command("help"))

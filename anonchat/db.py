@@ -68,6 +68,13 @@ CREATE TABLE IF NOT EXISTS blocks (
     PRIMARY KEY (user_id, blocked_id)
 );
 
+CREATE TABLE IF NOT EXISTS referrals (
+    invitee_id  INTEGER PRIMARY KEY,
+    referrer_id INTEGER NOT NULL,
+    xp_awarded  INTEGER NOT NULL,
+    created_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS kv (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -238,6 +245,25 @@ class Database:
         await self.db.commit()
         row = await self._fetchone("SELECT xp FROM users WHERE user_id = ?", (user_id,))
         return int(row["xp"]) if row else 0
+
+    async def award_referral(self, invitee_id: int, referrer_id: int, amount: int) -> bool:
+        if invitee_id == referrer_id:
+            return False
+        cur = await self.db.execute(
+            """INSERT OR IGNORE INTO referrals (invitee_id, referrer_id, xp_awarded, created_at)
+               SELECT ?, ?, ?, ? WHERE EXISTS (
+                   SELECT 1 FROM users WHERE user_id = ?
+               )""",
+            (invitee_id, referrer_id, amount, now(), referrer_id),
+        )
+        if cur.rowcount != 1:
+            return False
+        await self.db.execute(
+            "UPDATE users SET xp = xp + ? WHERE user_id = ?",
+            (amount, referrer_id),
+        )
+        await self.db.commit()
+        return True
 
     # ------------------------------------------------------------------ moderation
     async def is_restricted(self, user_id: int) -> str | None:

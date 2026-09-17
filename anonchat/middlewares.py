@@ -40,6 +40,7 @@ class DataContext(BaseMiddleware):
         data["mm"] = self.mm
         data["pack"] = self.pack
         data["is_admin"] = False
+        data["is_new_user"] = False
         data["ctx"] = None
         data["me"] = None
 
@@ -48,6 +49,7 @@ class DataContext(BaseMiddleware):
         if user is not None and not user.is_bot:
             me = await self.db.get_user(user.id)
             if me is None:
+                data["is_new_user"] = True
                 me = await self.db.ensure_user(user.id, user.username, user.first_name)
             elif me["last_seen"] < int(time.time()) - 60:
                 await self.db.touch(user.id)
