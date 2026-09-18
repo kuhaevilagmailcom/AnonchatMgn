@@ -617,14 +617,13 @@ async def apply_rating(ctx: Ctx, positive: bool) -> None:
         return
     if positive:
         await ctx.db.award_xp(partner, ctx.cfg.xp_good_rating)
-        await send_to(ctx.bot, partner, texts.RATING_DONE_GOOD.format(xp=ctx.cfg.xp_good_rating),
-                      None, ctx.pack)
         await ctx.ack("Спасибо")
+        result_text = texts.RATING_DONE_GOOD.format(xp=ctx.cfg.xp_good_rating)
     else:
-        await send_to(ctx.bot, partner, texts.RATING_DONE_BAD, None, ctx.pack)
         await ctx.ack("Записал")
+        result_text = texts.RATING_DONE_BAD
     await ctx.reply(
-        "Готово.", markup=menu_keyboard(ctx.mm.status(ctx.user_id))
+        result_text, markup=menu_keyboard(ctx.mm.status(ctx.user_id))
     )
 
 

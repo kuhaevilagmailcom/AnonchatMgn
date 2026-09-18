@@ -318,9 +318,15 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     await press(A, "rate:1")
     after_b = (await db.get_user(B))["xp"]
     check(after_b - before_b == cfg.xp_good_rating, "👍 добавило собеседнику xp_good_rating")
+    check("собеседнику" in session.last_to(A) and session.to(B) == [],
+          "результат положительной оценки получает только нажавший")
     check((await db.get_user(A))["xp"] >= 2, "за сообщения потёк опыт")
     await press(A, "rate:1")
     check((await db.get_user(B))["xp"] == after_b, "повторная та же оценка ничего не добавляет")
+    session.clear()
+    await press(B, "rate:0")
+    check(texts.RATING_DONE_BAD in session.last_to(B) and session.to(A) == [],
+          "результат отрицательной оценки не отправляется собеседнику")
 
     # 8. настройки и профиль
     session.clear()
