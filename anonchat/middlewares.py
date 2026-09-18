@@ -70,7 +70,7 @@ class DataContext(BaseMiddleware):
                 admin_permissions=permissions,
             )
         result = await handler(event, data)
-        await self.db.save_matchmaker(self.mm.snapshot())
+        self.db.schedule_matchmaker_save(self.mm)
         return result
 
 

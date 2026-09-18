@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
+import sqlite3
 import time
 from pathlib import Path
 from typing import Any, Sequence
@@ -140,6 +143,9 @@ class Database:
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
         self._db: aiosqlite.Connection | None = None
+        self._matchmaker = None
+        self._matchmaker_dirty = False
+        self._matchmaker_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> "Database":
@@ -148,6 +154,8 @@ class Database:
             self._db = await aiosqlite.connect(self.path)
             self._db.row_factory = aiosqlite.Row
             await self._db.execute("PRAGMA journal_mode=WAL")
+            await self._db.execute("PRAGMA synchronous=NORMAL")
+            await self._db.execute("PRAGMA busy_timeout=5000")
             await self._db.executescript(SCHEMA)
             await self._migrate()
             await self._db.commit()
@@ -204,6 +212,8 @@ class Database:
 
     async def close(self) -> None:
         if self._db is not None:
+            if self._matchmaker is not None:
+                await self.flush_matchmaker(self._matchmaker)
             await self._db.close()
             self._db = None
 
@@ -648,6 +658,44 @@ class Database:
             "matchmaker_state",
             json.dumps(state, ensure_ascii=False, separators=(",", ":")),
         )
+
+    def schedule_matchmaker_save(self, matchmaker) -> None:
+        """Объединяет частые изменения в одну запись состояния раз в 0,25 секунды."""
+        self._matchmaker = matchmaker
+        self._matchmaker_dirty = True
+        if self._matchmaker_task is None or self._matchmaker_task.done():
+            self._matchmaker_task = asyncio.create_task(self._save_matchmaker_loop())
+
+    async def _save_matchmaker_loop(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(0.25)
+                self._matchmaker_dirty = False
+                if self._matchmaker is not None:
+                    await self.save_matchmaker(self._matchmaker.snapshot())
+                if not self._matchmaker_dirty:
+                    return
+        finally:
+            self._matchmaker_task = None
+
+    async def flush_matchmaker(self, matchmaker) -> None:
+        task = self._matchmaker_task
+        if task is not None and not task.done() and task is not asyncio.current_task():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        self._matchmaker_task = None
+        self._matchmaker_dirty = False
+        await self.save_matchmaker(matchmaker.snapshot())
+
+    async def backup_to(self, path: Path | str) -> None:
+        """Создаёт согласованную копию работающей SQLite, включая данные из WAL."""
+        target = sqlite3.connect(Path(path), check_same_thread=False)
+        try:
+            await self.db.commit()
+            await self.db.backup(target)
+        finally:
+            target.close()
 
     async def load_matchmaker(self) -> dict[str, Any] | None:
         value = await self.get_kv("matchmaker_state")

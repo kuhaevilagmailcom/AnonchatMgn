@@ -378,7 +378,7 @@ def test_keyboard_styles_and_icons() -> None:
     panel = texts_of(K.admin_panel_keyboard(2, {"reports", "mute"}))
     assert panel == ["Жалобы · 2", "Мут по id", "В меню"], panel
     owner_panel = texts_of(K.admin_panel_keyboard(0, {"stats"}, True))
-    assert "Администраторы" in owner_panel and "Чаты: ВЫКЛ" in owner_panel
+    assert all(item in owner_panel for item in ("Администраторы", "Скачать базу", "Чаты: ВЫКЛ"))
     assert "Чаты: ВКЛ" in texts_of(K.admin_panel_keyboard(0, {"stats"}, True, True))
     # кнопка входа в панель появляется только у админа
     assert texts_of(K.menu_keyboard("free", admin=True))[-1] == "Панель модератора"
@@ -538,6 +538,37 @@ def test_supporter_persists_restart() -> None:
             assert int((await reopened.get_user(77))["support_stars"]) == support_total
         finally:
             await reopened.close()
+
+    asyncio.run(scenario())
+
+
+def test_live_database_backup_contains_runtime_state() -> None:
+    async def scenario() -> None:
+        root = Path(tempfile.mkdtemp())
+        db = await Database(root / "live.db").start()
+        mm = Matchmaker()
+        try:
+            await db.ensure_user(101, "backup_user", "Backup")
+            mm.connect(101)
+            db.schedule_matchmaker_save(mm)
+            save_task = db._matchmaker_task
+            for _ in range(1000):
+                db.schedule_matchmaker_save(mm)
+            assert db._matchmaker_task is save_task, "частые сообщения должны объединяться в одну запись"
+            await db.flush_matchmaker(mm)
+            await db.backup_to(root / "backup.db")
+        finally:
+            await db.close()
+
+        backup = await Database(root / "backup.db").start()
+        try:
+            assert (await backup.get_user(101))["username"] == "backup_user"
+            state = await backup.load_matchmaker()
+            restored = Matchmaker()
+            restored.restore(state or {})
+            assert restored.status(101) == "queued"
+        finally:
+            await backup.close()
 
     asyncio.run(scenario())
 

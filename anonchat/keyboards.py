@@ -280,6 +280,7 @@ CB_PANEL_USERS = "adm:panel:users"
 CB_PANEL_POINTS = "adm:panel:points"
 CB_PANEL_ADMINS = "adm:panel:admins"
 CB_PANEL_MONITOR = "adm:panel:monitor"
+CB_PANEL_BACKUP = "adm:panel:backup"
 CB_PANEL_BACK = "adm:panel:back"
 
 
@@ -318,6 +319,7 @@ def admin_panel_keyboard(
         _button(b, "Выдать / снять очки", callback_data=CB_PANEL_POINTS, icon="stars")
     if owner:
         _button(b, "Администраторы", callback_data=CB_PANEL_ADMINS, icon="bonus", style="primary")
+        _button(b, "Скачать базу", callback_data=CB_PANEL_BACKUP, icon="link", style="primary")
     if owner or "monitor" in permissions:
         _button(
             b,

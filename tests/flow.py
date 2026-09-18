@@ -624,6 +624,9 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await press(D, "adm:panel:monitor")
     check(await db.get_kv(f"chat_monitor:{D}") != "1",
           "назначенный администратор не может включить слежение за чатами")
+    await press(D, "adm:panel:backup")
+    check(not any(item["method"] == "sendDocument" for item in session.to(D)),
+          "скачивание базы недоступно назначенному администратору")
     await send(D, f"/ban {C} тест")
     check("Нет доступа" in session.last_to(D), "сервер запрещает действие без права ban")
     await send(ADMIN, f"/points {A} +50")
@@ -640,6 +643,10 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await press(ADMIN, "adm:panel:monitor")
     check(await db.get_kv(f"chat_monitor:{ADMIN}") == "1",
           "владелец включает слежение за активными чатами")
+    session.clear()
+    await press(ADMIN, "adm:panel:backup")
+    check(any(item["method"] == "sendDocument" for item in session.to(ADMIN)),
+          "владелец скачивает согласованную копию базы")
 
     session.clear()
     await press(A, "act:settings")

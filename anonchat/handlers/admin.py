@@ -8,14 +8,16 @@
 from __future__ import annotations
 
 import asyncio
+import tempfile
 import time
+from pathlib import Path
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, FSInputFile, Message
 
 from .. import keyboards as K
 from .. import nick as nicklib
@@ -493,6 +495,9 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
     if data == K.CB_PANEL_ADMINS and not ctx.is_owner:
         await ctx.ack("Только для владельца", alert=True)
         return
+    if data == K.CB_PANEL_BACKUP and not ctx.is_owner:
+        await ctx.ack("Только для владельца", alert=True)
+        return
     if data == K.CB_PANEL_BACK:
         await state.clear()
         await panel_screen(ctx, db, mm)
@@ -514,6 +519,21 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         await db.set_kv(key, "1" if enabled else "0")
         await ctx.ack(f"Слежение за чатами {'включено' if enabled else 'выключено'}")
         await panel_screen(ctx, db, mm)
+        return
+    if data == K.CB_PANEL_BACKUP:
+        await ctx.ack("Готовлю базу…")
+        await db.flush_matchmaker(mm)
+        with tempfile.NamedTemporaryFile(prefix="anonchat_backup_", suffix=".db", delete=False) as tmp:
+            backup_path = Path(tmp.name)
+        try:
+            await db.backup_to(backup_path)
+            if event.message is not None:
+                await event.message.answer_document(
+                    FSInputFile(backup_path, filename=f"anonchat_{time.strftime('%Y%m%d_%H%M%S')}.db"),
+                    caption="Резервная копия базы AnonchatMgn.",
+                )
+        finally:
+            backup_path.unlink(missing_ok=True)
         return
     if data == K.CB_PANEL_ADMINS:
         await state.set_state(AdminStates.await_input)

@@ -116,6 +116,7 @@ async def main() -> None:  # pragma: no cover
     finally:
         if janitor_task is not None:
             janitor_task.cancel()
+        await database.flush_matchmaker(mm)
         await dp.storage.close()
         await bot.session.close()
         await database.close()
