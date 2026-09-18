@@ -690,6 +690,8 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     session.clear()
     await press(A, "act:connect")
     check(mm.status(A) == "queued" and "Ищу собеседника" in session.last_to(A), "поиск ставит в очередь")
+    check(session.outbox[0]["method"] == "answerCallbackQuery",
+          "кнопка поиска отпускает интерфейс сразу")
     await press(B, "act:connect")
     check(mm.partner(A) == B, "возраст не разделяет очередь")
     check("Собеседник найден" in session.last_to(A), "экран найденного собеседника отправлен")

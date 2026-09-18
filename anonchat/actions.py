@@ -542,6 +542,7 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
 
 
 async def act_connect(ctx: Ctx) -> None:
+    await ctx.ack()
     if await ctx.restricted():
         return
     await ctx.ensure_nick()
@@ -564,7 +565,6 @@ async def act_connect(ctx: Ctx) -> None:
         outcome, payload = ctx.mm.connect(ctx.user_id, **prefs)
         if outcome == "paired":
             if await announce_pair(ctx, ctx.user_id, payload):
-                await ctx.ack("Собеседник найден")
                 return
             ctx.mm.forget(payload)
             continue
@@ -575,7 +575,6 @@ async def act_connect(ctx: Ctx) -> None:
                                     size=ctx.mm.queue_size()),
                 menu_keyboard("queued", ctx.mm.queue_size()),
             )
-            await ctx.ack("Ты в очереди")
             return
         await ctx.reply(
             texts.QUEUE_FULL.format(limit=ctx.cfg.queue_soft_limit),
