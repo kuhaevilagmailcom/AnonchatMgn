@@ -84,8 +84,8 @@ class Config:
 
     # limits
     max_message_len: int = 3000
-    inchat_rate_limit: int = 30          # сообщений в минуту внутри диалога
-    menu_rate_limit: int = 12            # команд/нажатий в минуту
+    inchat_rate_limit: int = 120         # сообщений в минуту внутри диалога
+    menu_rate_limit: int = 60            # команд/нажатий в минуту
     auto_mute_reports: int = 3           # жалоб за сутки -> авто-мут
     auto_mute_minutes: int = 60
     report_context_retention_days: int = 7
