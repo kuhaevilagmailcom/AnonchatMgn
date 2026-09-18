@@ -69,7 +69,9 @@ class DataContext(BaseMiddleware):
                 me=me,
                 admin_permissions=permissions,
             )
-        return await handler(event, data)
+        result = await handler(event, data)
+        await self.db.save_matchmaker(self.mm.snapshot())
+        return result
 
 
 class Throttling(BaseMiddleware):

@@ -1,13 +1,13 @@
 """Матчмейкер: очередь поиска, подбор пар по району, активные диалоги.
 
-Всё живёт в памяти процесса (быстро и без гонок: aiogram крутится в одном event loop).
-Профили, опыт и статистика — в SQLite, так что после рестарта люди остаются «прокачанными»,
-а очередь просто формируется заново — это нормально для анонимного чата.
+Операции выполняются в памяти, а снимок состояния сохраняется в SQLite middleware-слоем.
+Поэтому после рестарта восстанавливаются очередь, активные пары и ожидание оценки.
 """
 
 from __future__ import annotations
 
 import time
+from typing import Any
 from dataclasses import dataclass, field
 
 
@@ -261,3 +261,53 @@ class Matchmaker:
         for uid in stale:
             self._pending_rating.pop(uid, None)
         return len(stale)
+
+    def snapshot(self) -> dict[str, Any]:
+        pairs = []
+        seen: set[tuple[int, int]] = set()
+        for pair in self._pairs.values():
+            key = (min(pair.a, pair.b), max(pair.a, pair.b))
+            if key in seen:
+                continue
+            seen.add(key)
+            pairs.append({
+                "a": pair.a, "b": pair.b, "started_at": pair.started_at,
+                "counts": pair.counts, "history": pair.history,
+            })
+        return {
+            "queue": [
+                {
+                    "user_id": c.user_id, "district": c.district,
+                    "same_district": c.same_district, "excluded": list(c.excluded),
+                    "joined_at": c.joined_at,
+                }
+                for c in self._queue.values()
+            ],
+            "pairs": pairs,
+            "pending_rating": {
+                str(uid): list(entry) for uid, entry in self._pending_rating.items()
+            },
+        }
+
+    def restore(self, state: dict[str, Any]) -> None:
+        self._queue.clear()
+        self._pairs.clear()
+        self._pending_rating.clear()
+        for item in state.get("queue", []):
+            candidate = Candidate(
+                int(item["user_id"]), str(item.get("district") or ""),
+                bool(item.get("same_district")), set(map(int, item.get("excluded", []))),
+                float(item.get("joined_at", time.time())),
+            )
+            self._queue[candidate.user_id] = candidate
+        for item in state.get("pairs", []):
+            pair = Pair(
+                int(item["a"]), int(item["b"]), float(item.get("started_at", time.time())),
+                {int(uid): int(count) for uid, count in dict(item.get("counts", {})).items()},
+                [(int(uid), str(text)) for uid, text in item.get("history", [])],
+            )
+            self._pairs[pair.a] = pair
+            self._pairs[pair.b] = pair
+        for uid, entry in dict(state.get("pending_rating", {})).items():
+            if len(entry) == 3:
+                self._pending_rating[int(uid)] = (int(entry[0]), int(entry[1]), float(entry[2]))

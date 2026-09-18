@@ -88,6 +88,9 @@ async def main() -> None:  # pragma: no cover
 
     bot, dp, database, mm, pack = build(cfg)
     await database.start()
+    saved_matchmaker = await database.load_matchmaker()
+    if saved_matchmaker:
+        mm.restore(saved_matchmaker)
     await database.cleanup_report_context(cfg.report_context_retention_days)
 
     janitor_task: asyncio.Task | None = None

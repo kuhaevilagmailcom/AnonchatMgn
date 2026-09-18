@@ -116,6 +116,22 @@ def test_queue_then_pair() -> None:
     assert mm.status(1) == "free" and mm.status(2) == "free"
 
 
+def test_matchmaker_snapshot_restore() -> None:
+    mm = Matchmaker()
+    mm.connect(1)
+    mm.connect(2)
+    mm.count_message(1)
+    restored = Matchmaker()
+    restored.restore(mm.snapshot())
+    assert restored.partner(1) == 2
+    assert restored.dialog_stats(1)["counts"] == {1: 1}
+
+    queued = Matchmaker()
+    queued.connect(3, district="Левобережный", same_district=True)
+    restored.restore(queued.snapshot())
+    assert restored.status(3) == "queued"
+
+
 def test_district_filter_and_sweep() -> None:
     mm = Matchmaker()
     mm.connect(1, district="Правобережный", same_district=True)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 from typing import Any, Sequence
@@ -633,6 +634,22 @@ class Database:
             (key, value),
         )
         await self.db.commit()
+
+    async def save_matchmaker(self, state: dict[str, Any]) -> None:
+        await self.set_kv(
+            "matchmaker_state",
+            json.dumps(state, ensure_ascii=False, separators=(",", ":")),
+        )
+
+    async def load_matchmaker(self) -> dict[str, Any] | None:
+        value = await self.get_kv("matchmaker_state")
+        if not value:
+            return None
+        try:
+            state = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        return state if isinstance(state, dict) else None
 
     async def delete_kv(self, key: str) -> None:
         await self.db.execute("DELETE FROM kv WHERE key = ?", (key,))
