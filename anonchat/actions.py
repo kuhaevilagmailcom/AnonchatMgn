@@ -380,6 +380,7 @@ async def show_profile(ctx: Ctx) -> None:
         await ctx.reply(texts.PROFILE_MISSING)
         return
     me = ctx.me
+    invited, referral_xp = await ctx.db.referral_stats(ctx.user_id)
     messages = int(me["messages"])
     rank = rank_for(messages)
     lines = [
@@ -387,6 +388,8 @@ async def show_profile(ctx: Ctx) -> None:
         f"{rank.emoji} {texts.esc(rank.title)}",
         "",
         f"Очки: <b>{int(me['xp'])} ⭐</b>",
+        f"Приглашено пользователей: <b>{invited}</b>",
+        f"Получено за приглашения: <b>{referral_xp} ⭐</b>",
         f"Диалогов: <b>{me['dialogs']}</b>",
         f"👍 {me['good_ratings']}   👎 {me['bad_ratings']}",
         f"Возраст: <b>{me['age']}</b>",

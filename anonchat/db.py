@@ -388,6 +388,14 @@ class Database:
         await self.db.commit()
         return True
 
+    async def referral_stats(self, referrer_id: int) -> tuple[int, int]:
+        row = await self._fetchone(
+            "SELECT COUNT(*) AS invited, COALESCE(SUM(xp_awarded), 0) AS earned "
+            "FROM referrals WHERE referrer_id = ?",
+            (referrer_id,),
+        )
+        return (int(row["invited"]), int(row["earned"])) if row else (0, 0)
+
     async def record_payment(
         self,
         user_id: int,

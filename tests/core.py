@@ -199,6 +199,7 @@ def test_database() -> None:
 
         await db.ensure_user(11, "friend", "Друг")
         assert await db.award_referral(11, 10, 50) is True
+        assert await db.referral_stats(10) == (1, 50)
         assert (await db.get_user(10))["xp"] == 120
         assert await db.award_referral(11, 10, 50) is False
         assert await db.award_referral(21, 21, 50) is False
@@ -381,7 +382,8 @@ def test_keyboard_styles_and_icons() -> None:
     assert "Чаты: ВКЛ" in texts_of(K.admin_panel_keyboard(0, {"stats"}, True, True))
     # кнопка входа в панель появляется только у админа
     assert texts_of(K.menu_keyboard("free", admin=True))[-1] == "Панель модератора"
-    assert texts_of(K.menu_keyboard("free"))[-1] == "Поддержать проект"
+    assert "Поддержать проект" not in texts_of(K.menu_keyboard("free"))
+    assert "Поддержать проект" in texts_of(K.settings_keyboard(False, "", "Ник"))
 
 
 def test_contact_filter() -> None:

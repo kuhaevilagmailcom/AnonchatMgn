@@ -209,7 +209,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
         "Помощь",
     ):
         check(needle in labels, f"кнопка «{needle}» на месте")
-    check(len(labels) == 9, f"в главном меню 9 кнопок, не {len(labels)}")
+    check(len(labels) == 8, f"в главном меню 8 кнопок, не {len(labels)}")
     check(
         all("url" not in str(btn) for btn in buttons),
         "кнопки с эмодзи-паком в меню больше нет (ссылка осталась в /help)",

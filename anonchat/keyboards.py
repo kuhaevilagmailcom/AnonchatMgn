@@ -85,7 +85,6 @@ def menu_keyboard(status: str = "free", queue_size: int = 0, admin: bool = False
     _button(b, "Топ", callback_data=CB_TOP, icon="stats")
     _button(b, "Правила", callback_data=CB_RULES, icon="ticket")
     _button(b, "Помощь", callback_data=CB_HELP, icon="support")
-    _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
     rows = [1, 2, 2, 1]
     if admin:
         _button(b, "Панель модератора", callback_data=CB_ADMIN_PANEL, icon="bonus", style="primary")
@@ -161,9 +160,10 @@ def settings_keyboard(same_district: bool, district: str, nickname: str) -> Inli
     )
     _button(b, "Возраст", callback_data="cfg:age:ask", icon="stars")
     _button(b, "Сбросить скрытых", callback_data="cfg:blocks:ask", icon="refresh")
+    _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
     _button(b, "Удалить профиль", callback_data="cfg:forget:ask", icon="delete", style="danger")
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
-    b.adjust(1, 1, 1, 1, 1, 1, 1)
+    b.adjust(1, 1, 1, 1, 1, 1, 1, 1)
     return b.as_markup()
 
 
