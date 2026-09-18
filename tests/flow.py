@@ -716,6 +716,33 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check("💎" in session.last_to(A), "поддержавший получает постоянный marker")
 
     session.clear()
+    await press(A, "act:settings")
+    await press(A, "cfg:style")
+    check("Подписка Holy Gram" in session.last_to(A),
+          "без активной подписки раздел стилей открывает существующую покупку")
+    await press(A, "premium:buy")
+    premium_invoice = next(
+        (item for item in reversed(session.outbox) if item["method"] == "sendInvoice"), None
+    )
+    check(bool(premium_invoice and premium_invoice["prices"][0]["amount"] == cfg.premium_price_stars),
+          "покупка стиля использует существующий тариф Holy Gram")
+    await payload(A, successful_payment={
+        "currency": "XTR",
+        "total_amount": cfg.premium_price_stars,
+        "invoice_payload": f"premium:{A}:{cfg.premium_days}:nonce",
+        "telegram_payment_charge_id": "premium-charge-1",
+        "provider_payment_charge_id": "",
+    })
+    check(int((await db.get_user(A))["premium_until"]) > 0,
+          "платёж активирует существующую подписку")
+    await press(A, "act:settings")
+    await press(A, "cfg:style")
+    await press(A, "cfg:style:cute")
+    check((await db.get_user(A))["communication_style"] == "cute",
+          "выбранный стиль сохраняется в SQLite")
+    await press(A, "act:menu")
+
+    session.clear()
     await press(A, "act:connect")
     check(mm.status(A) == "queued" and "Ищу собеседника" in session.last_to(A), "поиск ставит в очередь")
     check(session.outbox[0]["method"] == "answerCallbackQuery",
@@ -729,6 +756,19 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check("@user1002" not in session.last_to(A) and f"<code>{B}</code>" not in session.last_to(A)
           and "⭐" in session.last_to(A),
           "видны только анонимный ник и очки")
+
+    session.clear()
+    await send(A, "ты где, скоро придешь?")
+    check("гдеее" in session.last_to(B) and ":3" in session.last_to(B),
+          "в центральной пересылке собеседник получает стилизованный текст")
+    check("ты где, скоро придешь?" not in session.last_to(B),
+          "оригинальный текст отдельно не отправляется")
+    await payload(
+        A,
+        photo=[{"file_id": "styled-photo", "file_unique_id": "styled", "width": 1, "height": 1}],
+        caption="Фото для тебя",
+    )
+    check(":3" in session.last_to(B), "у медиа преобразуется только подпись")
 
     session.clear()
     await send(A, "/game")
@@ -885,6 +925,11 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     session.fail_once["sendMessage"] = "forbidden"
     await send(D, "недоступен")
     check(mm.status(D) == "free" and mm.status(E) == "free", "UNAVAILABLE разрывает пару")
+
+    await press(A, "act:settings")
+    await press(A, "cfg:style")
+    await press(A, "cfg:style:off")
+    check((await db.get_user(A))["communication_style"] == "", "стиль отключается в настройках")
 
     await bot.session.close()
     await db.close()
