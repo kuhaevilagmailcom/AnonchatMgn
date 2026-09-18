@@ -37,7 +37,6 @@ COMMANDS = (
     BotCommand(command="help", description="❓ Как пользоваться"),
     BotCommand(command="rules", description="📜 Правила"),
     BotCommand(command="support", description="⭐ Поддержать проект"),
-    BotCommand(command="premium", description="✦ АНОН+"),
     BotCommand(command="ref", description="🎁 Пригласить друга и получить опыт"),
     BotCommand(command="unblock", description="🔓 Сбросить скрытых собеседников"),
     BotCommand(command="forget", description="🧹 Удалить мой профиль"),
@@ -74,9 +73,12 @@ async def register_common(bot: Bot, cfg: Config) -> None:
         await ensure_for_admin(bot, cfg, admin_id, quiet=True)
 
 
-async def ensure_for_admin(bot: Bot, cfg: Config, user_id: int, quiet: bool = False) -> bool:
+async def ensure_for_admin(
+    bot: Bot, cfg: Config, user_id: int, quiet: bool = False, authorized: bool | None = None
+) -> bool:
     """Меню модератора для конкретного чата. False — чат ещё не существует (боту не писали)."""
-    if user_id not in cfg.admin_ids or user_id in _done:
+    allowed = user_id in cfg.admin_ids if authorized is None else authorized
+    if not allowed or user_id in _done:
         return user_id in _done
     try:
         await bot.set_my_commands(
@@ -89,3 +91,12 @@ async def ensure_for_admin(bot: Bot, cfg: Config, user_id: int, quiet: bool = Fa
     _done.add(user_id)
     log.info("меню модератора включено для %s", user_id)
     return True
+
+
+async def remove_admin_commands(bot: Bot, user_id: int) -> None:
+    """Возвращает обычное меню после снятия динамической админки."""
+    try:
+        await bot.set_my_commands(list(COMMANDS), scope=BotCommandScopeChat(chat_id=user_id))
+    except TelegramAPIError:
+        pass
+    _done.discard(user_id)

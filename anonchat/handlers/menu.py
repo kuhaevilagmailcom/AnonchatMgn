@@ -48,9 +48,9 @@ async def cmd_start(
                     f"🎁 По твоей ссылке пришёл новый пользователь · +{REFERRAL_XP} ⭐",
                     pack=ctx.pack,
                 )
-    if ctx.user_id in cfg.admin_ids:
+    if ctx.is_admin:
         # при первом /start админа Telegram уже позволяет поставить его личное меню модератора
-        await ensure_for_admin(ctx.bot, cfg, ctx.user_id)
+        await ensure_for_admin(ctx.bot, cfg, ctx.user_id, authorized=True)
     await show_welcome(ctx)
     if ctx.mm.status(ctx.user_id) == "queued":
         await ctx.reply("⏳ Ты всё ещё в очереди — найду пару автоматически.")
@@ -62,7 +62,7 @@ async def cmd_referral(message: Message, ctx: Ctx) -> None:
     link = f"https://t.me/{bot.username}?start=ref_{ctx.user_id}"
     await ctx.reply(
         "<b>Пригласи друга</b>\n\n"
-        f"За каждого нового пользователя ты получишь <b>+{REFERRAL_XP} опыта</b>.\n\n"
+        f"За каждого нового пользователя ты получишь <b>+{REFERRAL_XP} ⭐ очков</b>.\n\n"
         f"Твоя ссылка:\n<code>{link}</code>",
         K.menu_keyboard(ctx.mm.status(ctx.user_id)),
     )
@@ -124,7 +124,7 @@ async def cb_menu(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
 @router.callback_query(F.data == K.CB_CONTINUE)
 async def cb_continue(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
     await state.clear()
-    await ctx.edit("<b>Сколько тебе лет?</b>", K.age_keyboard())
+    await show_menu(ctx)
 
 
 @router.callback_query(F.data.startswith("onboard:age:"))
@@ -133,8 +133,8 @@ async def cb_age(event: CallbackQuery, ctx: Ctx, db: Database, state: FSMContext
         age = int((event.data or "").rsplit(":", 1)[1])
     except (ValueError, IndexError):
         age = 0
-    if age not in range(13, 21):
-        await ctx.ack("Выбери возраст от 13 до 20", alert=True)
+    if age != 0 and age not in range(13, 21):
+        await ctx.ack("Выбери возраст от 13 до 20 или не указывай", alert=True)
         return
     await db.set_profile(ctx.user_id, age=age)
     ctx.me = await db.get_user(ctx.user_id)
@@ -143,17 +143,8 @@ async def cb_age(event: CallbackQuery, ctx: Ctx, db: Database, state: FSMContext
     await show_menu(ctx)
 
 
-@router.callback_query(F.data == K.CB_MORE)
-async def cb_more(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
-    await state.clear()
-    await ctx.edit("<b>Ещё</b>", K.more_keyboard())
-
-
 @router.callback_query(F.data == K.CB_CONNECT)
 async def cb_connect(event: CallbackQuery, ctx: Ctx) -> None:
-    if ctx.me is not None and int(ctx.me["age"] or 0) == 0:
-        await ctx.edit("<b>Сколько тебе лет?</b>", K.age_keyboard())
-        return
     await act_connect(ctx)
 
 

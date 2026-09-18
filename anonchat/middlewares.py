@@ -51,7 +51,10 @@ class DataContext(BaseMiddleware):
             if me is None:
                 data["is_new_user"] = True
             me = await self.db.ensure_user(user.id, user.username, user.first_name)
-            data["is_admin"] = user.id in self.config.admin_ids
+            permissions = await self.db.get_admin_permissions(user.id, self.config.admin_ids)
+            data["is_admin"] = bool(permissions)
+        else:
+            permissions = frozenset()
         data["me"] = me
 
         if isinstance(event, (Message, CallbackQuery)) and user is not None:
@@ -64,6 +67,7 @@ class DataContext(BaseMiddleware):
                 event=event,
                 user_id=user.id,
                 me=me,
+                admin_permissions=permissions,
             )
         return await handler(event, data)
 

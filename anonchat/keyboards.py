@@ -7,7 +7,9 @@
 
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from urllib.parse import quote
+
+from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from .pack import ICONS
@@ -25,9 +27,7 @@ CB_SETTINGS = "act:settings"
 CB_HELP = "act:help"
 CB_RULES = "act:rules"
 CB_TOP = "act:top"
-CB_MORE = "act:more"
 CB_SUPPORT = "act:support"
-CB_PREMIUM = "act:premium"
 CB_CONTINUE = "onboard:continue"
 CB_BLOCK = "rate:block"
 CB_NICK = "cfg:nick:ask"
@@ -82,8 +82,11 @@ def menu_keyboard(status: str = "free", queue_size: int = 0, admin: bool = False
         _button(b, "Найти собеседника", callback_data=CB_CONNECT, icon="view", style="success")
     _button(b, "Профиль", callback_data=CB_PROFILE, icon="profile")
     _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
-    _button(b, "Ещё", callback_data=CB_MORE, icon="add")
-    rows = [1, 2, 1]
+    _button(b, "Топ", callback_data=CB_TOP, icon="stats")
+    _button(b, "Правила", callback_data=CB_RULES, icon="ticket")
+    _button(b, "Помощь", callback_data=CB_HELP, icon="support")
+    _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
+    rows = [1, 2, 2, 1]
     if admin:
         _button(b, "Панель модератора", callback_data=CB_ADMIN_PANEL, icon="bonus", style="primary")
         rows.append(1)
@@ -101,7 +104,8 @@ def age_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     for age in range(13, 21):
         _button(b, str(age), callback_data=f"onboard:age:{age}")
-    b.adjust(4, 4)
+    _button(b, "Не указывать", callback_data="onboard:age:0", icon="check")
+    b.adjust(4, 4, 1)
     return b.as_markup()
 
 
@@ -109,25 +113,24 @@ def chat_keyboard() -> InlineKeyboardMarkup:
     return menu_keyboard("paired")
 
 
-def profile_keyboard() -> InlineKeyboardMarkup:
+def profile_keyboard(referral_url: str = "") -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
+    if referral_url:
+        b.row(InlineKeyboardButton(
+            text="Скопировать реферальную ссылку",
+            copy_text=CopyTextButton(text=referral_url),
+            icon_custom_emoji_id=ICONS.get("link"),
+        ))
+        _button(
+            b,
+            "Отправить другу",
+            url=f"https://t.me/share/url?url={quote(referral_url, safe='')}&text={quote('Заходи в анонимный чат', safe='')}",
+            icon="gift",
+        )
     _button(b, "Изменить ник", callback_data=CB_NICK, icon="edit")
     _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
     _button(b, "Назад", callback_data=CB_MENU, icon="home")
-    b.adjust(1, 2)
-    return b.as_markup()
-
-
-def more_keyboard() -> InlineKeyboardMarkup:
-    b = InlineKeyboardBuilder()
-    _button(b, "Топ", callback_data=CB_TOP, icon="stats")
-    _button(b, "Правила", callback_data=CB_RULES, icon="ticket")
-    _button(b, "Помощь", callback_data=CB_HELP, icon="support")
-    _button(b, "АНОН+", callback_data=CB_PREMIUM, icon="bonus")
-    _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
-    _button(b, "Удалить мои данные", callback_data="cfg:forget:ask", icon="delete", style="danger")
-    _button(b, "Назад", callback_data=CB_MENU, icon="home")
-    b.adjust(2, 1, 1, 1, 1, 1)
+    b.adjust(1, 1, 1, 2)
     return b.as_markup()
 
 
@@ -220,20 +223,6 @@ def confirm_blocks_keyboard() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def premium_keyboard(active: bool, price: int) -> InlineKeyboardMarkup:
-    b = InlineKeyboardBuilder()
-    _button(
-        b,
-        f"{'Продлить' if active else 'Получить АНОН+'} · {price} ⭐",
-        callback_data="premium:buy",
-        icon="stars",
-        style="success",
-    )
-    _button(b, "Назад", callback_data=CB_MORE, icon="home")
-    b.adjust(1, 1)
-    return b.as_markup()
-
-
 def contact_confirm_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "Отправить", callback_data="contact:send", icon="check", style="success")
@@ -257,13 +246,20 @@ def skip_cancel_keyboard() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def admin_report_keyboard(report_id: int) -> InlineKeyboardMarkup:
+def admin_report_keyboard(
+    report_id: int, permissions: frozenset[str] | set[str] | None = None
+) -> InlineKeyboardMarkup:
+    permissions = set(permissions or {"reports", "users", "mute", "ban"})
     b = InlineKeyboardBuilder()
-    _button(b, "Мут 60 мин", callback_data=f"adm:mute:{report_id}", icon="warn", style="primary")
-    _button(b, "Бан", callback_data=f"adm:ban:{report_id}", icon="delete", style="danger")
-    _button(b, "Профиль", callback_data=f"adm:who:{report_id}", icon="profile")
-    _button(b, "Закрыть", callback_data=f"adm:done:{report_id}", icon="check", style="success")
-    b.adjust(2, 2)
+    if "mute" in permissions:
+        _button(b, "Мут 60 мин", callback_data=f"adm:mute:{report_id}", icon="warn", style="primary")
+    if "ban" in permissions:
+        _button(b, "Бан", callback_data=f"adm:ban:{report_id}", icon="delete", style="danger")
+    if "users" in permissions:
+        _button(b, "Профиль", callback_data=f"adm:who:{report_id}", icon="profile")
+    if "reports" in permissions:
+        _button(b, "Закрыть", callback_data=f"adm:done:{report_id}", icon="check", style="success")
+    b.adjust(2)
     return b.as_markup()
 
 
@@ -288,28 +284,48 @@ CB_PANEL_BC = "adm:panel:broadcast"
 CB_PANEL_MUTE = "adm:panel:mute"
 CB_PANEL_BAN = "adm:panel:ban"
 CB_PANEL_UNBAN = "adm:panel:unban"
+CB_PANEL_USERS = "adm:panel:users"
+CB_PANEL_POINTS = "adm:panel:points"
+CB_PANEL_ADMINS = "adm:panel:admins"
 CB_PANEL_BACK = "adm:panel:back"
 
 
-def admin_panel_keyboard(open_reports: int = 0) -> InlineKeyboardMarkup:
+def admin_panel_keyboard(
+    open_reports: int = 0,
+    permissions: frozenset[str] | set[str] | None = None,
+    owner: bool = False,
+) -> InlineKeyboardMarkup:
     """Панель модератора: никаких команд в счёт, всё кнопками."""
     b = InlineKeyboardBuilder()
-    _button(b, "Сводка", callback_data=CB_PANEL_STATS, icon="stats")
-    _button(
-        b,
-        f"Жалобы · {open_reports}" if open_reports else "Жалобы",
-        callback_data=CB_PANEL_REPORTS,
-        icon="warn",
-        style="danger" if open_reports else "",
-    )
-    _button(b, "Очередь", callback_data=CB_PANEL_QUEUE, icon="refresh")
-    _button(b, "Найти профиль", callback_data=CB_PANEL_FIND, icon="view")
-    _button(b, "Рассылка", callback_data=CB_PANEL_BC, icon="support")
-    _button(b, "Мут по id", callback_data=CB_PANEL_MUTE, icon="settings", style="primary")
-    _button(b, "Бан по id", callback_data=CB_PANEL_BAN, icon="delete", style="danger")
-    _button(b, "Разбан по id", callback_data=CB_PANEL_UNBAN, icon="check")
+    permissions = set(permissions or ())
+    if "stats" in permissions:
+        _button(b, "Сводка", callback_data=CB_PANEL_STATS, icon="stats")
+    if "reports" in permissions:
+        _button(
+            b,
+            f"Жалобы · {open_reports}" if open_reports else "Жалобы",
+            callback_data=CB_PANEL_REPORTS,
+            icon="warn",
+            style="danger" if open_reports else "",
+        )
+    if "queue" in permissions:
+        _button(b, "Очередь", callback_data=CB_PANEL_QUEUE, icon="refresh")
+    if "users" in permissions:
+        _button(b, "Найти профиль", callback_data=CB_PANEL_FIND, icon="view")
+        _button(b, "Все пользователи", callback_data=CB_PANEL_USERS, icon="profile")
+    if "broadcast" in permissions:
+        _button(b, "Рассылка", callback_data=CB_PANEL_BC, icon="support")
+    if "mute" in permissions:
+        _button(b, "Мут по id", callback_data=CB_PANEL_MUTE, icon="settings", style="primary")
+    if "ban" in permissions:
+        _button(b, "Бан по id", callback_data=CB_PANEL_BAN, icon="delete", style="danger")
+        _button(b, "Разбан по id", callback_data=CB_PANEL_UNBAN, icon="check")
+    if "points" in permissions:
+        _button(b, "Выдать / снять очки", callback_data=CB_PANEL_POINTS, icon="stars")
+    if owner:
+        _button(b, "Администраторы", callback_data=CB_PANEL_ADMINS, icon="bonus", style="primary")
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
-    b.adjust(2, 2, 2, 2, 1)
+    b.adjust(2)
     return b.as_markup()
 
 
@@ -326,4 +342,15 @@ def panel_cancel_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="check")
     b.adjust(1)
+    return b.as_markup()
+
+
+def users_page_keyboard(offset: int, count: int, page_size: int = 30) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    if offset > 0:
+        _button(b, "Назад", callback_data=f"adm:users:{max(0, offset - page_size)}", icon="next")
+    if count == page_size:
+        _button(b, "Дальше", callback_data=f"adm:users:{offset + page_size}", icon="next")
+    _button(b, "В панель", callback_data=CB_PANEL_BACK, icon="home")
+    b.adjust(2, 1)
     return b.as_markup()

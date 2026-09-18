@@ -1,12 +1,8 @@
-"""Ники: пользователь сам выбирает, как его видеть в топе и профиле.
-
-Реальное имя и @username из Telegram в публичных местах не светятся — это анонимный чат.
-"""
+"""Публичные ники и постоянная отметка поддержки проекта."""
 
 from __future__ import annotations
 
 import hashlib
-import time
 
 from .safety import contains_contact
 
@@ -48,18 +44,17 @@ def auto_nick(user_id: int) -> str:
     return f"Аноним-{number:04d}"
 
 
-def is_premium(premium_until: int, timestamp: int | None = None) -> bool:
-    return int(premium_until or 0) > int(timestamp if timestamp is not None else time.time())
+def is_supporter(support_stars: int) -> bool:
+    return int(support_stars or 0) > 0
 
 
 def display(
     row_nickname: str | None,
     user_id: int,
-    premium_until: int = 0,
-    timestamp: int | None = None,
+    support_stars: int = 0,
 ) -> str:
     nick = normalize(row_nickname or "")
     value = nick or auto_nick(user_id)
-    if is_premium(premium_until, timestamp):
-        return f"{value} ✦"
+    if is_supporter(support_stars):
+        return f"{value} 💎"
     return value

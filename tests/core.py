@@ -36,7 +36,6 @@ def test_config_defaults(monkeypatch=None) -> None:
         assert cfg.auto_mute_reports == 3 and isinstance(cfg.auto_mute_reports, int)
         assert cfg.drop_pending_updates is False
         assert cfg.report_context_retention_days == 7
-        assert cfg.premium_price_stars == 129 and cfg.premium_days == 30
         assert cfg.emoji_pack_url.startswith("https://t.me/addemoji/")
         assert cfg.max_message_len == 3000
 
@@ -188,18 +187,28 @@ def test_database() -> None:
         assert await db.award_referral(11, 10, 50) is False
         assert await db.award_referral(21, 21, 50) is False
 
-        created, premium_until = await db.record_payment(
-            10, "premium", 129, "charge-1", "", "premium:10:30:x", 30
+        created, support_total = await db.record_payment(
+            10, "support", 1, "charge-1", "", "support:10:1:x"
         )
-        assert created and premium_until > 0
-        duplicate, duplicate_until = await db.record_payment(
-            10, "premium", 129, "charge-1", "", "premium:10:30:x", 30
+        assert created and support_total == 1
+        duplicate, duplicate_total = await db.record_payment(
+            10, "support", 1, "charge-1", "", "support:10:1:x"
         )
-        assert duplicate is False and duplicate_until == premium_until
+        assert duplicate is False and duplicate_total == support_total
         created2, extended = await db.record_payment(
-            10, "premium", 129, "charge-2", "", "premium:10:30:y", 30
+            10, "support", 10, "charge-2", "", "support:10:10:y"
         )
-        assert created2 and extended == premium_until + 30 * 86400
+        assert created2 and extended == 11
+
+        perms = await db.set_admin(11, {"reports", "mute"}, 10)
+        assert perms == {"reports", "mute"}
+        assert await db.get_admin_permissions(11) == perms
+        assert "ban" not in await db.get_admin_permissions(11)
+        assert await db.get_admin_permissions(10, (10,))
+        assert await db.remove_admin(11) is True
+        assert not await db.get_admin_permissions(11)
+        assert await db.adjust_xp(11, 50) == 50
+        assert await db.adjust_xp(11, -80) == 0
 
         await db.ensure_user(11, None, "Аня")
         rid, day_count = await db.add_report(10, 11, "spam", "реклама казино", "10:11:1")
@@ -231,6 +240,7 @@ def test_database() -> None:
         assert (await db.get_report(rid))["context"] == ""
 
         match_id = await db.log_dialog(10, 11, 5, 4, 1_000, 10)
+        assert 11 not in await db.excluded_partners(10), "недавний диалог не должен ломать очередь"
         assert await db.rate_dialog(match_id, 10, 1) == 11
         rated = await db.get_user(11)
         assert rated["good_ratings"] == 1
@@ -258,7 +268,7 @@ def test_database() -> None:
 
         await db.forget_user(10)
         assert await db.get_user(10) is None
-        assert (await db.stats())["dialogs"] == 1  # обезличенная история нужна для recent-pair
+        assert (await db.stats())["dialogs"] == 1  # обезличенная история нужна для статистики
         await db.close()
 
     async def guarded() -> None:
@@ -290,8 +300,8 @@ def test_nickname_rules() -> None:
     assert nick.display("", 5) == nick.auto_nick(5)
     assert nick.display("  ", 5) == nick.auto_nick(5)
     assert nick.display("Лена", 5) == "Лена"
-    assert nick.display("Лена", 5, 2_000, timestamp=1_000) == "Лена ✦"
-    assert nick.display("Лена", 5, 500, timestamp=1_000) == "Лена"
+    assert nick.display("Лена", 5, 1) == "Лена 💎"
+    assert nick.display("Лена", 5, 0) == "Лена"
     assert nick.validate("Лена ✦")[1] is not None
 
 
@@ -307,13 +317,15 @@ def test_keyboard_styles_and_icons() -> None:
     markups = [
         K.menu_keyboard("free"), K.menu_keyboard("queued", 3), K.menu_keyboard("paired"),
         K.menu_keyboard("free", admin=True), K.continue_keyboard(), K.age_keyboard(),
-        K.chat_keyboard(), K.profile_keyboard(), K.more_keyboard(),
+        K.chat_keyboard(), K.profile_keyboard("https://t.me/test_bot?start=ref_1"),
         K.district_keyboard(),
         K.settings_keyboard(True, "Правобережный", "Лена О"),
         K.report_keyboard(), K.rating_keyboard(), K.confirm_stop_keyboard(),
-        K.confirm_forget_keyboard(), K.confirm_blocks_keyboard(), K.premium_keyboard(False, 129),
+        K.confirm_forget_keyboard(), K.confirm_blocks_keyboard(),
         K.contact_confirm_keyboard(), K.back_menu_keyboard(), K.skip_cancel_keyboard(),
-        K.admin_report_keyboard(1), K.admin_panel_keyboard(3), K.panel_back_keyboard(),
+        K.admin_report_keyboard(1),
+        K.admin_panel_keyboard(3, {"stats", "reports", "queue", "users", "broadcast", "mute", "ban", "points"}, True),
+        K.users_page_keyboard(0, 30), K.panel_back_keyboard(),
         K.panel_cancel_keyboard(),
     ]
     icons = set()
@@ -346,12 +358,12 @@ def test_keyboard_styles_and_icons() -> None:
     # в диалоге из меню остаются только действия диалога
     assert texts_of(K.menu_keyboard("paired")) == ["Следующий", "Стоп", "Жалоба"]
     # панель модератора: 9 разделов, счётчик жалоб в подписи
-    panel = texts_of(K.admin_panel_keyboard(2))
-    assert len(panel) == 9 and "Жалобы · 2" in panel, panel
-    assert "Жалобы" in texts_of(K.admin_panel_keyboard(0))
+    panel = texts_of(K.admin_panel_keyboard(2, {"reports", "mute"}))
+    assert panel == ["Жалобы · 2", "Мут по id", "В меню"], panel
+    assert "Администраторы" in texts_of(K.admin_panel_keyboard(0, {"stats"}, True))
     # кнопка входа в панель появляется только у админа
     assert texts_of(K.menu_keyboard("free", admin=True))[-1] == "Панель модератора"
-    assert texts_of(K.menu_keyboard("free"))[-1] == "Ещё"
+    assert texts_of(K.menu_keyboard("free"))[-1] == "Поддержать проект"
 
 
 def test_contact_filter() -> None:
@@ -367,24 +379,21 @@ def test_contact_filter() -> None:
 def test_stars_payment_validation() -> None:
     from types import SimpleNamespace
 
-    from anonchat.config import Config
     from anonchat.handlers.support import _valid_payload
-
-    cfg = Config(bot_token="1:T", premium_price_stars=129, premium_days=30)
 
     good = SimpleNamespace(
         invoice_payload="support:42:25:abcdef", from_user=SimpleNamespace(id=42),
         currency="XTR", total_amount=25,
     )
-    assert _valid_payload(good, cfg)
+    assert _valid_payload(good)
     premium = SimpleNamespace(
         invoice_payload="premium:42:30:abcdef", from_user=SimpleNamespace(id=42),
         currency="XTR", total_amount=129,
     )
-    assert _valid_payload(premium, cfg)
-    assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "currency": "RUB"}), cfg)
-    assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "total_amount": 24}), cfg)
-    assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "invoice_payload": "bad"}), cfg)
+    assert not _valid_payload(premium)
+    assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "currency": "RUB"}))
+    assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "total_amount": 24}))
+    assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "invoice_payload": "bad"}))
 
 
 def test_retry_after_retries_real_delivery() -> None:
@@ -491,19 +500,19 @@ def test_database_open_error_is_explicit() -> None:
     asyncio.run(scenario())
 
 
-def test_premium_persists_restart() -> None:
+def test_supporter_persists_restart() -> None:
     async def scenario() -> None:
-        path = Path(tempfile.mkdtemp()) / "premium.db"
+        path = Path(tempfile.mkdtemp()) / "support.db"
         db = await Database(path).start()
         await db.ensure_user(77, None, "Тест")
-        created, premium_until = await db.record_payment(
-            77, "premium", 129, "persist-charge", "", "premium:77:30:x", 30
+        created, support_total = await db.record_payment(
+            77, "support", 1, "persist-charge", "", "support:77:1:x"
         )
-        assert created and premium_until > 0
+        assert created and support_total == 1
         await db.close()
         reopened = await Database(path).start()
         try:
-            assert int((await reopened.get_user(77))["premium_until"]) == premium_until
+            assert int((await reopened.get_user(77))["support_stars"]) == support_total
         finally:
             await reopened.close()
 

@@ -27,9 +27,12 @@ class ReportStates(StatesGroup):
     comment = State()
 
 
-async def notify_admins(ctx: Ctx, body: str, markup=None) -> None:
-    for admin_id in ctx.cfg.admin_ids:
-        await send_to(ctx.bot, admin_id, body, markup, ctx.pack)
+async def notify_admins(ctx: Ctx, body: str, markup=None, report_id: int | None = None) -> None:
+    admin_ids = await ctx.db.admin_ids_with_permission("reports", ctx.cfg.admin_ids)
+    for admin_id in admin_ids:
+        permissions = await ctx.db.get_admin_permissions(admin_id, ctx.cfg.admin_ids)
+        actual_markup = K.admin_report_keyboard(report_id, permissions) if report_id else markup
+        await send_to(ctx.bot, admin_id, body, actual_markup, ctx.pack)
 
 
 # ---------------------------------------------------------------------------------- старт жалобы
@@ -116,7 +119,7 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
     target_nick = nicklib.display(
         target_row["nickname"] if target_row else "",
         partner,
-        target_row["premium_until"] if target_row else 0,
+        target_row["support_stars"] if target_row else 0,
     )
 
     card = (
@@ -129,7 +132,7 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
         f"Комментарий: {texts.esc(comment) if comment else '<i>без комментария</i>'}\n"
         f"Жалоб на него за сутки: <b>{day_count}</b> · {time.strftime('%d.%m %H:%M')}"
     )
-    await notify_admins(ctx, card, K.admin_report_keyboard(report_id))
+    await notify_admins(ctx, card, report_id=report_id)
 
     auto = ""
     if cfg.auto_mute_reports > 0 and day_count >= cfg.auto_mute_reports:
@@ -142,7 +145,7 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
     await ctx.reply(
         texts.REPORT_TAKEN.format(rid=report_id, reason=texts.esc(REASON_TITLES.get(reason, reason)))
         + auto
-        + "\n\nМожешь сразу выйти из диалога: <code>/stop</code>.",
+        + "\n\nМожешь сразу выйти из диалога: /stop.",
         markup=K.menu_keyboard(),
     )
 

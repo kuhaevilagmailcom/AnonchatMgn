@@ -21,27 +21,24 @@ from .. import keyboards as K
 from .. import nick as nicklib
 from .. import texts
 from ..actions import Ctx, DeliveryResult, break_pair, send_to
+from ..commands import ensure_for_admin, remove_admin_commands
 from ..config import Config
 from ..db import Database
 from ..levels import rank_for
 from ..matching import Matchmaker
+from ..permissions import ALL_ADMIN_PERMISSIONS, PERMISSION_LABELS, parse_permissions
 
 router = Router(name="admin")
 
 
 def _is_admin(ctx: Ctx) -> bool:
-    return bool(ctx.cfg.admin_ids) and ctx.user_id in ctx.cfg.admin_ids
+    return ctx.is_admin
 
 
-async def _deny(ctx: Ctx) -> bool:
-    if _is_admin(ctx):
+async def _deny(ctx: Ctx, permission: str | None = None) -> bool:
+    if _is_admin(ctx) and (permission is None or ctx.can(permission)):
         return False
-    hint = (
-        "В .env пропиши <code>ADMIN_IDS=твой_telegram_id</code> и перезапусти бота."
-        if not ctx.cfg.admin_ids
-        else "Это раздел модерации."
-    )
-    await ctx.reply(f"Доступ только у админов. {hint}")
+    await ctx.reply("Нет доступа к этому разделу модерации.")
     return True
 
 
@@ -104,7 +101,7 @@ async def find_text(db: Database, query: str) -> str:
         rank = rank_for(int(r["messages"]))
         lines.append(
             f"<code>{r['user_id']}</code> · 🙋 "
-            f"<b>{texts.esc(nicklib.display(r['nickname'], int(r['user_id']), r['premium_until']))}</b>"
+            f"<b>{texts.esc(nicklib.display(r['nickname'], int(r['user_id']), r['support_stars']))}</b>"
             f" · {texts.esc(r['first_name'])} ({texts.esc(r['username'] or '-')})\n"
             f"   {rank.name} · {rank.pretty(int(r['messages']))} сообщ. · ⭐ {rank.pretty(int(r['xp']))}"
             f" · диалогов {r['dialogs']} · жалоб {r['reports_received']}"
@@ -119,7 +116,7 @@ def report_card(r) -> str:
         f"🚩 <b>Жалоба #{r['id']}</b> · {time.strftime('%d.%m %H:%M', time.localtime(r['created_at']))}\n"
         f"Причина: <b>{texts.esc(r['reason'])}</b>\n"
         f"На: <code>{r['target_id']}</code> · в чате как "
-        f"<b>{texts.esc(nicklib.display(r['target_nickname'], int(r['target_id']), r['target_premium_until'] or 0))}</b>"
+        f"<b>{texts.esc(nicklib.display(r['target_nickname'], int(r['target_id']), r['target_support_stars'] or 0))}</b>"
         f" ({texts.esc(r['target_name'] or '-')})\n"
         f"От: <code>{r['reporter_id']}</code>\n"
         f"Последние сообщения:\n{texts.esc(r['context']) if r['context'] else '<i>нет контекста</i>'}\n\n"
@@ -134,15 +131,41 @@ async def who_text(db: Database, uid: int) -> str | None:
     rank = rank_for(int(row["messages"]))
     return (
         f"👤 <code>{uid}</code> · 🙋 "
-        f"<b>{texts.esc(nicklib.display(row['nickname'], uid, row['premium_until']))}</b>\n"
+        f"<b>{texts.esc(nicklib.display(row['nickname'], uid, row['support_stars']))}</b>\n"
         f"📛 {texts.esc(row['first_name'])} ({texts.esc(row['username'] or '-')})\n"
         f"{rank.name} · {rank.pretty(int(row['messages']))} сообщ. · ⭐ {rank.pretty(int(row['xp']))}\n"
         f"💬 диалогов: {row['dialogs']} · 👍 {row['good_ratings']} · 👎 {row['bad_ratings']}\n"
         f"🚩 жалоб: {row['reports_received']} · {texts.esc(row['district'] or 'район не указан')}\n"
-        f"АНОН+: {'до ' + time.strftime('%d.%m.%Y', time.localtime(row['premium_until'])) if nicklib.is_premium(row['premium_until']) else 'нет'}\n"
+        f"💎 Поддержка: {int(row['support_stars'])} ⭐\n"
         f"в чате с {time.strftime('%d.%m.%Y', time.localtime(row['created_at']))}"
         + ("\n⛔ в бане" if row["banned"] else "")
     )
+
+
+async def users_text(db: Database, limit: int = 30, offset: int = 0) -> tuple[str, int]:
+    rows = await db.list_users(limit, offset)
+    lines = [f"👥 <b>Пользователи · {offset + 1}–{offset + len(rows)}</b>", ""]
+    for row in rows:
+        username = f"@{row['username']}" if row["username"] else "без username"
+        lines.append(
+            f"<code>{row['user_id']}</code> · {texts.esc(username)} · "
+            f"{texts.esc(row['first_name'] or '-')} · {int(row['xp'])} ⭐"
+        )
+    return "\n".join(lines), len(rows)
+
+
+async def admins_text(db: Database, owner_ids: tuple[int, ...]) -> str:
+    lines = ["👮 <b>Администраторы</b>", ""]
+    for owner_id in owner_ids:
+        lines.append(f"<code>{owner_id}</code> · владелец · все права")
+    for row in await db.list_admins():
+        permissions = ", ".join(
+            PERMISSION_LABELS.get(item, item)
+            for item in str(row["permissions"] or "").split(",") if item
+        )
+        username = f"@{row['username']}" if row["username"] else (row["first_name"] or "-")
+        lines.append(f"<code>{row['user_id']}</code> · {texts.esc(username)}\n{permissions}")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------------- санкции
@@ -177,9 +200,24 @@ async def do_broadcast(ctx: Ctx, db: Database, body: str) -> str:
     await ctx.reply(texts.PANEL_BC_PROGRESS.format(total=len(ids)))
     sent = 0
     for uid in ids:
-        if await send_to(ctx.bot, uid, f"📣 {body}", K.menu_keyboard(), ctx.pack) is DeliveryResult.DELIVERED:
+        if await send_to(ctx.bot, uid, body, None, ctx.pack) is DeliveryResult.DELIVERED:
             sent += 1
         await asyncio.sleep(0.05)  # бережём лимиты Telegram
+    return texts.PANEL_BC_DONE.format(sent=sent, total=len(ids))
+
+
+async def do_broadcast_message(ctx: Ctx, db: Database, message: Message) -> str:
+    """Копирует текст/фото/видео как есть, всегда без inline-кнопок."""
+    ids = await db.active_ids(days=7)
+    await ctx.reply(texts.PANEL_BC_PROGRESS.format(total=len(ids)))
+    sent = 0
+    for uid in ids:
+        try:
+            await message.send_copy(chat_id=uid, reply_markup=None)
+            sent += 1
+        except TelegramAPIError:
+            pass
+        await asyncio.sleep(0.05)
     return texts.PANEL_BC_DONE.format(sent=sent, total=len(ids))
 
 
@@ -207,7 +245,9 @@ async def panel_screen(ctx: Ctx, db: Database, mm: Matchmaker, edit: bool = True
         f"🚩 открытых жалоб: <b>{s['open_reports']}</b>\n\n"
         f"{texts.PANEL_NOTE}"
     )
-    kb = K.admin_panel_keyboard(int(s["open_reports"]))
+    kb = K.admin_panel_keyboard(
+        int(s["open_reports"]), ctx.admin_permissions, owner=ctx.is_owner
+    )
     if edit and await ctx.edit(body, kb):
         return
     await ctx.reply(body, kb)
@@ -226,6 +266,16 @@ PANEL_PROMPTS = {
     K.CB_PANEL_UNBAN: ("unban", texts.PANEL_ASK_UNBAN),
     K.CB_PANEL_MUTE: ("mute", texts.PANEL_ASK_MUTE),
     K.CB_PANEL_BC: ("bc", texts.PANEL_ASK_BC),
+    K.CB_PANEL_POINTS: (
+        "points",
+        "⭐ Пришли <code>id +50</code> для выдачи или <code>id -50</code> для снятия очков.",
+    ),
+    K.CB_PANEL_ADMINS: (
+        "admins",
+        "👮 Пришли <code>id права</code>. Права через запятую: "
+        + ", ".join(sorted(ALL_ADMIN_PERMISSIONS))
+        + ". Можно указать <code>all</code> или <code>remove</code> для снятия.",
+    ),
 }
 
 
@@ -248,21 +298,21 @@ async def cb_open_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchm
 # --------------------------------------------------------------- команды (вне меню, но живые)
 @router.message(Command("stats"))
 async def cmd_stats(message: Message, ctx: Ctx, db: Database, mm: Matchmaker) -> None:
-    if await _deny(ctx):
+    if await _deny(ctx, "stats"):
         return
     await ctx.reply(await stats_text(db, mm, ctx.cfg))
 
 
 @router.message(Command("queue"))
 async def cmd_queue(message: Message, ctx: Ctx, mm: Matchmaker) -> None:
-    if await _deny(ctx):
+    if await _deny(ctx, "queue"):
         return
     await ctx.reply(queue_text(mm))
 
 
 @router.message(Command("reports"))
 async def cmd_reports(message: Message, ctx: Ctx, db: Database) -> None:
-    if await _deny(ctx):
+    if await _deny(ctx, "reports"):
         return
     await send_report_cards(ctx, db)
 
@@ -273,12 +323,14 @@ async def send_report_cards(ctx: Ctx, db: Database) -> None:
         await ctx.reply("🚩 Открытых жалоб нет — город вежливый.")
         return
     for r in rows:
-        await ctx.reply(report_card(r), markup=K.admin_report_keyboard(int(r["id"])))
+        await ctx.reply(
+            report_card(r), markup=K.admin_report_keyboard(int(r["id"]), ctx.admin_permissions)
+        )
 
 
 @router.message(Command("resolve"))
 async def cmd_resolve(message: Message, ctx: Ctx, db: Database) -> None:
-    if await _deny(ctx):
+    if await _deny(ctx, "reports"):
         return
     args = _parse_args(message.text or "")
     if not args or not args[0].isdigit():
@@ -290,7 +342,7 @@ async def cmd_resolve(message: Message, ctx: Ctx, db: Database) -> None:
 
 @router.message(Command("ban"))
 async def cmd_ban(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, cfg: Config) -> None:
-    if await _deny(ctx):
+    if await _deny(ctx, "ban"):
         return
     uid, reason = _id_args(_body(message.text or "", "/ban"))
     if uid is None:
@@ -301,7 +353,7 @@ async def cmd_ban(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, cfg:
 
 @router.message(Command("unban"))
 async def cmd_unban(message: Message, ctx: Ctx, db: Database) -> None:
-    if await _deny(ctx):
+    if await _deny(ctx, "ban"):
         return
     uid, _ = _id_args(_body(message.text or "", "/unban"))
     if uid is None:
@@ -312,7 +364,7 @@ async def cmd_unban(message: Message, ctx: Ctx, db: Database) -> None:
 
 @router.message(Command("mute"))
 async def cmd_mute(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, cfg: Config) -> None:
-    if await _deny(ctx):
+    if await _deny(ctx, "mute"):
         return
     parts = _parse_args(message.text or "")
     if len(parts) < 2 or not parts[0].lstrip("-").isdigit() or not parts[1].isdigit():
@@ -323,20 +375,95 @@ async def cmd_mute(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, cfg
 
 @router.message(Command("find"))
 async def cmd_find(message: Message, ctx: Ctx, db: Database) -> None:
-    if await _deny(ctx):
+    if await _deny(ctx, "users"):
         return
     await ctx.reply(await find_text(db, _body(message.text or "", "/find")))
 
 
 @router.message(Command("bc"))
 async def cmd_broadcast(message: Message, ctx: Ctx, db: Database) -> None:
-    if await _deny(ctx):
+    if await _deny(ctx, "broadcast"):
         return
     body = _body(message.text or "", "/bc")
     if not body:
         await ctx.reply("Формат: <code>/bc текст рассылки</code>")
         return
     await ctx.reply(await do_broadcast(ctx, db, body))
+
+
+@router.message(Command("users"))
+async def cmd_users(message: Message, ctx: Ctx, db: Database) -> None:
+    if await _deny(ctx, "users"):
+        return
+    parts = _parse_args(message.text or "")
+    offset = int(parts[0]) if parts and parts[0].isdigit() else 0
+    body, count = await users_text(db, offset=offset)
+    await ctx.reply(body, K.users_page_keyboard(offset, count))
+
+
+@router.message(Command("points"))
+async def cmd_points(message: Message, ctx: Ctx, db: Database) -> None:
+    if await _deny(ctx, "points"):
+        return
+    parts = _parse_args(message.text or "")
+    if len(parts) < 2 or not parts[0].isdigit():
+        await ctx.reply("Формат: <code>/points 123456 +50</code> или <code>/points 123456 -50</code>")
+        return
+    try:
+        amount = int(parts[1])
+    except ValueError:
+        await ctx.reply("Количество очков должно быть целым числом со знаком.")
+        return
+    balance = await db.adjust_xp(int(parts[0]), amount)
+    await ctx.reply(f"⭐ Баланс <code>{parts[0]}</code>: <b>{balance}</b> очков.")
+
+
+@router.message(Command("adminadd", "adminperms"))
+async def cmd_admin_add(message: Message, ctx: Ctx, db: Database) -> None:
+    if not ctx.is_owner:
+        await ctx.reply("Назначать администраторов может только владелец.")
+        return
+    parts = (message.text or "").split(maxsplit=2)
+    if len(parts) < 3 or not parts[1].isdigit():
+        await ctx.reply("Формат: <code>/adminadd 123456 reports,users,mute</code>")
+        return
+    permissions = parse_permissions(parts[2])
+    if not permissions:
+        await ctx.reply("Не нашёл допустимых прав.")
+        return
+    uid = int(parts[1])
+    if uid in ctx.cfg.admin_ids:
+        await ctx.reply("Это владелец из ADMIN_IDS — его права всегда полные.")
+        return
+    await db.set_admin(uid, permissions, ctx.user_id)
+    await ensure_for_admin(ctx.bot, ctx.cfg, uid, quiet=True, authorized=True)
+    await ctx.reply(f"Администратор <code>{uid}</code> сохранён: {', '.join(sorted(permissions))}.")
+
+
+@router.message(Command("admindel"))
+async def cmd_admin_del(message: Message, ctx: Ctx, db: Database) -> None:
+    if not ctx.is_owner:
+        await ctx.reply("Снимать администраторов может только владелец.")
+        return
+    parts = _parse_args(message.text or "")
+    if not parts or not parts[0].isdigit():
+        await ctx.reply("Формат: <code>/admindel 123456</code>")
+        return
+    uid = int(parts[0])
+    if uid in ctx.cfg.admin_ids:
+        await ctx.reply("Владельца из ADMIN_IDS нужно убирать через конфигурацию сервера.")
+        return
+    removed = await db.remove_admin(uid)
+    await remove_admin_commands(ctx.bot, uid)
+    await ctx.reply("Администратор снят." if removed else "Такого назначенного администратора нет.")
+
+
+@router.message(Command("adminlist"))
+async def cmd_admin_list(message: Message, ctx: Ctx, db: Database) -> None:
+    if not ctx.is_owner:
+        await ctx.reply("Список администраторов доступен только владельцу.")
+        return
+    await ctx.reply(await admins_text(db, ctx.cfg.admin_ids))
 
 
 # --------------------------------------------------------------- кнопки панели
@@ -346,6 +473,24 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         await ctx.ack("Не для тебя", show_alert=True)
         return
     data = event.data or ""
+    required = {
+        K.CB_PANEL_STATS: "stats",
+        K.CB_PANEL_REPORTS: "reports",
+        K.CB_PANEL_QUEUE: "queue",
+        K.CB_PANEL_FIND: "users",
+        K.CB_PANEL_USERS: "users",
+        K.CB_PANEL_BC: "broadcast",
+        K.CB_PANEL_MUTE: "mute",
+        K.CB_PANEL_BAN: "ban",
+        K.CB_PANEL_UNBAN: "ban",
+        K.CB_PANEL_POINTS: "points",
+    }.get(data)
+    if required and not ctx.can(required):
+        await ctx.ack("У тебя нет этого права", show_alert=True)
+        return
+    if data == K.CB_PANEL_ADMINS and not ctx.is_owner:
+        await ctx.ack("Только для владельца", show_alert=True)
+        return
 
     if data == K.CB_PANEL_BACK:
         await state.clear()
@@ -356,6 +501,20 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         return
     if data == K.CB_PANEL_QUEUE:
         await ctx.edit(queue_text(mm), K.panel_back_keyboard())
+        return
+    if data == K.CB_PANEL_USERS:
+        body, count = await users_text(db)
+        await ctx.edit(body, K.users_page_keyboard(0, count))
+        return
+    if data == K.CB_PANEL_ADMINS:
+        await state.set_state(AdminStates.await_input)
+        await state.update_data(adm="admins")
+        await ctx.edit(
+            (await admins_text(db, ctx.cfg.admin_ids))
+            + "\n\n"
+            + PANEL_PROMPTS[K.CB_PANEL_ADMINS][1],
+            K.panel_cancel_keyboard(),
+        )
         return
     if data == K.CB_PANEL_REPORTS:
         rows = await db.list_reports("new", 10)
@@ -368,7 +527,10 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
             K.panel_back_keyboard(),
         )
         for r in rows:
-            await ctx.reply(report_card(r), markup=K.admin_report_keyboard(int(r["id"])))
+            await ctx.reply(
+                report_card(r),
+                markup=K.admin_report_keyboard(int(r["id"]), ctx.admin_permissions),
+            )
         await ctx.ack(f"{len(rows)} карточек")
         return
 
@@ -381,7 +543,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
     await ctx.ack("Не понимаю кнопку")
 
 
-@router.message(AdminStates.await_input, F.text, ~F.text.startswith("/"))
+@router.message(AdminStates.await_input)
 async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, cfg: Config,
                       state: FSMContext) -> None:
     """Ввод после кнопки панели: id, id+причина, id+минуты или текст рассылки."""
@@ -389,8 +551,19 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
         return
     data = await state.get_data()
     what = (data or {}).get("adm", "")
-    raw = (message.text or "").strip()
+    raw = (message.text or message.caption or "").strip()
     await state.clear()
+
+    required = {
+        "find": "users", "ban": "ban", "unban": "ban", "mute": "mute",
+        "bc": "broadcast", "points": "points",
+    }.get(what)
+    if required and not ctx.can(required):
+        await ctx.reply("У тебя нет этого права.")
+        return
+    if what == "admins" and not ctx.is_owner:
+        await ctx.reply("Назначать администраторов может только владелец.")
+        return
 
     if raw in {"-", "—", "--", "/cancel", "отмена"}:
         await ctx.reply(texts.PANEL_CANCELLED)
@@ -413,11 +586,52 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
         mins = int(tail.split(maxsplit=1)[0]) if tail and tail.split(maxsplit=1)[0].isdigit() else 60
         await ctx.reply(texts.PANEL_NO_ID if uid is None else await do_mute(ctx, db, mm, cfg, uid, mins))
     elif what == "bc":
-        await ctx.reply(await do_broadcast(ctx, db, raw))
+        await ctx.reply(await do_broadcast_message(ctx, db, message))
+    elif what == "points":
+        uid, tail = _id_args(raw)
+        try:
+            amount = int(tail)
+        except ValueError:
+            amount = 0
+        if uid is None or amount == 0:
+            await ctx.reply("Формат: <code>123456 +50</code> или <code>123456 -50</code>.")
+        else:
+            balance = await db.adjust_xp(uid, amount)
+            await ctx.reply(f"⭐ Баланс <code>{uid}</code>: <b>{balance}</b> очков.")
+    elif what == "admins":
+        uid, tail = _id_args(raw)
+        permissions = parse_permissions(tail)
+        remove = tail.strip().lower() in {"remove", "del", "снять", "удалить"}
+        if uid is None or (not permissions and not remove):
+            await ctx.reply("Формат: <code>123456 reports,users,mute</code>.")
+        elif uid in cfg.admin_ids:
+            await ctx.reply("Это владелец из ADMIN_IDS — его права всегда полные.")
+        elif remove:
+            await db.remove_admin(uid)
+            await remove_admin_commands(ctx.bot, uid)
+            await ctx.reply(f"Администратор <code>{uid}</code> снят.")
+        else:
+            await db.set_admin(uid, permissions, ctx.user_id)
+            await ensure_for_admin(ctx.bot, cfg, uid, quiet=True, authorized=True)
+            await ctx.reply(f"Администратор <code>{uid}</code> сохранён.")
     else:
         await ctx.reply("Кнопку панели не помню — открой /admin заново.")
         return
     await panel_screen(ctx, db, mm, edit=False)
+
+
+# ---------------------------------------------------------------------------------- страницы пользователей
+@router.callback_query(F.data.startswith("adm:users:"))
+async def cb_users_page(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    if not ctx.can("users"):
+        await ctx.ack("У тебя нет этого права", show_alert=True)
+        return
+    try:
+        offset = max(0, int((event.data or "").rsplit(":", 1)[1]))
+    except (ValueError, IndexError):
+        offset = 0
+    body, count = await users_text(db, offset=offset)
+    await ctx.edit(body, K.users_page_keyboard(offset, count))
 
 
 # ---------------------------------------------------------------------------------- кнопки в карточке жалобы
@@ -430,6 +644,10 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
     if len(parts) != 3 or not parts[2].isdigit():
         return  # adm:panel:* живёт в своём хендлере выше
     action, raw_id = parts[1], parts[2]
+    required = {"done": "reports", "who": "users", "mute": "mute", "ban": "ban"}.get(action)
+    if required and not ctx.can(required):
+        await ctx.ack("У тебя нет этого права", show_alert=True)
+        return
     report = await db.get_report(int(raw_id))
     if report is None:
         await ctx.ack("Жалоба не найдена", alert=True)

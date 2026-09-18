@@ -60,7 +60,9 @@ async def settings_screen(ctx: Ctx) -> None:
         f"{texts.SETTINGS_TITLE}\n\n"
         f"🙋 Ник: <b>{texts.esc(ctx.nick)}</b>\n"
         f"📍 Район: <b>{texts.esc(district or 'не выбран')}</b>\n"
-        f"Возраст: <b>{int(me['age']) if me else '—'}</b>\n"
+        f"Возраст: <b>{int(me['age']) if me and int(me['age'] or 0) else 'не указан'}</b> "
+        f"<i>(необязательно)</i>\n"
+        f"Район: <i>необязательно</i>\n"
         f"🧭 Ищу: <b>{'только свой район' if same else 'весь ' + texts.esc(ctx.cfg.city_short)}</b>\n\n"
         f"{texts.SETTINGS_NOTE}"
     )
@@ -210,7 +212,7 @@ async def cmd_forget(message: Message, ctx: Ctx) -> None:
     if await ctx.dialog_locked():
         return
     await ctx.reply(
-        "Точно стереть профиль? Кнопка ниже или <code>/cancel</code>, чтобы отменить.",
+        "Точно стереть профиль? Кнопка ниже или /cancel, чтобы отменить.",
         markup=K.confirm_forget_keyboard(),
     )
 

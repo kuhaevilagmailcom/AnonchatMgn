@@ -8,6 +8,8 @@ from typing import Any, Sequence
 
 import aiosqlite
 
+from .permissions import ALL_ADMIN_PERMISSIONS, serialize_permissions
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     user_id          INTEGER PRIMARY KEY,
@@ -33,6 +35,7 @@ CREATE TABLE IF NOT EXISTS users (
     ban_reason       TEXT    NOT NULL DEFAULT '',
     mute_until       INTEGER NOT NULL DEFAULT 0,
     premium_until    INTEGER NOT NULL DEFAULT 0,
+    support_stars    INTEGER NOT NULL DEFAULT 0,
     profile_deleted  INTEGER NOT NULL DEFAULT 0
 );
 
@@ -88,6 +91,14 @@ CREATE TABLE IF NOT EXISTS payments (
     payload                    TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS admins (
+    user_id      INTEGER PRIMARY KEY,
+    permissions TEXT    NOT NULL DEFAULT '',
+    granted_by  INTEGER NOT NULL,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS kv (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -101,6 +112,7 @@ CREATE INDEX IF NOT EXISTS idx_matches_recent ON matches(ended_at, user_a, user_
 CREATE INDEX IF NOT EXISTS idx_blocks_reverse ON blocks(blocked_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_admins_granted_by ON admins(granted_by, updated_at);
 """
 
 #: колонки, которых не было в ранних версиях схемы — догоняем их на лету
@@ -109,6 +121,7 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("nick_key", "ALTER TABLE users ADD COLUMN nick_key TEXT NOT NULL DEFAULT ''"),
     ("age", "ALTER TABLE users ADD COLUMN age INTEGER NOT NULL DEFAULT 0"),
     ("premium_until", "ALTER TABLE users ADD COLUMN premium_until INTEGER NOT NULL DEFAULT 0"),
+    ("support_stars", "ALTER TABLE users ADD COLUMN support_stars INTEGER NOT NULL DEFAULT 0"),
     ("profile_deleted", "ALTER TABLE users ADD COLUMN profile_deleted INTEGER NOT NULL DEFAULT 0"),
 )
 
@@ -148,6 +161,7 @@ class Database:
         """Старые базы могут не иметь новых колонок — добавляем, не теряя данные."""
         async with self.db.execute("PRAGMA table_info(users)") as cur:
             cols = {row[1] for row in await cur.fetchall()}
+        support_added = "support_stars" not in cols
         added = False
         for name, sql in _MIGRATIONS:
             if name not in cols:
@@ -164,6 +178,17 @@ class Database:
         )
         if added or "nick_key" in cols:
             await self._backfill_nick_keys()
+        if support_added:
+            await self.db.execute(
+                """UPDATE users SET support_stars = (
+                       SELECT COALESCE(SUM(stars), 0) FROM payments
+                       WHERE payments.user_id = users.user_id AND payments.kind = 'support'
+                   )
+                   WHERE EXISTS (
+                       SELECT 1 FROM payments
+                       WHERE payments.user_id = users.user_id AND payments.kind = 'support'
+                   )"""
+            )
 
     async def _backfill_nick_keys(self) -> None:
         """Регистронезависимый ключ ника: LOWER() в SQLite не понимает кириллицу, считаем в Python."""
@@ -221,6 +246,14 @@ class Database:
             """,
             (user_id, username, first_name, now(), now()),
         )
+        await self.db.execute(
+            """UPDATE users SET support_stars = (
+                   SELECT COALESCE(SUM(stars), 0) FROM payments
+                   WHERE payments.user_id = users.user_id AND payments.kind = 'support'
+               )
+               WHERE user_id = ? AND support_stars = 0""",
+            (user_id,),
+        )
         await self.db.commit()
         row = await self.get_user(user_id)
         assert row is not None
@@ -228,6 +261,63 @@ class Database:
 
     async def get_user(self, user_id: int) -> aiosqlite.Row | None:
         return await self._fetchone("SELECT * FROM users WHERE user_id = ?", (user_id,))
+
+    # ------------------------------------------------------------------ admin roles
+    async def get_admin_permissions(
+        self, user_id: int, owner_ids: tuple[int, ...] = ()
+    ) -> frozenset[str]:
+        if user_id in owner_ids:
+            return ALL_ADMIN_PERMISSIONS
+        row = await self._fetchone("SELECT permissions FROM admins WHERE user_id = ?", (user_id,))
+        if row is None:
+            return frozenset()
+        return frozenset(
+            item for item in str(row["permissions"] or "").split(",")
+            if item in ALL_ADMIN_PERMISSIONS
+        )
+
+    async def set_admin(
+        self, user_id: int, permissions: set[str] | frozenset[str], granted_by: int
+    ) -> frozenset[str]:
+        clean = frozenset(permissions) & ALL_ADMIN_PERMISSIONS
+        if not clean:
+            raise ValueError("Нужно выдать хотя бы одно право")
+        await self._ensure_row(user_id)
+        ts = now()
+        await self.db.execute(
+            """INSERT INTO admins(user_id, permissions, granted_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET
+                   permissions=excluded.permissions,
+                   granted_by=excluded.granted_by,
+                   updated_at=excluded.updated_at""",
+            (user_id, serialize_permissions(clean), granted_by, ts, ts),
+        )
+        await self.db.commit()
+        return clean
+
+    async def remove_admin(self, user_id: int) -> bool:
+        cur = await self.db.execute("DELETE FROM admins WHERE user_id = ?", (user_id,))
+        await self.db.commit()
+        return cur.rowcount > 0
+
+    async def list_admins(self) -> list[aiosqlite.Row]:
+        return await self._fetchall(
+            """SELECT a.*, u.username, u.first_name
+               FROM admins a LEFT JOIN users u ON u.user_id = a.user_id
+               ORDER BY a.updated_at DESC"""
+        )
+
+    async def admin_ids_with_permission(
+        self, permission: str, owner_ids: tuple[int, ...] = ()
+    ) -> list[int]:
+        rows = await self._fetchall("SELECT user_id, permissions FROM admins")
+        result = set(owner_ids)
+        for row in rows:
+            perms = str(row["permissions"] or "").split(",")
+            if permission in perms:
+                result.add(int(row["user_id"]))
+        return sorted(result)
 
     async def nickname_taken(self, nickname: str, except_user_id: int = 0) -> int | None:
         """Ник должен быть уникальным — иначе топ превращается в «Аноним, Аноним, Аноним».
@@ -305,7 +395,6 @@ class Database:
         telegram_charge_id: str,
         provider_charge_id: str,
         payload: str,
-        premium_days: int = 0,
     ) -> tuple[bool, int]:
         try:
             await self.db.execute(
@@ -318,19 +407,18 @@ class Database:
         except aiosqlite.IntegrityError:
             await self.db.rollback()
             row = await self.get_user(user_id)
-            return False, int(row["premium_until"] or 0) if row else 0
+            return False, int(row["support_stars"] or 0) if row else 0
 
-        premium_until = 0
-        if kind == "premium" and premium_days > 0:
-            row = await self.get_user(user_id)
-            current = int(row["premium_until"] or 0) if row else 0
-            premium_until = max(now(), current) + premium_days * 86400
+        total_support = 0
+        if kind == "support":
             await self.db.execute(
-                "UPDATE users SET premium_until = ? WHERE user_id = ?",
-                (premium_until, user_id),
+                "UPDATE users SET support_stars = support_stars + ? WHERE user_id = ?",
+                (stars, user_id),
             )
+            row = await self.get_user(user_id)
+            total_support = int(row["support_stars"] or 0) if row else stars
         await self.db.commit()
-        return True, premium_until
+        return True, total_support
 
     # ------------------------------------------------------------------ moderation
     async def is_restricted(self, user_id: int) -> str | None:
@@ -413,21 +501,18 @@ class Database:
         await self.db.commit()
         return int(cur.rowcount or 0)
 
-    async def excluded_partners(self, user_id: int, recent_seconds: int = 86400) -> set[int]:
+    async def excluded_partners(self, user_id: int, recent_seconds: int = 0) -> set[int]:
         rows = await self._fetchall(
             """SELECT blocked_id AS uid FROM blocks WHERE user_id = ?
-               UNION SELECT user_id AS uid FROM blocks WHERE blocked_id = ?
-               UNION SELECT CASE WHEN user_a = ? THEN user_b ELSE user_a END AS uid
-                     FROM matches
-                     WHERE (user_a = ? OR user_b = ?) AND ended_at > ?""",
-            (user_id, user_id, user_id, user_id, user_id, now() - recent_seconds),
+               UNION SELECT user_id AS uid FROM blocks WHERE blocked_id = ?""",
+            (user_id, user_id),
         )
         return {int(row["uid"]) for row in rows}
 
     async def list_reports(self, status: str = "new", limit: int = 20) -> list[aiosqlite.Row]:
         return await self._fetchall(
             """SELECT r.*, t.username AS target_username, t.first_name AS target_name,
-                      t.nickname AS target_nickname, t.premium_until AS target_premium_until
+                      t.nickname AS target_nickname, t.support_stars AS target_support_stars
                FROM reports r LEFT JOIN users t ON t.user_id = r.target_id
                WHERE r.status = ? ORDER BY r.created_at DESC LIMIT ?""",
             (status, limit),
@@ -436,7 +521,7 @@ class Database:
     async def get_report(self, report_id: int) -> aiosqlite.Row | None:
         return await self._fetchone(
             """SELECT r.*, t.username AS target_username, t.first_name AS target_name,
-                      t.nickname AS target_nickname, t.premium_until AS target_premium_until
+                      t.nickname AS target_nickname, t.support_stars AS target_support_stars
                FROM reports r LEFT JOIN users t ON t.user_id = r.target_id WHERE r.id = ?""",
             (report_id,),
         )
@@ -530,10 +615,9 @@ class Database:
     async def top(self, limit: int = 10) -> list[aiosqlite.Row]:
         """Активность с упором на диалоги и оценки; спам в одном чате быстро упирается в лимит."""
         return await self._fetchall(
-            """SELECT user_id, nickname, messages, xp, dialogs, good_ratings, premium_until
+            """SELECT user_id, username, nickname, messages, xp, dialogs, good_ratings, support_stars
                FROM users WHERE banned = 0
-               ORDER BY (dialogs * 10 + good_ratings * 5 + MIN(messages, dialogs * 40 + 20)) DESC,
-                        xp DESC LIMIT ?""",
+               ORDER BY xp DESC, dialogs DESC, messages DESC LIMIT ?""",
             (limit,),
         )
 
@@ -571,6 +655,23 @@ class Database:
         )
         await self.db.commit()
 
+    async def adjust_xp(self, user_id: int, amount: int) -> int:
+        await self._ensure_row(user_id)
+        await self.db.execute(
+            "UPDATE users SET xp = MAX(0, xp + ?) WHERE user_id = ?", (int(amount), user_id)
+        )
+        await self.db.commit()
+        row = await self.get_user(user_id)
+        return int(row["xp"] or 0) if row else 0
+
+    async def list_users(self, limit: int = 100, offset: int = 0) -> list[aiosqlite.Row]:
+        return await self._fetchall(
+            """SELECT user_id, username, first_name, nickname, xp, support_stars,
+                      banned, mute_until, last_seen
+               FROM users ORDER BY last_seen DESC LIMIT ? OFFSET ?""",
+            (max(1, min(limit, 500)), max(0, offset)),
+        )
+
     async def forget_user(self, user_id: int) -> None:
         """Стирает профиль, но сохраняет действующий бан/мут и модерационные доказательства."""
         row = await self.get_user(user_id)
@@ -580,7 +681,8 @@ class Database:
                 """UPDATE users SET username=NULL, first_name='Удалённый пользователь', nickname='',
                    nick_key='', age=0, xp=0, messages=0, dialogs=0, good_ratings=0,
                    bad_ratings=0, reports_sent=0, district='', gender='', same_district=0,
-                   about='', last_seen=0, premium_until=0, profile_deleted=1 WHERE user_id=?""",
+                   about='', last_seen=0, premium_until=0, support_stars=0,
+                   profile_deleted=1 WHERE user_id=?""",
                 (user_id,),
             )
         else:
@@ -592,7 +694,7 @@ class Database:
         like = f"%{name.lstrip('@')}%"
         return await self._fetchall(
             "SELECT user_id, username, first_name, nickname, messages, xp, dialogs, reports_received, "
-            "banned, premium_until "
+            "banned, support_stars "
             "FROM users "
             "WHERE username LIKE ? OR first_name LIKE ? OR nickname LIKE ? LIMIT ?",
             (like, like, like, limit),

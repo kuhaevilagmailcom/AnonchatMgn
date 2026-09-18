@@ -33,7 +33,7 @@ from . import texts
 from .config import Config
 from .db import Database
 from .keyboards import (
-    back_menu_keyboard, chat_keyboard, continue_keyboard, menu_keyboard,
+    back_menu_keyboard, chat_keyboard, menu_keyboard,
     profile_keyboard, rating_keyboard,
 )
 from .levels import rank_for
@@ -59,6 +59,7 @@ class Ctx:
     event: Message | CallbackQuery
     user_id: int
     me: Any = None
+    admin_permissions: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if self.pack is None:
@@ -146,14 +147,21 @@ class Ctx:
     # ------------------------------------------------------------------ профиль
     @property
     def is_admin(self) -> bool:
+        return self.user_id in self.cfg.admin_ids or bool(self.admin_permissions)
+
+    @property
+    def is_owner(self) -> bool:
         return self.user_id in self.cfg.admin_ids
+
+    def can(self, permission: str) -> bool:
+        return self.is_owner or permission in self.admin_permissions
 
     @property
     def nick(self) -> str:
         return nicklib.display(
             self.me["nickname"] if self.me else "",
             self.user_id,
-            self.me["premium_until"] if self.me else 0,
+            self.me["support_stars"] if self.me else 0,
         )
 
     @property
@@ -203,7 +211,7 @@ class Ctx:
         """Пока идёт диалог, свои экраны (профиль, настройки, топ, ник) закрыты.
 
         Иначе человек посреди переписки уходит смотреть статистику, а собеседник
-        остаётся с молчаливым «печатает…». Сначала <code>/stop</code>.
+        остаётся с молчаливым «печатает…». Сначала /stop.
         """
         if self.mm.status(self.user_id) == "paired":
             await self.reply(texts.DIALOG_LOCKED)
@@ -330,13 +338,6 @@ async def show_menu(ctx: Ctx) -> None:
 
 
 async def show_welcome(ctx: Ctx) -> None:
-    if ctx.me is not None and int(ctx.me["age"] or 0) == 0:
-        await ctx.render_screen(
-            "01_main_menu.png",
-            texts.WELCOME.format(city=texts.esc(ctx.cfg.city)),
-            continue_keyboard(),
-        )
-        return
     await ctx.ensure_nick()
     await show_menu(ctx)
 
@@ -362,12 +363,12 @@ async def show_top(ctx: Ctx) -> None:
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     lines = [f"🏆 <b>Топ · {texts.esc(ctx.cfg.city)}</b>", ""]
     for i, row in enumerate(rows, start=1):
-        messages = int(row["messages"])
-        rank = rank_for(messages)
         # медали только за места: ранг подписываем словом, иначе 🥇/🥈 слипаются с 🥇 Серебро
         place = medals.get(i, f"<code>{i}</code>")
         lines.append(
-            f"{place} <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id']), row['premium_until']))}</b>"
+            f"{place} <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id']), row['support_stars']))}</b>"
+            f" · <b>{int(row['xp'])} ⭐</b>"
+            + (f" · @{texts.esc(row['username'])}" if row["username"] else "")
         )
     lines += ["", "<i>Ники участники придумывают сами.</i>"]
     await ctx.render_screen("08_top.png", "\n".join(lines), back_menu_keyboard())
@@ -386,19 +387,17 @@ async def show_profile(ctx: Ctx) -> None:
         f"<b>{texts.esc(ctx.nick)}</b>",
         f"{rank.emoji} {texts.esc(rank.title)}",
         "",
+        f"Очки: <b>{int(me['xp'])} ⭐</b>",
         f"Диалогов: <b>{me['dialogs']}</b>",
         f"👍 {me['good_ratings']}   👎 {me['bad_ratings']}",
         f"Возраст: <b>{me['age']}</b>",
         f"Район: <b>{texts.esc(me['district']) if me['district'] else 'не указан'}</b>",
     ]
-    if nicklib.is_premium(me["premium_until"]):
-        until = time.strftime("%d.%m.%Y", time.localtime(int(me["premium_until"])))
-        lines += [
-            "",
-            f"АНОН+ активен до {until}",
-            f"Сообщений: {rank.pretty(messages)} · Опыт: {rank.pretty(int(me['xp']))}",
-        ]
-    await ctx.render_screen("04_profile.png", "\n".join(lines), profile_keyboard())
+    if nicklib.is_supporter(me["support_stars"]):
+        lines += ["", f"💎 Поддержал проект: {int(me['support_stars'])} ⭐"]
+    bot = await ctx.bot.get_me()
+    referral = f"https://t.me/{bot.username}?start=ref_{ctx.user_id}"
+    await ctx.render_screen("04_profile.png", "\n".join(lines), profile_keyboard(referral))
 
 
 # --------------------------------------------------------------------- ники
@@ -432,16 +431,13 @@ async def set_nick(ctx: Ctx, raw: str) -> tuple[bool, str]:
 
 # --------------------------------------------------------------------- пары
 def partner_card(row: Any, user_id: int) -> str:
-    """Публичная карточка: никаких Telegram-данных и модерационной статистики.
-
-    Настоящие имя и @username сюда не попадают намеренно — только то, что человек
-    выбрал и показал сам.
-    """
+    """Публичная карточка собеседника: ник и Telegram username, если он установлен."""
     if row is None:
         return f"🙂 <b>{texts.esc(nicklib.display('', user_id))}</b>"
+    username = f"\n@{texts.esc(row['username'])}" if row["username"] else ""
     return texts.MATCHED_CARD.format(
-        nick=texts.esc(nicklib.display(row["nickname"], user_id, row["premium_until"]))
-    )
+        nick=texts.esc(nicklib.display(row["nickname"], user_id, row["support_stars"]))
+    ) + username
 
 
 def matched_text(card: str, you: str) -> str:
@@ -456,9 +452,9 @@ async def announce_pair(ctx: Ctx, user_id: int, partner_id: int) -> bool:
     """
     partner_row = await ctx.db.get_user(partner_id)
     my_row = await ctx.db.get_user(user_id)
-    partner_nick = nicklib.display(partner_row["nickname"], partner_id, partner_row["premium_until"]) if partner_row \
+    partner_nick = nicklib.display(partner_row["nickname"], partner_id, partner_row["support_stars"]) if partner_row \
         else nicklib.display("", partner_id)
-    my_nick = nicklib.display(my_row["nickname"], user_id, my_row["premium_until"]) if my_row else ctx.nick
+    my_nick = nicklib.display(my_row["nickname"], user_id, my_row["support_stars"]) if my_row else ctx.nick
 
     found_kb = chat_keyboard()
     result = await send_screen_to(
@@ -486,8 +482,8 @@ async def announce_pairs(
     for a, b in pairs:
         row_a = await db.get_user(a) if db else None
         row_b = await db.get_user(b) if db else None
-        nick_a = nicklib.display(row_a["nickname"], a, row_a["premium_until"]) if row_a else nicklib.display("", a)
-        nick_b = nicklib.display(row_b["nickname"], b, row_b["premium_until"]) if row_b else nicklib.display("", b)
+        nick_a = nicklib.display(row_a["nickname"], a, row_a["support_stars"]) if row_a else nicklib.display("", a)
+        nick_b = nicklib.display(row_b["nickname"], b, row_b["support_stars"]) if row_b else nicklib.display("", b)
         result = await send_screen_to(
             bot, b, "03_found.png", matched_text(partner_card(row_a, a), nick_b),
             chat_keyboard(), pack, db,

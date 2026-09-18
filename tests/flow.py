@@ -116,7 +116,7 @@ def msg_update(bot: Bot, uid: int, text: str, update_id: int, entities: list[dic
         "message_id": update_id,
         "date": 1_700_000_000,
         "chat": {"id": uid, "type": "private", "first_name": f"U{uid}"},
-        "from": {"id": uid, "is_bot": False, "first_name": f"U{uid}"},
+        "from": {"id": uid, "is_bot": False, "first_name": f"U{uid}", "username": f"user{uid}"},
         "text": text,
     }
     if entities:
@@ -131,7 +131,7 @@ def cb_update(bot: Bot, uid: int, data: str, update_id: int) -> Update:
         "callback_query": {
             "id": f"cb{update_id}",
             "chat_instance": "1",
-            "from": {"id": uid, "is_bot": False, "first_name": f"U{uid}"},
+            "from": {"id": uid, "is_bot": False, "first_name": f"U{uid}", "username": f"user{uid}"},
             "data": data,
             "message": {
                 "message_id": update_id,
@@ -541,7 +541,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
 
 
 async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
-    """Новый мобильный сценарий: онбординг, безопасность, жалобы, recent/block и FSM."""
+    """Мобильный сценарий: профиль, безопасность, жалобы, блокировки, права и FSM."""
     tmp = Path(tempfile.mkdtemp())
     cfg = Config(
         bot_token="42:TEST", admin_ids=(ADMIN,), db_path=tmp / "flow-modern.db",
@@ -593,9 +593,7 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     async def onboard(uid: int, age: int) -> None:
         await send(uid, "/start")
-        check("Анонимный чат" in session.last_to(uid), "первый запуск показывает короткое приветствие")
-        await press(uid, "onboard:continue")
-        check("Сколько тебе лет" in session.last_to(uid), "после продолжения бот спрашивает возраст")
+        check("Аноним-" in session.last_to(uid), "первый запуск сразу показывает главное меню")
         await press(uid, f"onboard:age:{age}")
         row = await db.get_user(uid)
         check(bool(row and row["age"] == age and row["nickname"]), "возраст и случайный ник сохранены")
@@ -603,6 +601,28 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await onboard(A, 17)
     await onboard(B, 18)
     await onboard(C, 16)
+
+    session.clear()
+    await send(ADMIN, f"/adminadd {D} reports,users")
+    await send(D, "/admin")
+    dynamic_panel = next(
+        item.get("reply_markup", {}) for item in reversed(session.to(D)) if item.get("reply_markup")
+    )
+    dynamic_labels = [
+        button["text"] for row in dynamic_panel.get("inline_keyboard", []) for button in row
+    ]
+    check("Жалобы" in dynamic_labels and "Найти профиль" in dynamic_labels,
+          "владелец выдаёт администратору выбранные разделы")
+    check("Бан по id" not in dynamic_labels and "Рассылка" not in dynamic_labels,
+          "невыданные права скрыты из панели")
+    await send(D, f"/ban {C} тест")
+    check("Нет доступа" in session.last_to(D), "сервер запрещает действие без права ban")
+    await send(ADMIN, f"/points {A} +50")
+    check(int((await db.get_user(A))["xp"]) == 50, "владелец выдаёт очки")
+    session.clear()
+    await send(ADMIN, "/bc Тест рассылки")
+    broadcast = next(item for item in session.to(A) if item.get("text") == "Тест рассылки")
+    check(not broadcast.get("reply_markup"), "рассылка отправляется без кнопок")
 
     session.clear()
     await press(A, "act:settings")
@@ -618,7 +638,6 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(media.get("media") == first_settings_file, "повторный экран использует cached file_id")
 
     session.clear()
-    await press(A, "act:more")
     await press(A, "act:support")
     check("количество звёзд" in session.last_to(A), "поддержка спрашивает количество звёзд")
     await send(A, "25")
@@ -628,21 +647,21 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
         "бот создаёт счёт Telegram Stars на введённую сумму",
     )
 
-    premium_payment = {
+    support_payment = {
         "currency": "XTR",
-        "total_amount": cfg.premium_price_stars,
-        "invoice_payload": f"premium:{A}:{cfg.premium_days}:nonce",
-        "telegram_payment_charge_id": "premium-charge-1",
+        "total_amount": 25,
+        "invoice_payload": f"support:{A}:25:nonce",
+        "telegram_payment_charge_id": "support-charge-1",
         "provider_payment_charge_id": "",
     }
-    await payload(A, successful_payment=premium_payment)
-    premium_until = int((await db.get_user(A))["premium_until"])
-    check(premium_until > 0, "successful payment начисляет АНОН+")
-    await payload(A, successful_payment=premium_payment)
-    check(int((await db.get_user(A))["premium_until"]) == premium_until,
-          "duplicate charge ID не продлевает АНОН+ повторно")
+    await payload(A, successful_payment=support_payment)
+    support_stars = int((await db.get_user(A))["support_stars"])
+    check(support_stars == 25, "successful payment сохраняет поддержку")
+    await payload(A, successful_payment=support_payment)
+    check(int((await db.get_user(A))["support_stars"]) == support_stars,
+          "duplicate charge ID не начисляет поддержку повторно")
     await send(A, "/profile")
-    check("✦" in session.last_to(A), "активный АНОН+ показывает premium marker")
+    check("💎" in session.last_to(A), "поддержавший получает постоянный marker")
 
     session.clear()
     await press(A, "act:connect")
@@ -650,8 +669,8 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await press(B, "act:connect")
     check(mm.partner(A) == B, "возраст не разделяет очередь")
     check("Собеседник найден" in session.last_to(A), "экран найденного собеседника отправлен")
-    check("U1002" not in session.last_to(A) and str(B) not in session.last_to(A),
-          "Telegram-имя и id не попадают собеседнику")
+    check("@user1002" in session.last_to(A) and f"<code>{B}</code>" not in session.last_to(A),
+          "публичный username виден, Telegram id скрыт")
 
     session.clear()
     await send(A, "@secret_user")
@@ -705,7 +724,7 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(session.to(B) == [], "собеседник не получает уведомление о блоке")
     await press(A, "act:connect")
     await press(B, "act:connect")
-    check(mm.partner(A) != B, "заблокированные и недавние собеседники не соединяются снова")
+    check(mm.partner(A) != B, "заблокированные собеседники не соединяются снова")
     await press(C, "act:connect")
     check(mm.partner(A) == C, "очередь выбирает следующего подходящего пользователя")
 
