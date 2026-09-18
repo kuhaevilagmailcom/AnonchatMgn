@@ -356,7 +356,7 @@ async def show_rules(ctx: Ctx) -> None:
 async def show_top(ctx: Ctx) -> None:
     if await ctx.dialog_locked():
         return
-    rows = await ctx.db.top(5)
+    rows = await ctx.db.top(10)
     if not rows:
         await ctx.reply("🏆 Топ пуст — начни общаться первым.", markup=menu_keyboard())
         return
