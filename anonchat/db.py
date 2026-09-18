@@ -136,6 +136,7 @@ CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_admins_granted_by ON admins(granted_by, updated_at);
 CREATE INDEX IF NOT EXISTS idx_battle_users_a ON battle_games(user_a, status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_battle_users_b ON battle_games(user_b, status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_battle_status_updated ON battle_games(status, updated_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_battle_live_pair
 ON battle_games(MIN(user_a, user_b), MAX(user_a, user_b))
 WHERE status IN ('invited', 'active', 'round_done');
@@ -378,6 +379,27 @@ class Database:
 
     async def get_battle(self, game_id: int) -> aiosqlite.Row | None:
         return await self._fetchone("SELECT * FROM battle_games WHERE id = ?", (game_id,))
+
+    async def list_battles(self, history: bool = False, limit: int = 8) -> tuple[list[aiosqlite.Row], int]:
+        statuses = ("finished", "cancelled", "declined") if history else ("invited", "active", "round_done")
+        placeholders = ",".join("?" for _ in statuses)
+        total_row = await self._fetchone(
+            f"SELECT COUNT(*) AS c FROM battle_games WHERE status IN ({placeholders})", statuses
+        )
+        rows = await self._fetchall(
+            f"""SELECT g.*,
+                       a.username AS user_a_username, a.nickname AS user_a_nickname,
+                       a.support_stars AS user_a_support_stars,
+                       b.username AS user_b_username, b.nickname AS user_b_nickname,
+                       b.support_stars AS user_b_support_stars
+                  FROM battle_games g
+                  LEFT JOIN users a ON a.user_id = g.user_a
+                  LEFT JOIN users b ON b.user_id = g.user_b
+                 WHERE g.status IN ({placeholders})
+                 ORDER BY g.updated_at DESC LIMIT ?""",
+            (*statuses, max(1, min(limit, 20))),
+        )
+        return rows, int(total_row["c"] if total_row else 0)
 
     async def create_battle_invite(
         self, inviter_id: int, partner_id: int, total_questions: int = 5

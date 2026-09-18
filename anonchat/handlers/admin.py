@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import tempfile
 import time
 from pathlib import Path
@@ -23,6 +24,7 @@ from .. import keyboards as K
 from .. import nick as nicklib
 from .. import texts
 from ..actions import Ctx, DeliveryResult, break_pair, send_to
+from ..battle_questions import get_question
 from ..commands import ensure_for_admin, remove_admin_commands
 from ..config import Config
 from ..db import Database
@@ -180,6 +182,58 @@ async def restriction_screen(ctx: Ctx, db: Database, kind: str, offset: int = 0)
         offset = max(0, offset - 10)
         body, user_ids, total = await restricted_text(db, kind, offset=offset)
     markup = K.restricted_list_keyboard(kind, user_ids, offset, total)
+    if not await ctx.edit(body, markup):
+        await ctx.reply(body, markup)
+
+
+def _game_user(row, side: str) -> str:
+    user_id = int(row[f"user_{side}"])
+    nick = nicklib.display(
+        row[f"user_{side}_nickname"] or "", user_id,
+        int(row[f"user_{side}_support_stars"] or 0),
+    )
+    username = f"@{row[f'user_{side}_username']}" if row[f"user_{side}_username"] else "нет username"
+    return f"<b>{texts.esc(nick)}</b> · {texts.esc(username)} · <code>{user_id}</code>"
+
+
+async def game_watch_text(db: Database, history: bool = False) -> str:
+    rows, total = await db.list_battles(history, 6)
+    title = "📜 <b>Последние игры</b>" if history else "🎮 <b>Активные игры</b>"
+    lines = [f"{title} · всего: <b>{total}</b>", ""]
+    status_labels = {
+        "invited": "ожидает согласия", "active": "идёт", "round_done": "ответили оба",
+        "finished": "завершена", "cancelled": "прервана", "declined": "отклонена",
+    }
+    for row in rows:
+        status = str(row["status"])
+        total_questions = int(row["total_questions"])
+        current = min(int(row["question_index"]) + 1, total_questions)
+        lines.extend([
+            f"<b>Игра #{row['id']} · {status_labels.get(status, status)}</b>",
+            f"Вопрос: <b>{current}/{total_questions}</b> · совпадений: <b>{row['matches']}</b>",
+            f"A: {_game_user(row, 'a')}",
+            f"B: {_game_user(row, 'b')}",
+        ])
+        question_ids = json.loads(str(row["question_ids"] or "[]"))
+        if question_ids and int(row["question_index"]) < len(question_ids):
+            question = get_question(int(question_ids[int(row["question_index"])]))
+            answer_a = "ждёт ответа" if row["answer_a"] is None else question.option(int(row["answer_a"]))
+            answer_b = "ждёт ответа" if row["answer_b"] is None else question.option(int(row["answer_b"]))
+            lines.extend([
+                f"Тема: {texts.esc(question.text)}",
+                f"Ответ A: <b>{texts.esc(answer_a)}</b>",
+                f"Ответ B: <b>{texts.esc(answer_b)}</b>",
+            ])
+        lines.extend([f"Обновлено: {time.strftime('%d.%m · %H:%M:%S', time.localtime(row['updated_at']))}", ""])
+    if not rows:
+        lines.append("Сейчас здесь пусто.")
+    lines.append("Данные читаются только при открытии или обновлении этого экрана.")
+    return "\n".join(lines)
+
+
+async def game_watch_screen(ctx: Ctx, db: Database, history: bool = False) -> None:
+    body = await game_watch_text(db, history)
+    markup = K.game_watch_keyboard(history)
     if not await ctx.edit(body, markup):
         await ctx.reply(body, markup)
 
@@ -518,6 +572,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         K.CB_PANEL_BAN_LIST: "ban",
         K.CB_PANEL_POINTS: "points",
         K.CB_PANEL_MONITOR: "monitor",
+        K.CB_PANEL_GAMES: "monitor",
     }.get(data)
     if required and not ctx.can(required):
         await ctx.ack("У тебя нет этого права", alert=True)
@@ -550,6 +605,10 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
     if data == K.CB_PANEL_MUTE_LIST:
         await ctx.ack()
         await restriction_screen(ctx, db, "mute")
+        return
+    if data == K.CB_PANEL_GAMES:
+        await ctx.ack()
+        await game_watch_screen(ctx, db)
         return
     if data == K.CB_PANEL_MONITOR:
         key = f"chat_monitor:{ctx.user_id}"
@@ -741,6 +800,19 @@ async def cb_restricted_list(event: CallbackQuery, ctx: Ctx, db: Database) -> No
         await db.set_mute(user_id, 0)
         await ctx.ack("Мут снят")
         await restriction_screen(ctx, db, "mute", offset)
+
+
+@router.callback_query(F.data.startswith("adm:games:"))
+async def cb_game_watch(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    if not _is_admin(ctx) or not ctx.can("monitor"):
+        await ctx.ack("У тебя нет этого права", alert=True)
+        return
+    view = (event.data or "").rsplit(":", 1)[-1]
+    if view not in {"active", "history"}:
+        await ctx.ack("Кнопка устарела", alert=True)
+        return
+    await ctx.ack("Обновлено")
+    await game_watch_screen(ctx, db, history=view == "history")
 
 
 # ---------------------------------------------------------------------------------- кнопки в карточке жалобы

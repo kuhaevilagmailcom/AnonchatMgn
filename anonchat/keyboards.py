@@ -336,6 +336,7 @@ CB_PANEL_USERS = "adm:panel:users"
 CB_PANEL_POINTS = "adm:panel:points"
 CB_PANEL_ADMINS = "adm:panel:admins"
 CB_PANEL_MONITOR = "adm:panel:monitor"
+CB_PANEL_GAMES = "adm:panel:games"
 CB_PANEL_BACKUP = "adm:panel:backup"
 CB_PANEL_BACK = "adm:panel:back"
 
@@ -379,6 +380,7 @@ def admin_panel_keyboard(
         _button(b, "Администраторы", callback_data=CB_PANEL_ADMINS, icon="bonus", style="primary")
         _button(b, "Скачать базу", callback_data=CB_PANEL_BACKUP, icon="link", style="primary")
     if owner or "monitor" in permissions:
+        _button(b, "Игры пользователей", callback_data=CB_PANEL_GAMES, icon="bonus", style="primary")
         _button(
             b,
             f"Чаты: {'ВКЛ' if monitor_enabled else 'ВЫКЛ'}",
@@ -442,4 +444,20 @@ def restricted_list_keyboard(
         )
     _button(b, "В панель", callback_data=CB_PANEL_BACK, icon="home")
     b.adjust(*([1] * len(user_ids)), 2, 1)
+    return b.as_markup()
+
+
+def game_watch_keyboard(history: bool = False) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(
+        b, "Обновить", callback_data=f"adm:games:{'history' if history else 'active'}",
+        icon="refresh", style="primary",
+    )
+    _button(
+        b, "Активные игры" if history else "История игр",
+        callback_data=f"adm:games:{'active' if history else 'history'}",
+        icon="stats",
+    )
+    _button(b, "В панель", callback_data=CB_PANEL_BACK, icon="home")
+    b.adjust(2, 1)
     return b.as_markup()

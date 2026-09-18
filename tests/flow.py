@@ -746,6 +746,14 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await press(B, f"game:yes:{battle_id}")
     check("⚔️ <b>1/5</b>" in session.last_to(A) and "⚔️ <b>1/5</b>" in session.last_to(B),
           "согласие обоих запускает пять вопросов")
+    await send(ADMIN, "/admin")
+    await press(ADMIN, "adm:panel:games")
+    watch = session.last_to(ADMIN)
+    check("Активные игры" in watch and f"Игра #{battle_id}" in watch
+          and "Ответ A" in watch and "Ответ B" in watch,
+          "админ видит игру и ответы только при открытии экрана")
+    await press(ADMIN, "adm:games:active")
+    check("Данные читаются только" in session.last_to(ADMIN), "экран игр обновляется вручную")
     for question_index in range(5):
         session.clear()
         await press(A, f"game:answer:{battle_id}:{question_index}:0")
@@ -759,6 +767,10 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
         else:
             check("Битва окончена" in session.last_to(A) and "80%" in session.last_to(A),
                   "после пятого вопроса показан итог 4/5")
+
+    await press(ADMIN, "adm:games:history")
+    check("Последние игры" in session.last_to(ADMIN) and f"Игра #{battle_id}" in session.last_to(ADMIN)
+          and "завершена" in session.last_to(ADMIN), "админ видит историю завершённых игр")
 
     await press(ADMIN, "adm:panel:monitor")
     session.clear()

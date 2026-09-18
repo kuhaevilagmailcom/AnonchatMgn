@@ -322,6 +322,8 @@ def test_battle_game_persists_and_synchronizes() -> None:
         restored = await db.get_battle(game_id)
         assert restored is not None and restored["status"] == "active"
         assert restored["question_ids"] == "[1, 2, 3, 4, 5]"
+        active_games, active_total = await db.list_battles()
+        assert active_total == 1 and int(active_games[0]["id"]) == game_id
 
         for index in range(5):
             state, _ = await db.answer_battle(game_id, 101, index, 0)
@@ -336,6 +338,9 @@ def test_battle_game_persists_and_synchronizes() -> None:
                 assert game is not None and int(game["question_index"]) == index + 1
             else:
                 assert game["status"] == "finished" and int(game["matches"]) == 5
+
+        history, history_total = await db.list_battles(history=True)
+        assert history_total == 1 and int(history[0]["id"]) == game_id
 
         assert int((await db.get_user(101))["xp"]) == 25
         assert int((await db.get_user(202))["xp"]) == 25
@@ -416,6 +421,7 @@ def test_keyboard_styles_and_icons() -> None:
         K.back_menu_keyboard(), K.skip_cancel_keyboard(),
         K.admin_report_keyboard(1),
         K.restricted_list_keyboard("ban", [10, 11], 0, 2),
+        K.game_watch_keyboard(), K.game_watch_keyboard(history=True),
         K.admin_panel_keyboard(3, {"stats", "reports", "queue", "users", "broadcast", "mute", "ban", "points"}, True),
         K.users_page_keyboard(0, 30), K.panel_back_keyboard(),
         K.panel_cancel_keyboard(),
@@ -458,7 +464,11 @@ def test_keyboard_styles_and_icons() -> None:
     panel = texts_of(K.admin_panel_keyboard(2, {"reports", "mute"}))
     assert panel == ["Жалобы · 2", "Мут по id", "Мут-лист", "В меню"], panel
     owner_panel = texts_of(K.admin_panel_keyboard(0, {"stats"}, True))
-    assert all(item in owner_panel for item in ("Администраторы", "Скачать базу", "Чаты: ВЫКЛ"))
+    assert all(item in owner_panel for item in (
+        "Администраторы", "Скачать базу", "Игры пользователей", "Чаты: ВЫКЛ",
+    ))
+    assert "Игры пользователей" in texts_of(K.admin_panel_keyboard(0, {"monitor"}))
+    assert "Игры пользователей" not in texts_of(K.admin_panel_keyboard(0, {"reports"}))
     assert "Чаты: ВКЛ" in texts_of(K.admin_panel_keyboard(0, {"stats"}, True, True))
     # кнопка входа в панель появляется только у админа
     assert texts_of(K.menu_keyboard("free", admin=True))[-1] == "Панель модератора"
