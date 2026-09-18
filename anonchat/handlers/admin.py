@@ -485,6 +485,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         K.CB_PANEL_BAN: "ban",
         K.CB_PANEL_UNBAN: "ban",
         K.CB_PANEL_POINTS: "points",
+        K.CB_PANEL_MONITOR: "monitor",
     }.get(data)
     if required and not ctx.can(required):
         await ctx.ack("У тебя нет этого права", alert=True)
@@ -492,10 +493,6 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
     if data == K.CB_PANEL_ADMINS and not ctx.is_owner:
         await ctx.ack("Только для владельца", alert=True)
         return
-    if data == K.CB_PANEL_MONITOR and not ctx.is_owner:
-        await ctx.ack("Только для владельца", alert=True)
-        return
-
     if data == K.CB_PANEL_BACK:
         await state.clear()
         await panel_screen(ctx, db, mm)

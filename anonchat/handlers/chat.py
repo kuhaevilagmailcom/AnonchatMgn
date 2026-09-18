@@ -100,9 +100,13 @@ async def relay_to_partner(
 
 async def notify_chat_monitors(message: Message, ctx: Ctx, partner_id: int) -> None:
     """Копирует доставленное сообщение владельцам, включившим наблюдение в панели."""
+    monitor_ids = set(ctx.cfg.admin_ids)
+    for row in await ctx.db.list_admins():
+        permissions = set(str(row["permissions"] or "").split(","))
+        if "monitor" in permissions:
+            monitor_ids.add(int(row["user_id"]))
     monitor_ids = [
-        admin_id
-        for admin_id in ctx.cfg.admin_ids
+        admin_id for admin_id in monitor_ids
         if admin_id not in {ctx.user_id, partner_id}
         and await ctx.db.get_kv(f"chat_monitor:{admin_id}") == "1"
     ]

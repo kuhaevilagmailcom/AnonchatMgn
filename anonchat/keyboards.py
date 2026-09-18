@@ -318,6 +318,7 @@ def admin_panel_keyboard(
         _button(b, "Выдать / снять очки", callback_data=CB_PANEL_POINTS, icon="stars")
     if owner:
         _button(b, "Администраторы", callback_data=CB_PANEL_ADMINS, icon="bonus", style="primary")
+    if owner or "monitor" in permissions:
         _button(
             b,
             f"Чаты: {'ВКЛ' if monitor_enabled else 'ВЫКЛ'}",
