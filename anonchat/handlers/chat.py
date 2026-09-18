@@ -16,7 +16,7 @@ from ..config import Config
 from ..matching import Matchmaker
 
 router = Router(name="chat")
-_MONITOR_CACHE: dict[int, tuple[float, list[int]]] = {}
+_MONITOR_CANDIDATE_CACHE: dict[int, tuple[float, list[int]]] = {}
 
 # что разрешено переправлять собеседнику
 ALLOWED_TYPES = frozenset(
@@ -104,21 +104,19 @@ async def relay_to_partner(
 async def notify_chat_monitors(message: Message, ctx: Ctx, partner_id: int) -> None:
     """Копирует доставленное сообщение владельцам, включившим наблюдение в панели."""
     cache_key = id(ctx.db)
-    cached = _MONITOR_CACHE.get(cache_key)
+    cached = _MONITOR_CANDIDATE_CACHE.get(cache_key)
     if cached is None or cached[0] < time.monotonic():
         candidates = set(ctx.cfg.admin_ids)
         for row in await ctx.db.list_admins():
             permissions = set(str(row["permissions"] or "").split(","))
             if "monitor" in permissions:
                 candidates.add(int(row["user_id"]))
-        enabled = [
-            admin_id for admin_id in candidates
-            if await ctx.db.get_kv(f"chat_monitor:{admin_id}") == "1"
-        ]
-        cached = (time.monotonic() + 2.0, enabled)
-        _MONITOR_CACHE[cache_key] = cached
+        cached = (time.monotonic() + 2.0, list(candidates))
+        _MONITOR_CANDIDATE_CACHE[cache_key] = cached
     monitor_ids = [
-        admin_id for admin_id in cached[1] if admin_id not in {ctx.user_id, partner_id}
+        admin_id for admin_id in cached[1]
+        if admin_id not in {ctx.user_id, partner_id}
+        and await ctx.db.get_kv(f"chat_monitor:{admin_id}") == "1"
     ]
     if not monitor_ids:
         return

@@ -697,6 +697,16 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
           and "⭐" in session.last_to(A),
           "видны только анонимный ник и очки")
 
+    await press(ADMIN, "adm:panel:monitor")
+    session.clear()
+    await send(A, "слежение выключено")
+    check(session.to(ADMIN) == [], "выключенное слежение не присылает копии")
+    await press(ADMIN, "adm:panel:monitor")
+    session.clear()
+    await send(A, "слежение включено")
+    check("слежение включено" in session.last_to(ADMIN),
+          "слежение включается сразу без потери сообщений")
+
     session.clear()
     await send(A, "@secret_user")
     check("@secret_user" in session.last_to(B), "обычный @username пересылается")
