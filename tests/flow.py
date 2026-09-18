@@ -707,12 +707,18 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check("слежение включено" in session.last_to(ADMIN),
           "слежение включается сразу без потери сообщений")
 
+    await send(ADMIN, f"/adminperms {D} all")
+    await send(D, "/admin")
+    await press(D, "adm:panel:monitor")
+
     session.clear()
     await send(A, "@secret_user")
     check("@secret_user" in session.last_to(B), "обычный @username пересылается")
     check("@user1001" in session.last_to(ADMIN) and "@user1002" in session.last_to(ADMIN)
           and "@secret_user" in session.last_to(ADMIN),
           "владелец видит username обоих собеседников и текст")
+    check("@secret_user" in session.last_to(D),
+          "админ с правами all видит активные чаты")
     session.clear()
     await send(A, "+7 999 123-45-67")
     check("+7 999 123-45-67" in session.last_to(B), "телефон пересылается")
@@ -796,6 +802,10 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
         mm.forget(uid)
     await press(D, "act:connect")
     await press(E, "act:connect")
+    session.clear()
+    await send(E, "сообщение админу в диалоге")
+    check("Собеседник:" in session.last_to(D),
+          "админ видит данные даже в своём активном чате")
     session.fail_once["sendMessage"] = "temp"
     await send(D, "временная ошибка")
     check(mm.partner(D) == E, "TEMP_ERROR не разрывает пару")
