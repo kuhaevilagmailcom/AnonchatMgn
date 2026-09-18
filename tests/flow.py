@@ -669,8 +669,9 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await press(B, "act:connect")
     check(mm.partner(A) == B, "возраст не разделяет очередь")
     check("Собеседник найден" in session.last_to(A), "экран найденного собеседника отправлен")
-    check("@user1002" in session.last_to(A) and f"<code>{B}</code>" not in session.last_to(A),
-          "публичный username виден, Telegram id скрыт")
+    check("@user1002" not in session.last_to(A) and f"<code>{B}</code>" not in session.last_to(A)
+          and "⭐" in session.last_to(A),
+          "видны только анонимный ник и очки")
 
     session.clear()
     await send(A, "@secret_user")
@@ -684,14 +685,10 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     session.clear()
     await send(A, "/send @explicit_user")
-    check("поделиться контактом" in session.last_to(A), "/send просит подтверждение")
-    check(session.to(B) == [], "до подтверждения username не отправлен")
-    await press(A, "contact:send")
-    check("@explicit_user" in session.last_to(B), "подтверждённый username отправлен")
+    check(session.to(B) == [] and "Не знаю" in session.last_to(A), "/send удалена")
     session.clear()
     await send(A, "/user https://t.me/example")
-    await press(A, "contact:send")
-    check("https://t.me/example" in session.last_to(B), "/user отправляет подтверждённую ссылку")
+    check(session.to(B) == [] and "Не знаю" in session.last_to(A), "/user удалена")
 
     for body, label in (
         ({"location": {"latitude": 53.4, "longitude": 58.9}}, "location"),

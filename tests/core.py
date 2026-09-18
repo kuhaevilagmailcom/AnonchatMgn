@@ -322,7 +322,7 @@ def test_keyboard_styles_and_icons() -> None:
         K.settings_keyboard(True, "Правобережный", "Лена О"),
         K.report_keyboard(), K.rating_keyboard(), K.confirm_stop_keyboard(),
         K.confirm_forget_keyboard(), K.confirm_blocks_keyboard(),
-        K.contact_confirm_keyboard(), K.back_menu_keyboard(), K.skip_cancel_keyboard(),
+        K.back_menu_keyboard(), K.skip_cancel_keyboard(),
         K.admin_report_keyboard(1),
         K.admin_panel_keyboard(3, {"stats", "reports", "queue", "users", "broadcast", "mute", "ban", "points"}, True),
         K.users_page_keyboard(0, 30), K.panel_back_keyboard(),
@@ -597,6 +597,7 @@ def test_db_nickname_and_kv() -> None:
             top = await db.top(5)
             assert top[0]["nickname"] == "Старожил", "в топ уходит ник, а не настоящее имя"
             assert "first_name" not in top[0].keys()
+            assert "username" not in top[0].keys()
         finally:
             await db.close()
 

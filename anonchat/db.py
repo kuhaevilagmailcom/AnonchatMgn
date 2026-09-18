@@ -615,7 +615,7 @@ class Database:
     async def top(self, limit: int = 10) -> list[aiosqlite.Row]:
         """Активность с упором на диалоги и оценки; спам в одном чате быстро упирается в лимит."""
         return await self._fetchall(
-            """SELECT user_id, username, nickname, messages, xp, dialogs, good_ratings, support_stars
+            """SELECT user_id, nickname, messages, xp, dialogs, good_ratings, support_stars
                FROM users WHERE banned = 0
                ORDER BY xp DESC, dialogs DESC, messages DESC LIMIT ?""",
             (limit,),

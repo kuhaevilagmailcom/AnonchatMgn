@@ -368,7 +368,6 @@ async def show_top(ctx: Ctx) -> None:
         lines.append(
             f"{place} <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id']), row['support_stars']))}</b>"
             f" · <b>{int(row['xp'])} ⭐</b>"
-            + (f" · @{texts.esc(row['username'])}" if row["username"] else "")
         )
     lines += ["", "<i>Ники участники придумывают сами.</i>"]
     await ctx.render_screen("08_top.png", "\n".join(lines), back_menu_keyboard())
@@ -431,13 +430,12 @@ async def set_nick(ctx: Ctx, raw: str) -> tuple[bool, str]:
 
 # --------------------------------------------------------------------- пары
 def partner_card(row: Any, user_id: int) -> str:
-    """Публичная карточка собеседника: ник и Telegram username, если он установлен."""
+    """Публичная карточка собеседника: только анонимный ник и очки."""
     if row is None:
         return f"🙂 <b>{texts.esc(nicklib.display('', user_id))}</b>"
-    username = f"\n@{texts.esc(row['username'])}" if row["username"] else ""
     return texts.MATCHED_CARD.format(
         nick=texts.esc(nicklib.display(row["nickname"], user_id, row["support_stars"]))
-    ) + username
+    ) + f"\n⭐ <b>{int(row['xp'])}</b>"
 
 
 def matched_text(card: str, you: str) -> str:

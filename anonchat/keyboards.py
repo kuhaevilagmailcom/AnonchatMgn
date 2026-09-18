@@ -223,14 +223,6 @@ def confirm_blocks_keyboard() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def contact_confirm_keyboard() -> InlineKeyboardMarkup:
-    b = InlineKeyboardBuilder()
-    _button(b, "Отправить", callback_data="contact:send", icon="check", style="success")
-    _button(b, "Отмена", callback_data="contact:cancel", icon="home")
-    b.adjust(2)
-    return b.as_markup()
-
-
 def back_menu_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
