@@ -173,7 +173,7 @@ async def admins_text(db: Database, owner_ids: tuple[int, ...]) -> str:
 # ---------------------------------------------------------------------------------- санкции
 async def do_ban(ctx: Ctx, db: Database, mm: Matchmaker, cfg: Config, uid: int, reason: str) -> str:
     await db.set_ban(uid, True, reason)
-    await break_pair(ctx.bot, cfg, mm, uid, texts.PARTNER_LEFT, ctx.pack)
+    await break_pair(ctx.bot, cfg, mm, uid, texts.PARTNER_LEFT, ctx.pack, db)
     await send_to(
         ctx.bot, uid, texts.BANNED.format(city=texts.esc(cfg.city), reason=texts.esc(reason)),
         None, ctx.pack,
@@ -193,7 +193,7 @@ async def do_mute(
     await send_to(
         ctx.bot, uid, texts.MUTED.format(mins=max(1, int((until - time.time()) // 60))), None, ctx.pack
     )
-    await break_pair(ctx.bot, cfg, mm, uid, texts.MOD_CLOSED_DIALOG, ctx.pack)
+    await break_pair(ctx.bot, cfg, mm, uid, texts.MOD_CLOSED_DIALOG, ctx.pack, db)
     return f"🔇 <code>{uid}</code> заглушён на {mins} мин."
 
 

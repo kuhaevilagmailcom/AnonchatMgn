@@ -13,7 +13,7 @@ from aiogram.types import CallbackQuery, Message
 from .. import keyboards as K
 from .. import nick as nicklib
 from .. import texts
-from ..actions import Ctx, break_pair, send_to
+from ..actions import Ctx, DeliveryResult, break_pair, send_copy_to, send_to
 from ..config import Config
 from ..db import Database
 from ..matching import Matchmaker
@@ -27,12 +27,42 @@ class ReportStates(StatesGroup):
     comment = State()
 
 
+class FeedbackStates(StatesGroup):
+    message = State()
+
+
 async def notify_admins(ctx: Ctx, body: str, markup=None, report_id: int | None = None) -> None:
     admin_ids = await ctx.db.admin_ids_with_permission("reports", ctx.cfg.admin_ids)
     for admin_id in admin_ids:
         permissions = await ctx.db.get_admin_permissions(admin_id, ctx.cfg.admin_ids)
         actual_markup = K.admin_report_keyboard(report_id, permissions) if report_id else markup
         await send_to(ctx.bot, admin_id, body, actual_markup, ctx.pack)
+
+
+def _feedback_header(ctx: Ctx, message: Message) -> str:
+    username = f"@{message.from_user.username}" if message.from_user and message.from_user.username else "без username"
+    first_name = message.from_user.first_name if message.from_user else "-"
+    return (
+        "💌 <b>Отзыв / обратная связь</b>\n"
+        f"От: <code>{ctx.user_id}</code> · {texts.esc(username)} · {texts.esc(first_name)}"
+    )
+
+
+async def _deliver_feedback(ctx: Ctx, message: Message, body: str = "") -> int:
+    delivered = 0
+    header = _feedback_header(ctx, message)
+    for admin_id in await ctx.db.all_admin_ids(ctx.cfg.admin_ids):
+        if body:
+            result = await send_to(
+                ctx.bot, admin_id, f"{header}\n\n{texts.esc(body[:3500])}", None, ctx.pack
+            )
+        else:
+            result = await send_to(ctx.bot, admin_id, header, None, ctx.pack)
+            if result is DeliveryResult.DELIVERED:
+                result = await send_copy_to(ctx.bot, message, admin_id)
+        if result is DeliveryResult.DELIVERED:
+            delivered += 1
+    return delivered
 
 
 # ---------------------------------------------------------------------------------- старт жалобы
@@ -139,7 +169,7 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
         until = await db.set_mute(partner, cfg.auto_mute_minutes)
         mins = max(1, int((until - time.time()) // 60))
         await send_to(ctx.bot, partner, texts.MUTED.format(mins=mins), None, ctx.pack)
-        await break_pair(ctx.bot, cfg, mm, partner, texts.MOD_CLOSED_DIALOG, ctx.pack)
+        await break_pair(ctx.bot, cfg, mm, partner, texts.MOD_CLOSED_DIALOG, ctx.pack, db)
         auto = texts.REPORT_AUTO_MUTE.format(mins=mins)
 
     await ctx.reply(
@@ -152,14 +182,28 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
 
 # --------------------------------------------------------------------------------=> /feedback
 @router.message(Command("feedback"))
-async def cmd_feedback(message: Message, ctx: Ctx) -> None:
+async def cmd_feedback(message: Message, ctx: Ctx, state: FSMContext) -> None:
     body = (message.text or "").partition(" ")[2].strip()
     if not body:
-        await ctx.reply(texts.FEEDBACK_EMPTY)
+        await state.set_state(FeedbackStates.message)
+        await ctx.reply(texts.FEEDBACK_PROMPT, K.back_menu_keyboard())
         return
-    await notify_admins(
-        ctx,
-        f"💌 <b>Фидбек</b> от <code>{ctx.user_id}</code> ({texts.esc(message.from_user.first_name)}):\n"
-        f"{texts.esc(body[:1000])}",
-    )
+    await _deliver_feedback(ctx, message, body)
     await ctx.reply(texts.FEEDBACK_SENT)
+
+
+@router.callback_query(F.data == K.CB_FEEDBACK)
+async def cb_feedback(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
+    await state.set_state(FeedbackStates.message)
+    await ctx.edit(texts.FEEDBACK_PROMPT, K.back_menu_keyboard())
+    await ctx.ack()
+
+
+@router.message(FeedbackStates.message, ~F.text.startswith("/"))
+async def feedback_message(message: Message, ctx: Ctx, state: FSMContext) -> None:
+    await state.clear()
+    delivered = await _deliver_feedback(ctx, message)
+    if delivered:
+        await ctx.reply(texts.FEEDBACK_SENT, K.menu_keyboard(ctx.mm.status(ctx.user_id)))
+    else:
+        await ctx.reply("Не смог доставить сообщение админам. Попробуй ещё раз.")

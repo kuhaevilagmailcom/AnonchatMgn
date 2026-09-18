@@ -28,6 +28,7 @@ COMMANDS = (
     BotCommand(command="next", description="⏭ Следующий"),
     BotCommand(command="stop", description="⏹ Остановить диалог"),
     BotCommand(command="report", description="🚩 Пожаловаться"),
+    BotCommand(command="game", description="🎮 Игры с собеседником"),
     BotCommand(command="nick", description="🙋 Ник, который видят другие"),
     BotCommand(command="profile", description="📊 Мой ранг и статистика"),
     BotCommand(command="settings", description="⚙️ Район и фильтры"),
@@ -54,7 +55,7 @@ ADMIN_COMMANDS = (
     BotCommand(command="unban", description="✅ Разбанить"),
     BotCommand(command="mute", description="🔇 Мут на минуты"),
     BotCommand(command="find", description="🔎 Найти профиль"),
-    BotCommand(command="feedback", description="💌 Фидбек владельцу"),
+    BotCommand(command="feedback", description="💌 Обратная связь с админами"),
     BotCommand(command="bc", description="📣 Рассылка"),
 )
 

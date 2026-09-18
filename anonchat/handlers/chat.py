@@ -86,6 +86,7 @@ async def relay_to_partner(
         return
     if delivery is DeliveryResult.UNAVAILABLE:
         mm.uncount_message(ctx.user_id)
+        await ctx.db.close_battles_for_users(ctx.user_id, partner)
         mm.forget(ctx.user_id)
         await ctx.reply(
             texts.PARTNER_UNREACHABLE,

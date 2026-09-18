@@ -299,6 +299,50 @@ def test_database() -> None:
     asyncio.run(guarded())
 
 
+def test_battle_game_persists_and_synchronizes() -> None:
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "battle.db"
+        db = await Database(path).start()
+        invite, created = await db.create_battle_invite(101, 202)
+        assert created
+        game_id = int(invite["id"])
+        duplicate, duplicate_created = await db.create_battle_invite(202, 101)
+        assert not duplicate_created and int(duplicate["id"]) == game_id
+        game = await db.accept_battle(game_id, 202, [1, 2, 3, 4, 5])
+        assert game is not None and game["status"] == "active"
+        await db.close()
+
+        db = await Database(path).start()
+        restored = await db.get_battle(game_id)
+        assert restored is not None and restored["status"] == "active"
+        assert restored["question_ids"] == "[1, 2, 3, 4, 5]"
+
+        for index in range(5):
+            state, _ = await db.answer_battle(game_id, 101, index, 0)
+            assert state == "waiting"
+            state, _ = await db.answer_battle(game_id, 101, index, 1)
+            assert state == "already", "ответ нельзя изменять"
+            state, game = await db.answer_battle(game_id, 202, index, 0 if index < 4 else 1)
+            assert state == "resolved" and game is not None
+            if index < 4:
+                assert game["status"] == "round_done"
+                game = await db.advance_battle(game_id, 202, index)
+                assert game is not None and int(game["question_index"]) == index + 1
+            else:
+                assert game["status"] == "finished" and int(game["matches"]) == 4
+        await db.close()
+
+    asyncio.run(scenario())
+
+
+def test_battle_question_files() -> None:
+    from anonchat.battle_questions import questions
+
+    loaded = questions()
+    assert len(loaded) == 600 and set(loaded) == set(range(1, 601))
+    assert all(item.text and item.first and item.second for item in loaded.values())
+
+
 # --------------------------------------------------------------------------------- ники
 def test_nickname_rules() -> None:
     from anonchat import nick
@@ -337,6 +381,9 @@ def test_keyboard_styles_and_icons() -> None:
         K.chat_keyboard(), K.profile_keyboard("https://t.me/test_bot?start=ref_1"),
         K.district_keyboard(),
         K.settings_keyboard(True, "Правобережный", "Лена О"),
+        K.games_keyboard(), K.battle_invite_keyboard(1),
+        K.battle_answer_keyboard(1, 0, "ночь", "утро"),
+        K.battle_next_keyboard(1, 0), K.battle_end_keyboard(1),
         K.report_keyboard(), K.rating_keyboard(), K.confirm_stop_keyboard(),
         K.confirm_forget_keyboard(), K.confirm_blocks_keyboard(),
         K.back_menu_keyboard(), K.skip_cancel_keyboard(),
@@ -373,7 +420,7 @@ def test_keyboard_styles_and_icons() -> None:
         return [btn.text for row in markup.inline_keyboard for btn in row]
 
     # в диалоге из меню остаются только действия диалога
-    assert texts_of(K.menu_keyboard("paired")) == ["Следующий", "Стоп", "Жалоба"]
+    assert texts_of(K.menu_keyboard("paired")) == ["Игры", "Следующий", "Стоп", "Жалоба"]
     # панель модератора: 9 разделов, счётчик жалоб в подписи
     panel = texts_of(K.admin_panel_keyboard(2, {"reports", "mute"}))
     assert panel == ["Жалобы · 2", "Мут по id", "В меню"], panel
@@ -384,6 +431,7 @@ def test_keyboard_styles_and_icons() -> None:
     assert texts_of(K.menu_keyboard("free", admin=True))[-1] == "Панель модератора"
     assert "Поддержать проект" not in texts_of(K.menu_keyboard("free"))
     assert "Поддержать проект" in texts_of(K.settings_keyboard(False, "", "Ник"))
+    assert "Отзыв / обратная связь" in texts_of(K.settings_keyboard(False, "", "Ник"))
 
 
 def test_contact_filter() -> None:

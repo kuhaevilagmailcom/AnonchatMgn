@@ -31,6 +31,9 @@ CB_SUPPORT = "act:support"
 CB_CONTINUE = "onboard:continue"
 CB_BLOCK = "rate:block"
 CB_NICK = "cfg:nick:ask"
+CB_GAMES = "game:menu"
+CB_BATTLE = "game:battle"
+CB_FEEDBACK = "cfg:feedback"
 
 
 #: Bot API принимает только эти три цвета кнопки («warning» отвергает — проверено живьём)
@@ -66,10 +69,11 @@ def menu_keyboard(status: str = "free", queue_size: int = 0, admin: bool = False
     """
     b = InlineKeyboardBuilder()
     if status == "paired":
+        _button(b, "Игры", callback_data=CB_GAMES, icon="bonus", style="primary")
         _button(b, "Следующий", callback_data=CB_NEXT, icon="next")
         _button(b, "Стоп", callback_data=CB_STOP, icon="check", style="danger")
         _button(b, "Жалоба", callback_data=CB_REPORT, icon="warn")
-        b.adjust(1, 2)
+        b.adjust(1, 1, 2)
         return b.as_markup()
 
     if status == "queued":
@@ -160,10 +164,51 @@ def settings_keyboard(same_district: bool, district: str, nickname: str) -> Inli
     )
     _button(b, "Возраст", callback_data="cfg:age:ask", icon="stars")
     _button(b, "Сбросить скрытых", callback_data="cfg:blocks:ask", icon="refresh")
+    _button(b, "Отзыв / обратная связь", callback_data=CB_FEEDBACK, icon="support")
     _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
     _button(b, "Удалить профиль", callback_data="cfg:forget:ask", icon="delete", style="danger")
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
-    b.adjust(1, 1, 1, 1, 1, 1, 1, 1)
+    b.adjust(1, 1, 1, 1, 1, 1, 1, 1, 1)
+    return b.as_markup()
+
+
+def games_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Битва мнений", callback_data=CB_BATTLE, icon="bonus", style="primary")
+    _button(b, "Вернуться в чат", callback_data="game:return", icon="home")
+    b.adjust(1, 1)
+    return b.as_markup()
+
+
+def battle_invite_keyboard(game_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Играть", callback_data=f"game:yes:{game_id}", icon="check", style="success")
+    _button(b, "Не сейчас", callback_data=f"game:no:{game_id}", icon="delete")
+    b.adjust(2)
+    return b.as_markup()
+
+
+def battle_answer_keyboard(
+    game_id: int, question_index: int, first: str, second: str
+) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, first.capitalize(), callback_data=f"game:answer:{game_id}:{question_index}:0", style="primary")
+    _button(b, second.capitalize(), callback_data=f"game:answer:{game_id}:{question_index}:1", style="success")
+    b.adjust(1, 1)
+    return b.as_markup()
+
+
+def battle_next_keyboard(game_id: int, question_index: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Следующий вопрос", callback_data=f"game:next:{game_id}:{question_index}", icon="next", style="primary")
+    return b.as_markup()
+
+
+def battle_end_keyboard(game_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Сыграть ещё", callback_data=f"game:again:{game_id}", icon="refresh", style="success")
+    _button(b, "Вернуться в чат", callback_data="game:return", icon="home")
+    b.adjust(1, 1)
     return b.as_markup()
 
 

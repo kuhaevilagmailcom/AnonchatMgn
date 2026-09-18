@@ -330,7 +330,8 @@ async def show_menu(ctx: Ctx) -> None:
 
     body = (
         f"<b>{texts.esc(ctx.nick)}</b>\n\n"
-        f"{state}"
+        f"{state}\n\n"
+        f"🟢 Сейчас ищут: <b>{ctx.mm.queue_size()}</b>"
     )
     kb = menu_keyboard(status, ctx.mm.queue_size(), admin=ctx.is_admin)
     image = {"paired": "03_found.png", "queued": "02_search.png"}.get(status, "01_main_menu.png")
@@ -502,12 +503,15 @@ async def announce_pairs(
 
 
 async def break_pair(
-    bot: Bot, cfg: Config, mm: Matchmaker, user_id: int, note: str, pack: EmojiPack | None = None
+    bot: Bot, cfg: Config, mm: Matchmaker, user_id: int, note: str,
+    pack: EmojiPack | None = None, db: Database | None = None,
 ) -> None:
     kb = menu_keyboard()
     partner, _ = mm.release(user_id)
     if partner is None:
         return
+    if db is not None:
+        await db.close_battles_for_users(user_id, partner)
     await send_to(bot, partner, note, kb, pack)
     await send_to(bot, user_id, note, kb, pack)
 
@@ -517,6 +521,7 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
     if partner is None:
         await ctx.reply(texts.NO_DIALOG, markup=menu_keyboard())
         return
+    await ctx.db.close_battles_for_users(ctx.user_id, partner)
 
     counts: dict[int, int] = summary.get("counts", {}) or {}
     mine = int(counts.get(ctx.user_id, 0))
@@ -630,6 +635,8 @@ async def apply_rating(ctx: Ctx, positive: bool) -> None:
 
 
 async def forget_everything(ctx: Ctx) -> None:
+    partner = ctx.mm.partner(ctx.user_id)
+    await ctx.db.close_battles_for_users(ctx.user_id, partner or 0)
     ctx.mm.forget(ctx.user_id)
     await ctx.db.forget_user(ctx.user_id)
     await ctx.reply(

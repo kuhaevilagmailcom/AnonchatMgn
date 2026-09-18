@@ -191,6 +191,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     # 1. /start — приветствие, авто-ник и минималистичное меню
     await send(A, "/start")
     check("Анонимный чат" in session.last_to(A), "/start показывает приветствие с меню")
+    check("Сейчас ищут" in session.last_to(A), "главное меню показывает размер очереди")
     check("Аноним-1001" in session.last_to(A), "при первом входе выдаётся авто-ник вместо имени из Telegram")
     check((await db.get_user(A))["nickname"] == "Аноним-1001", "авто-ник сохранился в базу")
     check(session.has_keyboard(A), "в меню есть инлайн-кнопки")
@@ -662,6 +663,14 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(media.get("media") == first_settings_file, "повторный экран использует cached file_id")
 
     session.clear()
+    await press(A, "cfg:feedback")
+    await payload(A, photo=[{"file_id": "feedback-photo", "file_unique_id": "feedback", "width": 1, "height": 1}])
+    check(any("Отзыв / обратная связь" in text for text in session.texts_to(ADMIN)),
+          "обратная связь уходит владельцу")
+    check(any(item["method"] == "sendPhoto" for item in session.to(D)),
+          "медиаотзыв уходит всем назначенным админам")
+
+    session.clear()
     await press(A, "act:support")
     check("количество звёзд" in session.last_to(A), "поддержка спрашивает количество звёзд")
     await send(A, "25")
@@ -692,12 +701,41 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(mm.status(A) == "queued" and "Ищу собеседника" in session.last_to(A), "поиск ставит в очередь")
     check(session.outbox[0]["method"] == "answerCallbackQuery",
           "кнопка поиска отпускает интерфейс сразу")
+    await send(B, "/start")
+    check("Сейчас ищут: <b>1</b>" in session.last_to(B),
+          "меню показывает одного человека в очереди")
     await press(B, "act:connect")
     check(mm.partner(A) == B, "возраст не разделяет очередь")
     check("Собеседник найден" in session.last_to(A), "экран найденного собеседника отправлен")
     check("@user1002" not in session.last_to(A) and f"<code>{B}</code>" not in session.last_to(A)
           and "⭐" in session.last_to(A),
           "видны только анонимный ник и очки")
+
+    session.clear()
+    await send(A, "/game")
+    check("Битва мнений" in str(session.to(A)[-1].get("reply_markup")),
+          "/game открывает игры в активном чате")
+    await press(A, "game:battle")
+    battle = await db.battle_for_pair(A, B)
+    check(bool(battle and battle["status"] == "invited"), "предложение игры сохранено в SQLite")
+    battle_id = int(battle["id"])
+    check("предлагает сыграть" in session.last_to(B), "второй игрок получает приглашение")
+    await press(B, f"game:yes:{battle_id}")
+    check("⚔️ <b>1/5</b>" in session.last_to(A) and "⚔️ <b>1/5</b>" in session.last_to(B),
+          "согласие обоих запускает пять вопросов")
+    for question_index in range(5):
+        session.clear()
+        await press(A, f"game:answer:{battle_id}:{question_index}:0")
+        check("Ждём собеседника" in session.last_to(A), "первый ответ зафиксирован")
+        await press(A, f"game:answer:{battle_id}:{question_index}:1")
+        await press(B, f"game:answer:{battle_id}:{question_index}:{0 if question_index < 4 else 1}")
+        if question_index < 4:
+            check("Совпало" in session.last_to(A), "совпадение показано обоим")
+            await press(A, f"game:next:{battle_id}:{question_index}")
+            check(f"<b>{question_index + 2}/5</b>" in session.last_to(B), "следующий вопрос синхронно показан обоим")
+        else:
+            check("Битва окончена" in session.last_to(A) and "80%" in session.last_to(A),
+                  "после пятого вопроса показан итог 4/5")
 
     await press(ADMIN, "adm:panel:monitor")
     session.clear()
@@ -767,7 +805,13 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(len(await db.list_reports("new")) == 1 and texts.REPORT_DUPLICATE in session.last_to(A),
           "повторная жалоба на тот же диалог не считается")
 
+    await send(A, "/game")
+    await press(A, "game:battle")
+    active_battle = await db.battle_for_pair(A, B)
+    await press(B, f"game:yes:{int(active_battle['id'])}")
     await send(A, "/stop")
+    closed_battle = await db.get_battle(int(active_battle["id"]))
+    check(closed_battle["status"] == "cancelled", "/stop закрывает активную игру в SQLite")
     session.clear()
     await press(A, "rate:block")
     check(B in await db.excluded_partners(A), "блок-лист сохраняет пару")
