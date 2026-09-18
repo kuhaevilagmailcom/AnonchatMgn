@@ -407,7 +407,8 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     await press(A, "rep:spam")
     await send(A, "реклама казино, бесячье")
     card = " ".join(session.texts_to(ADMIN))
-    check("Жалоба #" in card and "spam" in card.lower() or "Спам" in card, "админ получил карточку жалобы")
+    check("НОВАЯ ЖАЛОБА" in card and "Нарушитель" in card and "Последние сообщения" in card
+          and "Спам" in card, "админ получил новую удобную карточку жалобы")
     check(str(C) in card, "в карточке есть id нарушителя")
     reports = await db.list_reports("new")
     check(len(reports) == 1 and reports[0]["target_id"] == C, "жалоба легла в базу")
@@ -489,7 +490,8 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     panel_labels = [btn["text"] for row in kb for btn in row]
     check(
         all(x in panel_labels for x in ("Сводка", "Жалобы", "Очередь", "Найти профиль", "Рассылка",
-                                        "Мут по id", "Бан по id", "Разбан по id", "В меню")),
+                                        "Мут по id", "Мут-лист", "Бан по id", "Разбан по id",
+                                        "Бан-лист", "В меню")),
         f"в панели все разделы: {panel_labels}",
     )
     check(
@@ -506,6 +508,13 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     await press(ADMIN, "adm:panel:back")
     check("Панель модератора" in session.last_to(ADMIN), "«Назад в панель» возвращает")
 
+    await press(ADMIN, "adm:panel:mute_list")
+    check("Мут-лист" in session.last_to(ADMIN) and "4242" in session.last_to(ADMIN),
+          "мут-лист показывает активные муты")
+    await press(ADMIN, "adm:restrict:unmute:4242:0")
+    check(await db.is_restricted(4242) is None, "мут снимается прямо из списка")
+    await press(ADMIN, "adm:panel:back")
+
     await press(ADMIN, "adm:panel:find")
     check("Кого ищем" in session.last_to(ADMIN), "«Найти профиль» спрашивает, кого искать")
     await send(ADMIN, str(B))
@@ -518,6 +527,14 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     await send(ADMIN, f"{C} спам с панели")
     check(await db.is_restricted(C) == "banned", "бан из панели применился")
     check("забанен" in " ".join(session.texts_to(ADMIN)).lower(), "панель отчиталась о бане")
+    await press(ADMIN, "adm:panel:ban_list")
+    check("Бан-лист" in session.last_to(ADMIN) and str(C) in session.last_to(ADMIN),
+          "бан-лист показывает заблокированных и причину")
+    await press(ADMIN, f"adm:restrict:unban:{C}:0")
+    check(await db.is_restricted(C) is None, "бан снимается прямо из списка")
+    await press(ADMIN, "adm:panel:back")
+    await press(ADMIN, "adm:panel:ban")
+    await send(ADMIN, f"{C} повторный тест")
     await press(ADMIN, "adm:panel:unban")
     await send(ADMIN, str(C))
     check(await db.is_restricted(C) is None, "разбан из панели вернул пользователя")

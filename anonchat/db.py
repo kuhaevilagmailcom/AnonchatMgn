@@ -650,6 +650,26 @@ class Database:
         await self.db.commit()
         return until
 
+    async def list_restricted(
+        self, kind: str, limit: int = 10, offset: int = 0
+    ) -> tuple[list[aiosqlite.Row], int]:
+        if kind == "ban":
+            where, params = "banned = 1", ()
+            order = "last_seen DESC"
+        elif kind == "mute":
+            where, params = "banned = 0 AND mute_until > ?", (now(),)
+            order = "mute_until ASC"
+        else:
+            raise ValueError("Неизвестный вид ограничения")
+        total_row = await self._fetchone(f"SELECT COUNT(*) AS c FROM users WHERE {where}", params)
+        rows = await self._fetchall(
+            f"""SELECT user_id, username, first_name, nickname, support_stars,
+                       ban_reason, mute_until, last_seen
+                  FROM users WHERE {where} ORDER BY {order} LIMIT ? OFFSET ?""",
+            (*params, max(1, min(limit, 50)), max(0, offset)),
+        )
+        return rows, int(total_row["c"] if total_row else 0)
+
     async def add_report(
         self, reporter_id: int, target_id: int, reason: str, comment: str,
         dialog_key: str = "", context: str = "",
@@ -703,8 +723,12 @@ class Database:
     async def list_reports(self, status: str = "new", limit: int = 20) -> list[aiosqlite.Row]:
         return await self._fetchall(
             """SELECT r.*, t.username AS target_username, t.first_name AS target_name,
-                      t.nickname AS target_nickname, t.support_stars AS target_support_stars
+                      t.nickname AS target_nickname, t.support_stars AS target_support_stars,
+                      t.reports_received AS target_reports_received,
+                      p.username AS reporter_username, p.first_name AS reporter_name,
+                      p.nickname AS reporter_nickname, p.support_stars AS reporter_support_stars
                FROM reports r LEFT JOIN users t ON t.user_id = r.target_id
+                              LEFT JOIN users p ON p.user_id = r.reporter_id
                WHERE r.status = ? ORDER BY r.created_at DESC LIMIT ?""",
             (status, limit),
         )
@@ -712,8 +736,13 @@ class Database:
     async def get_report(self, report_id: int) -> aiosqlite.Row | None:
         return await self._fetchone(
             """SELECT r.*, t.username AS target_username, t.first_name AS target_name,
-                      t.nickname AS target_nickname, t.support_stars AS target_support_stars
-               FROM reports r LEFT JOIN users t ON t.user_id = r.target_id WHERE r.id = ?""",
+                      t.nickname AS target_nickname, t.support_stars AS target_support_stars,
+                      t.reports_received AS target_reports_received,
+                      p.username AS reporter_username, p.first_name AS reporter_name,
+                      p.nickname AS reporter_nickname, p.support_stars AS reporter_support_stars
+               FROM reports r LEFT JOIN users t ON t.user_id = r.target_id
+                              LEFT JOIN users p ON p.user_id = r.reporter_id
+               WHERE r.id = ?""",
             (report_id,),
         )
 

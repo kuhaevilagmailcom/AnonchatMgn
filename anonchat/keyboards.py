@@ -298,14 +298,14 @@ def admin_report_keyboard(
     permissions = set(permissions or {"reports", "users", "mute", "ban"})
     b = InlineKeyboardBuilder()
     if "mute" in permissions:
-        _button(b, "Мут 60 мин", callback_data=f"adm:mute:{report_id}", icon="warn", style="primary")
+        _button(b, "Мут 60 минут", callback_data=f"adm:mute:{report_id}", icon="warn", style="primary")
     if "ban" in permissions:
-        _button(b, "Бан", callback_data=f"adm:ban:{report_id}", icon="delete", style="danger")
+        _button(b, "Забанить", callback_data=f"adm:ban:{report_id}", icon="delete", style="danger")
     if "users" in permissions:
-        _button(b, "Профиль", callback_data=f"adm:who:{report_id}", icon="profile")
+        _button(b, "Профиль нарушителя", callback_data=f"adm:who:{report_id}", icon="profile")
     if "reports" in permissions:
-        _button(b, "Закрыть", callback_data=f"adm:done:{report_id}", icon="check", style="success")
-    b.adjust(2)
+        _button(b, "Закрыть без наказания", callback_data=f"adm:done:{report_id}", icon="check", style="success")
+    b.adjust(2, 1, 1)
     return b.as_markup()
 
 
@@ -328,8 +328,10 @@ CB_PANEL_QUEUE = "adm:panel:queue"
 CB_PANEL_FIND = "adm:panel:find"
 CB_PANEL_BC = "adm:panel:broadcast"
 CB_PANEL_MUTE = "adm:panel:mute"
+CB_PANEL_MUTE_LIST = "adm:panel:mute_list"
 CB_PANEL_BAN = "adm:panel:ban"
 CB_PANEL_UNBAN = "adm:panel:unban"
+CB_PANEL_BAN_LIST = "adm:panel:ban_list"
 CB_PANEL_USERS = "adm:panel:users"
 CB_PANEL_POINTS = "adm:panel:points"
 CB_PANEL_ADMINS = "adm:panel:admins"
@@ -366,9 +368,11 @@ def admin_panel_keyboard(
         _button(b, "Рассылка", callback_data=CB_PANEL_BC, icon="support")
     if "mute" in permissions:
         _button(b, "Мут по id", callback_data=CB_PANEL_MUTE, icon="settings", style="primary")
+        _button(b, "Мут-лист", callback_data=CB_PANEL_MUTE_LIST, icon="warn")
     if "ban" in permissions:
         _button(b, "Бан по id", callback_data=CB_PANEL_BAN, icon="delete", style="danger")
         _button(b, "Разбан по id", callback_data=CB_PANEL_UNBAN, icon="check")
+        _button(b, "Бан-лист", callback_data=CB_PANEL_BAN_LIST, icon="delete")
     if "points" in permissions:
         _button(b, "Выдать / снять очки", callback_data=CB_PANEL_POINTS, icon="stars")
     if owner:
@@ -411,4 +415,31 @@ def users_page_keyboard(offset: int, count: int, page_size: int = 30) -> InlineK
         _button(b, "Дальше", callback_data=f"adm:users:{offset + page_size}", icon="next")
     _button(b, "В панель", callback_data=CB_PANEL_BACK, icon="home")
     b.adjust(2, 1)
+    return b.as_markup()
+
+
+def restricted_list_keyboard(
+    kind: str, user_ids: list[int], offset: int, total: int, page_size: int = 10
+) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    action = "unban" if kind == "ban" else "unmute"
+    label = "Разбанить" if kind == "ban" else "Снять мут"
+    for user_id in user_ids:
+        _button(
+            b, f"{label} {user_id}",
+            callback_data=f"adm:restrict:{action}:{user_id}:{offset}",
+            icon="check", style="success",
+        )
+    if offset > 0:
+        _button(
+            b, "Назад", callback_data=f"adm:restrict:list:{kind}:{max(0, offset - page_size)}",
+            icon="next",
+        )
+    if offset + page_size < total:
+        _button(
+            b, "Дальше", callback_data=f"adm:restrict:list:{kind}:{offset + page_size}",
+            icon="next",
+        )
+    _button(b, "В панель", callback_data=CB_PANEL_BACK, icon="home")
+    b.adjust(*([1] * len(user_ids)), 2, 1)
     return b.as_markup()

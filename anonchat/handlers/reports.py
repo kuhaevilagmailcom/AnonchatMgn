@@ -39,6 +39,38 @@ async def notify_admins(ctx: Ctx, body: str, markup=None, report_id: int | None 
         await send_to(ctx.bot, admin_id, body, actual_markup, ctx.pack)
 
 
+def format_report_card(row, day_count: int | None = None, *, is_new: bool = False) -> str:
+    target_id = int(row["target_id"])
+    reporter_id = int(row["reporter_id"])
+    target_nick = nicklib.display(
+        row["target_nickname"] or "", target_id, int(row["target_support_stars"] or 0)
+    )
+    reporter_nick = nicklib.display(
+        row["reporter_nickname"] or "", reporter_id, int(row["reporter_support_stars"] or 0)
+    )
+    target_username = f"@{row['target_username']}" if row["target_username"] else "нет username"
+    reporter_username = f"@{row['reporter_username']}" if row["reporter_username"] else "нет username"
+    reason = REASON_TITLES.get(str(row["reason"]), str(row["reason"]))
+    context = texts.esc(row["context"]) if row["context"] else "<i>Текстового контекста нет</i>"
+    comment = texts.esc(row["comment"]) if row["comment"] else "<i>Без комментария</i>"
+    daily = f"\n📊 Жалоб за 24 часа: <b>{day_count}</b>" if day_count is not None else ""
+    return (
+        f"🚨 <b>{'НОВАЯ ЖАЛОБА' if is_new else 'ЖАЛОБА'} · #{row['id']}</b>\n"
+        f"🕒 {time.strftime('%d.%m.%Y · %H:%M', time.localtime(row['created_at']))}\n\n"
+        f"🎯 <b>Нарушитель</b>\n"
+        f"├ Ник: <b>{texts.esc(target_nick)}</b>\n"
+        f"├ ID: <code>{target_id}</code>\n"
+        f"├ Telegram: {texts.esc(target_username)}\n"
+        f"└ Имя: {texts.esc(row['target_name'] or '-')}\n\n"
+        f"📝 <b>Причина:</b> {texts.esc(reason)}\n"
+        f"💬 <b>Комментарий:</b> {comment}\n\n"
+        f"📚 <b>Последние сообщения</b>\n<blockquote>{context}</blockquote>\n"
+        f"🙋 <b>Отправитель:</b> {texts.esc(reporter_nick)} · "
+        f"<code>{reporter_id}</code> · {texts.esc(reporter_username)}"
+        f"{daily}\n\nВыбери действие кнопками ниже."
+    )
+
+
 def _feedback_header(ctx: Ctx, message: Message) -> str:
     username = f"@{message.from_user.username}" if message.from_user and message.from_user.username else "без username"
     first_name = message.from_user.first_name if message.from_user else "-"
@@ -142,26 +174,9 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
     if report_id is None:
         await ctx.reply(texts.REPORT_DUPLICATE, markup=K.menu_keyboard("paired"))
         return
-    target_row = await db.get_user(partner)
-    # карточка — только для модератора: здесь настоящие данные уместны
-    target_name = (target_row["first_name"] if target_row else "собеседник") or "собеседник"
-    target_login = f"@{target_row['username']}" if target_row and target_row["username"] else "без юзернейма"
-    target_nick = nicklib.display(
-        target_row["nickname"] if target_row else "",
-        partner,
-        target_row["support_stars"] if target_row else 0,
-    )
-
-    card = (
-        f"🚩 <b>Жалоба #{report_id}</b>\n"
-        f"Причина: <b>{texts.esc(REASON_TITLES.get(reason, reason))}</b>\n"
-        f"На: <code>{partner}</code> · в чате как <b>{texts.esc(target_nick)}</b> · "
-        f"{texts.esc(target_name)} ({texts.esc(target_login)})\n"
-        f"От: <code>{ctx.user_id}</code>\n"
-        f"Последние сообщения:\n{texts.esc(context) if context else '<i>нет текстового контекста</i>'}\n\n"
-        f"Комментарий: {texts.esc(comment) if comment else '<i>без комментария</i>'}\n"
-        f"Жалоб на него за сутки: <b>{day_count}</b> · {time.strftime('%d.%m %H:%M')}"
-    )
+    stored_report = await db.get_report(report_id)
+    assert stored_report is not None
+    card = format_report_card(stored_report, day_count, is_new=True)
     await notify_admins(ctx, card, report_id=report_id)
 
     auto = ""

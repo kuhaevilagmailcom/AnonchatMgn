@@ -29,6 +29,7 @@ from ..db import Database
 from ..levels import rank_for
 from ..matching import Matchmaker
 from ..permissions import ALL_ADMIN_PERMISSIONS, PERMISSION_LABELS, parse_permissions
+from .reports import format_report_card
 
 router = Router(name="admin")
 
@@ -113,17 +114,7 @@ async def find_text(db: Database, query: str) -> str:
 
 
 def report_card(r) -> str:
-    """Карточка жалобы для модератора: здесь настоящие данные уместны."""
-    return (
-        f"🚩 <b>Жалоба #{r['id']}</b> · {time.strftime('%d.%m %H:%M', time.localtime(r['created_at']))}\n"
-        f"Причина: <b>{texts.esc(r['reason'])}</b>\n"
-        f"На: <code>{r['target_id']}</code> · в чате как "
-        f"<b>{texts.esc(nicklib.display(r['target_nickname'], int(r['target_id']), r['target_support_stars'] or 0))}</b>"
-        f" ({texts.esc(r['target_name'] or '-')})\n"
-        f"От: <code>{r['reporter_id']}</code>\n"
-        f"Последние сообщения:\n{texts.esc(r['context']) if r['context'] else '<i>нет контекста</i>'}\n\n"
-        f"Комментарий: {texts.esc(r['comment']) if r['comment'] else '<i>без комментария</i>'}"
-    )
+    return format_report_card(r)
 
 
 async def who_text(db: Database, uid: int) -> str | None:
@@ -154,6 +145,43 @@ async def users_text(db: Database, limit: int = 30, offset: int = 0) -> tuple[st
             f"{texts.esc(row['first_name'] or '-')} · {int(row['xp'])} ⭐"
         )
     return "\n".join(lines), len(rows)
+
+
+async def restricted_text(
+    db: Database, kind: str, limit: int = 10, offset: int = 0
+) -> tuple[str, list[int], int]:
+    rows, total = await db.list_restricted(kind, limit, offset)
+    title = "⛔ <b>Бан-лист</b>" if kind == "ban" else "🔇 <b>Мут-лист</b>"
+    lines = [f"{title} · всего: <b>{total}</b>", ""]
+    for index, row in enumerate(rows, start=offset + 1):
+        user_id = int(row["user_id"])
+        nick = nicklib.display(row["nickname"], user_id, row["support_stars"])
+        username = f"@{row['username']}" if row["username"] else "нет username"
+        lines.append(
+            f"<b>{index}. {texts.esc(nick)}</b> · {texts.esc(username)}\n"
+            f"ID: <code>{user_id}</code>"
+        )
+        if kind == "ban":
+            lines.append(f"Причина: {texts.esc(row['ban_reason'] or 'не указана')}\n")
+        else:
+            remaining = max(1, (int(row["mute_until"]) - int(time.time()) + 59) // 60)
+            lines.append(
+                f"До: <b>{time.strftime('%d.%m.%Y · %H:%M', time.localtime(row['mute_until']))}</b>"
+                f" · осталось {remaining} мин.\n"
+            )
+    if not rows:
+        lines.append("Список пуст.")
+    return "\n".join(lines), [int(row["user_id"]) for row in rows], total
+
+
+async def restriction_screen(ctx: Ctx, db: Database, kind: str, offset: int = 0) -> None:
+    body, user_ids, total = await restricted_text(db, kind, offset=offset)
+    if not user_ids and offset > 0 and total:
+        offset = max(0, offset - 10)
+        body, user_ids, total = await restricted_text(db, kind, offset=offset)
+    markup = K.restricted_list_keyboard(kind, user_ids, offset, total)
+    if not await ctx.edit(body, markup):
+        await ctx.reply(body, markup)
 
 
 async def admins_text(db: Database, owner_ids: tuple[int, ...]) -> str:
@@ -484,8 +512,10 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         K.CB_PANEL_USERS: "users",
         K.CB_PANEL_BC: "broadcast",
         K.CB_PANEL_MUTE: "mute",
+        K.CB_PANEL_MUTE_LIST: "mute",
         K.CB_PANEL_BAN: "ban",
         K.CB_PANEL_UNBAN: "ban",
+        K.CB_PANEL_BAN_LIST: "ban",
         K.CB_PANEL_POINTS: "points",
         K.CB_PANEL_MONITOR: "monitor",
     }.get(data)
@@ -512,6 +542,14 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         body, count = await users_text(db)
         await ctx.reply(body, K.users_page_keyboard(0, count))
         await ctx.ack()
+        return
+    if data == K.CB_PANEL_BAN_LIST:
+        await ctx.ack()
+        await restriction_screen(ctx, db, "ban")
+        return
+    if data == K.CB_PANEL_MUTE_LIST:
+        await ctx.ack()
+        await restriction_screen(ctx, db, "mute")
         return
     if data == K.CB_PANEL_MONITOR:
         key = f"chat_monitor:{ctx.user_id}"
@@ -663,6 +701,46 @@ async def cb_users_page(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     if not await ctx.edit(body, K.users_page_keyboard(offset, count)):
         await ctx.reply(body, K.users_page_keyboard(offset, count))
     await ctx.ack()
+
+
+@router.callback_query(F.data.startswith("adm:restrict:"))
+async def cb_restricted_list(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    if not _is_admin(ctx):
+        await ctx.ack("Не для тебя", alert=True)
+        return
+    parts = (event.data or "").split(":")
+    if len(parts) != 5:
+        await ctx.ack("Кнопка устарела", alert=True)
+        return
+    action, value, raw_offset = parts[2], parts[3], parts[4]
+    try:
+        offset = max(0, int(raw_offset))
+    except ValueError:
+        await ctx.ack("Кнопка устарела", alert=True)
+        return
+    if action == "list" and value in {"ban", "mute"}:
+        if not ctx.can(value):
+            await ctx.ack("У тебя нет этого права", alert=True)
+            return
+        await ctx.ack()
+        await restriction_screen(ctx, db, value, offset)
+        return
+    if action not in {"unban", "unmute"} or not value.isdigit():
+        await ctx.ack("Кнопка устарела", alert=True)
+        return
+    permission = "ban" if action == "unban" else "mute"
+    if not ctx.can(permission):
+        await ctx.ack("У тебя нет этого права", alert=True)
+        return
+    user_id = int(value)
+    if action == "unban":
+        await db.set_ban(user_id, False)
+        await ctx.ack("Пользователь разбанен")
+        await restriction_screen(ctx, db, "ban", offset)
+    else:
+        await db.set_mute(user_id, 0)
+        await ctx.ack("Мут снят")
+        await restriction_screen(ctx, db, "mute", offset)
 
 
 # ---------------------------------------------------------------------------------- кнопки в карточке жалобы

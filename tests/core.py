@@ -247,6 +247,8 @@ def test_database() -> None:
 
         until = await db.set_mute(11, 30)
         assert until > 0 and await db.is_restricted(11) == "muted"
+        muted, muted_total = await db.list_restricted("mute")
+        assert muted_total == 1 and int(muted[0]["user_id"]) == 11
         assert await db.resolve_report(rid, 10) is True
         assert await db.resolve_report(rid2, 10) is True
         assert await db.resolve_report(rid3, 10) is True
@@ -272,6 +274,8 @@ def test_database() -> None:
 
         await db.set_ban(11, True, "спам")
         assert await db.is_restricted(11) == "banned"
+        banned, banned_total = await db.list_restricted("ban")
+        assert banned_total == 1 and banned[0]["ban_reason"] == "спам"
         await db.forget_user(11)
         assert await db.is_restricted(11) == "banned", "/forget не снимает бан"
         deleted = await db.ensure_user(11, "restored", "Настоящее имя")
@@ -411,6 +415,7 @@ def test_keyboard_styles_and_icons() -> None:
         K.confirm_forget_keyboard(), K.confirm_blocks_keyboard(),
         K.back_menu_keyboard(), K.skip_cancel_keyboard(),
         K.admin_report_keyboard(1),
+        K.restricted_list_keyboard("ban", [10, 11], 0, 2),
         K.admin_panel_keyboard(3, {"stats", "reports", "queue", "users", "broadcast", "mute", "ban", "points"}, True),
         K.users_page_keyboard(0, 30), K.panel_back_keyboard(),
         K.panel_cancel_keyboard(),
@@ -451,7 +456,7 @@ def test_keyboard_styles_and_icons() -> None:
     assert texts_of(K.battle_length_keyboard()) == ["5 вопросов", "10 вопросов", "Назад"]
     # панель модератора: 9 разделов, счётчик жалоб в подписи
     panel = texts_of(K.admin_panel_keyboard(2, {"reports", "mute"}))
-    assert panel == ["Жалобы · 2", "Мут по id", "В меню"], panel
+    assert panel == ["Жалобы · 2", "Мут по id", "Мут-лист", "В меню"], panel
     owner_panel = texts_of(K.admin_panel_keyboard(0, {"stats"}, True))
     assert all(item in owner_panel for item in ("Администраторы", "Скачать базу", "Чаты: ВЫКЛ"))
     assert "Чаты: ВКЛ" in texts_of(K.admin_panel_keyboard(0, {"stats"}, True, True))
