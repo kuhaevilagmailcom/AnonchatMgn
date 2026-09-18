@@ -360,7 +360,9 @@ def test_keyboard_styles_and_icons() -> None:
     # панель модератора: 9 разделов, счётчик жалоб в подписи
     panel = texts_of(K.admin_panel_keyboard(2, {"reports", "mute"}))
     assert panel == ["Жалобы · 2", "Мут по id", "В меню"], panel
-    assert "Администраторы" in texts_of(K.admin_panel_keyboard(0, {"stats"}, True))
+    owner_panel = texts_of(K.admin_panel_keyboard(0, {"stats"}, True))
+    assert "Администраторы" in owner_panel and "Чаты: ВЫКЛ" in owner_panel
+    assert "Чаты: ВКЛ" in texts_of(K.admin_panel_keyboard(0, {"stats"}, True, True))
     # кнопка входа в панель появляется только у админа
     assert texts_of(K.menu_keyboard("free", admin=True))[-1] == "Панель модератора"
     assert texts_of(K.menu_keyboard("free"))[-1] == "Поддержать проект"

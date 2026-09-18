@@ -246,7 +246,8 @@ async def panel_screen(ctx: Ctx, db: Database, mm: Matchmaker, edit: bool = True
         f"{texts.PANEL_NOTE}"
     )
     kb = K.admin_panel_keyboard(
-        int(s["open_reports"]), ctx.admin_permissions, owner=ctx.is_owner
+        int(s["open_reports"]), ctx.admin_permissions, owner=ctx.is_owner,
+        monitor_enabled=await db.get_kv(f"chat_monitor:{ctx.user_id}") == "1",
     )
     if edit and await ctx.edit(body, kb):
         return
@@ -289,7 +290,7 @@ async def cmd_admin_panel(message: Message, ctx: Ctx, db: Database, mm: Matchmak
 @router.callback_query(F.data == K.CB_ADMIN_PANEL)
 async def cb_open_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker, state: FSMContext) -> None:
     if not _is_admin(ctx):
-        await ctx.ack("Не для тебя", show_alert=True)
+        await ctx.ack("Не для тебя", alert=True)
         return
     await state.clear()
     await panel_screen(ctx, db, mm)
@@ -470,7 +471,7 @@ async def cmd_admin_list(message: Message, ctx: Ctx, db: Database) -> None:
 @router.callback_query(F.data.startswith("adm:panel:"))
 async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker, state: FSMContext) -> None:
     if not _is_admin(ctx):
-        await ctx.ack("Не для тебя", show_alert=True)
+        await ctx.ack("Не для тебя", alert=True)
         return
     data = event.data or ""
     required = {
@@ -486,10 +487,13 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         K.CB_PANEL_POINTS: "points",
     }.get(data)
     if required and not ctx.can(required):
-        await ctx.ack("У тебя нет этого права", show_alert=True)
+        await ctx.ack("У тебя нет этого права", alert=True)
         return
     if data == K.CB_PANEL_ADMINS and not ctx.is_owner:
-        await ctx.ack("Только для владельца", show_alert=True)
+        await ctx.ack("Только для владельца", alert=True)
+        return
+    if data == K.CB_PANEL_MONITOR and not ctx.is_owner:
+        await ctx.ack("Только для владельца", alert=True)
         return
 
     if data == K.CB_PANEL_BACK:
@@ -504,7 +508,15 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         return
     if data == K.CB_PANEL_USERS:
         body, count = await users_text(db)
-        await ctx.edit(body, K.users_page_keyboard(0, count))
+        await ctx.reply(body, K.users_page_keyboard(0, count))
+        await ctx.ack()
+        return
+    if data == K.CB_PANEL_MONITOR:
+        key = f"chat_monitor:{ctx.user_id}"
+        enabled = await db.get_kv(key) != "1"
+        await db.set_kv(key, "1" if enabled else "0")
+        await ctx.ack(f"Слежение за чатами {'включено' if enabled else 'выключено'}")
+        await panel_screen(ctx, db, mm)
         return
     if data == K.CB_PANEL_ADMINS:
         await state.set_state(AdminStates.await_input)
@@ -624,21 +636,23 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
 @router.callback_query(F.data.startswith("adm:users:"))
 async def cb_users_page(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     if not ctx.can("users"):
-        await ctx.ack("У тебя нет этого права", show_alert=True)
+        await ctx.ack("У тебя нет этого права", alert=True)
         return
     try:
         offset = max(0, int((event.data or "").rsplit(":", 1)[1]))
     except (ValueError, IndexError):
         offset = 0
     body, count = await users_text(db, offset=offset)
-    await ctx.edit(body, K.users_page_keyboard(offset, count))
+    if not await ctx.edit(body, K.users_page_keyboard(offset, count)):
+        await ctx.reply(body, K.users_page_keyboard(offset, count))
+    await ctx.ack()
 
 
 # ---------------------------------------------------------------------------------- кнопки в карточке жалобы
 @router.callback_query(F.data.startswith("adm:"))
 async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker, cfg: Config) -> None:
     if not _is_admin(ctx):
-        await ctx.ack("Не для тебя", show_alert=True)
+        await ctx.ack("Не для тебя", alert=True)
         return
     parts = (event.data or "").split(":")
     if len(parts) != 3 or not parts[2].isdigit():
@@ -646,7 +660,7 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
     action, raw_id = parts[1], parts[2]
     required = {"done": "reports", "who": "users", "mute": "mute", "ban": "ban"}.get(action)
     if required and not ctx.can(required):
-        await ctx.ack("У тебя нет этого права", show_alert=True)
+        await ctx.ack("У тебя нет этого права", alert=True)
         return
     report = await db.get_report(int(raw_id))
     if report is None:

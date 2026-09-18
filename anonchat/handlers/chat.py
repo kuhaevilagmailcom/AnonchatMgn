@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -11,14 +9,11 @@ from aiogram.types import Message
 
 from .. import keyboards as K
 from .. import texts
-from ..actions import Ctx, DeliveryResult, send_copy_to, show_menu
+from ..actions import Ctx, DeliveryResult, send_copy_to, send_to, show_menu
 from ..config import Config
 from ..matching import Matchmaker
-from ..safety import contains_contact
 
 router = Router(name="chat")
-
-CONTACT_IN_TEXT_RE = re.compile(r"(?:@[A-Za-z0-9_]{5,32}|(?:https?://)?(?:t\.me|telegram\.me)/\S+)", re.I)
 
 # что разрешено переправлять собеседнику
 ALLOWED_TYPES = frozenset(
@@ -33,6 +28,7 @@ ALLOWED_TYPES = frozenset(
         "video_note",
         "poll",
         "dice",
+        "contact",
     }
 )
 
@@ -63,11 +59,6 @@ async def relay_to_partner(
 
     if message.content_type not in ALLOWED_TYPES:
         await ctx.reply(texts.UNKNOWN_TYPE)
-        return
-
-    payload_text = (message.text or message.caption or "").strip()
-    if payload_text and (contains_contact(payload_text) or CONTACT_IN_TEXT_RE.search(payload_text)):
-        await ctx.reply(texts.CONTACT_BLOCKED)
         return
 
     result = mm.count_message(ctx.user_id)
@@ -103,4 +94,39 @@ async def relay_to_partner(
         return
     if message.text:
         mm.record_text(ctx.user_id, message.text)
+    await notify_chat_monitors(message, ctx, partner)
     # молча: человек знает, что написал в анонимный чат, подтверждений не просил
+
+
+async def notify_chat_monitors(message: Message, ctx: Ctx, partner_id: int) -> None:
+    """Копирует доставленное сообщение владельцам, включившим наблюдение в панели."""
+    monitor_ids = [
+        admin_id
+        for admin_id in ctx.cfg.admin_ids
+        if admin_id not in {ctx.user_id, partner_id}
+        and await ctx.db.get_kv(f"chat_monitor:{admin_id}") == "1"
+    ]
+    if not monitor_ids:
+        return
+
+    sender = ctx.me or await ctx.db.get_user(ctx.user_id)
+    partner = await ctx.db.get_user(partner_id)
+
+    def identity(row, user_id: int) -> str:
+        username = f"@{row['username']}" if row and row["username"] else "без username"
+        nickname = row["nickname"] if row and row["nickname"] else f"Аноним-{user_id}"
+        return f"{texts.esc(username)} · {texts.esc(nickname)} · <code>{user_id}</code>"
+
+    header = (
+        "👁 <b>Сообщение в активном чате</b>\n"
+        f"От: {identity(sender, ctx.user_id)}\n"
+        f"Собеседник: {identity(partner, partner_id)}"
+    )
+    for admin_id in monitor_ids:
+        if message.text:
+            await send_to(
+                ctx.bot, admin_id, f"{header}\n\n{texts.esc(message.text)}", None, ctx.pack
+            )
+        else:
+            await send_to(ctx.bot, admin_id, header, None, ctx.pack)
+            await send_copy_to(ctx.bot, message, admin_id)

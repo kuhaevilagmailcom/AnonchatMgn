@@ -279,6 +279,7 @@ CB_PANEL_UNBAN = "adm:panel:unban"
 CB_PANEL_USERS = "adm:panel:users"
 CB_PANEL_POINTS = "adm:panel:points"
 CB_PANEL_ADMINS = "adm:panel:admins"
+CB_PANEL_MONITOR = "adm:panel:monitor"
 CB_PANEL_BACK = "adm:panel:back"
 
 
@@ -286,6 +287,7 @@ def admin_panel_keyboard(
     open_reports: int = 0,
     permissions: frozenset[str] | set[str] | None = None,
     owner: bool = False,
+    monitor_enabled: bool = False,
 ) -> InlineKeyboardMarkup:
     """Панель модератора: никаких команд в счёт, всё кнопками."""
     b = InlineKeyboardBuilder()
@@ -316,6 +318,13 @@ def admin_panel_keyboard(
         _button(b, "Выдать / снять очки", callback_data=CB_PANEL_POINTS, icon="stars")
     if owner:
         _button(b, "Администраторы", callback_data=CB_PANEL_ADMINS, icon="bonus", style="primary")
+        _button(
+            b,
+            f"Чаты: {'ВКЛ' if monitor_enabled else 'ВЫКЛ'}",
+            callback_data=CB_PANEL_MONITOR,
+            icon="view",
+            style="success" if monitor_enabled else "",
+        )
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
     b.adjust(2)
     return b.as_markup()

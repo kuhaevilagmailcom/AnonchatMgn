@@ -615,6 +615,9 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
           "владелец выдаёт администратору выбранные разделы")
     check("Бан по id" not in dynamic_labels and "Рассылка" not in dynamic_labels,
           "невыданные права скрыты из панели")
+    await press(D, "adm:panel:monitor")
+    check(await db.get_kv(f"chat_monitor:{D}") != "1",
+          "назначенный администратор не может включить слежение за чатами")
     await send(D, f"/ban {C} тест")
     check("Нет доступа" in session.last_to(D), "сервер запрещает действие без права ban")
     await send(ADMIN, f"/points {A} +50")
@@ -623,6 +626,14 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await send(ADMIN, "/bc Тест рассылки")
     broadcast = next(item for item in session.to(A) if item.get("text") == "Тест рассылки")
     check(not broadcast.get("reply_markup"), "рассылка отправляется без кнопок")
+    session.clear()
+    await send(ADMIN, "/admin")
+    await press(ADMIN, "adm:panel:users")
+    check(any("Пользователи" in text for text in session.texts_to(ADMIN)),
+          "кнопка «Все пользователи» открывает список отдельным сообщением")
+    await press(ADMIN, "adm:panel:monitor")
+    check(await db.get_kv(f"chat_monitor:{ADMIN}") == "1",
+          "владелец включает слежение за активными чатами")
 
     session.clear()
     await press(A, "act:settings")
@@ -675,10 +686,16 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     session.clear()
     await send(A, "@secret_user")
-    check(session.to(B) == [] and "контакты" in session.last_to(A), "обычный @username не пересылается")
+    check("@secret_user" in session.last_to(B), "обычный @username пересылается")
+    check("@user1001" in session.last_to(ADMIN) and "@user1002" in session.last_to(ADMIN)
+          and "@secret_user" in session.last_to(ADMIN),
+          "владелец видит username обоих собеседников и текст")
     session.clear()
     await send(A, "+7 999 123-45-67")
-    check(session.to(B) == [] and "контакты" in session.last_to(A), "телефон не пересылается")
+    check("+7 999 123-45-67" in session.last_to(B), "телефон пересылается")
+    session.clear()
+    await send(A, "https://t.me/example")
+    check("https://t.me/example" in session.last_to(B), "ссылка t.me пересылается")
     session.clear()
     await send(A, "https://example.com")
     check("https://example.com" in session.last_to(B), "ссылка пересылается собеседнику")
@@ -690,9 +707,14 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await send(A, "/user https://t.me/example")
     check(session.to(B) == [] and "Не знаю" in session.last_to(A), "/user удалена")
 
+    session.clear()
+    await payload(A, contact={"phone_number": "+79991234567", "first_name": "X"})
+    check(bool(session.to(B)), "контакт Telegram пересылается")
+    check(any(item["method"] == "sendContact" for item in session.to(ADMIN)),
+          "владелец получает копию медиа и контактов из чата")
+
     for body, label in (
         ({"location": {"latitude": 53.4, "longitude": 58.9}}, "location"),
-        ({"contact": {"phone_number": "+79991234567", "first_name": "X"}}, "contact"),
         ({"document": {"file_id": "f", "file_unique_id": "u"}}, "документ"),
     ):
         session.clear()
