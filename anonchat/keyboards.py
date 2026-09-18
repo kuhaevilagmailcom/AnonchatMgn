@@ -69,11 +69,11 @@ def menu_keyboard(status: str = "free", queue_size: int = 0, admin: bool = False
     """
     b = InlineKeyboardBuilder()
     if status == "paired":
-        _button(b, "Игры", callback_data=CB_GAMES, icon="bonus", style="primary")
         _button(b, "Следующий", callback_data=CB_NEXT, icon="next")
         _button(b, "Стоп", callback_data=CB_STOP, icon="check", style="danger")
         _button(b, "Жалоба", callback_data=CB_REPORT, icon="warn")
-        b.adjust(1, 1, 2)
+        _button(b, "Игры", callback_data=CB_GAMES, icon="bonus", style="primary")
+        b.adjust(1, 2, 1)
         return b.as_markup()
 
     if status == "queued":
@@ -185,6 +185,15 @@ def battle_invite_keyboard(game_id: int) -> InlineKeyboardMarkup:
     _button(b, "Играть", callback_data=f"game:yes:{game_id}", icon="check", style="success")
     _button(b, "Не сейчас", callback_data=f"game:no:{game_id}", icon="delete")
     b.adjust(2)
+    return b.as_markup()
+
+
+def battle_length_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "5 вопросов", callback_data="game:battle:5", style="primary")
+    _button(b, "10 вопросов", callback_data="game:battle:10", style="success")
+    _button(b, "Назад", callback_data=CB_GAMES, icon="home")
+    b.adjust(2, 1)
     return b.as_markup()
 
 

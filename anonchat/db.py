@@ -114,6 +114,8 @@ CREATE TABLE IF NOT EXISTS battle_games (
     answer_a       INTEGER,
     answer_b       INTEGER,
     matches        INTEGER NOT NULL DEFAULT 0,
+    total_questions INTEGER NOT NULL DEFAULT 5,
+    reward_awarded INTEGER NOT NULL DEFAULT 0,
     created_at     INTEGER NOT NULL,
     updated_at     INTEGER NOT NULL
 );
@@ -152,6 +154,11 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
 _REPORT_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("dialog_key", "ALTER TABLE reports ADD COLUMN dialog_key TEXT NOT NULL DEFAULT ''"),
     ("context", "ALTER TABLE reports ADD COLUMN context TEXT NOT NULL DEFAULT ''"),
+)
+
+_BATTLE_MIGRATIONS: tuple[tuple[str, str], ...] = (
+    ("total_questions", "ALTER TABLE battle_games ADD COLUMN total_questions INTEGER NOT NULL DEFAULT 5"),
+    ("reward_awarded", "ALTER TABLE battle_games ADD COLUMN reward_awarded INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -200,6 +207,11 @@ class Database:
             report_cols = {row[1] for row in await cur.fetchall()}
         for name, sql in _REPORT_MIGRATIONS:
             if name not in report_cols:
+                await self.db.execute(sql)
+        async with self.db.execute("PRAGMA table_info(battle_games)") as cur:
+            battle_cols = {row[1] for row in await cur.fetchall()}
+        for name, sql in _BATTLE_MIGRATIONS:
+            if name not in battle_cols:
                 await self.db.execute(sql)
         await self.db.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_dialog_once "
@@ -368,13 +380,14 @@ class Database:
         return await self._fetchone("SELECT * FROM battle_games WHERE id = ?", (game_id,))
 
     async def create_battle_invite(
-        self, inviter_id: int, partner_id: int
+        self, inviter_id: int, partner_id: int, total_questions: int = 5
     ) -> tuple[aiosqlite.Row, bool]:
         ts = now()
         cur = await self.db.execute(
-            """INSERT OR IGNORE INTO battle_games(user_a, user_b, inviter_id, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?)""",
-            (inviter_id, partner_id, inviter_id, ts, ts),
+            """INSERT OR IGNORE INTO battle_games(
+                   user_a, user_b, inviter_id, total_questions, created_at, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?)""",
+            (inviter_id, partner_id, inviter_id, total_questions, ts, ts),
         )
         await self.db.commit()
         created = cur.rowcount > 0
@@ -392,7 +405,7 @@ class Database:
         cur = await self.db.execute(
             """UPDATE battle_games
                SET status='active', question_ids=?, question_index=0,
-                   answer_a=NULL, answer_b=NULL, matches=0, updated_at=?
+                   answer_a=NULL, answer_b=NULL, matches=0, reward_awarded=0, updated_at=?
                WHERE id=? AND status='invited' AND user_b=? AND inviter_id<>?""",
             (json.dumps([int(item) for item in question_ids]), now(), game_id, user_id, user_id),
         )
@@ -430,14 +443,25 @@ class Database:
         resolved = await self.db.execute(
             """UPDATE battle_games
                SET matches = matches + CASE WHEN answer_a = answer_b THEN 1 ELSE 0 END,
-                   status = CASE WHEN question_index >= 4 THEN 'finished' ELSE 'round_done' END,
+                   status = CASE WHEN question_index >= total_questions - 1
+                                 THEN 'finished' ELSE 'round_done' END,
+                   reward_awarded = CASE
+                       WHEN question_index >= total_questions - 1
+                        AND matches + CASE WHEN answer_a = answer_b THEN 1 ELSE 0 END = total_questions
+                       THEN 1 ELSE reward_awarded END,
                    updated_at=?
                WHERE id=? AND status='active' AND question_index=?
                  AND answer_a IS NOT NULL AND answer_b IS NOT NULL""",
             (now(), game_id, question_index),
         )
+        game = await self.get_battle(game_id)
+        if resolved.rowcount and game is not None and int(game["reward_awarded"]):
+            await self.db.execute(
+                "UPDATE users SET xp=xp+25 WHERE user_id IN (?, ?)",
+                (int(game["user_a"]), int(game["user_b"])),
+            )
         await self.db.commit()
-        return ("resolved" if resolved.rowcount else "waiting"), await self.get_battle(game_id)
+        return ("resolved" if resolved.rowcount else "waiting"), game
 
     async def advance_battle(
         self, game_id: int, user_id: int, question_index: int

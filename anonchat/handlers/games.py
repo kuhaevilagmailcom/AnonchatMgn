@@ -34,6 +34,10 @@ def _question(row: Any) -> BattleQuestion:
     return get_question(int(ids[int(row["question_index"])]))
 
 
+def _total(row: Any) -> int:
+    return int(row["total_questions"])
+
+
 async def _require_current_game(ctx: Ctx, db: Database, game_id: int) -> Any | None:
     row = await db.get_battle(game_id)
     if row is None or ctx.user_id not in set(_players(row)):
@@ -49,14 +53,14 @@ async def _require_current_game(ctx: Ctx, db: Database, game_id: int) -> Any | N
 async def _send_question(ctx: Ctx, row: Any) -> None:
     question = _question(row)
     index = int(row["question_index"])
-    body = f"⚔️ <b>{index + 1}/5</b>\n\n{texts.esc(question.text)}"
+    body = f"⚔️ <b>{index + 1}/{_total(row)}</b>\n\n{texts.esc(question.text)}"
     markup = K.battle_answer_keyboard(row["id"], index, question.first, question.second)
     for user_id in _players(row):
         await send_to(ctx.bot, user_id, body, markup, ctx.pack)
 
 
-def _final_text(matches: int) -> str:
-    percent = matches * 20
+def _final_text(matches: int, total: int) -> str:
+    percent = matches * 100 // total
     if percent == 100:
         verdict = "вы будто читаете мысли 🧠"
     elif percent >= 80:
@@ -67,7 +71,11 @@ def _final_text(matches: int) -> str:
         verdict = "спорить вам будет интересно"
     else:
         verdict = "противоположности притягиваются"
-    return f"⚔️ <b>Битва окончена</b>\nСовпадений: <b>{matches}/5</b>\n<b>{percent}%</b> — {verdict}."
+    reward = "\n🎁 Каждому начислено <b>25 ⭐</b>!" if matches == total else ""
+    return (
+        f"⚔️ <b>Битва окончена</b>\nСовпадений: <b>{matches}/{total}</b>\n"
+        f"<b>{percent}%</b> — {verdict}.{reward}"
+    )
 
 
 async def _send_round_result(ctx: Ctx, row: Any) -> None:
@@ -93,7 +101,7 @@ async def _send_round_result(ctx: Ctx, row: Any) -> None:
             f"Собеседник: <b>{texts.esc(question.option(answer_a))}</b>"
         )
     if row["status"] == "finished":
-        final = _final_text(int(row["matches"]))
+        final = _final_text(int(row["matches"]), _total(row))
         markup = K.battle_end_keyboard(int(row["id"]))
         body_a = f"{body_a}\n\n{final}"
         body_b = f"{body_b}\n\n{final}"
@@ -149,7 +157,7 @@ async def cb_battle(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
             await ctx.ack("Игра уже идёт")
             question = _question(existing)
             await ctx.reply(
-                f"⚔️ <b>{int(existing['question_index']) + 1}/5</b>\n\n{texts.esc(question.text)}",
+                f"⚔️ <b>{int(existing['question_index']) + 1}/{_total(existing)}</b>\n\n{texts.esc(question.text)}",
                 K.battle_answer_keyboard(
                     int(existing["id"]), int(existing["question_index"]),
                     question.first, question.second,
@@ -161,14 +169,32 @@ async def cb_battle(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
             K.battle_next_keyboard(int(existing["id"]), int(existing["question_index"])),
         )
         return
-    game, created = await db.create_battle_invite(ctx.user_id, partner)
+    await ctx.ack()
+    await ctx.reply("⚔️ <b>Сколько вопросов сыграть?</b>", K.battle_length_keyboard())
+
+
+@router.callback_query(F.data.startswith("game:battle:"))
+async def cb_battle_length(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    try:
+        total = int((event.data or "").rsplit(":", 1)[1])
+    except (TypeError, ValueError):
+        await ctx.ack("Неверное количество вопросов", alert=True)
+        return
+    if total not in {5, 10}:
+        await ctx.ack("Можно выбрать только 5 или 10 вопросов", alert=True)
+        return
+    partner = ctx.mm.partner(ctx.user_id)
+    if partner is None:
+        await ctx.ack("Сначала найди собеседника", alert=True)
+        return
+    game, created = await db.create_battle_invite(ctx.user_id, partner, total)
     if not created:
         await ctx.ack("Игра для этой пары уже создана", alert=True)
         return
     result = await send_to(
         ctx.bot,
         partner,
-        "⚔️ <b>Собеседник предлагает сыграть в Битву мнений</b>",
+        f"⚔️ <b>Собеседник предлагает сыграть в Битву мнений</b>\nВопросов: <b>{total}</b>",
         K.battle_invite_keyboard(int(game["id"])),
         ctx.pack,
     )
@@ -185,7 +211,7 @@ async def cb_accept(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     row = await _require_current_game(ctx, db, game_id)
     if row is None:
         return
-    selected = random.sample(list(questions()), 5)
+    selected = random.sample(list(questions()), _total(row))
     game = await db.accept_battle(game_id, ctx.user_id, selected)
     if game is None:
         await ctx.ack("На это предложение уже ответили", alert=True)
@@ -257,14 +283,5 @@ async def cb_again(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     if old is None or ctx.user_id not in set(_players(old)) or not _current_pair(ctx.mm, old):
         await ctx.ack("Диалог уже завершён", alert=True)
         return
-    partner = _players(old)[1] if _players(old)[0] == ctx.user_id else _players(old)[0]
-    game, created = await db.create_battle_invite(ctx.user_id, partner)
-    if not created:
-        await ctx.ack("Предложение уже отправлено", alert=True)
-        return
-    await send_to(
-        ctx.bot, partner,
-        "⚔️ <b>Собеседник предлагает сыграть ещё раз</b>",
-        K.battle_invite_keyboard(int(game["id"])), ctx.pack,
-    )
-    await ctx.ack("Предложение отправлено")
+    await ctx.ack()
+    await ctx.reply("⚔️ <b>Сколько вопросов сыграть?</b>", K.battle_length_keyboard())

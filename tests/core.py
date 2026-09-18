@@ -303,6 +303,8 @@ def test_battle_game_persists_and_synchronizes() -> None:
     async def scenario() -> None:
         path = Path(tempfile.mkdtemp()) / "battle.db"
         db = await Database(path).start()
+        await db.ensure_user(101, "first", "First")
+        await db.ensure_user(202, "second", "Second")
         invite, created = await db.create_battle_invite(101, 202)
         assert created
         game_id = int(invite["id"])
@@ -322,14 +324,35 @@ def test_battle_game_persists_and_synchronizes() -> None:
             assert state == "waiting"
             state, _ = await db.answer_battle(game_id, 101, index, 1)
             assert state == "already", "ответ нельзя изменять"
-            state, game = await db.answer_battle(game_id, 202, index, 0 if index < 4 else 1)
+            state, game = await db.answer_battle(game_id, 202, index, 0)
             assert state == "resolved" and game is not None
             if index < 4:
                 assert game["status"] == "round_done"
                 game = await db.advance_battle(game_id, 202, index)
                 assert game is not None and int(game["question_index"]) == index + 1
             else:
-                assert game["status"] == "finished" and int(game["matches"]) == 4
+                assert game["status"] == "finished" and int(game["matches"]) == 5
+
+        assert int((await db.get_user(101))["xp"]) == 25
+        assert int((await db.get_user(202))["xp"]) == 25
+        perfect, created = await db.create_battle_invite(202, 101, 10)
+        assert created and int(perfect["total_questions"]) == 10
+        perfect_id = int(perfect["id"])
+        game = await db.accept_battle(perfect_id, 101, list(range(1, 11)))
+        assert game is not None
+        for index in range(10):
+            assert (await db.answer_battle(perfect_id, 202, index, 1))[0] == "waiting"
+            state, game = await db.answer_battle(perfect_id, 101, index, 1)
+            assert state == "resolved" and game is not None
+            if index < 9:
+                game = await db.advance_battle(perfect_id, 101, index)
+                assert game is not None
+        assert game["status"] == "finished" and int(game["matches"]) == 10
+        assert int(game["reward_awarded"]) == 1
+        assert int((await db.get_user(101))["xp"]) == 50
+        assert int((await db.get_user(202))["xp"]) == 50
+        assert (await db.answer_battle(perfect_id, 101, 9, 0))[0] == "closed"
+        assert int((await db.get_user(101))["xp"]) == 50, "награда выдаётся только один раз"
         await db.close()
 
     asyncio.run(scenario())
@@ -420,7 +443,12 @@ def test_keyboard_styles_and_icons() -> None:
         return [btn.text for row in markup.inline_keyboard for btn in row]
 
     # в диалоге из меню остаются только действия диалога
-    assert texts_of(K.menu_keyboard("paired")) == ["Игры", "Следующий", "Стоп", "Жалоба"]
+    paired = K.menu_keyboard("paired")
+    assert texts_of(paired) == ["Следующий", "Стоп", "Жалоба", "Игры"]
+    assert [[button.text for button in row] for row in paired.inline_keyboard] == [
+        ["Следующий"], ["Стоп", "Жалоба"], ["Игры"],
+    ]
+    assert texts_of(K.battle_length_keyboard()) == ["5 вопросов", "10 вопросов", "Назад"]
     # панель модератора: 9 разделов, счётчик жалоб в подписи
     panel = texts_of(K.admin_panel_keyboard(2, {"reports", "mute"}))
     assert panel == ["Жалобы · 2", "Мут по id", "В меню"], panel

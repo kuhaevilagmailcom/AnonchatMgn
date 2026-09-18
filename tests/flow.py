@@ -302,6 +302,8 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
         len(paired_labels) == 4 and "Профиль" not in paired_labels and "Настройки" not in paired_labels,
         f"в меню во время диалога только действия диалога: {paired_labels}",
     )
+    check([button["text"] for button in kb_paired[-1]] == ["Игры"],
+          "кнопка игр находится отдельным нижним рядом")
 
     # 6. стоп + начисление опыта
     session.clear()
@@ -716,6 +718,10 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check("Битва мнений" in str(session.to(A)[-1].get("reply_markup")),
           "/game открывает игры в активном чате")
     await press(A, "game:battle")
+    check("5 вопросов" in str(session.to(A)[-1].get("reply_markup"))
+          and "10 вопросов" in str(session.to(A)[-1].get("reply_markup")),
+          "перед игрой можно выбрать 5 или 10 вопросов")
+    await press(A, "game:battle:5")
     battle = await db.battle_for_pair(A, B)
     check(bool(battle and battle["status"] == "invited"), "предложение игры сохранено в SQLite")
     battle_id = int(battle["id"])
@@ -807,7 +813,9 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     await send(A, "/game")
     await press(A, "game:battle")
+    await press(A, "game:battle:10")
     active_battle = await db.battle_for_pair(A, B)
+    check(int(active_battle["total_questions"]) == 10, "выбор десяти вопросов сохраняется в SQLite")
     await press(B, f"game:yes:{int(active_battle['id'])}")
     await send(A, "/stop")
     closed_battle = await db.get_battle(int(active_battle["id"]))
