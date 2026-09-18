@@ -263,21 +263,14 @@ async def send_to(
     return DeliveryResult.TEMP_ERROR
 
 
-async def send_copy_to(
-    bot: Bot, message: Message, chat_id: int, text_override: str | None = None
-) -> DeliveryResult:
+async def send_copy_to(bot: Bot, message: Message, chat_id: int) -> DeliveryResult:
     try:
         await bot.send_chat_action(chat_id, "typing")
     except TelegramAPIError:
         pass
     for _ in range(3):
         try:
-            if text_override is not None and message.text is not None:
-                await bot.send_message(chat_id, text_override, parse_mode=None)
-            elif text_override is not None and message.caption is not None:
-                await message.copy_to(chat_id=chat_id, caption=text_override, parse_mode=None)
-            else:
-                await message.send_copy(chat_id=chat_id)
+            await message.send_copy(chat_id=chat_id)
             return DeliveryResult.DELIVERED
         except TelegramRetryAfter as exc:
             await asyncio.sleep(max(0.0, float(exc.retry_after)))

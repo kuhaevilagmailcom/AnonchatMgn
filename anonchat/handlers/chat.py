@@ -12,7 +12,6 @@ from .. import texts
 from ..actions import Ctx, DeliveryResult, send_copy_to, send_to, show_menu
 from ..config import Config
 from ..matching import Matchmaker
-from ..message_styles import transform_message_style
 
 router = Router(name="chat")
 
@@ -75,22 +74,12 @@ async def relay_to_partner(
 
     partner, _sent = result
 
-    source_text = message.text if message.text is not None else message.caption
-    if len(source_text or "") > cfg.max_message_len:
+    if len(message.text or "") > cfg.max_message_len:
         await ctx.reply(texts.TOO_LONG.format(limit=cfg.max_message_len))
         mm.uncount_message(ctx.user_id)
         return
 
-    final_text = (
-        await transform_message_style(
-            ctx.db,
-            ctx.user_id,
-            source_text,
-            max_length=4096 if message.text is not None else 1024,
-        )
-        if source_text is not None else None
-    )
-    delivery = await send_copy_to(ctx.bot, message, partner, final_text)
+    delivery = await send_copy_to(ctx.bot, message, partner)
     if delivery is DeliveryResult.TEMP_ERROR:
         mm.uncount_message(ctx.user_id)
         await ctx.reply(texts.DELIVERY_TEMP_ERROR)
@@ -104,15 +93,13 @@ async def relay_to_partner(
             markup=K.menu_keyboard(),
         )
         return
-    if final_text:
-        mm.record_text(ctx.user_id, final_text)
-    await notify_chat_monitors(message, ctx, partner, final_text)
+    if message.text:
+        mm.record_text(ctx.user_id, message.text)
+    await notify_chat_monitors(message, ctx, partner)
     # молча: человек знает, что написал в анонимный чат, подтверждений не просил
 
 
-async def notify_chat_monitors(
-    message: Message, ctx: Ctx, partner_id: int, delivered_text: str | None = None
-) -> None:
+async def notify_chat_monitors(message: Message, ctx: Ctx, partner_id: int) -> None:
     """Копирует доставленное сообщение владельцам, включившим наблюдение в панели."""
     candidates = await ctx.db.admin_ids_with_permission("monitor", ctx.cfg.admin_ids)
     monitor_ids = [
@@ -136,10 +123,10 @@ async def notify_chat_monitors(
         f"Собеседник: {identity(partner, partner_id)}"
     )
     for admin_id in monitor_ids:
-        if message.text is not None:
+        if message.text:
             await send_to(
-                ctx.bot, admin_id, f"{header}\n\n{texts.esc(delivered_text or message.text)}", None, ctx.pack
+                ctx.bot, admin_id, f"{header}\n\n{texts.esc(message.text)}", None, ctx.pack
             )
         else:
             await send_to(ctx.bot, admin_id, header, None, ctx.pack)
-            await send_copy_to(ctx.bot, message, admin_id, delivered_text)
+            await send_copy_to(ctx.bot, message, admin_id)

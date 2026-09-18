@@ -28,7 +28,6 @@ CB_HELP = "act:help"
 CB_RULES = "act:rules"
 CB_TOP = "act:top"
 CB_SUPPORT = "act:support"
-CB_PREMIUM = "act:premium"
 CB_CONTINUE = "onboard:continue"
 CB_BLOCK = "rate:block"
 CB_NICK = "cfg:nick:ask"
@@ -164,43 +163,12 @@ def settings_keyboard(same_district: bool, district: str, nickname: str) -> Inli
         icon="view",
     )
     _button(b, "Возраст", callback_data="cfg:age:ask", icon="stars")
-    _button(b, "Стиль общения", callback_data="cfg:style", icon="edit")
     _button(b, "Сбросить скрытых", callback_data="cfg:blocks:ask", icon="refresh")
     _button(b, "Отзыв / обратная связь", callback_data=CB_FEEDBACK, icon="support")
     _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
     _button(b, "Удалить профиль", callback_data="cfg:forget:ask", icon="delete", style="danger")
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
-    b.adjust(1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
-    return b.as_markup()
-
-
-def communication_style_keyboard(current: str) -> InlineKeyboardMarkup:
-    b = InlineKeyboardBuilder()
-    for title, value in (
-        ("🎀 Няшный", "cute"),
-        ("🧢 Вася", "vasya"),
-        ("🤝 Брат", "brother"),
-        ("🧠 Тупой", "dumb"),
-    ):
-        label = f"✓ {title}" if current == value else title
-        _button(b, label, callback_data=f"cfg:style:{value}", style="success" if current == value else "")
-    _button(b, "🚫 Отключить стиль", callback_data="cfg:style:off", style="danger")
-    _button(b, "Назад", callback_data=CB_SETTINGS, icon="home")
-    b.adjust(2, 2, 1, 1)
-    return b.as_markup()
-
-
-def premium_keyboard(active: bool, price: int) -> InlineKeyboardMarkup:
-    b = InlineKeyboardBuilder()
-    _button(
-        b,
-        f"{'Продлить подписку' if active else 'Купить подписку'} · {price} ⭐",
-        callback_data="premium:buy",
-        icon="stars",
-        style="success",
-    )
-    _button(b, "Назад в настройки", callback_data=CB_SETTINGS, icon="home")
-    b.adjust(1, 1)
+    b.adjust(1, 1, 1, 1, 1, 1, 1, 1, 1)
     return b.as_markup()
 
 

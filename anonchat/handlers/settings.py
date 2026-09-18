@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import time
-
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -14,10 +12,8 @@ from .. import keyboards as K
 from .. import nick as nicklib
 from .. import texts
 from ..actions import Ctx, announce_pairs, forget_everything, set_nick, show_menu, show_profile
-from ..config import Config
 from ..db import Database
 from ..matching import Matchmaker
-from ..message_styles import STYLE_LABELS
 
 router = Router(name="settings")
 
@@ -90,52 +86,6 @@ async def cmd_settings(message: Message, ctx: Ctx) -> None:
 @router.callback_query(F.data == K.CB_SETTINGS)
 async def cb_settings(event: CallbackQuery, ctx: Ctx) -> None:
     await settings_screen(ctx)
-
-
-async def communication_style_screen(ctx: Ctx, cfg: Config) -> None:
-    row = ctx.me or await ctx.db.get_user(ctx.user_id)
-    if row is None or int(row["premium_until"] or 0) <= int(time.time()):
-        from .support import show_premium
-
-        await show_premium(ctx, cfg)
-        return
-    current = str(row["communication_style"] or "")
-    current_label = STYLE_LABELS.get(current, "🚫 Отключён")
-    await ctx.edit(
-        f"🎭 <b>Стиль общения</b>\n\nТекущий стиль: <b>{current_label}</b>\n\n"
-        "Он автоматически применяется к твоим сообщениям в диалогах.",
-        K.communication_style_keyboard(current),
-    )
-
-
-@router.callback_query(F.data == "cfg:style")
-async def cb_communication_style(event: CallbackQuery, ctx: Ctx, cfg: Config) -> None:
-    if await ctx.dialog_locked():
-        return
-    await communication_style_screen(ctx, cfg)
-    await ctx.ack()
-
-
-@router.callback_query(F.data.startswith("cfg:style:"))
-async def cb_set_communication_style(event: CallbackQuery, ctx: Ctx, cfg: Config) -> None:
-    if await ctx.dialog_locked():
-        return
-    row = ctx.me or await ctx.db.get_user(ctx.user_id)
-    if row is None or int(row["premium_until"] or 0) <= int(time.time()):
-        from .support import show_premium
-
-        await show_premium(ctx, cfg)
-        await ctx.ack("Нужна активная подписка", alert=True)
-        return
-    value = event.data.rsplit(":", 1)[1]
-    style = "" if value == "off" else value
-    if style not in STYLE_LABELS and style:
-        await ctx.ack("Неизвестный стиль", alert=True)
-        return
-    await ctx.db.set_communication_style(ctx.user_id, style)
-    ctx.me = await ctx.db.get_user(ctx.user_id)
-    await ctx.ack("Стиль отключён" if not style else f"Выбран: {STYLE_LABELS[style]}")
-    await communication_style_screen(ctx, cfg)
 
 
 # ---------------------------------------------------------------------------------- ник

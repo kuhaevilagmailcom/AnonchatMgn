@@ -39,7 +39,6 @@ CREATE TABLE IF NOT EXISTS users (
     ban_reason       TEXT    NOT NULL DEFAULT '',
     mute_until       INTEGER NOT NULL DEFAULT 0,
     premium_until    INTEGER NOT NULL DEFAULT 0,
-    communication_style TEXT NOT NULL DEFAULT '',
     support_stars    INTEGER NOT NULL DEFAULT 0,
     profile_deleted  INTEGER NOT NULL DEFAULT 0
 );
@@ -148,7 +147,6 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("nick_key", "ALTER TABLE users ADD COLUMN nick_key TEXT NOT NULL DEFAULT ''"),
     ("age", "ALTER TABLE users ADD COLUMN age INTEGER NOT NULL DEFAULT 0"),
     ("premium_until", "ALTER TABLE users ADD COLUMN premium_until INTEGER NOT NULL DEFAULT 0"),
-    ("communication_style", "ALTER TABLE users ADD COLUMN communication_style TEXT NOT NULL DEFAULT ''"),
     ("support_stars", "ALTER TABLE users ADD COLUMN support_stars INTEGER NOT NULL DEFAULT 0"),
     ("profile_deleted", "ALTER TABLE users ADD COLUMN profile_deleted INTEGER NOT NULL DEFAULT 0"),
 )
@@ -533,15 +531,6 @@ class Database:
         await self.db.execute(f"UPDATE users SET {sets} WHERE user_id = ?", vals)
         await self.db.commit()
 
-    async def set_communication_style(self, user_id: int, style: str) -> None:
-        if style not in {"", "cute", "vasya", "brother", "dumb"}:
-            raise ValueError("Неизвестный стиль общения")
-        await self.db.execute(
-            "UPDATE users SET communication_style = ? WHERE user_id = ?",
-            (style, user_id),
-        )
-        await self.db.commit()
-
     async def award_xp(self, user_id: int, amount: int, *, column: str | None = None) -> int:
         """Начисляем опыт и, опционально, плюсует счётчик (messages/dialogs/good_ratings...)."""
         if column and column in {
@@ -597,7 +586,6 @@ class Database:
         telegram_charge_id: str,
         provider_charge_id: str,
         payload: str,
-        premium_days: int = 0,
     ) -> tuple[bool, int]:
         try:
             await self.db.execute(
@@ -610,27 +598,18 @@ class Database:
         except aiosqlite.IntegrityError:
             await self.db.rollback()
             row = await self.get_user(user_id)
-            field = "premium_until" if kind == "premium" else "support_stars"
-            return False, int(row[field] or 0) if row else 0
+            return False, int(row["support_stars"] or 0) if row else 0
 
-        result = 0
+        total_support = 0
         if kind == "support":
             await self.db.execute(
                 "UPDATE users SET support_stars = support_stars + ? WHERE user_id = ?",
                 (stars, user_id),
             )
             row = await self.get_user(user_id)
-            result = int(row["support_stars"] or 0) if row else stars
-        elif kind == "premium" and premium_days > 0:
-            row = await self.get_user(user_id)
-            current = int(row["premium_until"] or 0) if row else 0
-            result = max(now(), current) + premium_days * 86400
-            await self.db.execute(
-                "UPDATE users SET premium_until = ? WHERE user_id = ?",
-                (result, user_id),
-            )
+            total_support = int(row["support_stars"] or 0) if row else stars
         await self.db.commit()
-        return True, result
+        return True, total_support
 
     # ------------------------------------------------------------------ moderation
     async def is_restricted(self, user_id: int) -> str | None:
@@ -976,7 +955,7 @@ class Database:
                 """UPDATE users SET username=NULL, first_name='Удалённый пользователь', nickname='',
                    nick_key='', age=0, xp=0, messages=0, dialogs=0, good_ratings=0,
                    bad_ratings=0, reports_sent=0, district='', gender='', same_district=0,
-                   about='', last_seen=0, premium_until=0, communication_style='', support_stars=0,
+                   about='', last_seen=0, premium_until=0, support_stars=0,
                    profile_deleted=1 WHERE user_id=?""",
                 (user_id,),
             )

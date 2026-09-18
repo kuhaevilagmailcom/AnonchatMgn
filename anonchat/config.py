@@ -91,10 +91,6 @@ class Config:
     report_context_retention_days: int = 7
     drop_pending_updates: bool = False
 
-    # существующая подписка Holy Gram через Telegram Stars
-    premium_price_stars: int = 129
-    premium_days: int = 30
-
     # matching
     queue_soft_limit: int = 500          # сколько максимум держим в очереди
     xp_per_message: int = 1
@@ -128,10 +124,6 @@ class Config:
                 env("REPORT_CONTEXT_RETENTION_DAYS", str(cls._default("report_context_retention_days")))
             ),
             drop_pending_updates=_bool(env("DROP_PENDING_UPDATES", "false")),
-            premium_price_stars=int(
-                env("PREMIUM_PRICE_STARS", str(cls._default("premium_price_stars")))
-            ),
-            premium_days=int(env("PREMIUM_DAYS", str(cls._default("premium_days")))),
             inchat_rate_limit=int(
                 env("MESSAGE_RATE_LIMIT", env("INCHAT_RATE_LIMIT", str(cls._default("inchat_rate_limit"))))
             ),

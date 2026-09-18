@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import sys
 import tempfile
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -37,7 +36,6 @@ def test_config_defaults(monkeypatch=None) -> None:
         assert cfg.auto_mute_reports == 3 and isinstance(cfg.auto_mute_reports, int)
         assert cfg.drop_pending_updates is False
         assert cfg.report_context_retention_days == 7
-        assert cfg.premium_price_stars == 129 and cfg.premium_days == 30
         assert cfg.emoji_pack_url.startswith("https://t.me/addemoji/")
         assert cfg.max_message_len == 3000
 
@@ -410,8 +408,7 @@ def test_keyboard_styles_and_icons() -> None:
         K.chat_keyboard(), K.profile_keyboard("https://t.me/test_bot?start=ref_1"),
         K.district_keyboard(),
         K.settings_keyboard(True, "Правобережный", "Лена О"),
-        K.communication_style_keyboard("cute"), K.premium_keyboard(False, 129),
-        K.games_keyboard(), K.battle_length_keyboard(), K.battle_invite_keyboard(1),
+        K.games_keyboard(), K.battle_invite_keyboard(1),
         K.battle_answer_keyboard(1, 0, "ночь", "утро"),
         K.battle_next_keyboard(1, 0), K.battle_end_keyboard(1),
         K.report_keyboard(), K.rating_keyboard(), K.confirm_stop_keyboard(),
@@ -442,10 +439,7 @@ def test_keyboard_styles_and_icons() -> None:
     for markup in markups:
         for row in markup.inline_keyboard:
             for btn in row:
-                style_label = btn.text.lstrip("✓ ") in {
-                    "🎀 Няшный", "🧢 Вася", "🤝 Брат", "🧠 Тупой", "🚫 Отключить стиль"
-                }
-                if btn.text != "👍 Норм" and "⭐" not in btn.text and not style_label:
+                if btn.text != "👍 Норм" and "⭐" not in btn.text:
                     assert all(
                         ord(c) < 0x2500 or c in "\ufe0f\ufe0e\u200d" for c in btn.text
                     ), f"в подписи кнопки остался юникодный эмодзи: {btn.text!r}"
@@ -471,7 +465,6 @@ def test_keyboard_styles_and_icons() -> None:
     assert "Поддержать проект" not in texts_of(K.menu_keyboard("free"))
     assert "Поддержать проект" in texts_of(K.settings_keyboard(False, "", "Ник"))
     assert "Отзыв / обратная связь" in texts_of(K.settings_keyboard(False, "", "Ник"))
-    assert "Стиль общения" in texts_of(K.settings_keyboard(False, "", "Ник"))
 
 
 def test_contact_filter() -> None:
@@ -487,67 +480,10 @@ def test_contact_filter() -> None:
     assert not contains_contact("Привет, как дела?")
 
 
-def test_message_styles() -> None:
-    from anonchat.message_styles import STYLE_LABELS, stylize_text, transform_message_style
-
-    original = "ты где, скоро придешь?"
-    results = {style: stylize_text(style, original) for style in STYLE_LABELS}
-    assert "где" in results["cute"] and ":3" in results["cute"]
-    assert results["vasya"].startswith("вась,")
-    assert results["brother"].startswith("брат,")
-    assert results["dumb"].startswith("это...")
-    for style, value in results.items():
-        assert stylize_text(style, value) == value, f"двойная стилизация: {style}"
-    for protected in (
-        "/stop", "https://example.com/test", "t.me/example", "@username",
-        "+7 999 123-45-67", "позвони 89991234567",
-    ):
-        assert stylize_text("cute", protected) == protected
-    long_text = "очень длинное сообщение " * 120
-    assert long_text.rstrip() in stylize_text("brother", long_text)
-
-    async def scenario() -> None:
-        path = Path(tempfile.mkdtemp()) / "styles.db"
-        db = await Database(path).start()
-        await db.ensure_user(77, "style_user", "Style")
-        await db.set_communication_style(77, "cute")
-        plain = await transform_message_style(db, 77, original)
-        assert plain == original, "без подписки стиль не применяется"
-        await db.db.execute(
-            "UPDATE users SET premium_until = ? WHERE user_id = 77",
-            (int(time.time()) + 3600,),
-        )
-        await db.db.commit()
-        styled = await transform_message_style(db, 77, original)
-        assert styled != original and ":3" in styled
-        full_caption = "а" * 1024
-        assert await transform_message_style(db, 77, full_caption, max_length=1024) == full_caption
-        await db.db.execute("UPDATE users SET premium_until = 1 WHERE user_id = 77")
-        await db.db.commit()
-        assert await transform_message_style(db, 77, original) == original
-        row = await db.get_user(77)
-        assert row["communication_style"] == "cute", "после окончания стиль хранится"
-        created, renewed_until = await db.record_payment(
-            77, "premium", 129, "style-premium-1", "", "premium:77:30:a", 30
-        )
-        assert created and renewed_until > int(time.time())
-        assert ":3" in await transform_message_style(db, 77, original)
-        created, extended_until = await db.record_payment(
-            77, "premium", 129, "style-premium-2", "", "premium:77:30:b", 30
-        )
-        assert created and extended_until == renewed_until + 30 * 86400
-        await db.set_communication_style(77, "")
-        assert await transform_message_style(db, 77, original) == original
-        await db.close()
-
-    asyncio.run(scenario())
-
-
 def test_stars_payment_validation() -> None:
     from types import SimpleNamespace
 
     from anonchat.handlers.support import _valid_payload
-    from anonchat.config import Config
 
     good = SimpleNamespace(
         invoice_payload="support:42:25:abcdef", from_user=SimpleNamespace(id=42),
@@ -559,8 +495,6 @@ def test_stars_payment_validation() -> None:
         currency="XTR", total_amount=129,
     )
     assert not _valid_payload(premium)
-    cfg = Config(bot_token="42:TEST")
-    assert _valid_payload(premium, cfg)
     assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "currency": "RUB"}))
     assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "total_amount": 24}))
     assert not _valid_payload(SimpleNamespace(**{**good.__dict__, "invoice_payload": "bad"}))
@@ -780,7 +714,6 @@ def test_db_nickname_and_kv() -> None:
         try:
             assert await db.get_user(7) is not None, "старые данные не потерялись"
             assert (await db.get_user(7))["nickname"] == "", "колонка nickname добавлена на лету"
-            assert (await db.get_user(7))["communication_style"] == "", "стиль добавлен выключенным"
 
             await db.set_profile(7, nickname="Старожил")
             assert (await db.get_user(7))["nickname"] == "Старожил"
