@@ -551,6 +551,31 @@ async def cmd_admin_list(message: Message, ctx: Ctx, db: Database) -> None:
     await ctx.reply(await admins_text(db, ctx.cfg.admin_ids))
 
 
+@router.message(Command("purge_referrals"))
+async def cmd_purge_referrals(message: Message, ctx: Ctx, db: Database) -> None:
+    """Только владелец: сначала показывает точный предпросмотр, затем просит подтверждение."""
+    if not ctx.is_owner:
+        await ctx.reply("Очистка реферальной накрутки доступна только владельцу.")
+        return
+    args = _parse_args(message.text or "")
+    if not args or not args[0].isdigit() or int(args[0]) <= 0:
+        await ctx.reply("Формат: <code>/purge_referrals 123456789</code>")
+        return
+    user_id = int(args[0])
+    preview = await db.referral_cleanup_preview(user_id, ctx.cfg.admin_ids)
+    await ctx.reply(
+        "🧹 <b>Предпросмотр очистки накрутки</b>\n\n"
+        f"Пользователь: <code>{user_id}</code>\n"
+        f"Прямых рефералов: <b>{preview['referrals']}</b>\n"
+        f"Начислено по ним: <b>{preview['referral_xp']} ⭐</b>\n"
+        f"Текущий баланс станет 0: <b>{preview['current_xp']} ⭐</b>\n"
+        f"Профилей будет удалено: <b>{preview['users_to_delete']}</b>\n"
+        f"Защищено (платёж/админ): <b>{preview['protected_users']}</b>\n\n"
+        "Платежи и оплаченные Telegram Stars не удаляются. Действие необратимо.",
+        K.purge_referrals_keyboard(user_id),
+    )
+
+
 # --------------------------------------------------------------- кнопки панели
 @router.callback_query(F.data.startswith("adm:panel:"))
 async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker, state: FSMContext) -> None:
@@ -813,6 +838,51 @@ async def cb_game_watch(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         return
     await ctx.ack("Обновлено")
     await game_watch_screen(ctx, db, history=view == "history")
+
+
+@router.callback_query(F.data.startswith("adm:purge_refs:"))
+async def cb_purge_referrals(
+    event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker
+) -> None:
+    if not ctx.is_owner:
+        await ctx.ack("Только для владельца", alert=True)
+        return
+    raw_id = (event.data or "").rsplit(":", 1)[-1]
+    if not raw_id.isdigit() or int(raw_id) <= 0:
+        await ctx.ack("Кнопка устарела", alert=True)
+        return
+
+    user_id = int(raw_id)
+    await ctx.ack("Очищаю…")
+    result = await db.purge_referral_abuse(user_id, ctx.cfg.admin_ids)
+    removed = set(result["deleted_user_ids"])
+    partners: set[int] = set()
+    for removed_id in removed:
+        summary = mm.forget(removed_id)
+        partner = summary.get("partner")
+        if isinstance(partner, int) and partner not in removed:
+            partners.add(partner)
+    await db.flush_matchmaker(mm)
+    for partner in partners:
+        await send_to(
+            ctx.bot,
+            partner,
+            "Собеседник больше недоступен. Можно начать новый поиск.",
+            pack=ctx.pack,
+        )
+
+    await clear_kb(event)
+    await ctx.reply(
+        "✅ <b>Реферальная накрутка удалена</b>\n\n"
+        f"Пользователь: <code>{user_id}</code>\n"
+        f"Удалено реферальных связей: <b>{result['referrals_removed']}</b>\n"
+        f"Списано реферальных начислений: <b>{result['referral_xp_removed']} ⭐</b>\n"
+        f"Баланс пользователя: <b>0 ⭐</b>\n"
+        f"Удалено фейк-профилей: <b>{result['users_deleted']}</b>\n"
+        f"Сохранено защищённых профилей: <b>{result['protected_users']}</b>\n\n"
+        "Платежи и оплаченные Telegram Stars сохранены.",
+        K.panel_back_keyboard(),
+    )
 
 
 # ---------------------------------------------------------------------------------- кнопки в карточке жалобы

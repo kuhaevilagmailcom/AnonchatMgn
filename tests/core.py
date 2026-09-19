@@ -367,6 +367,73 @@ def test_battle_game_persists_and_synchronizes() -> None:
     asyncio.run(scenario())
 
 
+def test_referral_daily_limit_and_mass_cleanup() -> None:
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "referrals.db"
+        db = await Database(path).start()
+        try:
+            referrer = 7_300_000_001
+            await db.ensure_user(referrer, "referrer", "Реферер")
+
+            for number in range(30):
+                assert await db.award_referral(9_000_000 + number, referrer, 50) is True
+            assert await db.award_referral(9_000_030, referrer, 50) is False
+            assert await db.referral_stats(referrer) == (30, 1_500)
+            assert int((await db.get_user(referrer))["xp"]) == 1_500
+
+            # На следующие магнитогорские сутки начисление снова доступно.
+            await db.db.execute(
+                "UPDATE referrals SET created_at=0 WHERE referrer_id=?", (referrer,)
+            )
+            await db.db.commit()
+            assert await db.award_referral(9_000_030, referrer, 50) is True
+
+            # Больше стандартного лимита SQLite в 999 параметров: проверяем пакетную очистку.
+            invitees = list(range(10_000_000, 10_001_002))
+            await db.db.executemany(
+                "INSERT INTO users (user_id, first_name) VALUES (?, ?)",
+                [(user_id, f"Fake {user_id}") for user_id in invitees],
+            )
+            await db.db.executemany(
+                "INSERT INTO referrals (invitee_id, referrer_id, xp_awarded, created_at) "
+                "VALUES (?, ?, 50, 1)",
+                [(user_id, referrer) for user_id in invitees],
+            )
+            await db.db.execute("UPDATE users SET xp=999999 WHERE user_id=?", (referrer,))
+            await db.db.commit()
+
+            paid_id, admin_id, ordinary_id = invitees[0], invitees[1], invitees[2]
+            created, _ = await db.record_payment(
+                paid_id, "support", 1, "cleanup-payment", "", "support:test"
+            )
+            assert created
+            await db.set_admin(admin_id, {"users"}, referrer)
+
+            preview = await db.referral_cleanup_preview(referrer)
+            assert preview["referrals"] == 1_033
+            assert preview["users_to_delete"] == 1_000
+            assert preview["protected_users"] == 2
+
+            result = await db.purge_referral_abuse(referrer)
+            assert result["referrals_removed"] == 1_033
+            assert result["users_deleted"] == 1_000
+            assert result["protected_users"] == 2
+            assert int((await db.get_user(referrer))["xp"]) == 0
+            assert await db.referral_stats(referrer) == (0, 0)
+            assert await db.get_user(ordinary_id) is None
+            assert await db.get_user(paid_id) is not None
+            assert await db.get_user(admin_id) is not None
+            payment = await db._fetchone(
+                "SELECT stars FROM payments WHERE telegram_payment_charge_id=?",
+                ("cleanup-payment",),
+            )
+            assert payment is not None and int(payment["stars"]) == 1
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
 def test_battle_question_files() -> None:
     from anonchat.battle_questions import questions
 

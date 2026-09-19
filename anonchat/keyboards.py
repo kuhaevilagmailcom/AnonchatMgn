@@ -447,6 +447,20 @@ def restricted_list_keyboard(
     return b.as_markup()
 
 
+def purge_referrals_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(
+        b,
+        "Удалить накрутку",
+        callback_data=f"adm:purge_refs:{int(user_id)}",
+        icon="delete",
+        style="danger",
+    )
+    _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="check")
+    b.adjust(1)
+    return b.as_markup()
+
+
 def game_watch_keyboard(history: bool = False) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(

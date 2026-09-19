@@ -898,6 +898,20 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await send(D, "недоступен")
     check(mm.status(D) == "free" and mm.status(E) == "free", "UNAVAILABLE разрывает пару")
 
+    abuser, fake = 7_300_000_001, 7_300_000_002
+    await db.ensure_user(abuser, "abuser", "Накрутчик")
+    await db.ensure_user(fake, "fake", "Фейк")
+    check(await db.award_referral(fake, abuser, 50), "тестовая реферальная связь создана")
+    session.clear()
+    await send(A, f"/purge_referrals {abuser}")
+    check("только владельцу" in session.last_to(A).lower(), "очистка закрыта от обычных пользователей")
+    await send(ADMIN, f"/purge_referrals {abuser}")
+    check("Предпросмотр очистки" in session.last_to(ADMIN), "владелец сначала видит предпросмотр")
+    await press(ADMIN, f"adm:purge_refs:{abuser}")
+    check(await db.get_user(fake) is None, "подтверждение удаляет накрученный профиль")
+    check(int((await db.get_user(abuser))["xp"]) == 0, "подтверждение обнуляет очки накрутчика")
+    check("Реферальная накрутка удалена" in session.last_to(ADMIN), "владелец получает итог очистки")
+
     await bot.session.close()
     await db.close()
     print("\nmodern flow test passed")

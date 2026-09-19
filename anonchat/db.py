@@ -167,6 +167,16 @@ def now() -> int:
     return int(time.time())
 
 
+REFERRAL_DAILY_LIMIT = 30
+# Магнитогорск живёт по UTC+5. Фиксированный сдвиг не зависит от часового пояса хостинга.
+REFERRAL_TIMEZONE_OFFSET = 5 * 60 * 60
+
+
+def referral_day_start(timestamp: int | None = None) -> int:
+    value = now() if timestamp is None else int(timestamp)
+    return ((value + REFERRAL_TIMEZONE_OFFSET) // 86_400) * 86_400 - REFERRAL_TIMEZONE_OFFSET
+
+
 class Database:
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
@@ -174,6 +184,7 @@ class Database:
         self._matchmaker = None
         self._matchmaker_dirty = False
         self._matchmaker_task: asyncio.Task | None = None
+        self._referral_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> "Database":
@@ -573,24 +584,45 @@ class Database:
         row = await self._fetchone("SELECT xp FROM users WHERE user_id = ?", (user_id,))
         return int(row["xp"]) if row else 0
 
-    async def award_referral(self, invitee_id: int, referrer_id: int, amount: int) -> bool:
+    async def award_referral(
+        self,
+        invitee_id: int,
+        referrer_id: int,
+        amount: int,
+        daily_limit: int = REFERRAL_DAILY_LIMIT,
+    ) -> bool:
         if invitee_id == referrer_id:
             return False
-        cur = await self.db.execute(
-            """INSERT OR IGNORE INTO referrals (invitee_id, referrer_id, xp_awarded, created_at)
-               SELECT ?, ?, ?, ? WHERE EXISTS (
-                   SELECT 1 FROM users WHERE user_id = ?
-               )""",
-            (invitee_id, referrer_id, amount, now(), referrer_id),
-        )
-        if cur.rowcount != 1:
-            return False
-        await self.db.execute(
-            "UPDATE users SET xp = xp + ? WHERE user_id = ?",
-            (amount, referrer_id),
-        )
-        await self.db.commit()
-        return True
+        timestamp = now()
+        limit = max(1, int(daily_limit))
+        async with self._referral_lock:
+            cur = await self.db.execute(
+                """INSERT OR IGNORE INTO referrals
+                       (invitee_id, referrer_id, xp_awarded, created_at)
+                   SELECT ?, ?, ?, ?
+                   WHERE EXISTS (SELECT 1 FROM users WHERE user_id = ?)
+                     AND (SELECT COUNT(*) FROM referrals
+                          WHERE referrer_id = ? AND created_at >= ?) < ?""",
+                (
+                    invitee_id,
+                    referrer_id,
+                    amount,
+                    timestamp,
+                    referrer_id,
+                    referrer_id,
+                    referral_day_start(timestamp),
+                    limit,
+                ),
+            )
+            if cur.rowcount != 1:
+                await self.db.commit()
+                return False
+            await self.db.execute(
+                "UPDATE users SET xp = xp + ? WHERE user_id = ?",
+                (amount, referrer_id),
+            )
+            await self.db.commit()
+            return True
 
     async def referral_stats(self, referrer_id: int) -> tuple[int, int]:
         row = await self._fetchone(
@@ -599,6 +631,143 @@ class Database:
             (referrer_id,),
         )
         return (int(row["invited"]), int(row["earned"])) if row else (0, 0)
+
+    async def referral_cleanup_preview(
+        self, referrer_id: int, protected_ids: Sequence[int] = ()
+    ) -> dict[str, int]:
+        """Считает последствия очистки, не меняя базу и не затрагивая платежи."""
+        rows = await self._fetchall(
+            """SELECT r.invitee_id, r.xp_awarded, u.user_id AS existing_user_id,
+                      EXISTS(SELECT 1 FROM payments p WHERE p.user_id = r.invitee_id) AS paid,
+                      EXISTS(SELECT 1 FROM admins a WHERE a.user_id = r.invitee_id) AS admin,
+                      COALESCE(u.support_stars, 0) AS support_stars
+               FROM referrals r
+               LEFT JOIN users u ON u.user_id = r.invitee_id
+               WHERE r.referrer_id = ?""",
+            (referrer_id,),
+        )
+        protected = {int(value) for value in protected_ids}
+        kept = sum(
+            1
+            for row in rows
+            if int(row["invitee_id"]) in protected
+            or bool(row["paid"])
+            or bool(row["admin"])
+            or int(row["support_stars"] or 0) > 0
+        )
+        removable = sum(
+            1
+            for row in rows
+            if row["existing_user_id"] is not None
+            and int(row["invitee_id"]) not in protected
+            and not bool(row["paid"])
+            and not bool(row["admin"])
+            and int(row["support_stars"] or 0) <= 0
+        )
+        owner = await self.get_user(referrer_id)
+        return {
+            "referrer_id": int(referrer_id),
+            "referrals": len(rows),
+            "referral_xp": sum(int(row["xp_awarded"] or 0) for row in rows),
+            "current_xp": int(owner["xp"] or 0) if owner else 0,
+            "users_to_delete": removable,
+            "protected_users": kept,
+        }
+
+    async def purge_referral_abuse(
+        self, referrer_id: int, protected_ids: Sequence[int] = ()
+    ) -> dict[str, Any]:
+        """Атомарно убирает накрутку: связи, очки и безопасно удаляемые фейк-профили.
+
+        Платежи никогда не удаляются. Пользователи с платежами, поддержкой или правами
+        администратора сохраняются, но их мошенническая реферальная связь удаляется.
+        """
+        await self.db.commit()
+        cleanup = await aiosqlite.connect(self.path)
+        cleanup.row_factory = aiosqlite.Row
+        deleted_user_ids: list[int] = []
+        try:
+            await cleanup.execute("PRAGMA busy_timeout=10000")
+            await cleanup.execute("BEGIN IMMEDIATE")
+            async with cleanup.execute(
+                """SELECT r.invitee_id, r.xp_awarded, u.user_id AS existing_user_id,
+                          EXISTS(SELECT 1 FROM payments p WHERE p.user_id=r.invitee_id) AS paid,
+                          EXISTS(SELECT 1 FROM admins a WHERE a.user_id=r.invitee_id) AS admin,
+                          COALESCE(u.support_stars, 0) AS support_stars
+                   FROM referrals r
+                   LEFT JOIN users u ON u.user_id=r.invitee_id
+                   WHERE r.referrer_id=?""",
+                (referrer_id,),
+            ) as cur:
+                rows = list(await cur.fetchall())
+
+            protected = {int(value) for value in protected_ids}
+            deleted_user_ids = [
+                int(row["invitee_id"])
+                for row in rows
+                if row["existing_user_id"] is not None
+                and int(row["invitee_id"]) not in protected
+                and not bool(row["paid"])
+                and not bool(row["admin"])
+                and int(row["support_stars"] or 0) <= 0
+            ]
+
+            await cleanup.execute("UPDATE users SET xp=0 WHERE user_id=?", (referrer_id,))
+            await cleanup.execute("DELETE FROM referrals WHERE referrer_id=?", (referrer_id,))
+
+            # Два поля в одном DELETE дают по два параметра на id; размер 400 ниже
+            # стандартного лимита SQLite в 999 переменных.
+            for offset in range(0, len(deleted_user_ids), 400):
+                chunk = deleted_user_ids[offset : offset + 400]
+                marks = ",".join("?" for _ in chunk)
+                twice = (*chunk, *chunk)
+                await cleanup.execute(
+                    f"DELETE FROM blocks WHERE user_id IN ({marks}) OR blocked_id IN ({marks})",
+                    twice,
+                )
+                await cleanup.execute(
+                    f"DELETE FROM reports WHERE reporter_id IN ({marks}) OR target_id IN ({marks})",
+                    twice,
+                )
+                await cleanup.execute(
+                    f"DELETE FROM matches WHERE user_a IN ({marks}) OR user_b IN ({marks})",
+                    twice,
+                )
+                await cleanup.execute(
+                    f"DELETE FROM battle_games WHERE user_a IN ({marks}) OR user_b IN ({marks})",
+                    twice,
+                )
+                await cleanup.execute(
+                    f"DELETE FROM referrals WHERE invitee_id IN ({marks}) OR referrer_id IN ({marks})",
+                    twice,
+                )
+                await cleanup.execute(
+                    f"DELETE FROM users WHERE user_id IN ({marks})",
+                    tuple(chunk),
+                )
+
+            await cleanup.commit()
+        except BaseException:
+            await cleanup.rollback()
+            raise
+        finally:
+            await cleanup.close()
+
+        return {
+            "referrer_id": int(referrer_id),
+            "referrals_removed": len(rows),
+            "referral_xp_removed": sum(int(row["xp_awarded"] or 0) for row in rows),
+            "users_deleted": len(deleted_user_ids),
+            "protected_users": sum(
+                1
+                for row in rows
+                if int(row["invitee_id"]) in protected
+                or bool(row["paid"])
+                or bool(row["admin"])
+                or int(row["support_stars"] or 0) > 0
+            ),
+            "deleted_user_ids": deleted_user_ids,
+        }
 
     async def record_payment(
         self,

@@ -24,7 +24,7 @@ from ..actions import (
 )
 from ..commands import ensure_for_admin
 from ..config import Config
-from ..db import Database
+from ..db import Database, REFERRAL_DAILY_LIMIT
 
 router = Router(name="menu")
 REFERRAL_XP = 50
@@ -63,6 +63,7 @@ async def cmd_referral(message: Message, ctx: Ctx) -> None:
     await ctx.reply(
         "<b>Пригласи друга</b>\n\n"
         f"За каждого нового пользователя ты получишь <b>+{REFERRAL_XP} ⭐ очков</b>.\n\n"
+        f"Лимит начислений: <b>{REFERRAL_DAILY_LIMIT} приглашений в сутки</b>.\n\n"
         f"Твоя ссылка:\n<code>{link}</code>",
         K.menu_keyboard(ctx.mm.status(ctx.user_id)),
     )
