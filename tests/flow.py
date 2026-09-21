@@ -113,7 +113,10 @@ class RecordingSession(BaseSession):
         self.outbox.clear()
 
 
-def msg_update(bot: Bot, uid: int, text: str, update_id: int, entities: list[dict] | None = None) -> Update:
+def msg_update(
+    bot: Bot, uid: int, text: str, update_id: int,
+    entities: list[dict] | None = None, reply_to_message_id: int | None = None,
+) -> Update:
     message: dict[str, Any] = {
         "message_id": update_id,
         "date": 1_700_000_000,
@@ -123,6 +126,14 @@ def msg_update(bot: Bot, uid: int, text: str, update_id: int, entities: list[dic
     }
     if entities:
         message["entities"] = entities
+    if reply_to_message_id is not None:
+        message["reply_to_message"] = {
+            "message_id": int(reply_to_message_id),
+            "date": 1_700_000_000,
+            "chat": {"id": uid, "type": "private", "first_name": f"U{uid}"},
+            "from": {"id": 777, "is_bot": True, "first_name": "Анончат"},
+            "text": "анонимная копия",
+        }
     payload = {"update_id": update_id, "message": message}
     return Update.model_validate(payload, context={"bot": bot})
 
@@ -175,10 +186,18 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
 
     step = 0
 
-    async def send(uid: int, text: str, entities: list[dict] | None = None) -> None:
+    async def send(
+        uid: int, text: str, entities: list[dict] | None = None,
+        reply_to_message_id: int | None = None,
+    ) -> int:
         nonlocal step
         step += 1
-        await dp.feed_update(bot, msg_update(bot, uid, text, step, entities))
+        current = step
+        await dp.feed_update(
+            bot,
+            msg_update(bot, uid, text, current, entities, reply_to_message_id),
+        )
+        return current
 
     async def press(uid: int, data: str) -> None:
         nonlocal step
@@ -267,6 +286,20 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     check(session.to(A) == [], "бот не пишет «доставлено анонимно» — человек и так всё понял")
     await send(B, "С Правобережного 🙂")
     check("С Правобережного" in session.last_to(A), "ответ дошёл A")
+
+    session.clear()
+    source_id = await send(A, "Сообщение для reply")
+    copied_message_id = session._mid
+    session.clear()
+    await send(B, "Ответ именно на сообщение", reply_to_message_id=copied_message_id)
+    reply_calls = [
+        item for item in session.to(A)
+        if item.get("method") == "sendMessage" and "Ответ именно" in str(item.get("text", ""))
+    ]
+    check(bool(reply_calls), "reply доставлен собеседнику")
+    reply_params = reply_calls[-1].get("reply_parameters", {})
+    check(int(reply_params.get("message_id", 0)) == source_id,
+          "reply у собеседника привязан к исходному сообщению")
     await send(A, "О, тогда нам по пути — я от Вокзала")
     await send(B, "Бывает 🙂")
     await send(A, "Как тебе наш снег?")
