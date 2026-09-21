@@ -59,7 +59,7 @@ async def settings_screen(ctx: Ctx) -> None:
     same = False
     gender = (me["gender"] if me else "") or ""
     looking_for = (me["looking_for"] if me else "") or ""
-    gender_text = "👨 М" if gender == "m" else "👩 Ж" if gender == "f" else "не выбран"
+    gender_text = "👨 М" if gender == "m" else "👩 Д" if gender == "f" else "не выбран"
     looking_text = "👨 М" if looking_for == "m" else "👩 Д" if looking_for == "f" else "🤷 Без разницы"
     body = (
         f"{texts.SETTINGS_TITLE}\n\n"
