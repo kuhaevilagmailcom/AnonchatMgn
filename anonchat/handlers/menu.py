@@ -53,7 +53,7 @@ async def cmd_start(
         await ensure_for_admin(ctx.bot, cfg, ctx.user_id, authorized=True)
     await show_welcome(ctx)
     if ctx.mm.status(ctx.user_id) == "queued":
-        await ctx.reply("⏳ Ты всё ещё в очереди — найду пару автоматически.")
+        await ctx.reply("Ты всё ещё в очереди.")
 
 
 @router.message(Command("ref", "invite"))
@@ -105,12 +105,12 @@ async def cmd_unblock(message: Message, ctx: Ctx, db: Database) -> None:
     cleared = await db.clear_blocks(ctx.user_id)
     if cleared:
         await ctx.reply(
-            f"Готово — сбросил скрытых собеседников: {cleared}. Теперь они снова могут попасться в поиске.",
+            f"Скрытые собеседники сброшены: {cleared}.",
             K.menu_keyboard(ctx.mm.status(ctx.user_id)),
         )
     else:
         await ctx.reply(
-            "Скрытых собеседников нет — сбрасывать нечего.",
+            "Список скрытых пуст.",
             K.menu_keyboard(ctx.mm.status(ctx.user_id)),
         )
 
@@ -118,12 +118,14 @@ async def cmd_unblock(message: Message, ctx: Ctx, db: Database) -> None:
 # ---------------------------------------------------------------------------------- кнопки меню
 @router.callback_query(F.data == K.CB_MENU)
 async def cb_menu(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
+    await ctx.ack()
     await state.clear()
     await show_menu(ctx)
 
 
 @router.callback_query(F.data == K.CB_CONTINUE)
 async def cb_continue(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
+    await ctx.ack()
     await state.clear()
     await show_menu(ctx)
 
@@ -141,6 +143,7 @@ async def cb_age(event: CallbackQuery, ctx: Ctx, db: Database, state: FSMContext
     ctx.me = await db.get_user(ctx.user_id)
     await ctx.ensure_nick()
     await state.clear()
+    await ctx.ack()
     await show_menu(ctx)
 
 
@@ -151,6 +154,7 @@ async def cb_connect(event: CallbackQuery, ctx: Ctx) -> None:
 
 @router.callback_query(F.data == K.CB_NEXT)
 async def cb_next(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     await act_next(ctx)
 
 
@@ -159,45 +163,53 @@ async def cb_stop(event: CallbackQuery, ctx: Ctx, cfg: Config) -> None:
     status = ctx.mm.status(ctx.user_id)
     if status == "queued":
         ctx.mm.forget(ctx.user_id)
+        await ctx.ack("Поиск остановлен")
         await show_menu(ctx)
         return
     if status != "paired":
+        await ctx.ack()
         await ctx.reply(texts.NO_DIALOG, markup=K.menu_keyboard())
         return
+    await ctx.ack()
     await ctx.edit(
-        "⏹ Остановить диалог? Собеседник увидит, что чат закрыт — но не узнает, кто ты.",
+        "Закрыть диалог?",
         K.confirm_stop_keyboard(),
     )
 
 
 @router.callback_query(F.data == K.CB_STOP_YES)
 async def cb_stop_yes(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     await act_stop(ctx)
 
 
 @router.callback_query(F.data == K.CB_STOP_NO)
 async def cb_stop_no(event: CallbackQuery, ctx: Ctx) -> None:
-    await ctx.ack("Хорошо, продолжаем")
+    await ctx.ack("Продолжаем")
     await show_menu(ctx)
 
 
 @router.callback_query(F.data == K.CB_RULES)
 async def cb_rules(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     await show_rules(ctx)
 
 
 @router.callback_query(F.data == K.CB_HELP)
 async def cb_help(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     await show_help(ctx)
 
 
 @router.callback_query(F.data == K.CB_TOP)
 async def cb_top(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     await show_top(ctx)
 
 
 @router.callback_query(F.data.startswith("act:"))
 async def cb_unknown(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     await show_menu(ctx)
 
 
@@ -225,4 +237,4 @@ async def cb_block(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
 
 @router.callback_query(F.data.startswith("rate:"))
 async def cb_rate_unknown(event: CallbackQuery, ctx: Ctx) -> None:
-    await ctx.ack("Эта оценка уже учтена 🙂")
+    await ctx.ack("Эта оценка уже учтена")

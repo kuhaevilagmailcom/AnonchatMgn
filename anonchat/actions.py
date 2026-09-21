@@ -369,7 +369,8 @@ async def send_copy_to_message(
     Фото отправляем напрямую по Telegram file_id. Остальные типы копируем средствами
     Telegram Bot API без forward, чтобы не раскрывать отправителя.
     """
-    action = "upload_photo" if message.photo else "typing"
+    photo = getattr(message, "photo", None)
+    action = "upload_photo" if photo else "typing"
     try:
         await bot.send_chat_action(chat_id, action)
     except TelegramAPIError:
@@ -377,10 +378,10 @@ async def send_copy_to_message(
 
     for attempt in range(3):
         try:
-            if message.photo:
+            if photo:
                 sent = await bot.send_photo(
                     chat_id=chat_id,
-                    photo=message.photo[-1].file_id,
+                    photo=photo[-1].file_id,
                     caption=message.caption,
                     parse_mode=None,
                     caption_entities=message.caption_entities or None,
@@ -583,13 +584,22 @@ async def show_profile(ctx: Ctx) -> None:
         f"{rank.emoji} {texts.esc(rank.title)}",
         "",
         f"Очки: <b>{int(me['xp'])} ⭐</b>",
-        f"Приглашено пользователей: <b>{invited}</b>",
-        f"Получено за приглашения: <b>{referral_xp} ⭐</b>",
+        f"Сообщений: <b>{messages}</b>",
         f"Диалогов: <b>{me['dialogs']}</b>",
-        f"👍 {me['good_ratings']}   👎 {me['bad_ratings']}",
-        f"Возраст: <b>{me['age']}</b>",
+        f"Оценки: 👍 {me['good_ratings']} · 👎 {me['bad_ratings']}",
+    ]
+    if not rank.is_max:
+        lines += [
+            f"<code>{rank.bar}</code>",
+            f"До «{texts.esc(rank.next_title)}»: <b>{rank.to_next}</b> сообщений",
+        ]
+    lines += [
+        "",
+        f"Возраст: <b>{me['age'] if int(me['age'] or 0) else 'не указан'}</b>",
         f"Пол: <b>{'👨 М' if me['gender'] == 'm' else '👩 Д' if me['gender'] == 'f' else 'не указан'}</b>",
         f"Берег: <b>{texts.esc(me['district']) if me['district'] else 'не указан'}</b>",
+        "",
+        f"Приглашено: <b>{invited}</b> · +<b>{referral_xp} ⭐</b>",
     ]
     if nicklib.is_supporter(me["support_stars"]):
         lines += ["", f"💎 Поддержал проект: {int(me['support_stars'])} ⭐"]
@@ -636,9 +646,13 @@ async def announce_pair(ctx: Ctx, user_id: int, partner_id: int) -> bool:
     )
     if result is DeliveryResult.UNAVAILABLE:
         return False
-    await send_screen_to(
+    own_result = await send_screen_to(
         ctx.bot, user_id, "03_found.png", texts.MATCHED, found_kb, ctx.pack, ctx.db
     )
+    if own_result is DeliveryResult.UNAVAILABLE:
+        ctx.mm.forget(user_id)
+        await send_to(ctx.bot, partner_id, texts.PARTNER_LEFT, menu_keyboard(), ctx.pack)
+        return False
     return True
 
 
@@ -756,7 +770,7 @@ async def act_connect(ctx: Ctx) -> None:
             markup=menu_keyboard(),
         )
         return
-    await ctx.reply("Не успел никого подобрать — попробуй ещё раз.",
+    await ctx.reply("Не удалось подобрать собеседника. Попробуй ещё раз.",
                     markup=menu_keyboard())
 
 

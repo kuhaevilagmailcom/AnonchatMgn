@@ -52,12 +52,15 @@ async def reconcile_queue(
 async def janitor(
     bot: Bot, cfg: Config, db: Database, mm: Matchmaker, pack: EmojiPack
 ) -> None:
-    """Подчищает оценки и регулярно пересобирает возможные пары."""
+    """Подчищает устаревшее состояние и регулярно пересобирает возможные пары."""
     while True:
         try:
             await asyncio.sleep(60)
             mm.drop_stale_ratings()
+            removed_games = await db.cleanup_stale_games()
             paired = await reconcile_queue(bot, cfg, db, mm, pack)
+            if removed_games:
+                log.info("game janitor: удалено неактивных игр=%s", removed_games)
             if paired:
                 log.info("queue janitor: создано пар=%s", paired)
         except asyncio.CancelledError:
@@ -122,6 +125,9 @@ async def main() -> None:  # pragma: no cover
     if saved_matchmaker:
         mm.restore(saved_matchmaker)
     await database.cleanup_report_context(cfg.report_context_retention_days)
+    removed_games = await database.cleanup_stale_games()
+    if removed_games:
+        log.info("startup game cleanup: удалено неактивных игр=%s", removed_games)
 
     janitor_task: asyncio.Task | None = None
     menu_task: asyncio.Task | None = None

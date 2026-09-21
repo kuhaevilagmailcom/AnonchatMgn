@@ -69,9 +69,12 @@ class DataContext(BaseMiddleware):
                 me=me,
                 admin_permissions=permissions,
             )
-        result = await handler(event, data)
-        self.db.schedule_matchmaker_save(self.mm)
-        return result
+        try:
+            return await handler(event, data)
+        finally:
+            # Даже если обработчик упал после изменения очереди/пары,
+            # сохраняем фактическое состояние и не откатываемся после рестарта.
+            self.db.schedule_matchmaker_save(self.mm)
 
 
 class Throttling(BaseMiddleware):
@@ -103,9 +106,9 @@ class Throttling(BaseMiddleware):
 
         if len(bucket) >= limit:
             if isinstance(event, CallbackQuery):
-                await event.answer("Слишком быстро — подожди секунду.", show_alert=True)
+                await event.answer("Слишком много действий. Попробуй через несколько секунд.", show_alert=True)
             elif isinstance(event, Message):
-                await event.answer("Попридержи коней: слишком много сообщений в минуту.")
+                await event.answer("Слишком много сообщений. Попробуй через несколько секунд.")
             return
 
         bucket.append(ts)

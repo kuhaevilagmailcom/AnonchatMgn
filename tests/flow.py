@@ -97,7 +97,9 @@ class RecordingSession(BaseSession):
         values = []
         for item in self.to(chat_id):
             media = item.get("media") if isinstance(item.get("media"), dict) else {}
-            values.append(str(item.get("text") or item.get("caption") or media.get("caption") or ""))
+            value = item.get("text") or item.get("caption") or media.get("caption")
+            if value:
+                values.append(str(value))
         return values
 
     def last_to(self, chat_id: int) -> str:
@@ -239,7 +241,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     # 2. A жмёт поиск — встаёт в очередь
     session.clear()
     await press(A, "act:connect")
-    check("Ищу пару" in session.last_to(A), "кнопка 🔎 ставит в очередь")
+    check("Ищу собеседника" in session.last_to(A), "кнопка поиска ставит в очередь")
     check(mm.status(A) == "queued", "матчмейкер видит A в очереди")
 
     # 3. B жмёт поиск — сводим обоих
@@ -273,7 +275,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     # 5. мусорные типы не пересылаем, команды не теряем
     session.clear()
     await send(A, "/unknowncmd")
-    check("Не знаю такой команды" in session.last_to(A), "неизвестная команда не улетает собеседнику")
+    check("Команда не найдена" in session.last_to(A), "неизвестная команда не улетает собеседнику")
 
     # 5b. пока идёт диалог — свои экраны закрыты, надо /stop
     session.clear()
@@ -303,7 +305,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     session.clear()
     await send(A, "/stop")
     check(mm.status(A) == "free" and mm.status(B) == "free", "после /stop оба свободны")
-    check("Остановить диалог" in " ".join(session.texts_to(A)) or "диалог остановлен" in session.last_to(A).lower(),
+    check("Закрыть диалог" in " ".join(session.texts_to(A)) or "диалог закрыт" in session.last_to(A).lower(),
           "A получил подтверждение остановки")
     check("собеседник вышел" in " ".join(session.texts_to(B)).lower(), "B узнал, что собеседник вышел")
     row_a = await db.get_user(A)
@@ -332,10 +334,11 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     check((await db.get_user(A))["district"] == "Правый берег", "берег сохранился")
     await send(A, "/profile")
     card = session.last_to(A)
-    check("Старт" in card and "🔰" in card, "профиль показывает ранг по числу сообщений")
-    check("<code>▱▱▱▱" in card, "полоса прогресса до следующего ранга на месте")
-    check("⭐" in card and "Сообщений" in card and "✍️" in card, "профиль — карточка со статистикой")
-    check("до «Бронза»" in card and "1 000" in card, "видно, сколько осталось до Бронзы")
+    check("Новичок" in card and "🌱" in card, "профиль показывает текущий ранг")
+    check("<code>" in card and "▱" in card, "полоса прогресса до следующего ранга на месте")
+    check("⭐" in card and "Сообщений" in card and "Диалогов" in card,
+          "профиль показывает основные показатели")
+    check("До «Общительный»" in card, "видно прогресс до следующего ранга")
 
     # 8b. свой ник вместо реального имени
     session.clear()
@@ -407,6 +410,15 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     reports = await db.list_reports("new")
     check(len(reports) == 1 and reports[0]["target_id"] == C, "жалоба легла в базу")
     check(mm.partner(A) == C, "жалоба сама по себе диалог не рвёт")
+    report_markup = session.to(A)[-1].get("reply_markup", {})
+    report_labels = [
+        button["text"]
+        for row in report_markup.get("inline_keyboard", [])
+        for button in row
+    ]
+    check("Стоп" in report_labels and "Игры" in report_labels
+          and "Найти собеседника" not in report_labels,
+          "после жалобы остаётся меню текущего диалога")
 
     # 10. админ мутит нарушителя и закрывает жалобу
     session.clear()
@@ -685,15 +697,27 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     session.clear()
     await press(A, "act:settings")
-    check(session.outbox[-1]["method"] == "editMessageMedia", "главное меню в настройки меняет картинку")
+    check(any(item["method"] == "editMessageMedia" for item in session.outbox),
+          "главное меню в настройки меняет картинку")
     first_settings_file = await db.get_kv("menu_file_id:05_settings.png")
     check(bool(first_settings_file), "file_id экрана сохраняется в SQLite")
+
+    session.clear()
     await press(A, "act:profile")
-    check(session.outbox[-1]["method"] == "editMessageMedia", "настройки в профиль меняет картинку")
+    check(any(item["method"] == "editMessageMedia" for item in session.outbox),
+          "настройки в профиль меняет картинку")
+
+    session.clear()
     await press(A, "act:rules")
-    check(session.outbox[-1]["method"] == "editMessageMedia", "профиль в правила меняет картинку")
+    check(any(item["method"] == "editMessageMedia" for item in session.outbox),
+          "профиль в правила меняет картинку")
+
+    session.clear()
     await press(A, "act:settings")
-    media = session.outbox[-1].get("media", {})
+    edit_media = next(
+        item for item in reversed(session.outbox) if item["method"] == "editMessageMedia"
+    )
+    media = edit_media.get("media", {})
     check(media.get("media") == first_settings_file, "повторный экран использует cached file_id")
 
     session.clear()
@@ -818,7 +842,7 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
             await press(A, f"game:next:{battle_id}:{question_index}")
             check(f"<b>{question_index + 2}/5</b>" in session.last_to(B), "следующий вопрос синхронно показан обоим")
         else:
-            check("Битва окончена" in session.last_to(A) and "80%" in session.last_to(A),
+            check("Битва окончена" in session.last_to(A) and "4/5" in session.last_to(A),
                   "после пятого вопроса показан итог 4/5")
 
     check(await db.get_battle(battle_id) is None, "завершённая игра удалена из SQLite")
@@ -920,10 +944,10 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     session.clear()
     await send(A, "/send @explicit_user")
-    check(session.to(B) == [] and "Не знаю" in session.last_to(A), "/send удалена")
+    check(session.to(B) == [] and "Команда не найдена" in session.last_to(A), "/send удалена")
     session.clear()
     await send(A, "/user https://t.me/example")
-    check(session.to(B) == [] and "Не знаю" in session.last_to(A), "/user удалена")
+    check(session.to(B) == [] and "Команда не найдена" in session.last_to(A), "/user удалена")
 
     session.clear()
     await payload(A, contact={"phone_number": "+79991234567", "first_name": "X"})
@@ -976,7 +1000,7 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await press(B, f"game:yes:{int(active_battle['id'])}")
     await send(A, "/stop")
     closed_battle = await db.get_battle(int(active_battle["id"]))
-    check(closed_battle["status"] == "cancelled", "/stop закрывает активную игру в SQLite")
+    check(closed_battle is None, "/stop удаляет активную игру из SQLite")
     session.clear()
     await press(A, "rate:block")
     check(B in await db.excluded_partners(A), "блок-лист сохраняет пару")
@@ -1019,9 +1043,11 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
           "админ видит данные даже в своём активном чате")
     session.fail_once["sendMessage"] = "temp"
     await send(D, "временная ошибка")
-    check(mm.partner(D) == E, "TEMP_ERROR не разрывает пару")
-    check(mm.dialog_stats(D).get("counts", {}).get(D, 0) == 0, "TEMP_ERROR откатывает count_message")
-    check("Попробуй ещё раз" in session.last_to(D), "при TEMP_ERROR пользователь видит короткую ошибку")
+    check(mm.partner(D) == E, "временная ошибка Telegram не разрывает пару")
+    check(mm.dialog_stats(D).get("counts", {}).get(D, 0) == 1,
+          "после успешного повтора сообщение учитывается один раз")
+    check("временная ошибка" in session.last_to(E),
+          "после временной ошибки сообщение доставляется повторной попыткой")
     session.fail_once["sendMessage"] = "forbidden"
     await send(D, "недоступен")
     check(mm.status(D) == "free" and mm.status(E) == "free", "UNAVAILABLE разрывает пару")

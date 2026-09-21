@@ -202,6 +202,8 @@ def now() -> int:
 
 
 REFERRAL_DAILY_LIMIT = 30
+GAME_INACTIVE_TTL_SECONDS = 2 * 24 * 60 * 60
+
 # Магнитогорск живёт по UTC+5. Фиксированный сдвиг не зависит от часового пояса хостинга.
 REFERRAL_TIMEZONE_OFFSET = 5 * 60 * 60
 
@@ -488,6 +490,35 @@ class Database:
 
     async def get_battle(self, game_id: int) -> aiosqlite.Row | None:
         return await self._fetchone("SELECT * FROM battle_games WHERE id = ?", (game_id,))
+
+    async def cleanup_stale_games(
+        self, max_age: int = GAME_INACTIVE_TTL_SECONDS, timestamp: int | None = None
+    ) -> int:
+        """Удаляет игры без активности дольше заданного срока."""
+        cutoff = (now() if timestamp is None else int(timestamp)) - max(1, int(max_age))
+        async with self._number_reward_lock:
+            rows = await self._fetchall(
+                """SELECT id, user_a, user_b, game_type, status, question_index,
+                          reward_awarded
+                     FROM battle_games
+                    WHERE status IN ('invited', 'active', 'round_done')
+                      AND updated_at <= ?""",
+                (cutoff,),
+            )
+            if not rows:
+                return 0
+
+            ids = [int(row["id"]) for row in rows]
+            for row in rows:
+                await self._release_unplayed_number_pair(row)
+
+            placeholders = ",".join("?" for _ in ids)
+            await self.db.execute(
+                f"DELETE FROM battle_games WHERE id IN ({placeholders})",
+                tuple(ids),
+            )
+            await self.db.commit()
+            return len(ids)
 
     async def list_battles(self, history: bool = False, limit: int = 8) -> tuple[list[aiosqlite.Row], int]:
         if history:
@@ -844,27 +875,55 @@ class Database:
         await self.db.commit()
         return await self.get_battle(game_id) if cur.rowcount else None
 
+    async def _release_unplayed_number_pair(self, row: Any) -> None:
+        if (
+            str(row["game_type"] or "battle") == "numbers"
+            and str(row["status"]) == "active"
+            and int(row["question_index"] or 0) == 0
+            and int(row["reward_awarded"] or 0) == 1
+        ):
+            low, high = sorted((int(row["user_a"]), int(row["user_b"])))
+            await self.db.execute(
+                "DELETE FROM number_game_pairs WHERE user_low=? AND user_high=?",
+                (low, high),
+            )
+
     async def cancel_battle(self, game_id: int) -> bool:
-        cur = await self.db.execute(
-            "DELETE FROM battle_games WHERE id=? AND status IN ('invited', 'active', 'round_done')",
-            (game_id,),
-        )
-        await self.db.commit()
-        return cur.rowcount > 0
+        async with self._number_reward_lock:
+            row = await self.get_battle(game_id)
+            if row is None or str(row["status"]) not in {"invited", "active", "round_done"}:
+                return False
+            await self._release_unplayed_number_pair(row)
+            cur = await self.db.execute(
+                "DELETE FROM battle_games WHERE id=? AND status IN ('invited', 'active', 'round_done')",
+                (game_id,),
+            )
+            await self.db.commit()
+            return cur.rowcount > 0
 
     async def close_battles_for_users(self, *user_ids: int) -> int:
         ids = sorted({int(user_id) for user_id in user_ids if user_id})
         if not ids:
             return 0
         placeholders = ",".join("?" for _ in ids)
-        cur = await self.db.execute(
-            f"""DELETE FROM battle_games
-                 WHERE status IN ('invited', 'active', 'round_done')
-                   AND (user_a IN ({placeholders}) OR user_b IN ({placeholders}))""",
-            (*ids, *ids),
-        )
-        await self.db.commit()
-        return cur.rowcount
+        params = (*ids, *ids)
+        async with self._number_reward_lock:
+            rows = await self._fetchall(
+                f"""SELECT * FROM battle_games
+                     WHERE status IN ('invited', 'active', 'round_done')
+                       AND (user_a IN ({placeholders}) OR user_b IN ({placeholders}))""",
+                params,
+            )
+            for row in rows:
+                await self._release_unplayed_number_pair(row)
+            cur = await self.db.execute(
+                f"""DELETE FROM battle_games
+                     WHERE status IN ('invited', 'active', 'round_done')
+                       AND (user_a IN ({placeholders}) OR user_b IN ({placeholders}))""",
+                params,
+            )
+            await self.db.commit()
+            return cur.rowcount
 
     async def nickname_taken(self, nickname: str, except_user_id: int = 0) -> int | None:
         """Ник должен быть уникальным — иначе топ превращается в «Аноним, Аноним, Аноним».
@@ -1071,6 +1130,14 @@ class Database:
                 await cleanup.execute(
                     f"DELETE FROM battle_games WHERE user_a IN ({marks}) OR user_b IN ({marks})",
                     twice,
+                )
+                await cleanup.execute(
+                    f"DELETE FROM number_game_pairs WHERE user_low IN ({marks}) OR user_high IN ({marks})",
+                    twice,
+                )
+                await cleanup.execute(
+                    f"DELETE FROM number_daily_rewards WHERE user_id IN ({marks})",
+                    tuple(chunk),
                 )
                 await cleanup.execute(
                     f"DELETE FROM referrals WHERE invitee_id IN ({marks}) OR referrer_id IN ({marks})",
@@ -1494,6 +1561,21 @@ class Database:
             )
         else:
             await self.db.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+
+        # Служебные данные игр не являются модерационными доказательствами и не должны
+        # переживать удаление профиля.
+        await self.db.execute(
+            "DELETE FROM number_daily_rewards WHERE user_id = ?",
+            (user_id,),
+        )
+        await self.db.execute(
+            "DELETE FROM number_game_pairs WHERE user_low = ? OR user_high = ?",
+            (user_id, user_id),
+        )
+        await self.db.execute(
+            "DELETE FROM battle_games WHERE user_a = ? OR user_b = ?",
+            (user_id, user_id),
+        )
         # История диалогов/жалоб нужна для блокировок и открытой модерации; личные поля там не хранятся.
         await self.db.commit()
 

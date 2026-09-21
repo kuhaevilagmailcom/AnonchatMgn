@@ -549,6 +549,88 @@ def test_number_game_three_rounds_and_rewards() -> None:
             assert await db.number_daily_reward(301) == 300
             assert await db.number_daily_reward(303) == 100
             await db.cancel_battle(capped_id)
+
+            await db.forget_user(301)
+            assert await db.number_daily_reward(301) == 0
+            assert await db.number_pair_reward_available(301, 302) is True
+            assert await db.number_pair_reward_available(301, 303) is True
+
+            # Если пара закрыла чат до первого завершённого раунда, попытка не сгорает.
+            await db.ensure_user(304, "numbers_d", "D")
+            await db.ensure_user(305, "numbers_e", "E")
+            abandoned, created = await db.create_number_invite(304, 305, 100)
+            assert created
+            abandoned_id = int(abandoned["id"])
+            abandoned = await db.accept_number(abandoned_id, 305)
+            assert abandoned is not None and int(abandoned["reward_awarded"]) == 1
+            assert await db.number_pair_reward_available(304, 305) is False
+            assert await db.close_battles_for_users(304, 305) == 1
+            assert await db.number_pair_reward_available(304, 305) is True
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
+def test_stale_games_cleanup_after_two_days() -> None:
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "stale-games.db"
+        db = await Database(path).start()
+        try:
+            for uid in range(401, 411):
+                await db.ensure_user(uid, f"u{uid}", f"U{uid}")
+
+            stale_battle, _ = await db.create_battle_invite(401, 402, 5)
+            fresh_battle, _ = await db.create_battle_invite(403, 404, 5)
+
+            stale_number, _ = await db.create_number_invite(405, 406, 10)
+            stale_number_id = int(stale_number["id"])
+            accepted = await db.accept_number(stale_number_id, 406)
+            assert accepted is not None and int(accepted["reward_awarded"]) == 1
+            assert (await db.answer_number(stale_number_id, 405, 0, 5))[0] == "waiting"
+            assert await db.number_pair_reward_available(405, 406) is False
+
+            played_number, _ = await db.create_number_invite(407, 408, 10)
+            played_number_id = int(played_number["id"])
+            accepted = await db.accept_number(played_number_id, 408)
+            assert accepted is not None
+            assert (await db.answer_number(played_number_id, 407, 0, 5))[0] == "waiting"
+            state, played, _, _ = await db.answer_number(played_number_id, 408, 0, 5)
+            assert state == "resolved" and played is not None and played["status"] == "round_done"
+            assert await db.number_pair_reward_available(407, 408) is False
+
+            old_ts = 1_000
+            fresh_ts = 200_000
+            await db.db.execute(
+                "UPDATE battle_games SET updated_at=? WHERE id IN (?, ?, ?)",
+                (
+                    old_ts,
+                    int(stale_battle["id"]),
+                    stale_number_id,
+                    played_number_id,
+                ),
+            )
+            await db.db.execute(
+                "UPDATE battle_games SET updated_at=? WHERE id=?",
+                (fresh_ts, int(fresh_battle["id"])),
+            )
+            await db.db.commit()
+
+            removed = await db.cleanup_stale_games(
+                max_age=2 * 24 * 60 * 60,
+                timestamp=fresh_ts + 1,
+            )
+            assert removed == 3
+            assert await db.get_battle(int(stale_battle["id"])) is None
+            assert await db.get_battle(stale_number_id) is None
+            assert await db.get_battle(played_number_id) is None
+            assert await db.get_battle(int(fresh_battle["id"])) is not None
+
+            # Если игра «Числа» протухла до первого завершённого раунда,
+            # наградная попытка пары возвращается.
+            assert await db.number_pair_reward_available(405, 406) is True
+            # После хотя бы одного завершённого раунда попытка уже использована.
+            assert await db.number_pair_reward_available(407, 408) is False
         finally:
             await db.close()
 
@@ -591,6 +673,17 @@ def test_referral_daily_limit_and_mass_cleanup() -> None:
             await db.db.commit()
 
             paid_id, admin_id, ordinary_id = invitees[0], invitees[1], invitees[2]
+            low, high = sorted((ordinary_id, referrer))
+            await db.db.execute(
+                "INSERT INTO number_game_pairs(user_low, user_high, consumed_at) VALUES (?, ?, 1)",
+                (low, high),
+            )
+            await db.db.execute(
+                "INSERT INTO number_daily_rewards(user_id, day_start, stars) VALUES (?, ?, 25)",
+                (ordinary_id, number_reward_day_start()),
+            )
+            await db.db.commit()
+
             created, _ = await db.record_payment(
                 paid_id, "support", 1, "cleanup-payment", "", "support:test"
             )
@@ -609,6 +702,8 @@ def test_referral_daily_limit_and_mass_cleanup() -> None:
             assert int((await db.get_user(referrer))["xp"]) == 0
             assert await db.referral_stats(referrer) == (0, 0)
             assert await db.get_user(ordinary_id) is None
+            assert await db.number_pair_reward_available(ordinary_id, referrer) is True
+            assert await db.number_daily_reward(ordinary_id) == 0
             assert await db.get_user(paid_id) is not None
             assert await db.get_user(admin_id) is not None
             payment = await db._fetchone(

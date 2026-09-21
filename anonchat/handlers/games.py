@@ -212,22 +212,8 @@ async def _send_question(ctx: Ctx, row: Any) -> None:
 
 
 def _final_text(matches: int, total: int) -> str:
-    percent = matches * 100 // total
-    if percent == 100:
-        verdict = "вы будто читаете мысли 🧠"
-    elif percent >= 80:
-        verdict = "вы подозрительно похожи 👀"
-    elif percent >= 60:
-        verdict = "у вас много общего"
-    elif percent >= 40:
-        verdict = "спорить вам будет интересно"
-    else:
-        verdict = "противоположности притягиваются"
-    reward = "\n🎁 Каждому начислено <b>25 ⭐</b>!" if matches == total else ""
-    return (
-        f"⚔️ <b>Битва окончена</b>\nСовпадений: <b>{matches}/{total}</b>\n"
-        f"<b>{percent}%</b> — {verdict}.{reward}"
-    )
+    reward = "\n🎁 Каждому начислено <b>25 ⭐</b>." if matches == total else ""
+    return f"⚔️ <b>Битва окончена</b>\nСовпадений: <b>{matches}/{total}</b>.{reward}"
 
 
 async def _send_round_result(ctx: Ctx, row: Any) -> None:
@@ -380,7 +366,7 @@ async def cb_number_range(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         await ctx.reply("Не получилось отправить предложение.")
         return
     await ctx.ack()
-    await ctx.reply("🔢 Предложение отправлено. Ждём ответа собеседника…")
+    await ctx.reply("🔢 Предложение отправлено.")
 
 
 @router.callback_query(F.data.startswith("game:num:yes:"))
@@ -564,7 +550,7 @@ async def cb_battle(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
             )
             return
         await ctx.reply(
-            "⚔️ Раун завершён. Можно перейти к следующему вопросу.",
+            "⚔️ Раунд завершён. Можно перейти к следующему вопросу.",
             K.battle_next_keyboard(int(existing["id"]), int(existing["question_index"])),
         )
         return
@@ -601,7 +587,7 @@ async def cb_battle_length(event: CallbackQuery, ctx: Ctx, db: Database) -> None
         await db.cancel_battle(int(game["id"]))
         await ctx.reply("Не получилось отправить предложение.")
         return
-    await ctx.reply("⚔️ Предложение отправлено. Ждём ответа собеседника…")
+    await ctx.reply("⚔️ Предложение отправлено.")
 
 
 @router.callback_query(F.data.startswith("game:yes:"))

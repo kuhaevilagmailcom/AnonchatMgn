@@ -175,8 +175,8 @@ def settings_keyboard(
     gender: str = "", looking_for: str = "",
 ) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    gender_label = "👨 М" if gender == "m" else "👩 Д" if gender == "f" else "не выбран"
-    looking_label = "👨 М" if looking_for == "m" else "👩 Д" if looking_for == "f" else "🤷 Без разницы"
+    gender_label = "М" if gender == "m" else "Д" if gender == "f" else "не выбран"
+    looking_label = "М" if looking_for == "m" else "Д" if looking_for == "f" else "Без разницы"
     _button(b, f"Ник: {nickname}", callback_data=CB_NICK, icon="profile")
     _button(b, f"Пол: {gender_label}", callback_data="cfg:gender:ask")
     _button(b, f"Ищу: {looking_label}", callback_data="cfg:looking:ask")

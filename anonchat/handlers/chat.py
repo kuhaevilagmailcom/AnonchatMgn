@@ -69,7 +69,8 @@ async def relay_to_partner(
 
     partner, _sent = result
 
-    if len(message.text or "") > cfg.max_message_len:
+    body = message.text if message.text is not None else (message.caption or "")
+    if len(body) > cfg.max_message_len:
         await ctx.reply(texts.TOO_LONG.format(limit=cfg.max_message_len))
         mm.uncount_message(ctx.user_id)
         return
