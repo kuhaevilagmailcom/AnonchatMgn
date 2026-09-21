@@ -44,6 +44,7 @@ from .matching import Matchmaker
 from .pack import EmojiPack
 from .engagement import collect_progress_notifications, format_quests
 from . import relay_state
+from .runtime_state import online_count as presence_online_count
 
 ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "menu"
 log = logging.getLogger(__name__)
@@ -51,7 +52,8 @@ log = logging.getLogger(__name__)
 # Только память процесса: никаких записей message_id/онлайна в SQLite.
 # Нужны для замены старого меню и обновления счётчика без мусора в БД.
 _SCREEN_MESSAGES: dict[int, tuple[int, int]] = {}
-_LIVE_MENUS: dict[int, tuple[int, int, str, bool, int]] = {}
+_LIVE_MENUS: dict[int, tuple[int, int, str, bool, int, float]] = {}
+_FILE_ID_CACHE: dict[str, str] = {}
 
 
 class DeliveryResult(Enum):
@@ -128,7 +130,11 @@ class Ctx:
             return await self.reply(caption, markup)
 
         key = f"menu_file_id:{image}"
-        cached = await self.db.get_kv(key)
+        cached = _FILE_ID_CACHE.get(key, "")
+        if not cached:
+            cached = await self.db.get_kv(key)
+            if cached:
+                _FILE_ID_CACHE[key] = cached
         sources: list[str | FSInputFile] = ([cached] if cached else []) + [FSInputFile(path)]
         for source in sources:
             for wrapped in (True, False):
@@ -145,6 +151,7 @@ class Ctx:
                         if final.photo:
                             new_file_id = final.photo[-1].file_id
                             if new_file_id != cached:
+                                _FILE_ID_CACHE[key] = new_file_id
                                 await self.db.set_kv(key, new_file_id)
                                 cached = new_file_id
                         if (
@@ -159,7 +166,7 @@ class Ctx:
                         if live_menu:
                             _LIVE_MENUS[self.user_id] = (
                                 final.chat.id, final.message_id, self.nick, self.is_admin,
-                                online_count(self.mm),
+                                online_count(self.mm), time.monotonic(),
                             )
                     return final
                 except TelegramBadRequest as exc:
@@ -169,6 +176,7 @@ class Ctx:
                 except TelegramAPIError:
                     break
             if isinstance(source, str):
+                _FILE_ID_CACHE.pop(key, None)
                 await self.db.delete_kv(key)
         fallback = await self.reply(caption, markup)
         if fallback is not None:
@@ -231,10 +239,11 @@ class Ctx:
             auto = nicklib.auto_nick(self.user_id)
             for salt in range(32):
                 candidate = nicklib.auto_nick(self.user_id + salt * 1_000_003)
-                if not await self.db.nickname_taken(candidate, except_user_id=self.user_id):
+                if await self.db.set_unique_nickname(self.user_id, candidate):
                     auto = candidate
                     break
-            await self.db.set_profile(self.user_id, nickname=auto)
+            else:
+                await self.db.set_profile(self.user_id, nickname=auto)
             self.me = await self.db.get_user(self.user_id)
         return self.nick
 
@@ -283,20 +292,29 @@ async def _remember_screen(bot: Bot, user_id: int, message: Message) -> None:
         pass
 
 
-def online_count(mm: Matchmaker) -> int:
-    return mm.queue_size() + mm.online_pairs() * 2
+def online_count(mm: Matchmaker | None = None) -> int:
+    """Реальный онлайн: пользователи, взаимодействовавшие с ботом за последние 5 минут."""
+    return presence_online_count()
 
 
 async def refresh_live_menus(bot: Bot, mm: Matchmaker, pack: EmojiPack | None = None) -> None:
-    """Обновляет открытые главные меню только когда реальный онлайн изменился."""
+    """Редко обновляет только свежие главные меню, не устраивая массовый edit-шторм."""
     size = online_count(mm)
-    for user_id, (chat_id, message_id, nickname, is_admin, previous_size) in list(_LIVE_MENUS.items()):
+    now_mono = time.monotonic()
+    edited = 0
+    for user_id, item in list(_LIVE_MENUS.items()):
+        chat_id, message_id, nickname, is_admin, previous_size, opened_at = item
+        if now_mono - opened_at > 10 * 60:
+            _LIVE_MENUS.pop(user_id, None)
+            continue
         if previous_size == size:
             continue
         status = mm.status(user_id)
         if status != "free":
             _LIVE_MENUS.pop(user_id, None)
             continue
+        if edited >= 50:
+            break
         body = (
             f"<b>{texts.esc(nickname)}</b>\n\n"
             f"{texts.STATUS_FREE}\n\n"
@@ -310,7 +328,10 @@ async def refresh_live_menus(bot: Bot, mm: Matchmaker, pack: EmojiPack | None = 
                     chat_id=chat_id, message_id=message_id,
                     caption=wrapped, reply_markup=markup,
                 )
-                _LIVE_MENUS[user_id] = (chat_id, message_id, nickname, is_admin, size)
+                _LIVE_MENUS[user_id] = (
+                    chat_id, message_id, nickname, is_admin, size, opened_at
+                )
+                edited += 1
                 break
             except TelegramBadRequest as exc:
                 if pack and attempt == 0 and pack.accept(exc):
@@ -495,7 +516,11 @@ async def send_screen_to(
     if not path.exists():
         return await send_to(bot, chat_id, caption, markup, pack)
     key = f"menu_file_id:{image}"
-    cached = await db.get_kv(key) if db else ""
+    cached = _FILE_ID_CACHE.get(key, "")
+    if not cached and db:
+        cached = await db.get_kv(key)
+        if cached:
+            _FILE_ID_CACHE[key] = cached
     photo: str | FSInputFile = cached or FSInputFile(path)
     for attempt in range(2):
         body = pack.wrap(caption) if pack and attempt == 0 else (pack.strip(caption) if pack else caption)
@@ -504,6 +529,7 @@ async def send_screen_to(
             if db and sent.photo:
                 new_file_id = sent.photo[-1].file_id
                 if new_file_id != cached:
+                    _FILE_ID_CACHE[key] = new_file_id
                     await db.set_kv(key, new_file_id)
                     cached = new_file_id
             _LIVE_MENUS.pop(chat_id, None)
@@ -513,6 +539,7 @@ async def send_screen_to(
             if attempt == 0 and pack is not None and pack.accept(exc):
                 continue
             if cached:
+                _FILE_ID_CACHE.pop(key, None)
                 await db.delete_kv(key)
                 cached = ""
                 photo = FSInputFile(path)
@@ -588,7 +615,7 @@ async def show_top(ctx: Ctx, period: str = "week") -> None:
 
 
 async def show_referral(ctx: Ctx) -> None:
-    bot = await ctx.bot.get_me()
+    bot = await ctx.bot.me()
     link = f"https://t.me/{bot.username}?start=ref_{ctx.user_id}"
     invited, earned = await ctx.db.referral_stats(ctx.user_id)
     body = (
@@ -654,13 +681,17 @@ async def show_quests(ctx: Ctx) -> None:
 
 
 async def show_online(ctx: Ctx) -> None:
-    current = ctx.mm.queue_size() + ctx.mm.online_pairs() * 2
+    current = online_count(ctx.mm)
+    chatting = ctx.mm.online_pairs() * 2
+    queued = ctx.mm.queue_size()
+    free = max(0, current - chatting - queued)
     peak = await ctx.db.online_peak(current)
     body = (
         "🟢 <b>Онлайн сейчас</b>\n\n"
-        f"Общаются: <b>{ctx.mm.online_pairs() * 2}</b>\n"
-        f"Ищут собеседника: <b>{ctx.mm.queue_size()}</b>\n"
-        f"Всего сейчас: <b>{current}</b>\n"
+        f"Всего: <b>{current}</b>\n"
+        f"Общаются: <b>{chatting}</b>\n"
+        f"Ищут собеседника: <b>{queued}</b>\n"
+        f"Свободны: <b>{free}</b>\n"
         f"Пик сегодня: <b>{peak}</b>"
     )
     await ctx.render_screen("05_settings.png", body, online_keyboard())
@@ -700,9 +731,7 @@ async def show_profile(ctx: Ctx) -> None:
     ]
     if nicklib.is_supporter(me["support_stars"]):
         lines += ["", f"💎 Поддержал проект: {int(me['support_stars'])} ⭐"]
-    bot = await ctx.bot.get_me()
-    referral = f"https://t.me/{bot.username}?start=ref_{ctx.user_id}"
-    await ctx.render_screen("04_profile.png", "\n".join(lines), profile_keyboard(referral))
+    await ctx.render_screen("04_profile.png", "\n".join(lines), profile_keyboard())
 
 
 # --------------------------------------------------------------------- ники
@@ -726,10 +755,8 @@ async def set_nick(ctx: Ctx, raw: str) -> tuple[bool, str]:
     candidate, error = nicklib.validate(value)
     if error:
         return False, texts.NICK_BAD.format(error=texts.esc(error))
-    if await ctx.db.nickname_taken(candidate, except_user_id=ctx.user_id):
+    if not await ctx.db.set_unique_nickname(ctx.user_id, candidate):
         return False, texts.NICK_TAKEN
-
-    await ctx.db.set_profile(ctx.user_id, nickname=candidate)
     ctx.me = await ctx.db.get_user(ctx.user_id)
     return True, texts.NICK_SAVED.format(nick=texts.esc(candidate))
 
@@ -836,22 +863,28 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
     theirs = int(counts.get(partner, 0))
     started = int(summary.get("started_at", time.time()))
 
-    match_id = await ctx.db.log_dialog(ctx.user_id, partner, mine, theirs, started, ended_by)
-    cap = ctx.cfg.xp_message_cap
     live = mine > 0 and theirs > 0 and (mine + theirs) >= 6
+    match_id = await ctx.db.log_dialog(
+        ctx.user_id, partner, mine, theirs, started, ended_by,
+        count_dialog=live, commit=False,
+    )
+    cap = ctx.cfg.xp_message_cap
     my_xp = 0
     for uid, sent in ((ctx.user_id, mine), (partner, theirs)):
         gain = min(sent, cap) * ctx.cfg.xp_per_message + (ctx.cfg.xp_per_dialog if live else 0)
         if gain:
-            await ctx.db.award_xp(uid, gain)
+            await ctx.db.award_xp(uid, gain, commit=False)
         if sent:
-            await ctx.db.bump(uid, "messages", sent)
-        await ctx.db.activity_add(uid, messages=sent, dialogs=1 if live else 0)
+            await ctx.db.bump(uid, "messages", sent, commit=False)
+        await ctx.db.activity_add(
+            uid, messages=sent, dialogs=1 if live else 0, commit=False
+        )
         if live:
-            await ctx.db.record_dialog_engagement(uid)
-            await ctx.db.update_streak(uid)
+            await ctx.db.record_dialog_engagement(uid, commit=False)
+            await ctx.db.update_streak(uid, commit=False)
         if uid == ctx.user_id:
             my_xp = gain
+    await ctx.db.db.commit()
 
     ctx.mm.remember_rating([ctx.user_id, partner], match_id)
     summary_text = _dialog_summary_text(summary)
@@ -890,7 +923,10 @@ async def act_connect(ctx: Ctx) -> None:
         return
 
     prefs = ctx.prefs
-    prefs["excluded"] = await ctx.db.excluded_partners(ctx.user_id)
+    prefs["excluded"] = await ctx.db.excluded_partners(
+        ctx.user_id,
+        recent_seconds=max(0, int(ctx.cfg.recent_partner_cooldown_minutes)) * 60,
+    )
     for _ in range(8):
         outcome, payload = ctx.mm.connect(ctx.user_id, **prefs)
         if outcome == "paired":

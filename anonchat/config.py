@@ -93,10 +93,11 @@ class Config:
 
     # matching
     queue_soft_limit: int = 500          # сколько максимум держим в очереди
+    recent_partner_cooldown_minutes: int = 30
     xp_per_message: int = 1
     xp_message_cap: int = 40             # максимум «за сообщения» с одного диалога
     xp_per_dialog: int = 8
-    xp_good_rating: int = 15
+    xp_good_rating: int = 10
 
     debug: bool = False
 
@@ -129,6 +130,13 @@ class Config:
             ),
             menu_rate_limit=int(env("MENU_RATE_LIMIT", str(cls._default("menu_rate_limit")))),
             max_message_len=int(env("MAX_MESSAGE_LEN", str(cls._default("max_message_len")))),
+            recent_partner_cooldown_minutes=int(
+                env(
+                    "RECENT_PARTNER_COOLDOWN_MINUTES",
+                    str(cls._default("recent_partner_cooldown_minutes")),
+                )
+            ),
+            xp_good_rating=int(env("XP_GOOD_RATING", str(cls._default("xp_good_rating")))),
             debug=_bool(env("DEBUG", "false")),
         )
 

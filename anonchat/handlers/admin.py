@@ -33,6 +33,7 @@ from ..matching import Matchmaker
 from ..permissions import ALL_ADMIN_PERMISSIONS, PERMISSION_LABELS, parse_permissions
 from ..diagnostics import METRICS
 from .. import relay_state
+from ..monitoring import invalidate_monitor_cache, pending_count
 from .reports import format_report_card
 
 router = Router(name="admin")
@@ -120,6 +121,7 @@ async def diagnostics_text(db: Database, mm: Matchmaker) -> str:
         f"Последняя очистка: <b>{last_cleanup}</b>\n"
         f"Последнее сохранение очереди: <b>{last_save}</b>\n"
         f"Reply-map в памяти: <b>{relay_state.size()}</b>\n"
+        f"Monitor queue: <b>{pending_count()}</b>\n"
         f"Matchmaker dirty: <b>{'да' if db._matchmaker_dirty else 'нет'}</b>"
     )
 
@@ -711,6 +713,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         key = f"chat_monitor:{ctx.user_id}"
         enabled = await db.get_kv(key) != "1"
         await db.set_kv(key, "1" if enabled else "0")
+        invalidate_monitor_cache()
         await ctx.ack(f"Слежение за чатами {'включено' if enabled else 'выключено'}")
         await panel_screen(ctx, db, mm)
         return

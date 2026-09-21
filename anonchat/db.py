@@ -261,9 +261,12 @@ class Database:
         self._matchmaker_dirty = False
         self._matchmaker_task: asyncio.Task | None = None
         self._matchmaker_snapshot_key = ""
+        self._matchmaker_revision = -1
         self._referral_lock = asyncio.Lock()
         self._number_reward_lock = asyncio.Lock()
         self._engagement_lock = asyncio.Lock()
+        self._nickname_lock = asyncio.Lock()
+        self._admin_permissions_cache: dict[int, tuple[float, frozenset[str]]] = {}
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> "Database":
@@ -442,8 +445,12 @@ class Database:
             return list(await cur.fetchall())
 
     # ------------------------------------------------------------------ users
-    async def ensure_user(self, user_id: int, username: str | None, first_name: str) -> aiosqlite.Row:
-        existing = await self.get_user(user_id)
+    async def ensure_user(
+        self, user_id: int, username: str | None, first_name: str,
+        *, existing: aiosqlite.Row | None = None,
+    ) -> aiosqlite.Row:
+        if existing is None:
+            existing = await self.get_user(user_id)
         if existing is not None and existing["profile_deleted"]:
             restricted = bool(existing["banned"] or int(existing["mute_until"] or 0) > now())
             if restricted:
@@ -489,13 +496,20 @@ class Database:
     ) -> frozenset[str]:
         if user_id in owner_ids:
             return ALL_ADMIN_PERMISSIONS
+        cached = self._admin_permissions_cache.get(int(user_id))
+        now_mono = time.monotonic()
+        if cached is not None and now_mono - cached[0] < 30:
+            return cached[1]
         row = await self._fetchone("SELECT permissions FROM admins WHERE user_id = ?", (user_id,))
-        if row is None:
-            return frozenset()
-        return frozenset(
-            item for item in str(row["permissions"] or "").split(",")
-            if item in ALL_ADMIN_PERMISSIONS
+        permissions = (
+            frozenset(
+                item for item in str(row["permissions"] or "").split(",")
+                if item in ALL_ADMIN_PERMISSIONS
+            )
+            if row is not None else frozenset()
         )
+        self._admin_permissions_cache[int(user_id)] = (now_mono, permissions)
+        return permissions
 
     async def set_admin(
         self, user_id: int, permissions: set[str] | frozenset[str], granted_by: int
@@ -515,11 +529,13 @@ class Database:
             (user_id, serialize_permissions(clean), granted_by, ts, ts),
         )
         await self.db.commit()
+        self._admin_permissions_cache.pop(int(user_id), None)
         return clean
 
     async def remove_admin(self, user_id: int) -> bool:
         cur = await self.db.execute("DELETE FROM admins WHERE user_id = ?", (user_id,))
         await self.db.commit()
+        self._admin_permissions_cache.pop(int(user_id), None)
         return cur.rowcount > 0
 
     async def list_admins(self) -> list[aiosqlite.Row]:
@@ -1041,6 +1057,14 @@ class Database:
         )
         return int(row["user_id"]) if row else None
 
+    async def set_unique_nickname(self, user_id: int, nickname: str) -> bool:
+        """Атомарно для одного процесса проверяет уникальность и сохраняет ник."""
+        async with self._nickname_lock:
+            if await self.nickname_taken(nickname, except_user_id=user_id):
+                return False
+            await self.set_profile(user_id, nickname=nickname)
+            return True
+
     async def set_profile(self, user_id: int, **fields: Any) -> None:
         allowed = {"age", "district", "same_district", "nickname", "gender", "looking_for"}
         if "gender" in fields:
@@ -1059,7 +1083,9 @@ class Database:
         await self.db.execute(f"UPDATE users SET {sets} WHERE user_id = ?", vals)
         await self.db.commit()
 
-    async def award_xp(self, user_id: int, amount: int, *, column: str | None = None) -> int:
+    async def award_xp(
+        self, user_id: int, amount: int, *, column: str | None = None, commit: bool = True
+    ) -> int:
         """Начисляем опыт и, опционально, плюсует счётчик (messages/dialogs/good_ratings...)."""
         if column and column in {
             "messages",
@@ -1083,7 +1109,8 @@ class Database:
                    DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
                 (int(user_id), referral_day_start(), int(amount)),
             )
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
         row = await self._fetchone("SELECT xp FROM users WHERE user_id = ?", (user_id,))
         return int(row["xp"]) if row else 0
 
@@ -1200,7 +1227,7 @@ class Database:
             await cleanup.execute("PRAGMA busy_timeout=10000")
             await cleanup.execute("BEGIN IMMEDIATE")
             async with cleanup.execute(
-                """SELECT r.invitee_id, r.xp_awarded, u.user_id AS existing_user_id,
+                """SELECT r.invitee_id, r.xp_awarded, r.created_at, u.user_id AS existing_user_id,
                           EXISTS(SELECT 1 FROM payments p WHERE p.user_id=r.invitee_id) AS paid,
                           EXISTS(SELECT 1 FROM admins a WHERE a.user_id=r.invitee_id) AS admin,
                           COALESCE(u.support_stars, 0) AS support_stars
@@ -1222,7 +1249,22 @@ class Database:
                 and int(row["support_stars"] or 0) <= 0
             ]
 
-            await cleanup.execute("UPDATE users SET xp=0 WHERE user_id=?", (referrer_id,))
+            referral_xp = sum(int(row["xp_awarded"] or 0) for row in rows)
+            await cleanup.execute(
+                "UPDATE users SET xp=MAX(0, xp-?) WHERE user_id=?",
+                (referral_xp, referrer_id),
+            )
+            by_day: dict[int, int] = {}
+            for row in rows:
+                day = referral_day_start(int(row["created_at"] or 0) or now())
+                by_day[day] = by_day.get(day, 0) + int(row["xp_awarded"] or 0)
+            for day, amount in by_day.items():
+                await cleanup.execute(
+                    """UPDATE daily_activity
+                          SET xp_earned=MAX(0, xp_earned-?)
+                        WHERE user_id=? AND day_start=?""",
+                    (amount, referrer_id, day),
+                )
             await cleanup.execute("DELETE FROM referrals WHERE referrer_id=?", (referrer_id,))
 
             # Два поля в одном DELETE дают по два параметра на id; размер 400 ниже
@@ -1435,7 +1477,19 @@ class Database:
                UNION SELECT user_id AS uid FROM blocks WHERE blocked_id = ?""",
             (user_id, user_id),
         )
-        return {int(row["uid"]) for row in rows}
+        result = {int(row["uid"]) for row in rows}
+        if int(recent_seconds) > 0:
+            cutoff = now() - int(recent_seconds)
+            recent = await self._fetchall(
+                """SELECT CASE WHEN user_a=? THEN user_b ELSE user_a END AS uid
+                     FROM matches
+                    WHERE ended_at IS NOT NULL
+                      AND ended_at>=?
+                      AND (user_a=? OR user_b=?)""",
+                (user_id, cutoff, user_id, user_id),
+            )
+            result.update(int(row["uid"]) for row in recent)
+        return result
 
     async def list_reports(self, status: str = "new", limit: int = 20) -> list[aiosqlite.Row]:
         return await self._fetchall(
@@ -1483,17 +1537,20 @@ class Database:
 
     # ------------------------------------------------------------------ dialogs
     async def log_dialog(
-        self, user_a: int, user_b: int, msg_a: int, msg_b: int, started_at: int, ended_by: int | None
+        self, user_a: int, user_b: int, msg_a: int, msg_b: int, started_at: int,
+        ended_by: int | None, *, count_dialog: bool = True, commit: bool = True,
     ) -> int:
         cur = await self.db.execute(
             """INSERT INTO matches (started_at, ended_at, user_a, user_b, msg_a, msg_b, ended_by)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (started_at, now(), user_a, user_b, msg_a, msg_b, ended_by),
         )
-        await self.db.execute(
-            "UPDATE users SET dialogs = dialogs + 1 WHERE user_id IN (?, ?)", (user_a, user_b)
-        )
-        await self.db.commit()
+        if count_dialog:
+            await self.db.execute(
+                "UPDATE users SET dialogs = dialogs + 1 WHERE user_id IN (?, ?)", (user_a, user_b)
+            )
+        if commit:
+            await self.db.commit()
         return int(cur.lastrowid)
 
     async def rate_dialog(self, match_id: int, user_id: int, value: int) -> int | None:
@@ -1524,12 +1581,13 @@ class Database:
         return partner
 
     # ------------------------------------------------------------------ engagement
-    async def engagement_state(self, user_id: int) -> aiosqlite.Row:
+    async def engagement_state(self, user_id: int, *, commit: bool = True) -> aiosqlite.Row:
         await self.db.execute(
             "INSERT OR IGNORE INTO user_engagement(user_id) VALUES (?)",
             (int(user_id),),
         )
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
         row = await self._fetchone(
             "SELECT * FROM user_engagement WHERE user_id=?", (int(user_id),)
         )
@@ -1537,7 +1595,7 @@ class Database:
         return row
 
     async def activity_add(
-        self, user_id: int, timestamp: int | None = None, **deltas: int
+        self, user_id: int, timestamp: int | None = None, *, commit: bool = True, **deltas: int
     ) -> None:
         allowed = {
             "messages", "dialogs", "games", "battle_games", "number_games",
@@ -1557,7 +1615,8 @@ class Database:
             f"ON CONFLICT(user_id, day_start) DO UPDATE SET {updates}",
             params,
         )
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
 
     async def activity_totals(self, user_id: int, days: int) -> dict[str, int]:
         days = max(1, min(int(days), 40))
@@ -1599,10 +1658,12 @@ class Database:
             (start, max(1, min(int(limit), 50))),
         )
 
-    async def update_streak(self, user_id: int, timestamp: int | None = None) -> tuple[int, int]:
+    async def update_streak(
+        self, user_id: int, timestamp: int | None = None, *, commit: bool = True
+    ) -> tuple[int, int]:
         day = referral_day_start(timestamp)
         async with self._engagement_lock:
-            row = await self.engagement_state(user_id)
+            row = await self.engagement_state(user_id, commit=commit)
             last = int(row["last_active_day"] or 0)
             current = int(row["current_streak"] or 0)
             best = int(row["best_streak"] or 0)
@@ -1616,16 +1677,18 @@ class Database:
                     WHERE user_id=?""",
                 (current, best, day, int(user_id)),
             )
-            await self.db.commit()
+            if commit:
+                await self.db.commit()
             return current, best
 
-    async def record_dialog_engagement(self, user_id: int) -> None:
-        await self.engagement_state(user_id)
+    async def record_dialog_engagement(self, user_id: int, *, commit: bool = True) -> None:
+        await self.engagement_state(user_id, commit=commit)
         await self.db.execute(
             "UPDATE user_engagement SET dialogs_total=dialogs_total+1 WHERE user_id=?",
             (int(user_id),),
         )
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
 
     async def record_game_engagement(
         self, user_id: int, kind: str, matches: int = 0, total: int = 0,
@@ -1843,13 +1906,15 @@ class Database:
         METRICS.last_matchmaker_save_at = now()
 
     def schedule_matchmaker_save(self, matchmaker) -> None:
-        """Пишет snapshot только если состояние реально изменилось, а не после каждого апдейта."""
-        snapshot_key = json.dumps(
-            matchmaker.snapshot(), ensure_ascii=False, separators=(",", ":"), sort_keys=True
-        )
-        if snapshot_key == self._matchmaker_snapshot_key:
+        """Дешёвый debounce: на каждом апдейте сравниваем только integer revision.
+
+        Snapshot не сериализуется и SQLite не пишется на каждое сообщение. При
+        активном чате состояние сбрасывается на диск максимум раз в 5 секунд.
+        """
+        revision = int(getattr(matchmaker, "persistence_revision", 0))
+        if revision == self._matchmaker_revision:
             return
-        self._matchmaker_snapshot_key = snapshot_key
+        self._matchmaker_revision = revision
         self._matchmaker = matchmaker
         self._matchmaker_dirty = True
         if self._matchmaker_task is None or self._matchmaker_task.done():
@@ -1858,10 +1923,14 @@ class Database:
     async def _save_matchmaker_loop(self) -> None:
         try:
             while True:
-                await asyncio.sleep(0.25)
+                await asyncio.sleep(5)
                 self._matchmaker_dirty = False
                 if self._matchmaker is not None:
-                    await self.save_matchmaker(self._matchmaker.snapshot())
+                    state = self._matchmaker.snapshot()
+                    await self.save_matchmaker(state)
+                    self._matchmaker_snapshot_key = json.dumps(
+                        state, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+                    )
                 if not self._matchmaker_dirty:
                     return
         finally:
@@ -1891,17 +1960,35 @@ class Database:
         if not value:
             return None
         self._matchmaker_snapshot_key = value
+        self._matchmaker_revision = 0
         try:
             state = json.loads(value)
         except json.JSONDecodeError:
             return None
-        return state if isinstance(state, dict) else None
+        if not isinstance(state, dict):
+            return None
+
+        # Старые версии клали последние сообщения пары в snapshot. Удаляем их
+        # с диска сразу при старте; контекст жалобы теперь живёт только в RAM.
+        sanitized = False
+        for pair in state.get("pairs", []):
+            if isinstance(pair, dict) and "history" in pair:
+                pair.pop("history", None)
+                sanitized = True
+        if sanitized:
+            await self.save_matchmaker(state)
+            self._matchmaker_snapshot_key = json.dumps(
+                state, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+            )
+        return state
 
     async def delete_kv(self, key: str) -> None:
         await self.db.execute("DELETE FROM kv WHERE key = ?", (key,))
         await self.db.commit()
 
-    async def bump(self, user_id: int, column: str, amount: int = 1) -> None:
+    async def bump(
+        self, user_id: int, column: str, amount: int = 1, *, commit: bool = True
+    ) -> None:
         allowed = {
             "messages",
             "dialogs",
@@ -1916,7 +2003,8 @@ class Database:
         await self.db.execute(
             f"UPDATE users SET {column} = {column} + ? WHERE user_id = ?", (amount, user_id)
         )
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
 
     async def adjust_xp(self, user_id: int, amount: int) -> int:
         await self._ensure_row(user_id)

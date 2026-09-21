@@ -13,6 +13,7 @@ from .actions import Ctx
 from .config import Config
 from .db import Database
 from .pack import EmojiPack
+from .runtime_state import touch as touch_presence
 
 
 def event_user(event: TelegramObject) -> User | None:
@@ -50,7 +51,10 @@ class DataContext(BaseMiddleware):
             me = await self.db.get_user(user.id)
             if me is None:
                 data["is_new_user"] = True
-            me = await self.db.ensure_user(user.id, user.username, user.first_name)
+            touch_presence(user.id)
+            me = await self.db.ensure_user(
+                user.id, user.username, user.first_name, existing=me
+            )
             permissions = await self.db.get_admin_permissions(user.id, self.config.admin_ids)
             data["is_admin"] = bool(permissions)
         else:

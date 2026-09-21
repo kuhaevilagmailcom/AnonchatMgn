@@ -26,6 +26,7 @@ from anonchat.matching import Matchmaker
 from anonchat.middlewares import DataContext, Throttling
 from anonchat.pack import EmojiPack
 from anonchat.diagnostics import METRICS
+from anonchat.runtime_state import online_count as presence_online_count
 
 log = logging.getLogger("anonchat")
 
@@ -61,7 +62,7 @@ async def janitor(
             mm.drop_stale_ratings()
             removed_games = await db.cleanup_stale_games()
             await db.cleanup_daily_activity()
-            await db.online_peak(mm.queue_size() + mm.online_pairs() * 2)
+            await db.online_peak(presence_online_count())
             METRICS.last_cleanup_at = int(time.time())
             METRICS.janitor_removed_games += int(removed_games)
             paired = await reconcile_queue(bot, cfg, db, mm, pack)
@@ -76,10 +77,10 @@ async def janitor(
 
 
 async def menu_refresher(bot: Bot, mm: Matchmaker, pack: EmojiPack) -> None:
-    """Обновляет открытые главные меню только при изменении размера очереди."""
+    """Редко обновляет только свежие открытые главные меню."""
     while True:
         try:
-            await asyncio.sleep(5)
+            await asyncio.sleep(30)
             await refresh_live_menus(bot, mm, pack)
         except asyncio.CancelledError:
             raise
@@ -133,7 +134,7 @@ async def main() -> None:  # pragma: no cover
     await database.cleanup_report_context(cfg.report_context_retention_days)
     removed_games = await database.cleanup_stale_games()
     await database.cleanup_daily_activity()
-    await database.online_peak(mm.queue_size() + mm.online_pairs() * 2)
+    await database.online_peak(presence_online_count())
     METRICS.last_cleanup_at = int(time.time())
     METRICS.janitor_removed_games += int(removed_games)
     if removed_games:
