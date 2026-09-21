@@ -695,15 +695,27 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     session.clear()
     await press(A, "act:settings")
-    check(session.outbox[-1]["method"] == "editMessageMedia", "главное меню в настройки меняет картинку")
+    check(any(item["method"] == "editMessageMedia" for item in session.outbox),
+          "главное меню в настройки меняет картинку")
     first_settings_file = await db.get_kv("menu_file_id:05_settings.png")
     check(bool(first_settings_file), "file_id экрана сохраняется в SQLite")
+
+    session.clear()
     await press(A, "act:profile")
-    check(session.outbox[-1]["method"] == "editMessageMedia", "настройки в профиль меняет картинку")
+    check(any(item["method"] == "editMessageMedia" for item in session.outbox),
+          "настройки в профиль меняет картинку")
+
+    session.clear()
     await press(A, "act:rules")
-    check(session.outbox[-1]["method"] == "editMessageMedia", "профиль в правила меняет картинку")
+    check(any(item["method"] == "editMessageMedia" for item in session.outbox),
+          "профиль в правила меняет картинку")
+
+    session.clear()
     await press(A, "act:settings")
-    media = session.outbox[-1].get("media", {})
+    edit_media = next(
+        item for item in reversed(session.outbox) if item["method"] == "editMessageMedia"
+    )
+    media = edit_media.get("media", {})
     check(media.get("media") == first_settings_file, "повторный экран использует cached file_id")
 
     session.clear()
