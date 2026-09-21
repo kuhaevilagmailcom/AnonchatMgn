@@ -276,6 +276,7 @@ class Database:
             await self._db.execute("PRAGMA busy_timeout=5000")
             await self._db.executescript(SCHEMA)
             await self._migrate()
+            await self._backfill_legacy_activity_xp()
             await self._db.commit()
         except (OSError, aiosqlite.Error) as exc:
             if self._db is not None:
@@ -283,6 +284,49 @@ class Database:
                 self._db = None
             raise RuntimeError(f"Не удалось открыть SQLite {self.path}: {exc}") from exc
         return self
+
+    async def _backfill_legacy_activity_xp(self) -> int:
+        """Один раз переносит старый баланс в периодную статистику.
+
+        До появления daily_activity звёзды хранились только в users.xp без даты.
+        Для старых аккаунтов недостающую часть относим к дню создания аккаунта —
+        это не выдумывает дополнительные звёзды и не меняет общий баланс.
+        """
+        marker = "daily_activity_xp_backfill_v1"
+        if await self.get_kv(marker) == "1":
+            return 0
+
+        rows = await self._fetchall(
+            """SELECT u.user_id, u.xp, u.created_at,
+                      COALESCE(SUM(a.xp_earned), 0) AS tracked
+                 FROM users u
+                 LEFT JOIN daily_activity a ON a.user_id=u.user_id
+                GROUP BY u.user_id"""
+        )
+        added = 0
+        for row in rows:
+            total = max(0, int(row["xp"] or 0))
+            tracked = max(0, int(row["tracked"] or 0))
+            missing = max(0, total - tracked)
+            if missing <= 0:
+                continue
+            created_at = int(row["created_at"] or 0) or now()
+            day = referral_day_start(created_at)
+            await self.db.execute(
+                """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(user_id, day_start)
+                   DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
+                (int(row["user_id"]), day, missing),
+            )
+            added += missing
+
+        await self.db.execute(
+            """INSERT INTO kv(key, value) VALUES (?, '1')
+               ON CONFLICT(key) DO UPDATE SET value='1'""",
+            (marker,),
+        )
+        return added
 
     async def _migrate(self) -> None:
         """Старые базы могут не иметь новых колонок — добавляем, не теряя данные."""
