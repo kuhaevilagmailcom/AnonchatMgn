@@ -164,7 +164,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
 
     dp = Dispatcher(storage=MemoryStorage())
     pack = EmojiPack(cfg.emoji_pack_url)
-    for observer in (dp.message, dp.callback_query):
+    for observer in (dp.message, dp.edited_message, dp.callback_query):
         observer.outer_middleware(Throttling(cfg, limit=200))
         observer.middleware(DataContext(cfg, db, mm, pack))
     for router in get_routers():
@@ -575,7 +575,7 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     bot = Bot(cfg.bot_token, session=session, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
     pack = EmojiPack(cfg.emoji_pack_url)
-    for observer in (dp.message, dp.callback_query):
+    for observer in (dp.message, dp.edited_message, dp.callback_query):
         observer.outer_middleware(Throttling(cfg, limit=200))
         observer.middleware(DataContext(cfg, db, mm, pack))
     for router in get_routers():
