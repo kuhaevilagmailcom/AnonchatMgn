@@ -435,17 +435,24 @@ def test_battle_game_persists_and_synchronizes() -> None:
 
 
 def test_number_game_three_rounds_and_rewards() -> None:
-    from anonchat.number_game import NUMBER_REWARDS, NUMBER_ROUNDS, number_reward
+    from anonchat.number_game import (
+        NUMBER_NEAR_DIFFS, NUMBER_REWARDS, NUMBER_ROUNDS, number_reward,
+    )
 
     assert NUMBER_ROUNDS == 3
     assert NUMBER_REWARDS == {10: 25, 100: 50, 1000: 100}
+    assert NUMBER_NEAR_DIFFS == {10: 1, 100: 2, 1000: 5}
     assert number_reward(10, 5, 5) == 25
     assert number_reward(10, 5, 6) == 12
     assert number_reward(100, 44, 44) == 50
     assert number_reward(100, 44, 45) == 25
+    assert number_reward(100, 44, 46) == 25
+    assert number_reward(100, 44, 47) == 0
     assert number_reward(1000, 777, 777) == 100
     assert number_reward(1000, 777, 778) == 50
-    assert number_reward(1000, 1, 3) == 0
+    assert number_reward(1000, 777, 782) == 50
+    assert number_reward(1000, 777, 783) == 0
+    assert number_reward(10, 1, 3) == 0
 
     async def scenario() -> None:
         path = Path(tempfile.mkdtemp()) / "numbers.db"

@@ -17,7 +17,7 @@ from ..actions import Ctx, DeliveryResult, send_to
 from ..battle_questions import BattleQuestion, get_question, questions
 from ..db import Database
 from ..matching import Matchmaker
-from ..number_game import NUMBER_REWARDS, NUMBER_ROUNDS, number_reward
+from ..number_game import NUMBER_NEAR_DIFFS, NUMBER_REWARDS, NUMBER_ROUNDS, number_reward
 
 router = Router(name="games")
 
@@ -121,16 +121,16 @@ async def _send_number_result(ctx: Ctx, row: Any) -> None:
             f"Вы оба выбрали <b>{answer_a}</b>.\n"
             f"+<b>{reward} ⭐</b> каждому."
         )
-    elif diff == 1:
+    elif 1 <= diff <= NUMBER_NEAR_DIFFS.get(int(row["range_max"]), 0):
         body_a = (
             f"🔥 <b>Почти совпало!</b>\n"
             f"Ты: <b>{answer_a}</b> · собеседник: <b>{answer_b}</b>\n"
-            f"Разница всего <b>1</b> · +<b>{reward} ⭐</b> каждому."
+            f"Разница <b>{diff}</b> · +<b>{reward} ⭐</b> каждому."
         )
         body_b = (
             f"🔥 <b>Почти совпало!</b>\n"
             f"Ты: <b>{answer_b}</b> · собеседник: <b>{answer_a}</b>\n"
-            f"Разница всего <b>1</b> · +<b>{reward} ⭐</b> каждому."
+            f"Разница <b>{diff}</b> · +<b>{reward} ⭐</b> каждому."
         )
     else:
         body_a = (
@@ -319,12 +319,14 @@ async def cb_number_range(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
 
     base = NUMBER_REWARDS[range_max]
     near = base // 2
+    near_diff = NUMBER_NEAR_DIFFS[range_max]
     result = await send_to(
         ctx.bot,
         partner,
         f"🔢 <b>Собеседник предлагает сыграть в Числа</b>\n"
         f"Диапазон: <b>1–{range_max}</b> · раундов: <b>{NUMBER_ROUNDS}</b>\n"
-        f"Точное совпадение: <b>{base} ⭐</b> · разница 1: <b>{near} ⭐</b>",
+        f"Точное совпадение: <b>{base} ⭐</b> · "
+        f"разница до {near_diff}: <b>{near} ⭐</b>",
         K.number_invite_keyboard(int(game["id"])),
         ctx.pack,
     )
