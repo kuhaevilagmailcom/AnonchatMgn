@@ -232,6 +232,19 @@ class Database:
         )
         if added or "nick_key" in cols:
             await self._backfill_nick_keys()
+        # Старые версии хранили административные районы. Теперь пользователю доступны
+        # только два берега; известные значения переносим, неоднозначный Орджоникидзевский
+        # сбрасываем, чтобы человек выбрал берег заново.
+        await self.db.execute(
+            """UPDATE users
+               SET district = CASE
+                   WHEN district = 'Правобережный' THEN 'Правый берег'
+                   WHEN district = 'Левобережный' THEN 'Левый берег'
+                   WHEN district = 'Орджоникидзевский' THEN ''
+                   ELSE district
+               END
+               WHERE district IN ('Правобережный', 'Левобережный', 'Орджоникидзевский')"""
+        )
         if support_added:
             await self.db.execute(
                 """UPDATE users SET support_stars = (
