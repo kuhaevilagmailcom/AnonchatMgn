@@ -212,8 +212,8 @@ async def _send_question(ctx: Ctx, row: Any) -> None:
 
 
 def _final_text(matches: int, total: int) -> str:
-    reward = "\nКаждому начислено <b>25 ⭐</b>." if matches == total else ""
-    return f"<b>Битва окончена</b>\nСовпадений: <b>{matches}/{total}</b>.{reward}"
+    reward = "\n🎁 Каждому начислено <b>25 ⭐</b>." if matches == total else ""
+    return f"⚔️ <b>Битва окончена</b>\nСовпадений: <b>{matches}/{total}</b>.{reward}"
 
 
 async def _send_round_result(ctx: Ctx, row: Any) -> None:
@@ -308,7 +308,7 @@ async def cb_numbers(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
                 )
             return
         await ctx.reply(
-            "Раунд завершён. Можно перейти дальше.",
+            "🔢 Раунд завершён. Можно перейти дальше.",
             K.number_next_keyboard(game_id, int(existing["question_index"])),
         )
         return
@@ -366,7 +366,7 @@ async def cb_number_range(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         await ctx.reply("Не получилось отправить предложение.")
         return
     await ctx.ack()
-    await ctx.reply("Предложение отправлено.")
+    await ctx.reply("🔢 Предложение отправлено.")
 
 
 @router.callback_query(F.data.startswith("game:num:yes:"))
@@ -550,7 +550,7 @@ async def cb_battle(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
             )
             return
         await ctx.reply(
-            "Раунд завершён. Можно перейти к следующему вопросу.",
+            "⚔️ Раунд завершён. Можно перейти к следующему вопросу.",
             K.battle_next_keyboard(int(existing["id"]), int(existing["question_index"])),
         )
         return
@@ -587,7 +587,7 @@ async def cb_battle_length(event: CallbackQuery, ctx: Ctx, db: Database) -> None
         await db.cancel_battle(int(game["id"]))
         await ctx.reply("Не получилось отправить предложение.")
         return
-    await ctx.reply("Предложение отправлено.")
+    await ctx.reply("⚔️ Предложение отправлено.")
 
 
 @router.callback_query(F.data.startswith("game:yes:"))
