@@ -129,7 +129,7 @@ async def relay_edited_message(
         return
 
     if delivery is DeliveryResult.UNAVAILABLE:
-        _RELAY_COPIES.pop((ctx.user_id, message.message_id), None)
+        relay_state.forget_source(ctx.user_id, message.message_id)
         return
 
     # Если Telegram не дал отредактировать конкретный тип, отправляем актуальную
