@@ -1,6 +1,7 @@
 """Правила игры «Числа»."""
 
 NUMBER_ROUNDS = 3
+NUMBER_DAILY_REWARD_LIMIT = 300
 NUMBER_REWARDS: dict[int, int] = {
     10: 25,
     100: 50,
