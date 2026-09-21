@@ -7,6 +7,7 @@ import random
 from typing import Any
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
@@ -16,6 +17,7 @@ from ..actions import Ctx, DeliveryResult, send_to
 from ..battle_questions import BattleQuestion, get_question, questions
 from ..db import Database
 from ..matching import Matchmaker
+from ..number_game import NUMBER_REWARDS, NUMBER_ROUNDS, number_reward
 
 router = Router(name="games")
 
@@ -38,9 +40,25 @@ def _total(row: Any) -> int:
     return int(row["total_questions"])
 
 
+def _game_type(row: Any) -> str:
+    try:
+        return str(row["game_type"] or "battle")
+    except (KeyError, IndexError):
+        return "battle"
+
+
+def _number_answered(row: Any, user_id: int) -> bool:
+    column = "answer_a" if int(row["user_a"]) == user_id else "answer_b"
+    return row[column] is not None
+
+
 async def _require_current_game(ctx: Ctx, db: Database, game_id: int) -> Any | None:
     row = await db.get_battle(game_id)
-    if row is None or ctx.user_id not in set(_players(row)):
+    if (
+        row is None
+        or _game_type(row) != "battle"
+        or ctx.user_id not in set(_players(row))
+    ):
         await ctx.ack("Игра не найдена", alert=True)
         return None
     if not _current_pair(ctx.mm, row):
@@ -48,6 +66,101 @@ async def _require_current_game(ctx: Ctx, db: Database, game_id: int) -> Any | N
         await ctx.ack("Диалог уже завершён", alert=True)
         return None
     return row
+
+
+async def _require_current_number(ctx: Ctx, db: Database, game_id: int) -> Any | None:
+    row = await db.get_battle(game_id)
+    if (
+        row is None
+        or _game_type(row) != "numbers"
+        or ctx.user_id not in set(_players(row))
+    ):
+        await ctx.ack("Игра не найдена", alert=True)
+        return None
+    if not _current_pair(ctx.mm, row):
+        await db.cancel_battle(game_id)
+        await ctx.ack("Диалог уже завершён", alert=True)
+        return None
+    return row
+
+
+def _number_prompt(row: Any) -> str:
+    round_index = int(row["question_index"])
+    range_max = int(row["range_max"])
+    return (
+        f"🔢 <b>Числа · раунд {round_index + 1}/{NUMBER_ROUNDS}</b>\n\n"
+        f"Выбери число от <b>1</b> до <b>{range_max}</b>.\n"
+        "Собеседник увидит его только после своего выбора."
+    )
+
+
+async def _send_number_round(ctx: Ctx, row: Any) -> None:
+    body = _number_prompt(row)
+    game_id = int(row["id"])
+    round_index = int(row["question_index"])
+    for user_id in _players(row):
+        await send_to(
+            ctx.bot,
+            user_id,
+            body,
+            K.number_input_keyboard(game_id, round_index),
+            ctx.pack,
+        )
+
+
+async def _send_number_result(ctx: Ctx, row: Any) -> None:
+    user_a, user_b = _players(row)
+    answer_a = int(row["answer_a"])
+    answer_b = int(row["answer_b"])
+    diff = abs(answer_a - answer_b)
+    reward = number_reward(int(row["range_max"]), answer_a, answer_b)
+
+    if diff == 0:
+        body_a = body_b = (
+            f"🎯 <b>Точное совпадение!</b>\n"
+            f"Вы оба выбрали <b>{answer_a}</b>.\n"
+            f"+<b>{reward} ⭐</b> каждому."
+        )
+    elif diff == 1:
+        body_a = (
+            f"🔥 <b>Почти совпало!</b>\n"
+            f"Ты: <b>{answer_a}</b> · собеседник: <b>{answer_b}</b>\n"
+            f"Разница всего <b>1</b> · +<b>{reward} ⭐</b> каждому."
+        )
+        body_b = (
+            f"🔥 <b>Почти совпало!</b>\n"
+            f"Ты: <b>{answer_b}</b> · собеседник: <b>{answer_a}</b>\n"
+            f"Разница всего <b>1</b> · +<b>{reward} ⭐</b> каждому."
+        )
+    else:
+        body_a = (
+            f"🔢 <b>Не совпало</b>\n"
+            f"Ты: <b>{answer_a}</b> · собеседник: <b>{answer_b}</b>\n"
+            "В этом раунде без награды."
+        )
+        body_b = (
+            f"🔢 <b>Не совпало</b>\n"
+            f"Ты: <b>{answer_b}</b> · собеседник: <b>{answer_a}</b>\n"
+            "В этом раунде без награды."
+        )
+
+    if str(row["status"]) == "finished":
+        total_reward = int(row["reward_total"])
+        exact = int(row["matches"])
+        final = (
+            f"🔢 <b>Игра окончена</b>\n"
+            f"Сыграно раундов: <b>{NUMBER_ROUNDS}</b>\n"
+            f"Точных совпадений: <b>{exact}/{NUMBER_ROUNDS}</b>\n"
+            f"Получено за игру: <b>{total_reward} ⭐</b> каждому."
+        )
+        markup = K.number_end_keyboard()
+        body_a = f"{body_a}\n\n{final}"
+        body_b = f"{body_b}\n\n{final}"
+    else:
+        markup = K.number_next_keyboard(int(row["id"]), int(row["question_index"]))
+
+    await send_to(ctx.bot, user_a, body_a, markup, ctx.pack)
+    await send_to(ctx.bot, user_b, body_b, markup, ctx.pack)
 
 
 async def _send_question(ctx: Ctx, row: Any) -> None:
