@@ -218,7 +218,7 @@ async def game_watch_text(db: Database) -> str:
         title = "Числа" if game_type == "numbers" else "Битва мнений"
         unit = "Раунд" if game_type == "numbers" else "Вопрос"
         lines.extend([
-            f"<b>{title} #{row['id']} · {status_labels.get(status, status)}</b>",
+            f"<b>Игра #{row['id']} · {title} · {status_labels.get(status, status)}</b>",
             f"{unit}: <b>{current}/{total_questions}</b> · совпадений: <b>{row['matches']}</b>",
             f"A: {_game_user(row, 'a')}",
             f"B: {_game_user(row, 'b')}",
