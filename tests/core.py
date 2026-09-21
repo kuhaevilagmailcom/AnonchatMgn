@@ -23,7 +23,10 @@ def test_config_defaults(monkeypatch=None) -> None:
 
     saved = {
         k: os.environ.get(k)
-        for k in ("BOT_TOKEN", "CITY_NAME", "ADMIN_IDS", "TELEGRAM_ADMIN_ID", "AUTO_MUTE_REPORTS")
+        for k in (
+            "BOT_TOKEN", "CITY_NAME", "ADMIN_IDS", "TELEGRAM_ADMIN_ID",
+            "AUTO_MUTE_REPORTS", "XP_GOOD_RATING", "RECENT_PARTNER_COOLDOWN_MINUTES",
+        )
     }
     os.environ["BOT_TOKEN"] = "12:TEST"
     os.environ.pop("CITY_NAME", None)
@@ -38,6 +41,8 @@ def test_config_defaults(monkeypatch=None) -> None:
         assert cfg.report_context_retention_days == 7
         assert cfg.emoji_pack_url.startswith("https://t.me/addemoji/")
         assert cfg.max_message_len == 3000
+        assert cfg.xp_good_rating == 10
+        assert cfg.recent_partner_cooldown_minutes == 30
 
         # id администраторов не зашиваются в публичный код
         os.environ["ADMIN_IDS"] = ""
@@ -121,10 +126,14 @@ def test_matchmaker_snapshot_restore() -> None:
     mm.connect(1)
     mm.connect(2)
     mm.count_message(1)
+    mm.record_text(1, "секретный текст не должен попасть в SQLite")
+    snapshot = mm.snapshot()
+    assert snapshot["pairs"] and "history" not in snapshot["pairs"][0]
     restored = Matchmaker()
-    restored.restore(mm.snapshot())
+    restored.restore(snapshot)
     assert restored.partner(1) == 2
     assert restored.dialog_stats(1)["counts"] == {1: 1}
+    assert restored.dialog_stats(1)["history"] == []
 
     queued = Matchmaker()
     queued.connect(3, district="Левобережный", same_district=True)
@@ -699,7 +708,7 @@ def test_referral_daily_limit_and_mass_cleanup() -> None:
             assert result["referrals_removed"] == 1_033
             assert result["users_deleted"] == 1_000
             assert result["protected_users"] == 2
-            assert int((await db.get_user(referrer))["xp"]) == 0
+            assert int((await db.get_user(referrer))["xp"]) == 948_349
             assert await db.referral_stats(referrer) == (0, 0)
             assert await db.get_user(ordinary_id) is None
             assert await db.number_pair_reward_available(ordinary_id, referrer) is True
@@ -711,6 +720,24 @@ def test_referral_daily_limit_and_mass_cleanup() -> None:
                 ("cleanup-payment",),
             )
             assert payment is not None and int(payment["stars"]) == 1
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
+def test_recent_partner_cooldown_and_empty_dialog_counter() -> None:
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "recent-pairs.db"
+        db = await Database(path).start()
+        try:
+            await db.ensure_user(801, "u801", "U801")
+            await db.ensure_user(802, "u802", "U802")
+            await db.log_dialog(801, 802, 0, 0, 1, 801, count_dialog=False)
+            assert int((await db.get_user(801))["dialogs"]) == 0
+            assert int((await db.get_user(802))["dialogs"]) == 0
+            assert 802 in await db.excluded_partners(801, recent_seconds=1800)
+            assert 802 not in await db.excluded_partners(801, recent_seconds=0)
         finally:
             await db.close()
 
