@@ -724,6 +724,30 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
           and "⭐" not in session.last_to(A),
           "в найденном диалоге не раскрываются ник, очки и id")
 
+    # Фото отправляется напрямую по file_id и переживает кратковременный сбой Telegram.
+    session.clear()
+    session.fail_once["sendPhoto"] = "temp"
+    await payload(
+        A,
+        photo=[{"file_id": "chat-photo", "file_unique_id": "chat-photo-u", "width": 1280, "height": 720}],
+        caption="фото <3",
+    )
+    check(any(item["method"] == "sendPhoto" for item in session.to(B)),
+          "фото доходит после временной ошибки Telegram")
+    check(mm.partner(A) == B, "временная ошибка фото не разрывает диалог")
+
+    # Некоторые Telegram-клиенты присылают картинку как image/document.
+    session.clear()
+    await payload(
+        A,
+        document={
+            "file_id": "image-doc", "file_unique_id": "image-doc-u",
+            "file_name": "photo.jpg", "mime_type": "image/jpeg",
+        },
+    )
+    check(any(item["method"] == "sendDocument" for item in session.to(B)),
+          "картинка, отправленная как файл, тоже доходит собеседнику")
+
     session.clear()
     await send(A, "/game")
     check("Битва мнений" in str(session.to(A)[-1].get("reply_markup")),

@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -41,6 +42,7 @@ from .matching import Matchmaker
 from .pack import EmojiPack
 
 ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "menu"
+log = logging.getLogger(__name__)
 
 # Только память процесса: никаких записей message_id/онлайна в SQLite.
 # Нужны для замены старого меню и обновления счётчика без мусора в БД.
@@ -360,21 +362,57 @@ async def send_to(
 
 
 async def send_copy_to(bot: Bot, message: Message, chat_id: int) -> DeliveryResult:
+    """Надёжно пересылает пользовательское сообщение.
+
+    Фото отправляем напрямую по Telegram file_id: это рекомендованный Bot API путь
+    и он не зависит от внутренней реализации aiogram Message.send_copy().
+    Временные Telegram/API ошибки повторяем до трёх раз вместо мгновенного выхода.
+    """
+    action = "upload_photo" if message.photo else "typing"
     try:
-        await bot.send_chat_action(chat_id, "typing")
+        await bot.send_chat_action(chat_id, action)
     except TelegramAPIError:
         pass
-    for _ in range(3):
+
+    for attempt in range(3):
         try:
-            await message.send_copy(chat_id=chat_id)
+            if message.photo:
+                await bot.send_photo(
+                    chat_id=chat_id,
+                    photo=message.photo[-1].file_id,
+                    caption=message.caption,
+                    parse_mode=None,
+                    caption_entities=message.caption_entities or None,
+                    has_spoiler=bool(getattr(message, "has_media_spoiler", False)),
+                )
+            else:
+                await message.send_copy(chat_id=chat_id)
             return DeliveryResult.DELIVERED
         except TelegramRetryAfter as exc:
             await asyncio.sleep(max(0.0, float(exc.retry_after)))
         except TelegramForbiddenError:
             return DeliveryResult.UNAVAILABLE
         except TelegramBadRequest as exc:
-            return DeliveryResult.UNAVAILABLE if "chat not found" in str(exc).lower() else DeliveryResult.TEMP_ERROR
-        except TelegramAPIError:
+            error = str(exc).lower()
+            log.warning(
+                "relay bad request: type=%s chat_id=%s error=%s",
+                message.content_type, chat_id, exc,
+            )
+            if "chat not found" in error or "user is deactivated" in error:
+                return DeliveryResult.UNAVAILABLE
+            # Повторяем: часть ошибок Telegram с медиа бывает кратковременной.
+            if attempt < 2:
+                await asyncio.sleep(0.25 * (attempt + 1))
+                continue
+            return DeliveryResult.TEMP_ERROR
+        except TelegramAPIError as exc:
+            log.warning(
+                "relay api error: type=%s chat_id=%s attempt=%s error=%s",
+                message.content_type, chat_id, attempt + 1, exc,
+            )
+            if attempt < 2:
+                await asyncio.sleep(0.25 * (attempt + 1))
+                continue
             return DeliveryResult.TEMP_ERROR
     return DeliveryResult.TEMP_ERROR
 
