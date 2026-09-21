@@ -1216,7 +1216,7 @@ class Database:
             await cleanup.execute("PRAGMA busy_timeout=10000")
             await cleanup.execute("BEGIN IMMEDIATE")
             async with cleanup.execute(
-                """SELECT r.invitee_id, r.xp_awarded, u.user_id AS existing_user_id,
+                """SELECT r.invitee_id, r.xp_awarded, r.created_at, u.user_id AS existing_user_id,
                           EXISTS(SELECT 1 FROM payments p WHERE p.user_id=r.invitee_id) AS paid,
                           EXISTS(SELECT 1 FROM admins a WHERE a.user_id=r.invitee_id) AS admin,
                           COALESCE(u.support_stars, 0) AS support_stars
@@ -1238,7 +1238,22 @@ class Database:
                 and int(row["support_stars"] or 0) <= 0
             ]
 
-            await cleanup.execute("UPDATE users SET xp=0 WHERE user_id=?", (referrer_id,))
+            referral_xp = sum(int(row["xp_awarded"] or 0) for row in rows)
+            await cleanup.execute(
+                "UPDATE users SET xp=MAX(0, xp-?) WHERE user_id=?",
+                (referral_xp, referrer_id),
+            )
+            by_day: dict[int, int] = {}
+            for row in rows:
+                day = referral_day_start(int(row["created_at"] or 0) or now())
+                by_day[day] = by_day.get(day, 0) + int(row["xp_awarded"] or 0)
+            for day, amount in by_day.items():
+                await cleanup.execute(
+                    """UPDATE daily_activity
+                          SET xp_earned=MAX(0, xp_earned-?)
+                        WHERE user_id=? AND day_start=?""",
+                    (amount, referrer_id, day),
+                )
             await cleanup.execute("DELETE FROM referrals WHERE referrer_id=?", (referrer_id,))
 
             # Два поля в одном DELETE дают по два параметра на id; размер 400 ниже
