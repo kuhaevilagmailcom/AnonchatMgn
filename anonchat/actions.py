@@ -369,7 +369,8 @@ async def send_copy_to_message(
     Фото отправляем напрямую по Telegram file_id. Остальные типы копируем средствами
     Telegram Bot API без forward, чтобы не раскрывать отправителя.
     """
-    action = "upload_photo" if message.photo else "typing"
+    photo = getattr(message, "photo", None)
+    action = "upload_photo" if photo else "typing"
     try:
         await bot.send_chat_action(chat_id, action)
     except TelegramAPIError:
@@ -377,10 +378,10 @@ async def send_copy_to_message(
 
     for attempt in range(3):
         try:
-            if message.photo:
+            if photo:
                 sent = await bot.send_photo(
                     chat_id=chat_id,
-                    photo=message.photo[-1].file_id,
+                    photo=photo[-1].file_id,
                     caption=message.caption,
                     parse_mode=None,
                     caption_entities=message.caption_entities or None,
