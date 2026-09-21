@@ -455,7 +455,7 @@ def test_battle_question_files() -> None:
     from anonchat.battle_questions import questions
 
     loaded = questions()
-    assert len(loaded) == 600 and set(loaded) == set(range(1, 601))
+    assert len(loaded) == 630 and set(loaded) == set(range(1, 631))
     assert all(item.text and item.first and item.second for item in loaded.values())
 
 
