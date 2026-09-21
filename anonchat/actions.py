@@ -213,6 +213,8 @@ class Ctx:
         return {
             "district": (me["district"] if me else "") or "",
             "same_district": bool(me["same_district"]) if me else False,
+            "gender": (me["gender"] if me else "") or "",
+            "looking_for": (me["looking_for"] if me else "") or "",
         }
 
     async def ensure_nick(self) -> str:
@@ -493,6 +495,7 @@ async def show_profile(ctx: Ctx) -> None:
         f"Диалогов: <b>{me['dialogs']}</b>",
         f"👍 {me['good_ratings']}   👎 {me['bad_ratings']}",
         f"Возраст: <b>{me['age']}</b>",
+        f"Пол: <b>{'👨 М' if me['gender'] == 'm' else '👩 Ж' if me['gender'] == 'f' else 'не указан'}</b>",
         f"Берег: <b>{texts.esc(me['district']) if me['district'] else 'не указан'}</b>",
     ]
     if nicklib.is_supporter(me["support_stars"]):

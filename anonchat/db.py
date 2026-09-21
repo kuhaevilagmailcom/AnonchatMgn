@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS users (
     reports_received INTEGER NOT NULL DEFAULT 0,
     district         TEXT    NOT NULL DEFAULT '',
     gender           TEXT    NOT NULL DEFAULT '',
+    looking_for      TEXT    NOT NULL DEFAULT '',
     same_district    INTEGER NOT NULL DEFAULT 0,
     about            TEXT    NOT NULL DEFAULT '',
     banned           INTEGER NOT NULL DEFAULT 0,
@@ -147,6 +148,8 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("nickname", "ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT ''"),
     ("nick_key", "ALTER TABLE users ADD COLUMN nick_key TEXT NOT NULL DEFAULT ''"),
     ("age", "ALTER TABLE users ADD COLUMN age INTEGER NOT NULL DEFAULT 0"),
+    ("gender", "ALTER TABLE users ADD COLUMN gender TEXT NOT NULL DEFAULT ''"),
+    ("looking_for", "ALTER TABLE users ADD COLUMN looking_for TEXT NOT NULL DEFAULT ''"),
     ("premium_until", "ALTER TABLE users ADD COLUMN premium_until INTEGER NOT NULL DEFAULT 0"),
     ("support_stars", "ALTER TABLE users ADD COLUMN support_stars INTEGER NOT NULL DEFAULT 0"),
     ("profile_deleted", "ALTER TABLE users ADD COLUMN profile_deleted INTEGER NOT NULL DEFAULT 0"),
@@ -229,6 +232,10 @@ class Database:
         await self.db.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_dialog_once "
             "ON reports(reporter_id, target_id, dialog_key) WHERE dialog_key <> ''"
+        )
+        # Историю игр не храним: после обновления удаляем старые завершённые записи.
+        await self.db.execute(
+            "DELETE FROM battle_games WHERE status NOT IN ('invited', 'active', 'round_done')"
         )
         if added or "nick_key" in cols:
             await self._backfill_nick_keys()
@@ -406,7 +413,9 @@ class Database:
         return await self._fetchone("SELECT * FROM battle_games WHERE id = ?", (game_id,))
 
     async def list_battles(self, history: bool = False, limit: int = 8) -> tuple[list[aiosqlite.Row], int]:
-        statuses = ("finished", "cancelled", "declined") if history else ("invited", "active", "round_done")
+        if history:
+            return [], 0
+        statuses = ("invited", "active", "round_done")
         placeholders = ",".join("?" for _ in statuses)
         total_row = await self._fetchone(
             f"SELECT COUNT(*) AS c FROM battle_games WHERE status IN ({placeholders})", statuses
@@ -464,8 +473,8 @@ class Database:
         if row is None or int(row["user_b"]) != user_id:
             return None
         cur = await self.db.execute(
-            "UPDATE battle_games SET status='declined', updated_at=? WHERE id=? AND status='invited'",
-            (now(), game_id),
+            "DELETE FROM battle_games WHERE id=? AND status='invited'",
+            (game_id,),
         )
         await self.db.commit()
         return row if cur.rowcount else None
@@ -507,6 +516,8 @@ class Database:
                 "UPDATE users SET xp=xp+25 WHERE user_id IN (?, ?)",
                 (int(game["user_a"]), int(game["user_b"])),
             )
+        if resolved.rowcount and game is not None and str(game["status"]) == "finished":
+            await self.db.execute("DELETE FROM battle_games WHERE id = ?", (game_id,))
         await self.db.commit()
         return ("resolved" if resolved.rowcount else "waiting"), game
 
@@ -528,9 +539,8 @@ class Database:
 
     async def cancel_battle(self, game_id: int) -> bool:
         cur = await self.db.execute(
-            """UPDATE battle_games SET status='cancelled', updated_at=?
-               WHERE id=? AND status IN ('invited', 'active', 'round_done')""",
-            (now(), game_id),
+            "DELETE FROM battle_games WHERE id=? AND status IN ('invited', 'active', 'round_done')",
+            (game_id,),
         )
         await self.db.commit()
         return cur.rowcount > 0
@@ -541,10 +551,10 @@ class Database:
             return 0
         placeholders = ",".join("?" for _ in ids)
         cur = await self.db.execute(
-            f"""UPDATE battle_games SET status='cancelled', updated_at=?
+            f"""DELETE FROM battle_games
                  WHERE status IN ('invited', 'active', 'round_done')
                    AND (user_a IN ({placeholders}) OR user_b IN ({placeholders}))""",
-            (now(), *ids, *ids),
+            (*ids, *ids),
         )
         await self.db.commit()
         return cur.rowcount
@@ -565,7 +575,11 @@ class Database:
         return int(row["user_id"]) if row else None
 
     async def set_profile(self, user_id: int, **fields: Any) -> None:
-        allowed = {"age", "district", "same_district", "nickname"}
+        allowed = {"age", "district", "same_district", "nickname", "gender", "looking_for"}
+        if "gender" in fields:
+            fields["gender"] = fields["gender"] if fields["gender"] in {"m", "f"} else ""
+        if "looking_for" in fields:
+            fields["looking_for"] = fields["looking_for"] if fields["looking_for"] in {"m", "f"} else ""
         if "nickname" in fields:
             fields["nick_key"] = str(fields["nickname"] or "").strip().casefold()
         keys = [k for k in fields if k in allowed]
@@ -1166,7 +1180,7 @@ class Database:
             await self.db.execute(
                 """UPDATE users SET username=NULL, first_name='Удалённый пользователь', nickname='',
                    nick_key='', age=0, xp=0, messages=0, dialogs=0, good_ratings=0,
-                   bad_ratings=0, reports_sent=0, district='', gender='', same_district=0,
+                   bad_ratings=0, reports_sent=0, district='', gender='', looking_for='', same_district=0,
                    about='', last_seen=0, premium_until=0, support_stars=0,
                    profile_deleted=1 WHERE user_id=?""",
                 (user_id,),

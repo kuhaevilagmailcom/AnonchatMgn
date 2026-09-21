@@ -151,13 +151,40 @@ def district_keyboard() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def settings_keyboard(same_district: bool, district: str, nickname: str) -> InlineKeyboardMarkup:
+def gender_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
+    _button(b, "👨 М", callback_data="cfg:gender:m")
+    _button(b, "👩 Ж", callback_data="cfg:gender:f")
+    _button(b, "Не указывать", callback_data="cfg:gender:none", icon="check")
+    _button(b, "Назад", callback_data=CB_SETTINGS, icon="home")
+    b.adjust(2, 1, 1)
+    return b.as_markup()
+
+
+def looking_for_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "👨 Ищу М", callback_data="cfg:looking:m")
+    _button(b, "👩 Ищу Д", callback_data="cfg:looking:f")
+    _button(b, "🤷 Без разницы", callback_data="cfg:looking:any")
+    _button(b, "Назад", callback_data=CB_SETTINGS, icon="home")
+    b.adjust(2, 1, 1)
+    return b.as_markup()
+
+
+def settings_keyboard(
+    same_district: bool, district: str, nickname: str,
+    gender: str = "", looking_for: str = "",
+) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    gender_label = "👨 М" if gender == "m" else "👩 Ж" if gender == "f" else "не выбран"
+    looking_label = "👨 М" if looking_for == "m" else "👩 Д" if looking_for == "f" else "🤷 Без разницы"
     _button(b, f"Ник: {nickname}", callback_data=CB_NICK, icon="profile")
+    _button(b, f"Пол: {gender_label}", callback_data="cfg:gender:ask")
+    _button(b, f"Ищу: {looking_label}", callback_data="cfg:looking:ask")
     _button(b, f"Берег: {district or 'не выбран'}", callback_data="cfg:district:ask", icon="geo")
     _button(
         b,
-        "Ищу: мой берег" if same_district else "Ищу: весь город",
+        "По берегу: только свой" if same_district else "По берегу: весь город",
         callback_data="cfg:same:toggle",
         icon="view",
     )
@@ -167,7 +194,7 @@ def settings_keyboard(same_district: bool, district: str, nickname: str) -> Inli
     _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
     _button(b, "Удалить профиль", callback_data="cfg:forget:ask", icon="delete", style="danger")
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
-    b.adjust(1, 1, 1, 1, 1, 1, 1, 1, 1)
+    b.adjust(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
     return b.as_markup()
 
 
@@ -212,9 +239,9 @@ def battle_next_keyboard(game_id: int, question_index: int) -> InlineKeyboardMar
     return b.as_markup()
 
 
-def battle_end_keyboard(game_id: int) -> InlineKeyboardMarkup:
+def battle_end_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    _button(b, "Сыграть ещё", callback_data=f"game:again:{game_id}", icon="refresh", style="success")
+    _button(b, "Сыграть ещё", callback_data="game:again", icon="refresh", style="success")
     _button(b, "Вернуться в чат", callback_data="game:return", icon="home")
     b.adjust(1, 1)
     return b.as_markup()
@@ -460,17 +487,9 @@ def purge_referrals_keyboard(user_id: int) -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def game_watch_keyboard(history: bool = False) -> InlineKeyboardMarkup:
+def game_watch_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    _button(
-        b, "Обновить", callback_data=f"adm:games:{'history' if history else 'active'}",
-        icon="refresh", style="primary",
-    )
-    _button(
-        b, "Активные игры" if history else "История игр",
-        callback_data=f"adm:games:{'active' if history else 'history'}",
-        icon="stats",
-    )
+    _button(b, "Обновить", callback_data="adm:games:active", icon="refresh", style="primary")
     _button(b, "В панель", callback_data=CB_PANEL_BACK, icon="home")
-    b.adjust(2, 1)
+    b.adjust(1, 1)
     return b.as_markup()

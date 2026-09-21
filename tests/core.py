@@ -177,6 +177,18 @@ def test_excluded_users_do_not_match() -> None:
     assert mm.connect(3) == ("paired", 1)
 
 
+def test_gender_filter() -> None:
+    mm = Matchmaker()
+    assert mm.connect(1, gender="m", looking_for="f") == ("queued", 1)
+    assert mm.connect(2, gender="m", looking_for="m") == ("queued", 2)
+    assert mm.connect(3, gender="f", looking_for="m") == ("paired", 1)
+    assert mm.status(2) == "queued"
+
+    restored = Matchmaker()
+    restored.restore(mm.snapshot())
+    assert restored.status(2) == "queued"
+
+
 # --------------------------------------------------------------------------------- database
 def test_database() -> None:
     holder: dict[str, object] = {}
@@ -339,8 +351,9 @@ def test_battle_game_persists_and_synchronizes() -> None:
             else:
                 assert game["status"] == "finished" and int(game["matches"]) == 5
 
+        assert await db.get_battle(game_id) is None, "завершённая игра удаляется из БД"
         history, history_total = await db.list_battles(history=True)
-        assert history_total == 1 and int(history[0]["id"]) == game_id
+        assert history == [] and history_total == 0
 
         assert int((await db.get_user(101))["xp"]) == 25
         assert int((await db.get_user(202))["xp"]) == 25
@@ -360,7 +373,8 @@ def test_battle_game_persists_and_synchronizes() -> None:
         assert int(game["reward_awarded"]) == 1
         assert int((await db.get_user(101))["xp"]) == 50
         assert int((await db.get_user(202))["xp"]) == 50
-        assert (await db.answer_battle(perfect_id, 101, 9, 0))[0] == "closed"
+        assert await db.get_battle(perfect_id) is None
+        assert (await db.answer_battle(perfect_id, 101, 9, 0))[0] == "missing"
         assert int((await db.get_user(101))["xp"]) == 50, "награда выдаётся только один раз"
         await db.close()
 
@@ -478,17 +492,17 @@ def test_keyboard_styles_and_icons() -> None:
         K.menu_keyboard("free"), K.menu_keyboard("queued", 3), K.menu_keyboard("paired"),
         K.menu_keyboard("free", admin=True), K.continue_keyboard(), K.age_keyboard(),
         K.chat_keyboard(), K.profile_keyboard("https://t.me/test_bot?start=ref_1"),
-        K.district_keyboard(),
-        K.settings_keyboard(True, "Правобережный", "Лена О"),
+        K.district_keyboard(), K.gender_keyboard(), K.looking_for_keyboard(),
+        K.settings_keyboard(True, "Правый берег", "Лена О", "m", "f"),
         K.games_keyboard(), K.battle_invite_keyboard(1),
         K.battle_answer_keyboard(1, 0, "ночь", "утро"),
-        K.battle_next_keyboard(1, 0), K.battle_end_keyboard(1),
+        K.battle_next_keyboard(1, 0), K.battle_end_keyboard(),
         K.report_keyboard(), K.rating_keyboard(), K.confirm_stop_keyboard(),
         K.confirm_forget_keyboard(), K.confirm_blocks_keyboard(),
         K.back_menu_keyboard(), K.skip_cancel_keyboard(),
         K.admin_report_keyboard(1),
         K.restricted_list_keyboard("ban", [10, 11], 0, 2),
-        K.game_watch_keyboard(), K.game_watch_keyboard(history=True),
+        K.game_watch_keyboard(),
         K.admin_panel_keyboard(3, {"stats", "reports", "queue", "users", "broadcast", "mute", "ban", "points"}, True),
         K.users_page_keyboard(0, 30), K.panel_back_keyboard(),
         K.panel_cancel_keyboard(),
@@ -508,14 +522,16 @@ def test_keyboard_styles_and_icons() -> None:
                     icons.add(icon)
     assert total >= 40, f"клавиатур стало подозрительно мало: {total} кнопок"
     assert len(icons) >= 12, f"иконки должны брать из пака, а не из одного места: {len(icons)}"
-    # ни одна подпись не содержит юникодный эмодзи: маркер — иконка
+    # Эмодзи в подписях разрешены только там, где это часть выбора пола/поиска.
+    emoji_labels = {"👨 М", "👩 Ж", "👨 Ищу М", "👩 Ищу Д", "🤷 Без разницы"}
     for markup in markups:
         for row in markup.inline_keyboard:
             for btn in row:
-                if btn.text != "👍 Норм" and "⭐" not in btn.text:
-                    assert all(
-                        ord(c) < 0x2500 or c in "\ufe0f\ufe0e\u200d" for c in btn.text
-                    ), f"в подписи кнопки остался юникодный эмодзи: {btn.text!r}"
+                if btn.text in emoji_labels or btn.text == "👍 Норм" or "⭐" in btn.text:
+                    continue
+                assert all(
+                    ord(c) < 0x2500 or c in "\ufe0f\ufe0e\u200d" for c in btn.text
+                ), f"в подписи кнопки остался неожиданный юникодный эмодзи: {btn.text!r}"
 
     def texts_of(markup):
         return [btn.text for row in markup.inline_keyboard for btn in row]
@@ -791,6 +807,7 @@ def test_db_nickname_and_kv() -> None:
         try:
             assert await db.get_user(7) is not None, "старые данные не потерялись"
             assert (await db.get_user(7))["nickname"] == "", "колонка nickname добавлена на лету"
+            assert (await db.get_user(7))["looking_for"] == "", "предпочтение пола мигрируется без потери базы"
 
             await db.set_profile(7, nickname="Старожил")
             assert (await db.get_user(7))["nickname"] == "Старожил"

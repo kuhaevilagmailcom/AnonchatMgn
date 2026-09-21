@@ -16,12 +16,19 @@ class Candidate:
     user_id: int
     district: str = ""
     same_district: bool = False
+    gender: str = ""
+    looking_for: str = ""
     excluded: set[int] = field(default_factory=set)
     joined_at: float = field(default_factory=time.time)
 
-    def refresh(self, district: str, same_district: bool, excluded: set[int] | None = None) -> None:
+    def refresh(
+        self, district: str, same_district: bool, gender: str = "",
+        looking_for: str = "", excluded: set[int] | None = None,
+    ) -> None:
         self.district = district or ""
         self.same_district = bool(same_district)
+        self.gender = gender if gender in {"m", "f"} else ""
+        self.looking_for = looking_for if looking_for in {"m", "f"} else ""
         if excluded is not None:
             self.excluded = set(excluded)
 
@@ -47,8 +54,12 @@ class Pair:
 
 
 def compatible(x: Candidate, y: Candidate) -> bool:
-    """Оба хотят «только свой район» и оба его указали — тогда районы должны совпасть."""
+    """Проверяет блокировки, предпочтение пола и фильтр по берегу целиком в памяти."""
     if y.user_id in x.excluded or x.user_id in y.excluded:
+        return False
+    if x.looking_for and y.gender != x.looking_for:
+        return False
+    if y.looking_for and x.gender != y.looking_for:
         return False
     if x.same_district and y.same_district and x.district and y.district:
         return x.district == y.district
@@ -115,18 +126,27 @@ class Matchmaker:
                 return other.user_id
         return None
 
-    def connect(self, user_id: int, *, district: str = "", same_district: bool = False,
-                excluded: set[int] | None = None):
+    def connect(
+        self, user_id: int, *, district: str = "", same_district: bool = False,
+        gender: str = "", looking_for: str = "", excluded: set[int] | None = None,
+    ):
         """Возвращает ('paired', partner_id) | ('queued', position) | ('full', None)."""
         if user_id in self._pairs:
             return "paired", self.partner(user_id)
         if user_id in self._queue:
-            self._queue[user_id].refresh(district, same_district, excluded)
+            self._queue[user_id].refresh(district, same_district, gender, looking_for, excluded)
             return "queued", self.position(user_id)
         if len(self._queue) >= self.queue_limit:
             return "full", None
 
-        me = Candidate(user_id, district, same_district, set(excluded or ()))
+        me = Candidate(
+            user_id=user_id,
+            district=district,
+            same_district=same_district,
+            gender=gender if gender in {"m", "f"} else "",
+            looking_for=looking_for if looking_for in {"m", "f"} else "",
+            excluded=set(excluded or ()),
+        )
         # сначала пытаемся дать собеседника НОВОМУ, потом — кому-то из ожидающих
         partner_id = self._pick(me)
         if partner_id is not None:
@@ -155,9 +175,12 @@ class Matchmaker:
             self._pair(a, b)
         return pairs
 
-    def refresh(self, user_id: int, *, district: str, same_district: bool) -> list[tuple[int, int]]:
+    def refresh(
+        self, user_id: int, *, district: str, same_district: bool,
+        gender: str = "", looking_for: str = "",
+    ) -> list[tuple[int, int]]:
         if user_id in self._queue:
-            self._queue[user_id].refresh(district, same_district)
+            self._queue[user_id].refresh(district, same_district, gender, looking_for)
             return self.sweep()
         return []
 
@@ -278,7 +301,8 @@ class Matchmaker:
             "queue": [
                 {
                     "user_id": c.user_id, "district": c.district,
-                    "same_district": c.same_district, "excluded": list(c.excluded),
+                    "same_district": c.same_district, "gender": c.gender,
+                    "looking_for": c.looking_for, "excluded": list(c.excluded),
                     "joined_at": c.joined_at,
                 }
                 for c in self._queue.values()
@@ -295,9 +319,13 @@ class Matchmaker:
         self._pending_rating.clear()
         for item in state.get("queue", []):
             candidate = Candidate(
-                int(item["user_id"]), str(item.get("district") or ""),
-                bool(item.get("same_district")), set(map(int, item.get("excluded", []))),
-                float(item.get("joined_at", time.time())),
+                user_id=int(item["user_id"]),
+                district=str(item.get("district") or ""),
+                same_district=bool(item.get("same_district")),
+                gender=str(item.get("gender") or ""),
+                looking_for=str(item.get("looking_for") or ""),
+                excluded=set(map(int, item.get("excluded", []))),
+                joined_at=float(item.get("joined_at", time.time())),
             )
             self._queue[candidate.user_id] = candidate
         for item in state.get("pairs", []):
