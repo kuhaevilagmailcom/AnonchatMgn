@@ -12,7 +12,12 @@ from typing import Any, Sequence
 
 import aiosqlite
 
-from .number_game import NUMBER_ROUNDS, NUMBER_REWARDS, number_reward
+from .number_game import (
+    NUMBER_DAILY_REWARD_LIMIT,
+    NUMBER_ROUNDS,
+    NUMBER_REWARDS,
+    number_reward,
+)
 from .permissions import ALL_ADMIN_PERMISSIONS, serialize_permissions
 
 SCHEMA = """
@@ -121,8 +126,24 @@ CREATE TABLE IF NOT EXISTS battle_games (
     reward_awarded INTEGER NOT NULL DEFAULT 0,
     range_max      INTEGER NOT NULL DEFAULT 0,
     reward_total   INTEGER NOT NULL DEFAULT 0,
+    reward_total_a INTEGER NOT NULL DEFAULT 0,
+    reward_total_b INTEGER NOT NULL DEFAULT 0,
     created_at     INTEGER NOT NULL,
     updated_at     INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS number_game_pairs (
+    user_low    INTEGER NOT NULL,
+    user_high   INTEGER NOT NULL,
+    consumed_at INTEGER NOT NULL,
+    PRIMARY KEY (user_low, user_high)
+);
+
+CREATE TABLE IF NOT EXISTS number_daily_rewards (
+    user_id   INTEGER NOT NULL,
+    day_start INTEGER NOT NULL,
+    stars     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day_start)
 );
 
 CREATE TABLE IF NOT EXISTS kv (
@@ -142,6 +163,7 @@ CREATE INDEX IF NOT EXISTS idx_admins_granted_by ON admins(granted_by, updated_a
 CREATE INDEX IF NOT EXISTS idx_battle_users_a ON battle_games(user_a, status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_battle_users_b ON battle_games(user_b, status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_battle_status_updated ON battle_games(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_number_daily_day ON number_daily_rewards(day_start);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_battle_live_pair
 ON battle_games(MIN(user_a, user_b), MAX(user_a, user_b))
 WHERE status IN ('invited', 'active', 'round_done');
@@ -170,6 +192,8 @@ _BATTLE_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("game_type", "ALTER TABLE battle_games ADD COLUMN game_type TEXT NOT NULL DEFAULT 'battle'"),
     ("range_max", "ALTER TABLE battle_games ADD COLUMN range_max INTEGER NOT NULL DEFAULT 0"),
     ("reward_total", "ALTER TABLE battle_games ADD COLUMN reward_total INTEGER NOT NULL DEFAULT 0"),
+    ("reward_total_a", "ALTER TABLE battle_games ADD COLUMN reward_total_a INTEGER NOT NULL DEFAULT 0"),
+    ("reward_total_b", "ALTER TABLE battle_games ADD COLUMN reward_total_b INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -187,6 +211,10 @@ def referral_day_start(timestamp: int | None = None) -> int:
     return ((value + REFERRAL_TIMEZONE_OFFSET) // 86_400) * 86_400 - REFERRAL_TIMEZONE_OFFSET
 
 
+def number_reward_day_start(timestamp: int | None = None) -> int:
+    return referral_day_start(timestamp)
+
+
 class Database:
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
@@ -196,6 +224,7 @@ class Database:
         self._matchmaker_task: asyncio.Task | None = None
         self._matchmaker_snapshot_key = ""
         self._referral_lock = asyncio.Lock()
+        self._number_reward_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> "Database":
@@ -233,6 +262,9 @@ class Database:
                 await self.db.execute(sql)
         async with self.db.execute("PRAGMA table_info(battle_games)") as cur:
             battle_cols = {row[1] for row in await cur.fetchall()}
+        number_antifarm_added = (
+            "reward_total_a" not in battle_cols or "reward_total_b" not in battle_cols
+        )
         for name, sql in _BATTLE_MIGRATIONS:
             if name not in battle_cols:
                 await self.db.execute(sql)
@@ -244,6 +276,24 @@ class Database:
         await self.db.execute(
             "DELETE FROM battle_games WHERE status NOT IN ('invited', 'active', 'round_done')"
         )
+        # Для дневного лимита нужны только свежие агрегаты. Старше недели они бесполезны.
+        await self.db.execute(
+            "DELETE FROM number_daily_rewards WHERE day_start < ?",
+            (number_reward_day_start() - 7 * 86_400,),
+        )
+        # Только при первом переходе на антифарм: уже начатая старая игра считается
+        # использованной попыткой пары. На обычных рестартах новые игры не трогаем.
+        if number_antifarm_added:
+            await self.db.execute(
+                """INSERT OR IGNORE INTO number_game_pairs(user_low, user_high, consumed_at)
+                   SELECT MIN(user_a, user_b), MAX(user_a, user_b), updated_at
+                     FROM battle_games
+                    WHERE game_type='numbers' AND status IN ('active', 'round_done')"""
+            )
+            await self.db.execute(
+                """UPDATE battle_games SET reward_awarded=0
+                    WHERE game_type='numbers' AND status IN ('active', 'round_done')"""
+            )
         if added or "nick_key" in cols:
             await self._backfill_nick_keys()
         # Старые версии хранили административные районы. Теперь пользователю доступны
@@ -577,6 +627,48 @@ class Database:
         await self.db.commit()
         return await self.get_battle(game_id) if cur.rowcount else None
 
+    async def number_pair_reward_available(self, user_a: int, user_b: int) -> bool:
+        low, high = sorted((int(user_a), int(user_b)))
+        row = await self._fetchone(
+            "SELECT 1 FROM number_game_pairs WHERE user_low=? AND user_high=?",
+            (low, high),
+        )
+        return row is None
+
+    async def number_daily_reward(self, user_id: int, timestamp: int | None = None) -> int:
+        row = await self._fetchone(
+            "SELECT stars FROM number_daily_rewards WHERE user_id=? AND day_start=?",
+            (int(user_id), number_reward_day_start(timestamp)),
+        )
+        return int(row["stars"] or 0) if row else 0
+
+    async def _award_number_daily_unlocked(
+        self, user_id: int, requested: int, day_start: int
+    ) -> int:
+        requested = max(0, int(requested))
+        if requested <= 0:
+            return 0
+        row = await self._fetchone(
+            "SELECT stars FROM number_daily_rewards WHERE user_id=? AND day_start=?",
+            (int(user_id), int(day_start)),
+        )
+        current = int(row["stars"] or 0) if row else 0
+        awarded = min(requested, max(0, NUMBER_DAILY_REWARD_LIMIT - current))
+        if awarded <= 0:
+            return 0
+        await self.db.execute(
+            """INSERT INTO number_daily_rewards(user_id, day_start, stars)
+               VALUES (?, ?, ?)
+               ON CONFLICT(user_id, day_start)
+               DO UPDATE SET stars=stars+excluded.stars""",
+            (int(user_id), int(day_start), awarded),
+        )
+        await self.db.execute(
+            "UPDATE users SET xp=xp+? WHERE user_id=?",
+            (awarded, int(user_id)),
+        )
+        return awarded
+
     async def create_number_invite(
         self, inviter_id: int, partner_id: int, range_max: int
     ) -> tuple[aiosqlite.Row, bool]:
@@ -587,8 +679,9 @@ class Database:
         cur = await self.db.execute(
             """INSERT OR IGNORE INTO battle_games(
                    user_a, user_b, inviter_id, game_type, total_questions,
-                   range_max, reward_total, created_at, updated_at
-               ) VALUES (?, ?, ?, 'numbers', ?, ?, 0, ?, ?)""",
+                   range_max, reward_total, reward_total_a, reward_total_b,
+                   created_at, updated_at
+               ) VALUES (?, ?, ?, 'numbers', ?, ?, 0, 0, 0, ?, ?)""",
             (inviter_id, partner_id, inviter_id, NUMBER_ROUNDS, range_max, ts, ts),
         )
         await self.db.commit()
@@ -602,17 +695,42 @@ class Database:
         return row, created
 
     async def accept_number(self, game_id: int, user_id: int) -> aiosqlite.Row | None:
-        cur = await self.db.execute(
-            """UPDATE battle_games
-               SET status='active', question_index=0,
-                   answer_a=NULL, answer_b=NULL, matches=0,
-                   reward_total=0, updated_at=?
-               WHERE id=? AND game_type='numbers' AND status='invited'
-                 AND user_b=? AND inviter_id<>?""",
-            (now(), game_id, user_id, user_id),
-        )
-        await self.db.commit()
-        return await self.get_battle(game_id) if cur.rowcount else None
+        async with self._number_reward_lock:
+            row = await self.get_battle(game_id)
+            if (
+                row is None
+                or str(row["game_type"] or "") != "numbers"
+                or str(row["status"]) != "invited"
+                or int(row["user_b"]) != int(user_id)
+                or int(row["inviter_id"]) == int(user_id)
+            ):
+                return None
+
+            low, high = sorted((int(row["user_a"]), int(row["user_b"])))
+            claimed = await self.db.execute(
+                """INSERT OR IGNORE INTO number_game_pairs(user_low, user_high, consumed_at)
+                   VALUES (?, ?, ?)""",
+                (low, high, now()),
+            )
+            reward_enabled = 1 if claimed.rowcount else 0
+
+            cur = await self.db.execute(
+                """UPDATE battle_games
+                   SET status='active', question_index=0,
+                       answer_a=NULL, answer_b=NULL, matches=0,
+                       reward_awarded=?, reward_total=0,
+                       reward_total_a=0, reward_total_b=0, updated_at=?
+                   WHERE id=? AND game_type='numbers' AND status='invited'
+                     AND user_b=? AND inviter_id<>?""",
+                (reward_enabled, now(), game_id, user_id, user_id),
+            )
+            if not cur.rowcount and reward_enabled:
+                await self.db.execute(
+                    "DELETE FROM number_game_pairs WHERE user_low=? AND user_high=?",
+                    (low, high),
+                )
+            await self.db.commit()
+            return await self.get_battle(game_id) if cur.rowcount else None
 
     async def decline_number(self, game_id: int, user_id: int) -> aiosqlite.Row | None:
         row = await self.get_battle(game_id)
@@ -631,58 +749,79 @@ class Database:
 
     async def answer_number(
         self, game_id: int, user_id: int, round_index: int, value: int
-    ) -> tuple[str, aiosqlite.Row | None]:
-        row = await self.get_battle(game_id)
-        if (
-            row is None
-            or str(row["game_type"] or "") != "numbers"
-            or user_id not in {int(row["user_a"]), int(row["user_b"])}
-        ):
-            return "missing", row
-        range_max = int(row["range_max"] or 0)
-        if range_max not in NUMBER_REWARDS or not 1 <= int(value) <= range_max:
-            return "invalid", row
-        if row["status"] != "active" or int(row["question_index"]) != round_index:
-            return "closed", row
+    ) -> tuple[str, aiosqlite.Row | None, int, int]:
+        async with self._number_reward_lock:
+            row = await self.get_battle(game_id)
+            if (
+                row is None
+                or str(row["game_type"] or "") != "numbers"
+                or user_id not in {int(row["user_a"]), int(row["user_b"])}
+            ):
+                return "missing", row, 0, 0
+            range_max = int(row["range_max"] or 0)
+            if range_max not in NUMBER_REWARDS or not 1 <= int(value) <= range_max:
+                return "invalid", row, 0, 0
+            if row["status"] != "active" or int(row["question_index"]) != round_index:
+                return "closed", row, 0, 0
 
-        column = "answer_a" if int(row["user_a"]) == user_id else "answer_b"
-        cur = await self.db.execute(
-            f"""UPDATE battle_games SET {column}=?, updated_at=?
-                 WHERE id=? AND game_type='numbers' AND status='active'
-                   AND question_index=? AND {column} IS NULL""",
-            (int(value), now(), game_id, round_index),
-        )
-        if not cur.rowcount:
-            await self.db.commit()
-            return "already", await self.get_battle(game_id)
-
-        game = await self.get_battle(game_id)
-        if game is None or game["answer_a"] is None or game["answer_b"] is None:
-            await self.db.commit()
-            return "waiting", game
-
-        reward = number_reward(range_max, int(game["answer_a"]), int(game["answer_b"]))
-        exact = int(game["answer_a"]) == int(game["answer_b"])
-        status = "finished" if round_index >= NUMBER_ROUNDS - 1 else "round_done"
-        resolved = await self.db.execute(
-            """UPDATE battle_games
-               SET matches=matches+?,
-                   reward_total=reward_total+?,
-                   status=?, updated_at=?
-               WHERE id=? AND game_type='numbers' AND status='active'
-                 AND question_index=? AND answer_a IS NOT NULL AND answer_b IS NOT NULL""",
-            (1 if exact else 0, reward, status, now(), game_id, round_index),
-        )
-        game = await self.get_battle(game_id)
-        if resolved.rowcount and reward > 0 and game is not None:
-            await self.db.execute(
-                "UPDATE users SET xp=xp+? WHERE user_id IN (?, ?)",
-                (reward, int(game["user_a"]), int(game["user_b"])),
+            column = "answer_a" if int(row["user_a"]) == user_id else "answer_b"
+            cur = await self.db.execute(
+                f"""UPDATE battle_games SET {column}=?, updated_at=?
+                     WHERE id=? AND game_type='numbers' AND status='active'
+                       AND question_index=? AND {column} IS NULL""",
+                (int(value), now(), game_id, round_index),
             )
-        if resolved.rowcount and game is not None and status == "finished":
-            await self.db.execute("DELETE FROM battle_games WHERE id=?", (game_id,))
-        await self.db.commit()
-        return ("resolved" if resolved.rowcount else "waiting"), game
+            if not cur.rowcount:
+                await self.db.commit()
+                return "already", await self.get_battle(game_id), 0, 0
+
+            game = await self.get_battle(game_id)
+            if game is None or game["answer_a"] is None or game["answer_b"] is None:
+                await self.db.commit()
+                return "waiting", game, 0, 0
+
+            raw_reward = number_reward(
+                range_max, int(game["answer_a"]), int(game["answer_b"])
+            )
+            exact = int(game["answer_a"]) == int(game["answer_b"])
+            status = "finished" if round_index >= NUMBER_ROUNDS - 1 else "round_done"
+
+            resolved = await self.db.execute(
+                """UPDATE battle_games
+                   SET matches=matches+?,
+                       status=?, updated_at=?
+                   WHERE id=? AND game_type='numbers' AND status='active'
+                     AND question_index=? AND answer_a IS NOT NULL AND answer_b IS NOT NULL""",
+                (1 if exact else 0, status, now(), game_id, round_index),
+            )
+            if not resolved.rowcount:
+                await self.db.commit()
+                return "waiting", await self.get_battle(game_id), 0, 0
+
+            reward_a = 0
+            reward_b = 0
+            if int(game["reward_awarded"] or 0) and raw_reward > 0:
+                day_start = number_reward_day_start()
+                reward_a = await self._award_number_daily_unlocked(
+                    int(game["user_a"]), raw_reward, day_start
+                )
+                reward_b = await self._award_number_daily_unlocked(
+                    int(game["user_b"]), raw_reward, day_start
+                )
+
+            await self.db.execute(
+                """UPDATE battle_games
+                   SET reward_total=reward_total+?,
+                       reward_total_a=reward_total_a+?,
+                       reward_total_b=reward_total_b+?
+                   WHERE id=?""",
+                (min(reward_a, reward_b), reward_a, reward_b, game_id),
+            )
+            game = await self.get_battle(game_id)
+            if game is not None and status == "finished":
+                await self.db.execute("DELETE FROM battle_games WHERE id=?", (game_id,))
+            await self.db.commit()
+            return "resolved", game, reward_a, reward_b
 
     async def advance_number(
         self, game_id: int, user_id: int, round_index: int
