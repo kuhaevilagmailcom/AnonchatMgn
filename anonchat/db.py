@@ -1212,6 +1212,14 @@ class Database:
                     tuple(chunk),
                 )
                 await cleanup.execute(
+                    f"DELETE FROM daily_activity WHERE user_id IN ({marks})",
+                    tuple(chunk),
+                )
+                await cleanup.execute(
+                    f"DELETE FROM user_engagement WHERE user_id IN ({marks})",
+                    tuple(chunk),
+                )
+                await cleanup.execute(
                     f"DELETE FROM referrals WHERE invitee_id IN ({marks}) OR referrer_id IN ({marks})",
                     twice,
                 )
