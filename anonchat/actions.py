@@ -654,16 +654,20 @@ async def announce_pairs(
     kb = menu_keyboard()
     made = 0
     for a, b in pairs:
-        result = await send_screen_to(
+        result_b = await send_screen_to(
             bot, b, "03_found.png", texts.MATCHED, chat_keyboard(), pack, db,
         )
-        if result is DeliveryResult.UNAVAILABLE:
+        if result_b is DeliveryResult.UNAVAILABLE:
             mm.forget(b)
             await send_to(bot, a, texts.PARTNER_LEFT, kb, pack)
             continue
-        await send_screen_to(
+        result_a = await send_screen_to(
             bot, a, "03_found.png", texts.MATCHED, chat_keyboard(), pack, db,
         )
+        if result_a is DeliveryResult.UNAVAILABLE:
+            mm.forget(a)
+            await send_to(bot, b, texts.PARTNER_LEFT, kb, pack)
+            continue
         made += 1
     return made
 
@@ -722,6 +726,7 @@ async def act_connect(ctx: Ctx) -> None:
         await ctx.reply(texts.ALREADY_PAIRED, markup=menu_keyboard("paired"))
         return
     if status == "queued":
+        ctx.mm.touch_queue(ctx.user_id)
         await ctx.render_screen(
             "02_search.png",
             texts.QUEUED.format(city=texts.esc(ctx.cfg.city), pos=ctx.mm.position(ctx.user_id) or 1,

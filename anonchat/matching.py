@@ -11,6 +11,9 @@ from typing import Any
 from dataclasses import dataclass, field
 
 
+QUEUE_TTL_SECONDS = 15 * 60
+
+
 @dataclass(slots=True)
 class Candidate:
     user_id: int
@@ -20,6 +23,7 @@ class Candidate:
     looking_for: str = ""
     excluded: set[int] = field(default_factory=set)
     joined_at: float = field(default_factory=time.time)
+    active_at: float = field(default_factory=time.time)
 
     def refresh(
         self, district: str, same_district: bool, gender: str = "",
@@ -31,6 +35,7 @@ class Candidate:
         self.looking_for = looking_for if looking_for in {"m", "f"} else ""
         if excluded is not None:
             self.excluded = set(excluded)
+        self.active_at = time.time()
 
 
 @dataclass(slots=True)
@@ -107,6 +112,41 @@ class Matchmaker:
     def queue_snapshot(self, limit: int = 10) -> list[tuple[int, str]]:
         ordered = sorted(self._queue.values(), key=lambda c: c.joined_at)
         return [(c.user_id, c.district) for c in ordered[:limit]]
+
+    def queue_debug_snapshot(self, limit: int = 15) -> list[dict[str, Any]]:
+        ordered = sorted(self._queue.values(), key=lambda c: c.joined_at)
+        now_ts = time.time()
+        return [
+            {
+                "user_id": c.user_id,
+                "district": c.district,
+                "gender": c.gender,
+                "looking_for": c.looking_for,
+                "waiting_seconds": max(0, int(now_ts - c.joined_at)),
+                "idle_seconds": max(0, int(now_ts - c.active_at)),
+            }
+            for c in ordered[:limit]
+        ]
+
+    def touch_queue(self, user_id: int) -> bool:
+        candidate = self._queue.get(user_id)
+        if candidate is None:
+            return False
+        candidate.active_at = time.time()
+        return True
+
+    def prune_queue(
+        self, max_age: int = QUEUE_TTL_SECONDS, *, now_ts: float | None = None
+    ) -> list[int]:
+        """Удаляет тех, кто давно никак не подтверждал поиск."""
+        ts = time.time() if now_ts is None else float(now_ts)
+        stale = [
+            uid for uid, candidate in self._queue.items()
+            if ts - candidate.active_at >= max(1, int(max_age))
+        ]
+        for uid in stale:
+            self._queue.pop(uid, None)
+        return stale
 
     def users_in_play(self) -> set[int]:
         return set(self._queue) | set(self._pairs)
@@ -190,10 +230,12 @@ class Matchmaker:
 
     def refresh(
         self, user_id: int, *, district: str, same_district: bool,
-        gender: str = "", looking_for: str = "",
+        gender: str = "", looking_for: str = "", excluded: set[int] | None = None,
     ) -> list[tuple[int, int]]:
         if user_id in self._queue:
-            self._queue[user_id].refresh(district, same_district, gender, looking_for)
+            self._queue[user_id].refresh(
+                district, same_district, gender, looking_for, excluded
+            )
             return self.sweep()
         return []
 
@@ -316,7 +358,7 @@ class Matchmaker:
                     "user_id": c.user_id, "district": c.district,
                     "same_district": c.same_district, "gender": c.gender,
                     "looking_for": c.looking_for, "excluded": list(c.excluded),
-                    "joined_at": c.joined_at,
+                    "joined_at": c.joined_at, "active_at": c.active_at,
                 }
                 for c in self._queue.values()
             ],
@@ -339,6 +381,7 @@ class Matchmaker:
                 looking_for=str(item.get("looking_for") or ""),
                 excluded=set(map(int, item.get("excluded", []))),
                 joined_at=float(item.get("joined_at", time.time())),
+                active_at=float(item.get("active_at", item.get("joined_at", time.time()))),
             )
             self._queue[candidate.user_id] = candidate
         for item in state.get("pairs", []):

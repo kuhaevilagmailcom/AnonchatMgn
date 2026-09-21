@@ -59,6 +59,7 @@ async def relay_to_partner(
     result = mm.count_message(ctx.user_id)
     if result is None:
         if mm.status(ctx.user_id) == "queued":
+            mm.touch_queue(ctx.user_id)
             await ctx.reply(texts.QUEUED_MESSAGE, markup=K.menu_keyboard("queued"))
             return
         await ctx.reply(

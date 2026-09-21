@@ -212,9 +212,25 @@ async def cb_blocks_ask(event: CallbackQuery, ctx: Ctx) -> None:
 
 
 @router.callback_query(F.data == "cfg:blocks:yes")
-async def cb_blocks_yes(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+async def cb_blocks_yes(
+    event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker
+) -> None:
     await db.clear_blocks(ctx.user_id)
+    me = await db.get_user(ctx.user_id)
+    pairs: list[tuple[int, int]] = []
+    if me is not None:
+        pairs = mm.refresh(
+            ctx.user_id,
+            district=me["district"],
+            same_district=bool(me["same_district"]),
+            gender=(me["gender"] or ""),
+            looking_for=(me["looking_for"] or ""),
+            excluded=await db.excluded_partners(ctx.user_id),
+        )
     await ctx.ack("Скрытые собеседники сброшены")
+    if pairs:
+        await announce_pairs(ctx.bot, ctx.cfg, mm, pairs, ctx.pack, db)
+        return
     await settings_screen(ctx)
 
 
