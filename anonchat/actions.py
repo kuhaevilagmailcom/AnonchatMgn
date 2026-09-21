@@ -355,18 +355,19 @@ async def send_to(
             await asyncio.sleep(max(0.0, float(exc.retry_after)))
             continue
         except TelegramForbiddenError:
-            return DeliveryResult.UNAVAILABLE
+            return DeliveryResult.UNAVAILABLE, None
         except TelegramAPIError:
             return DeliveryResult.TEMP_ERROR
     return DeliveryResult.TEMP_ERROR
 
 
-async def send_copy_to(bot: Bot, message: Message, chat_id: int) -> DeliveryResult:
-    """Надёжно пересылает пользовательское сообщение.
+async def send_copy_to_message(
+    bot: Bot, message: Message, chat_id: int
+) -> tuple[DeliveryResult, Message | None]:
+    """Пересылает сообщение и возвращает созданную копию для последующего редактирования.
 
-    Фото отправляем напрямую по Telegram file_id: это рекомендованный Bot API путь
-    и он не зависит от внутренней реализации aiogram Message.send_copy().
-    Временные Telegram/API ошибки повторяем до трёх раз вместо мгновенного выхода.
+    Фото отправляем напрямую по Telegram file_id. Остальные типы копируем средствами
+    Telegram Bot API без forward, чтобы не раскрывать отправителя.
     """
     action = "upload_photo" if message.photo else "typing"
     try:
@@ -377,7 +378,7 @@ async def send_copy_to(bot: Bot, message: Message, chat_id: int) -> DeliveryResu
     for attempt in range(3):
         try:
             if message.photo:
-                await bot.send_photo(
+                sent = await bot.send_photo(
                     chat_id=chat_id,
                     photo=message.photo[-1].file_id,
                     caption=message.caption,
@@ -386,8 +387,8 @@ async def send_copy_to(bot: Bot, message: Message, chat_id: int) -> DeliveryResu
                     has_spoiler=bool(getattr(message, "has_media_spoiler", False)),
                 )
             else:
-                await message.send_copy(chat_id=chat_id)
-            return DeliveryResult.DELIVERED
+                sent = await message.send_copy(chat_id=chat_id)
+            return DeliveryResult.DELIVERED, sent if isinstance(sent, Message) else None
         except TelegramRetryAfter as exc:
             await asyncio.sleep(max(0.0, float(exc.retry_after)))
         except TelegramForbiddenError:
@@ -399,12 +400,12 @@ async def send_copy_to(bot: Bot, message: Message, chat_id: int) -> DeliveryResu
                 message.content_type, chat_id, exc,
             )
             if "chat not found" in error or "user is deactivated" in error:
-                return DeliveryResult.UNAVAILABLE
+                return DeliveryResult.UNAVAILABLE, None
             # Повторяем: часть ошибок Telegram с медиа бывает кратковременной.
             if attempt < 2:
                 await asyncio.sleep(0.25 * (attempt + 1))
                 continue
-            return DeliveryResult.TEMP_ERROR
+            return DeliveryResult.TEMP_ERROR, None
         except TelegramAPIError as exc:
             log.warning(
                 "relay api error: type=%s chat_id=%s attempt=%s error=%s",
@@ -413,8 +414,62 @@ async def send_copy_to(bot: Bot, message: Message, chat_id: int) -> DeliveryResu
             if attempt < 2:
                 await asyncio.sleep(0.25 * (attempt + 1))
                 continue
+            return DeliveryResult.TEMP_ERROR, None
+    return DeliveryResult.TEMP_ERROR, None
+
+
+async def send_copy_to(bot: Bot, message: Message, chat_id: int) -> DeliveryResult:
+    result, _ = await send_copy_to_message(bot, message, chat_id)
+    return result
+
+
+async def edit_copied_message(
+    bot: Bot, message: Message, chat_id: int, message_id: int
+) -> DeliveryResult:
+    """Синхронизирует редактирование текста или подписи у уже отправленной копии."""
+    try:
+        if message.text is not None:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=message.text,
+                parse_mode=None,
+                entities=message.entities or None,
+            )
+        elif message.caption is not None or any((
+            message.photo, message.video, message.animation,
+            message.audio, message.document,
+        )):
+            await bot.edit_message_caption(
+                chat_id=chat_id,
+                message_id=message_id,
+                caption=message.caption,
+                parse_mode=None,
+                caption_entities=message.caption_entities or None,
+            )
+        else:
             return DeliveryResult.TEMP_ERROR
-    return DeliveryResult.TEMP_ERROR
+        return DeliveryResult.DELIVERED
+    except TelegramForbiddenError:
+        return DeliveryResult.UNAVAILABLE
+    except TelegramBadRequest as exc:
+        error = str(exc).lower()
+        # Одинаковый текст после повторного edit — это не ошибка доставки.
+        if "message is not modified" in error:
+            return DeliveryResult.DELIVERED
+        if "chat not found" in error or "message to edit not found" in error:
+            return DeliveryResult.UNAVAILABLE
+        log.warning(
+            "edit relay bad request: type=%s chat_id=%s message_id=%s error=%s",
+            message.content_type, chat_id, message_id, exc,
+        )
+        return DeliveryResult.TEMP_ERROR
+    except TelegramAPIError as exc:
+        log.warning(
+            "edit relay api error: type=%s chat_id=%s message_id=%s error=%s",
+            message.content_type, chat_id, message_id, exc,
+        )
+        return DeliveryResult.TEMP_ERROR
 
 
 async def send_screen_to(
