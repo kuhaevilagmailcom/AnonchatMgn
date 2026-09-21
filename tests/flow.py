@@ -793,8 +793,18 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(session.outbox[0]["method"] == "answerCallbackQuery",
           "кнопка поиска отпускает интерфейс сразу")
     await send(B, "/start")
-    check("Онлайн сейчас: <b>1</b>" in session.last_to(B),
-          "меню показывает текущий онлайн")
+    check("Онлайн сейчас" not in session.last_to(B),
+          "главное меню не перегружено онлайном")
+    await press(B, "act:settings")
+    settings_markup = session.to(B)[-1].get("reply_markup", {})
+    settings_labels = [
+        button["text"] for row in settings_markup.get("inline_keyboard", []) for button in row
+    ]
+    check("Онлайн сейчас" in settings_labels, "онлайн вынесен в настройки")
+    await press(B, "cfg:online")
+    check("Ищут собеседника: <b>1</b>" in session.last_to(B),
+          "экран онлайна показывает очередь")
+    await press(B, "act:menu")
     await press(B, "act:connect")
     check(mm.partner(A) == B, "возраст не разделяет очередь")
     check("Собеседник найден" in session.last_to(A), "экран найденного собеседника отправлен")
