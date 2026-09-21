@@ -142,12 +142,10 @@ def district_keyboard() -> InlineKeyboardMarkup:
     for title, value in (
         ("Правый берег", "right"),
         ("Левый берег", "left"),
-        ("Не важно", "none"),
     ):
-        _button(b, title, callback_data=f"cfg:district:{value}",
-                icon="geo" if value != "none" else "check")
+        _button(b, title, callback_data=f"cfg:district:{value}", icon="geo")
     _button(b, "Назад", callback_data=CB_SETTINGS, icon="home")
-    b.adjust(1, 1, 1, 1)
+    b.adjust(1, 1, 1)
     return b.as_markup()
 
 
@@ -182,19 +180,13 @@ def settings_keyboard(
     _button(b, f"Пол: {gender_label}", callback_data="cfg:gender:ask")
     _button(b, f"Ищу: {looking_label}", callback_data="cfg:looking:ask")
     _button(b, f"Берег: {district or 'не выбран'}", callback_data="cfg:district:ask", icon="geo")
-    _button(
-        b,
-        "По берегу: только свой" if same_district else "По берегу: весь город",
-        callback_data="cfg:same:toggle",
-        icon="view",
-    )
     _button(b, "Возраст", callback_data="cfg:age:ask", icon="stars")
     _button(b, "Сбросить скрытых", callback_data="cfg:blocks:ask", icon="refresh")
     _button(b, "Отзыв / обратная связь", callback_data=CB_FEEDBACK, icon="support")
     _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
     _button(b, "Удалить профиль", callback_data="cfg:forget:ask", icon="delete", style="danger")
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
-    b.adjust(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+    b.adjust(1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
     return b.as_markup()
 
 

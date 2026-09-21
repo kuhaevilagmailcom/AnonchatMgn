@@ -56,7 +56,7 @@ async def settings_screen(ctx: Ctx) -> None:
         return
     me = ctx.me
     district = (me["district"] if me else "") or ""
-    same = bool(me["same_district"]) if me else False
+    same = False
     gender = (me["gender"] if me else "") or ""
     looking_for = (me["looking_for"] if me else "") or ""
     gender_text = "👨 М" if gender == "m" else "👩 Ж" if gender == "f" else "не выбран"
@@ -68,8 +68,7 @@ async def settings_screen(ctx: Ctx) -> None:
         f"Ищу: <b>{looking_text}</b>\n"
         f"📍 Берег: <b>{texts.esc(district or 'не выбран')}</b>\n"
         f"Возраст: <b>{int(me['age']) if me and int(me['age'] or 0) else 'не указан'}</b> "
-        f"<i>(необязательно)</i>\n"
-        f"🧭 По берегу: <b>{'только свой' if same else 'весь ' + texts.esc(ctx.cfg.city_short)}</b>\n\n"
+        f"<i>(необязательно)</i>\n\n"
         f"{texts.SETTINGS_NOTE}"
     )
     kb = K.settings_keyboard(same, district, ctx.nick, gender, looking_for)
@@ -187,15 +186,13 @@ async def cb_district(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmak
     await settings_screen(ctx)
 
 
-# ---------------------------------------------------------------------------------- «только мой берег»
+# Старые сообщения могли содержать прежнюю кнопку. Теперь приоритет берега автоматический.
 @router.callback_query(F.data == "cfg:same:toggle")
 async def cb_same_toggle(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker) -> None:
     if await ctx.dialog_locked():
         return
-    me = ctx.me or await db.get_user(ctx.user_id)
-    new = 0 if (me and me["same_district"]) else 1
-    await _apply(ctx, db, mm, same_district=new)
-    await ctx.ack("Ищем только на своём берегу" if new else "Ищем по всему городу")
+    await _apply(ctx, db, mm, same_district=0)
+    await ctx.ack("Приоритет своего берега теперь включается автоматически")
     await settings_screen(ctx)
 
 
