@@ -55,14 +55,18 @@ class Pair:
 
 
 def compatible(x: Candidate, y: Candidate) -> bool:
-    """Жёсткие ограничения: блокировки и выбранный пол. Берег — только приоритет."""
-    if y.user_id in x.excluded or x.user_id in y.excluded:
-        return False
-    if x.looking_for and y.gender != x.looking_for:
-        return False
-    if y.looking_for and x.gender != y.looking_for:
-        return False
-    return True
+    """Жёсткое ограничение только одно: пользователи не должны быть заблокированы друг у друга."""
+    return y.user_id not in x.excluded and x.user_id not in y.excluded
+
+
+def gender_score(x: Candidate, y: Candidate) -> int:
+    """Мягкий приоритет пола: 0–2 совпавших пожелания, но несовпадение не блокирует пару."""
+    score = 0
+    if x.looking_for and y.gender == x.looking_for:
+        score += 1
+    if y.looking_for and x.gender == y.looking_for:
+        score += 1
+    return score
 
 
 def bank_score(x: Candidate, y: Candidate) -> int:
@@ -136,14 +140,20 @@ class Matchmaker:
         return pair
 
     def _pick(self, me: Candidate) -> int | None:
-        """Берём лучший вариант: свой берег приоритетнее, затем самый старый в очереди."""
+        """Сначала желаемый пол, затем свой берег, затем самый старый человек в очереди."""
         candidates = [
             other for other in self._queue.values()
             if other.user_id != me.user_id and compatible(me, other)
         ]
         if not candidates:
             return None
-        candidates.sort(key=lambda other: (-bank_score(me, other), other.joined_at))
+        candidates.sort(
+            key=lambda other: (
+                -gender_score(me, other),
+                -bank_score(me, other),
+                other.joined_at,
+            )
+        )
         return candidates[0].user_id
 
     def connect(
@@ -177,14 +187,15 @@ class Matchmaker:
         return "queued", self.position(user_id)
 
     def sweep(self) -> list[tuple[int, int]]:
-        """Сначала собираем пары по предпочтительному берегу, затем любые допустимые."""
+        """Сначала желаемый пол, затем берег; если совпадений нет — сводим любых незаблокированных."""
         candidates = sorted(self._queue.values(), key=lambda c: c.joined_at)
-        ranked: list[tuple[int, float, float, int, int]] = []
+        ranked: list[tuple[int, int, float, float, int, int]] = []
         for i, first in enumerate(candidates):
             for other in candidates[i + 1:]:
                 if not compatible(first, other):
                     continue
                 ranked.append((
+                    -gender_score(first, other),
                     -bank_score(first, other),
                     min(first.joined_at, other.joined_at),
                     max(first.joined_at, other.joined_at),
@@ -194,7 +205,7 @@ class Matchmaker:
         ranked.sort()
         pairs: list[tuple[int, int]] = []
         taken: set[int] = set()
-        for _score, _oldest, _newest, a, b in ranked:
+        for _gender, _bank, _oldest, _newest, a, b in ranked:
             if a in taken or b in taken:
                 continue
             pairs.append((a, b))
