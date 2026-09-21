@@ -674,6 +674,14 @@ class Database:
                 "UPDATE users SET xp=xp+25 WHERE user_id IN (?, ?)",
                 (int(game["user_a"]), int(game["user_b"])),
             )
+            day = referral_day_start()
+            await self.db.executemany(
+                """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+                   VALUES (?, ?, 25)
+                   ON CONFLICT(user_id, day_start)
+                   DO UPDATE SET xp_earned=xp_earned+25""",
+                [(int(game["user_a"]), day), (int(game["user_b"]), day)],
+            )
         if resolved.rowcount and game is not None and str(game["status"]) == "finished":
             await self.db.execute("DELETE FROM battle_games WHERE id = ?", (game_id,))
         await self.db.commit()
@@ -738,6 +746,13 @@ class Database:
         await self.db.execute(
             "UPDATE users SET xp=xp+? WHERE user_id=?",
             (awarded, int(user_id)),
+        )
+        await self.db.execute(
+            """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+               VALUES (?, ?, ?)
+               ON CONFLICT(user_id, day_start)
+               DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
+            (int(user_id), int(day_start), awarded),
         )
         return awarded
 
@@ -1015,6 +1030,14 @@ class Database:
             )
         else:
             await self.db.execute("UPDATE users SET xp = xp + ? WHERE user_id = ?", (amount, user_id))
+        if int(amount) > 0:
+            await self.db.execute(
+                """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(user_id, day_start)
+                   DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
+                (int(user_id), referral_day_start(), int(amount)),
+            )
         await self.db.commit()
         row = await self._fetchone("SELECT xp FROM users WHERE user_id = ?", (user_id,))
         return int(row["xp"]) if row else 0
@@ -1055,6 +1078,13 @@ class Database:
             await self.db.execute(
                 "UPDATE users SET xp = xp + ? WHERE user_id = ?",
                 (amount, referrer_id),
+            )
+            await self.db.execute(
+                """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(user_id, day_start)
+                   DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
+                (int(referrer_id), referral_day_start(timestamp), int(amount)),
             )
             await self.db.commit()
             return True
