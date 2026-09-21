@@ -796,7 +796,10 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check("Онлайн сейчас" not in session.last_to(B),
           "главное меню не перегружено онлайном")
     await press(B, "act:settings")
-    settings_markup = session.to(B)[-1].get("reply_markup", {})
+    settings_message = next(
+        item for item in reversed(session.to(B)) if item.get("reply_markup")
+    )
+    settings_markup = settings_message.get("reply_markup", {})
     settings_labels = [
         button["text"] for row in settings_markup.get("inline_keyboard", []) for button in row
     ]
