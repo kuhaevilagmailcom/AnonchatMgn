@@ -397,6 +397,8 @@ async def send_screen_to(
                 if new_file_id != cached:
                     await db.set_kv(key, new_file_id)
                     cached = new_file_id
+            _LIVE_MENUS.pop(chat_id, None)
+            await _remember_screen(bot, chat_id, sent)
             return DeliveryResult.DELIVERED
         except TelegramBadRequest as exc:
             if attempt == 0 and pack is not None and pack.accept(exc):
