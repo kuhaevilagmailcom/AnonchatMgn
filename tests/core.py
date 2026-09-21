@@ -476,6 +476,14 @@ def test_number_game_three_rounds_and_rewards() -> None:
 
             game = await db.accept_number(game_id, 302)
             assert game is not None and game["status"] == "active"
+            assert int(game["reward_awarded"]) == 1
+            assert await db.number_pair_reward_available(301, 302) is False
+
+            # Обычный рестарт не должен отключать награду уже начатой первой игры.
+            await db.close()
+            db = await Database(path).start()
+            game = await db.get_battle(game_id)
+            assert game is not None and int(game["reward_awarded"]) == 1
 
             # Раунд 1: точное совпадение = 25 каждому.
             assert (await db.answer_number(game_id, 301, 0, 5))[0] == "waiting"
