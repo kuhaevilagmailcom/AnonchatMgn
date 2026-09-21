@@ -106,9 +106,9 @@ class Throttling(BaseMiddleware):
 
         if len(bucket) >= limit:
             if isinstance(event, CallbackQuery):
-                await event.answer("Слишком быстро — подожди секунду.", show_alert=True)
+                await event.answer("Слишком много действий. Попробуй через несколько секунд.", show_alert=True)
             elif isinstance(event, Message):
-                await event.answer("Попридержи коней: слишком много сообщений в минуту.")
+                await event.answer("Слишком много сообщений. Попробуй через несколько секунд.")
             return
 
         bucket.append(ts)
