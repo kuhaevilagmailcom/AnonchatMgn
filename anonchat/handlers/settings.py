@@ -114,7 +114,7 @@ async def cb_looking(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmake
     key = (event.data or "").rsplit(":", 1)[-1]
     value = key if key in {"m", "f"} else ""
     await _apply(ctx, db, mm, looking_for=value)
-    await ctx.ack("Фильтр обновлён")
+    await ctx.ack("Поиск обновлён")
     await settings_screen(ctx)
 
 
@@ -192,7 +192,7 @@ async def cb_same_toggle(event: CallbackQuery, ctx: Ctx, db: Database, mm: Match
     if await ctx.dialog_locked():
         return
     await _apply(ctx, db, mm, same_district=0)
-    await ctx.ack("Приоритет своего берега теперь включается автоматически")
+    await ctx.ack("Приоритет берега работает автоматически")
     await settings_screen(ctx)
 
 
@@ -244,7 +244,7 @@ async def cb_forget_ask(event: CallbackQuery, ctx: Ctx) -> None:
     if await ctx.dialog_locked():
         return
     await ctx.edit(
-        "Удалить профиль целиком? Слетят опыт, статистика, ник и настройки. Отменить нельзя.",
+        "Удалить профиль? Опыт, статистика, ник и настройки будут удалены.",
         K.confirm_forget_keyboard(),
     )
 
@@ -258,7 +258,7 @@ async def cb_forget_yes(event: CallbackQuery, ctx: Ctx) -> None:
 
 @router.callback_query(F.data == "cfg:forget:no")
 async def cb_forget_no(event: CallbackQuery, ctx: Ctx) -> None:
-    await ctx.ack("Окей, не трогаем")
+    await ctx.ack("Отменено")
     await settings_screen(ctx)
 
 
@@ -267,7 +267,7 @@ async def cmd_forget(message: Message, ctx: Ctx) -> None:
     if await ctx.dialog_locked():
         return
     await ctx.reply(
-        "Точно стереть профиль? Кнопка ниже или /cancel, чтобы отменить.",
+        "Удалить профиль? Это действие нельзя отменить.",
         markup=K.confirm_forget_keyboard(),
     )
 
