@@ -1549,8 +1549,8 @@ class Database:
                  JOIN users u ON u.user_id=a.user_id
                 WHERE a.day_start>=? AND u.banned=0
                 GROUP BY u.user_id
-                HAVING xp > 0 OR dialogs > 0 OR messages > 0
-                ORDER BY xp DESC, dialogs DESC, messages DESC
+                HAVING SUM(a.xp_earned) > 0 OR SUM(a.dialogs) > 0 OR SUM(a.messages) > 0
+                ORDER BY SUM(a.xp_earned) DESC, SUM(a.dialogs) DESC, SUM(a.messages) DESC
                 LIMIT ?""",
             (start, max(1, min(int(limit), 50))),
         )
