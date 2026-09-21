@@ -1539,6 +1539,21 @@ class Database:
             )
         else:
             await self.db.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+
+        # Служебные данные игр не являются модерационными доказательствами и не должны
+        # переживать удаление профиля.
+        await self.db.execute(
+            "DELETE FROM number_daily_rewards WHERE user_id = ?",
+            (user_id,),
+        )
+        await self.db.execute(
+            "DELETE FROM number_game_pairs WHERE user_low = ? OR user_high = ?",
+            (user_id, user_id),
+        )
+        await self.db.execute(
+            "DELETE FROM battle_games WHERE user_a = ? OR user_b = ?",
+            (user_id, user_id),
+        )
         # История диалогов/жалоб нужна для блокировок и открытой модерации; личные поля там не хранятся.
         await self.db.commit()
 
