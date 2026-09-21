@@ -152,7 +152,7 @@ def district_keyboard() -> InlineKeyboardMarkup:
 def gender_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "👨 М", callback_data="cfg:gender:m")
-    _button(b, "👩 Ж", callback_data="cfg:gender:f")
+    _button(b, "👩 Д", callback_data="cfg:gender:f")
     _button(b, "Не указывать", callback_data="cfg:gender:none", icon="check")
     _button(b, "Назад", callback_data=CB_SETTINGS, icon="home")
     b.adjust(2, 1, 1)
@@ -174,7 +174,7 @@ def settings_keyboard(
     gender: str = "", looking_for: str = "",
 ) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    gender_label = "👨 М" if gender == "m" else "👩 Ж" if gender == "f" else "не выбран"
+    gender_label = "👨 М" if gender == "m" else "👩 Д" if gender == "f" else "не выбран"
     looking_label = "👨 М" if looking_for == "m" else "👩 Д" if looking_for == "f" else "🤷 Без разницы"
     _button(b, f"Ник: {nickname}", callback_data=CB_NICK, icon="profile")
     _button(b, f"Пол: {gender_label}", callback_data="cfg:gender:ask")

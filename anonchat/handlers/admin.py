@@ -85,8 +85,8 @@ async def stats_text(db: Database, mm: Matchmaker, cfg: Config) -> str:
 def queue_text(mm: Matchmaker) -> str:
     snap = mm.queue_debug_snapshot(15)
     lines = [f"⏳ <b>Очередь · {mm.queue_size()}</b> · в парах: {mm.online_pairs()}", ""]
-    gender_label = {"m": "👨 М", "f": "👩 Ж", "": "пол —"}
-    looking_label = {"m": "ищет М", "f": "ищет Ж", "": "ищет любого"}
+    gender_label = {"m": "👨 М", "f": "👩 Д", "": "пол —"}
+    looking_label = {"m": "ищет М", "f": "ищет Д", "": "ищет любого"}
     for i, item in enumerate(snap, start=1):
         wait_min = max(0, int(item["waiting_seconds"]) // 60)
         lines.append(
