@@ -44,6 +44,8 @@ async def _apply(ctx: Ctx, db: Database, mm: Matchmaker, **fields) -> None:
         ctx.user_id,
         district=me["district"],
         same_district=bool(me["same_district"]),
+        gender=(me["gender"] or ""),
+        looking_for=(me["looking_for"] or ""),
     )
     if pairs:
         await announce_pairs(ctx.bot, ctx.cfg, mm, pairs, ctx.pack, db)
@@ -55,9 +57,15 @@ async def settings_screen(ctx: Ctx) -> None:
     me = ctx.me
     district = (me["district"] if me else "") or ""
     same = bool(me["same_district"]) if me else False
+    gender = (me["gender"] if me else "") or ""
+    looking_for = (me["looking_for"] if me else "") or ""
+    gender_text = "👨 М" if gender == "m" else "👩 Ж" if gender == "f" else "не выбран"
+    looking_text = "👨 М" if looking_for == "m" else "👩 Д" if looking_for == "f" else "🤷 Без разницы"
     body = (
         f"{texts.SETTINGS_TITLE}\n\n"
         f"🙋 Ник: <b>{texts.esc(ctx.nick)}</b>\n"
+        f"Пол: <b>{gender_text}</b>\n"
+        f"Ищу: <b>{looking_text}</b>\n"
         f"📍 Берег: <b>{texts.esc(district or 'не выбран')}</b>\n"
         f"Возраст: <b>{int(me['age']) if me and int(me['age'] or 0) else 'не указан'}</b> "
         f"<i>(необязательно)</i>\n"
@@ -65,7 +73,7 @@ async def settings_screen(ctx: Ctx) -> None:
         f"🧭 Ищу: <b>{'только свой берег' if same else 'весь ' + texts.esc(ctx.cfg.city_short)}</b>\n\n"
         f"{texts.SETTINGS_NOTE}"
     )
-    kb = K.settings_keyboard(same, district, ctx.nick)
+    kb = K.settings_keyboard(same, district, ctx.nick, gender, looking_for)
     await ctx.render_screen("05_settings.png", body, kb)
 
 
@@ -74,6 +82,42 @@ async def cb_age_ask(event: CallbackQuery, ctx: Ctx) -> None:
     if await ctx.dialog_locked():
         return
     await ctx.edit("<b>Сколько тебе лет?</b>", K.age_keyboard())
+
+
+@router.callback_query(F.data == "cfg:gender:ask")
+async def cb_gender_ask(event: CallbackQuery, ctx: Ctx) -> None:
+    if await ctx.dialog_locked():
+        return
+    await ctx.edit("<b>Твой пол</b>", K.gender_keyboard())
+
+
+@router.callback_query(F.data.in_({"cfg:gender:m", "cfg:gender:f", "cfg:gender:none"}))
+async def cb_gender(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker) -> None:
+    if await ctx.dialog_locked():
+        return
+    key = (event.data or "").rsplit(":", 1)[-1]
+    value = key if key in {"m", "f"} else ""
+    await _apply(ctx, db, mm, gender=value)
+    await ctx.ack("Пол обновлён")
+    await settings_screen(ctx)
+
+
+@router.callback_query(F.data == "cfg:looking:ask")
+async def cb_looking_ask(event: CallbackQuery, ctx: Ctx) -> None:
+    if await ctx.dialog_locked():
+        return
+    await ctx.edit("<b>Кого ищем?</b>", K.looking_for_keyboard())
+
+
+@router.callback_query(F.data.in_({"cfg:looking:m", "cfg:looking:f", "cfg:looking:any"}))
+async def cb_looking(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker) -> None:
+    if await ctx.dialog_locked():
+        return
+    key = (event.data or "").rsplit(":", 1)[-1]
+    value = key if key in {"m", "f"} else ""
+    await _apply(ctx, db, mm, looking_for=value)
+    await ctx.ack("Фильтр обновлён")
+    await settings_screen(ctx)
 
 
 # ---------------------------------------------------------------------------------- экран настроек
