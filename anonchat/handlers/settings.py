@@ -11,7 +11,9 @@ from aiogram.types import CallbackQuery, Message
 from .. import keyboards as K
 from .. import nick as nicklib
 from .. import texts
-from ..actions import Ctx, announce_pairs, forget_everything, set_nick, show_menu, show_profile
+from ..actions import (
+    Ctx, announce_pairs, forget_everything, set_nick, show_menu, show_profile, show_online
+)
 from ..db import Database
 from ..matching import Matchmaker
 
@@ -131,6 +133,14 @@ async def cmd_settings(message: Message, ctx: Ctx) -> None:
 async def cb_settings(event: CallbackQuery, ctx: Ctx) -> None:
     await ctx.ack()
     await settings_screen(ctx)
+
+
+@router.callback_query(F.data.in_({K.CB_ONLINE, "cfg:online:refresh"}))
+async def cb_online(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack("Обновлено" if event.data == "cfg:online:refresh" else "")
+    if await ctx.dialog_locked():
+        return
+    await show_online(ctx)
 
 
 # ---------------------------------------------------------------------------------- ник

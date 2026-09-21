@@ -146,6 +146,40 @@ CREATE TABLE IF NOT EXISTS number_daily_rewards (
     PRIMARY KEY (user_id, day_start)
 );
 
+CREATE TABLE IF NOT EXISTS daily_activity (
+    user_id          INTEGER NOT NULL,
+    day_start        INTEGER NOT NULL,
+    messages         INTEGER NOT NULL DEFAULT 0,
+    dialogs          INTEGER NOT NULL DEFAULT 0,
+    games            INTEGER NOT NULL DEFAULT 0,
+    battle_games     INTEGER NOT NULL DEFAULT 0,
+    number_games     INTEGER NOT NULL DEFAULT 0,
+    ratings_given    INTEGER NOT NULL DEFAULT 0,
+    good_ratings     INTEGER NOT NULL DEFAULT 0,
+    battle_matches   INTEGER NOT NULL DEFAULT 0,
+    battle_questions INTEGER NOT NULL DEFAULT 0,
+    number_exact     INTEGER NOT NULL DEFAULT 0,
+    xp_earned        INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day_start)
+);
+
+CREATE TABLE IF NOT EXISTS user_engagement (
+    user_id           INTEGER PRIMARY KEY,
+    current_streak    INTEGER NOT NULL DEFAULT 0,
+    best_streak       INTEGER NOT NULL DEFAULT 0,
+    last_active_day   INTEGER NOT NULL DEFAULT 0,
+    achievements      TEXT    NOT NULL DEFAULT '[]',
+    quest_day         INTEGER NOT NULL DEFAULT 0,
+    quest_claimed     TEXT    NOT NULL DEFAULT '[]',
+    dialogs_total     INTEGER NOT NULL DEFAULT 0,
+    games_total       INTEGER NOT NULL DEFAULT 0,
+    battle_games_total INTEGER NOT NULL DEFAULT 0,
+    number_games_total INTEGER NOT NULL DEFAULT 0,
+    battle_perfect_5  INTEGER NOT NULL DEFAULT 0,
+    battle_perfect_10 INTEGER NOT NULL DEFAULT 0,
+    number_exact_1000 INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS kv (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -164,6 +198,8 @@ CREATE INDEX IF NOT EXISTS idx_battle_users_a ON battle_games(user_a, status, up
 CREATE INDEX IF NOT EXISTS idx_battle_users_b ON battle_games(user_b, status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_battle_status_updated ON battle_games(status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_number_daily_day ON number_daily_rewards(day_start);
+CREATE INDEX IF NOT EXISTS idx_activity_day ON daily_activity(day_start, xp_earned DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_user_day ON daily_activity(user_id, day_start DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_battle_live_pair
 ON battle_games(MIN(user_a, user_b), MAX(user_a, user_b))
 WHERE status IN ('invited', 'active', 'round_done');
@@ -227,6 +263,7 @@ class Database:
         self._matchmaker_snapshot_key = ""
         self._referral_lock = asyncio.Lock()
         self._number_reward_lock = asyncio.Lock()
+        self._engagement_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> "Database":
@@ -282,6 +319,11 @@ class Database:
         await self.db.execute(
             "DELETE FROM number_daily_rewards WHERE day_start < ?",
             (number_reward_day_start() - 7 * 86_400,),
+        )
+        # Для топов недели/месяца и личной активности достаточно последних 40 суток.
+        await self.db.execute(
+            "DELETE FROM daily_activity WHERE day_start < ?",
+            (referral_day_start() - 39 * 86_400,),
         )
         # Только при первом переходе на антифарм: уже начатая старая игра считается
         # использованной попыткой пары. На обычных рестартах новые игры не трогаем.
@@ -633,6 +675,14 @@ class Database:
                 "UPDATE users SET xp=xp+25 WHERE user_id IN (?, ?)",
                 (int(game["user_a"]), int(game["user_b"])),
             )
+            day = referral_day_start()
+            await self.db.executemany(
+                """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+                   VALUES (?, ?, 25)
+                   ON CONFLICT(user_id, day_start)
+                   DO UPDATE SET xp_earned=xp_earned+25""",
+                [(int(game["user_a"]), day), (int(game["user_b"]), day)],
+            )
         if resolved.rowcount and game is not None and str(game["status"]) == "finished":
             await self.db.execute("DELETE FROM battle_games WHERE id = ?", (game_id,))
         await self.db.commit()
@@ -697,6 +747,13 @@ class Database:
         await self.db.execute(
             "UPDATE users SET xp=xp+? WHERE user_id=?",
             (awarded, int(user_id)),
+        )
+        await self.db.execute(
+            """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+               VALUES (?, ?, ?)
+               ON CONFLICT(user_id, day_start)
+               DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
+            (int(user_id), int(day_start), awarded),
         )
         return awarded
 
@@ -974,6 +1031,14 @@ class Database:
             )
         else:
             await self.db.execute("UPDATE users SET xp = xp + ? WHERE user_id = ?", (amount, user_id))
+        if int(amount) > 0:
+            await self.db.execute(
+                """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(user_id, day_start)
+                   DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
+                (int(user_id), referral_day_start(), int(amount)),
+            )
         await self.db.commit()
         row = await self._fetchone("SELECT xp FROM users WHERE user_id = ?", (user_id,))
         return int(row["xp"]) if row else 0
@@ -1014,6 +1079,13 @@ class Database:
             await self.db.execute(
                 "UPDATE users SET xp = xp + ? WHERE user_id = ?",
                 (amount, referrer_id),
+            )
+            await self.db.execute(
+                """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(user_id, day_start)
+                   DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
+                (int(referrer_id), referral_day_start(timestamp), int(amount)),
             )
             await self.db.commit()
             return True
@@ -1137,6 +1209,14 @@ class Database:
                 )
                 await cleanup.execute(
                     f"DELETE FROM number_daily_rewards WHERE user_id IN ({marks})",
+                    tuple(chunk),
+                )
+                await cleanup.execute(
+                    f"DELETE FROM daily_activity WHERE user_id IN ({marks})",
+                    tuple(chunk),
+                )
+                await cleanup.execute(
+                    f"DELETE FROM user_engagement WHERE user_id IN ({marks})",
                     tuple(chunk),
                 )
                 await cleanup.execute(
@@ -1399,6 +1479,269 @@ class Database:
         await self.db.commit()
         return partner
 
+    # ------------------------------------------------------------------ engagement
+    async def engagement_state(self, user_id: int) -> aiosqlite.Row:
+        await self.db.execute(
+            "INSERT OR IGNORE INTO user_engagement(user_id) VALUES (?)",
+            (int(user_id),),
+        )
+        await self.db.commit()
+        row = await self._fetchone(
+            "SELECT * FROM user_engagement WHERE user_id=?", (int(user_id),)
+        )
+        assert row is not None
+        return row
+
+    async def activity_add(
+        self, user_id: int, timestamp: int | None = None, **deltas: int
+    ) -> None:
+        allowed = {
+            "messages", "dialogs", "games", "battle_games", "number_games",
+            "ratings_given", "good_ratings", "battle_matches", "battle_questions",
+            "number_exact", "xp_earned",
+        }
+        values = {k: int(v) for k, v in deltas.items() if k in allowed and int(v)}
+        if not values:
+            return
+        day = referral_day_start(timestamp)
+        cols = ["user_id", "day_start", *values]
+        params = [int(user_id), day, *values.values()]
+        updates = ", ".join(f"{key}={key}+excluded.{key}" for key in values)
+        await self.db.execute(
+            f"INSERT INTO daily_activity({', '.join(cols)}) "
+            f"VALUES ({','.join('?' for _ in cols)}) "
+            f"ON CONFLICT(user_id, day_start) DO UPDATE SET {updates}",
+            params,
+        )
+        await self.db.commit()
+
+    async def activity_totals(self, user_id: int, days: int) -> dict[str, int]:
+        days = max(1, min(int(days), 40))
+        start = referral_day_start() - (days - 1) * 86_400
+        row = await self._fetchone(
+            """SELECT COALESCE(SUM(messages),0) messages,
+                      COALESCE(SUM(dialogs),0) dialogs,
+                      COALESCE(SUM(games),0) games,
+                      COALESCE(SUM(battle_games),0) battle_games,
+                      COALESCE(SUM(number_games),0) number_games,
+                      COALESCE(SUM(ratings_given),0) ratings_given,
+                      COALESCE(SUM(good_ratings),0) good_ratings,
+                      COALESCE(SUM(battle_matches),0) battle_matches,
+                      COALESCE(SUM(battle_questions),0) battle_questions,
+                      COALESCE(SUM(number_exact),0) number_exact,
+                      COALESCE(SUM(xp_earned),0) xp_earned
+                 FROM daily_activity
+                WHERE user_id=? AND day_start>=?""",
+            (int(user_id), start),
+        )
+        return {key: int(row[key] or 0) for key in row.keys()} if row else {}
+
+    async def top_period(self, days: int, limit: int = 10) -> list[aiosqlite.Row]:
+        if int(days) <= 0:
+            return await self.top(limit)
+        start = referral_day_start() - (max(1, int(days)) - 1) * 86_400
+        return await self._fetchall(
+            """SELECT u.user_id, u.nickname, u.support_stars,
+                      SUM(a.xp_earned) AS xp,
+                      SUM(a.dialogs) AS dialogs,
+                      SUM(a.messages) AS messages
+                 FROM daily_activity a
+                 JOIN users u ON u.user_id=a.user_id
+                WHERE a.day_start>=? AND u.banned=0
+                GROUP BY u.user_id
+                HAVING SUM(a.xp_earned) > 0 OR SUM(a.dialogs) > 0 OR SUM(a.messages) > 0
+                ORDER BY SUM(a.xp_earned) DESC, SUM(a.dialogs) DESC, SUM(a.messages) DESC
+                LIMIT ?""",
+            (start, max(1, min(int(limit), 50))),
+        )
+
+    async def update_streak(self, user_id: int, timestamp: int | None = None) -> tuple[int, int]:
+        day = referral_day_start(timestamp)
+        async with self._engagement_lock:
+            row = await self.engagement_state(user_id)
+            last = int(row["last_active_day"] or 0)
+            current = int(row["current_streak"] or 0)
+            best = int(row["best_streak"] or 0)
+            if last == day:
+                return current, best
+            current = current + 1 if last == day - 86_400 else 1
+            best = max(best, current)
+            await self.db.execute(
+                """UPDATE user_engagement
+                      SET current_streak=?, best_streak=?, last_active_day=?
+                    WHERE user_id=?""",
+                (current, best, day, int(user_id)),
+            )
+            await self.db.commit()
+            return current, best
+
+    async def record_dialog_engagement(self, user_id: int) -> None:
+        await self.engagement_state(user_id)
+        await self.db.execute(
+            "UPDATE user_engagement SET dialogs_total=dialogs_total+1 WHERE user_id=?",
+            (int(user_id),),
+        )
+        await self.db.commit()
+
+    async def record_game_engagement(
+        self, user_id: int, kind: str, matches: int = 0, total: int = 0,
+        number_exact: int = 0, range_max: int = 0,
+    ) -> None:
+        await self.engagement_state(user_id)
+        battle5 = int(kind == "battle" and total == 5 and matches == 5)
+        battle10 = int(kind == "battle" and total == 10 and matches == 10)
+        exact1000 = int(kind == "numbers" and range_max == 1000 and number_exact > 0)
+        await self.db.execute(
+            """UPDATE user_engagement
+                  SET games_total=games_total+1,
+                      battle_games_total=battle_games_total+?,
+                      number_games_total=number_games_total+?,
+                      battle_perfect_5=battle_perfect_5+?,
+                      battle_perfect_10=battle_perfect_10+?,
+                      number_exact_1000=number_exact_1000+?
+                WHERE user_id=?""",
+            (
+                int(kind == "battle"), int(kind == "numbers"),
+                battle5, battle10, exact1000, int(user_id),
+            ),
+        )
+        day = referral_day_start()
+        await self.db.execute(
+            """INSERT INTO daily_activity(
+                   user_id, day_start, games, battle_games, number_games,
+                   battle_matches, battle_questions, number_exact
+               ) VALUES (?, ?, 1, ?, ?, ?, ?, ?)
+               ON CONFLICT(user_id, day_start) DO UPDATE SET
+                   games=games+1,
+                   battle_games=battle_games+excluded.battle_games,
+                   number_games=number_games+excluded.number_games,
+                   battle_matches=battle_matches+excluded.battle_matches,
+                   battle_questions=battle_questions+excluded.battle_questions,
+                   number_exact=number_exact+excluded.number_exact""",
+            (
+                int(user_id), day, int(kind == "battle"), int(kind == "numbers"),
+                int(matches if kind == "battle" else 0),
+                int(total if kind == "battle" else 0),
+                int(number_exact if kind == "numbers" else 0),
+            ),
+        )
+        await self.db.commit()
+
+    async def unlock_achievement(self, user_id: int, key: str, reward: int) -> bool:
+        async with self._engagement_lock:
+            row = await self.engagement_state(user_id)
+            try:
+                unlocked = set(json.loads(str(row["achievements"] or "[]")))
+            except (json.JSONDecodeError, TypeError):
+                unlocked = set()
+            if key in unlocked:
+                return False
+            unlocked.add(str(key))
+            reward = max(0, int(reward))
+            await self.db.execute(
+                "UPDATE user_engagement SET achievements=? WHERE user_id=?",
+                (json.dumps(sorted(unlocked), ensure_ascii=False), int(user_id)),
+            )
+            if reward:
+                await self.db.execute(
+                    "UPDATE users SET xp=xp+? WHERE user_id=?", (reward, int(user_id))
+                )
+                day = referral_day_start()
+                await self.db.execute(
+                    """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+                       VALUES (?, ?, ?)
+                       ON CONFLICT(user_id, day_start)
+                       DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
+                    (int(user_id), day, reward),
+                )
+            await self.db.commit()
+            return True
+
+    async def daily_quest_claimed(self, user_id: int, day: int | None = None) -> set[str]:
+        day = referral_day_start() if day is None else int(day)
+        row = await self.engagement_state(user_id)
+        if int(row["quest_day"] or 0) != day:
+            return set()
+        try:
+            return set(json.loads(str(row["quest_claimed"] or "[]")))
+        except (json.JSONDecodeError, TypeError):
+            return set()
+
+    async def claim_daily_quest(
+        self, user_id: int, day: int, quest_key: str, reward: int
+    ) -> bool:
+        async with self._engagement_lock:
+            row = await self.engagement_state(user_id)
+            claimed: set[str] = set()
+            if int(row["quest_day"] or 0) == int(day):
+                try:
+                    claimed = set(json.loads(str(row["quest_claimed"] or "[]")))
+                except (json.JSONDecodeError, TypeError):
+                    claimed = set()
+            if quest_key in claimed:
+                return False
+            claimed.add(str(quest_key))
+            reward = max(0, int(reward))
+            await self.db.execute(
+                """UPDATE user_engagement SET quest_day=?, quest_claimed=?
+                    WHERE user_id=?""",
+                (int(day), json.dumps(sorted(claimed), ensure_ascii=False), int(user_id)),
+            )
+            if reward:
+                await self.db.execute(
+                    "UPDATE users SET xp=xp+? WHERE user_id=?", (reward, int(user_id))
+                )
+                await self.db.execute(
+                    """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+                       VALUES (?, ?, ?)
+                       ON CONFLICT(user_id, day_start)
+                       DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
+                    (int(user_id), int(day), reward),
+                )
+            await self.db.commit()
+            return True
+
+    async def cleanup_daily_activity(self, retention_days: int = 40) -> int:
+        cutoff = referral_day_start() - (max(2, int(retention_days)) - 1) * 86_400
+        cur = await self.db.execute(
+            "DELETE FROM daily_activity WHERE day_start < ?", (cutoff,)
+        )
+        await self.db.commit()
+        return int(cur.rowcount or 0)
+
+    async def game_diagnostics(self) -> dict[str, int]:
+        cutoff = now() - GAME_INACTIVE_TTL_SECONDS
+        row = await self._fetchone(
+            """SELECT COUNT(*) total,
+                      SUM(CASE WHEN game_type='battle' THEN 1 ELSE 0 END) battle,
+                      SUM(CASE WHEN game_type='numbers' THEN 1 ELSE 0 END) numbers,
+                      SUM(CASE WHEN updated_at<=? THEN 1 ELSE 0 END) stale
+                 FROM battle_games
+                WHERE status IN ('invited','active','round_done')""",
+            (cutoff,),
+        )
+        return {
+            "total": int(row["total"] or 0) if row else 0,
+            "battle": int(row["battle"] or 0) if row else 0,
+            "numbers": int(row["numbers"] or 0) if row else 0,
+            "stale": int(row["stale"] or 0) if row else 0,
+        }
+
+    async def online_peak(self, current: int) -> int:
+        day = referral_day_start()
+        raw_day = await self.get_kv("online_peak_day")
+        raw_value = await self.get_kv("online_peak_value")
+        saved_day = int(raw_day) if raw_day.isdigit() else 0
+        peak = int(raw_value) if raw_value.isdigit() else 0
+        if saved_day != day:
+            peak = max(0, int(current))
+            await self.set_kv("online_peak_day", str(day))
+            await self.set_kv("online_peak_value", str(peak))
+        elif int(current) > peak:
+            peak = int(current)
+            await self.set_kv("online_peak_value", str(peak))
+        return peak
+
     # ------------------------------------------------------------------ stats
     async def active_ids(self, days: int = 7, limit: int = 100000) -> list[int]:
         rows = await self._fetchall(
@@ -1452,6 +1795,8 @@ class Database:
             "matchmaker_state",
             json.dumps(state, ensure_ascii=False, separators=(",", ":")),
         )
+        from .diagnostics import METRICS
+        METRICS.last_matchmaker_save_at = now()
 
     def schedule_matchmaker_save(self, matchmaker) -> None:
         """Пишет snapshot только если состояние реально изменилось, а не после каждого апдейта."""
@@ -1576,6 +1921,8 @@ class Database:
             "DELETE FROM battle_games WHERE user_a = ? OR user_b = ?",
             (user_id, user_id),
         )
+        await self.db.execute("DELETE FROM daily_activity WHERE user_id=?", (user_id,))
+        await self.db.execute("DELETE FROM user_engagement WHERE user_id=?", (user_id,))
         # История диалогов/жалоб нужна для блокировок и открытой модерации; личные поля там не хранятся.
         await self.db.commit()
 

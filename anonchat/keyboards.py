@@ -35,6 +35,11 @@ CB_GAMES = "game:menu"
 CB_BATTLE = "game:battle"
 CB_NUMBERS = "game:numbers"
 CB_FEEDBACK = "cfg:feedback"
+CB_ACTIVITY = "profile:activity"
+CB_STREAK = "profile:streak"
+CB_QUESTS = "profile:quests"
+CB_REFERRAL = "profile:ref"
+CB_ONLINE = "cfg:online"
 
 
 #: Bot API принимает только эти три цвета кнопки («warning» отвергает — проверено живьём)
@@ -119,22 +124,61 @@ def chat_keyboard() -> InlineKeyboardMarkup:
 
 def profile_keyboard(referral_url: str = "") -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    if referral_url:
-        b.row(InlineKeyboardButton(
-            text="Скопировать реферальную ссылку",
-            copy_text=CopyTextButton(text=referral_url),
-            icon_custom_emoji_id=ICONS.get("link"),
-        ))
-        _button(
-            b,
-            "Отправить другу",
-            url=f"https://t.me/share/url?url={quote(referral_url, safe='')}&text={quote('Заходи в анонимный чат', safe='')}",
-            icon="gift",
-        )
+    _button(b, "Моя активность", callback_data=CB_ACTIVITY, icon="stats")
+    _button(b, "Серия активности", callback_data=CB_STREAK, icon="bonus")
+    _button(b, "Квесты дня", callback_data=CB_QUESTS, icon="ticket")
+    _button(b, "Реферальная ссылка", callback_data=CB_REFERRAL, icon="gift")
     _button(b, "Изменить ник", callback_data=CB_NICK, icon="edit")
     _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
     _button(b, "Назад", callback_data=CB_MENU, icon="home")
-    b.adjust(1, 1, 1, 2)
+    b.adjust(2, 2, 2, 1)
+    return b.as_markup()
+
+
+def referral_keyboard(referral_url: str) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(
+        text="Скопировать ссылку",
+        copy_text=CopyTextButton(text=referral_url),
+        icon_custom_emoji_id=ICONS.get("link"),
+    ))
+    _button(
+        b,
+        "Отправить другу",
+        url=f"https://t.me/share/url?url={quote(referral_url, safe='')}&text={quote('Заходи в анонимный чат', safe='')}",
+        icon="gift",
+    )
+    _button(b, "Назад в профиль", callback_data=CB_PROFILE, icon="home")
+    b.adjust(1, 1, 1)
+    return b.as_markup()
+
+
+def top_keyboard(period: str = "week") -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    labels = (("week", "Неделя"), ("month", "Месяц"), ("all", "Всё время"))
+    for key, title in labels:
+        _button(
+            b,
+            f"• {title}" if key == period else title,
+            callback_data=f"top:{key}",
+            style="primary" if key == period else "",
+        )
+    _button(b, "Назад", callback_data=CB_MENU, icon="home")
+    b.adjust(3, 1)
+    return b.as_markup()
+
+
+def profile_section_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Назад в профиль", callback_data=CB_PROFILE, icon="home")
+    return b.as_markup()
+
+
+def online_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Обновить", callback_data="cfg:online:refresh", icon="refresh", style="primary")
+    _button(b, "Назад в настройки", callback_data=CB_SETTINGS, icon="home")
+    b.adjust(1, 1)
     return b.as_markup()
 
 
@@ -183,11 +227,12 @@ def settings_keyboard(
     _button(b, f"Берег: {district or 'не выбран'}", callback_data="cfg:district:ask", icon="geo")
     _button(b, "Возраст", callback_data="cfg:age:ask", icon="stars")
     _button(b, "Сбросить скрытых", callback_data="cfg:blocks:ask", icon="refresh")
+    _button(b, "Онлайн сейчас", callback_data=CB_ONLINE, icon="view")
     _button(b, "Отзыв / обратная связь", callback_data=CB_FEEDBACK, icon="support")
     _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
     _button(b, "Удалить профиль", callback_data="cfg:forget:ask", icon="delete", style="danger")
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
-    b.adjust(1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+    b.adjust(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
     return b.as_markup()
 
 
@@ -425,6 +470,7 @@ CB_PANEL_ADMINS = "adm:panel:admins"
 CB_PANEL_MONITOR = "adm:panel:monitor"
 CB_PANEL_GAMES = "adm:panel:games"
 CB_PANEL_BACKUP = "adm:panel:backup"
+CB_PANEL_DIAGNOSTICS = "adm:panel:diagnostics"
 CB_PANEL_BACK = "adm:panel:back"
 
 
@@ -439,6 +485,7 @@ def admin_panel_keyboard(
     permissions = set(permissions or ())
     if "stats" in permissions:
         _button(b, "Сводка", callback_data=CB_PANEL_STATS, icon="stats")
+        _button(b, "Диагностика", callback_data=CB_PANEL_DIAGNOSTICS, icon="settings", style="primary")
     if "reports" in permissions:
         _button(
             b,
@@ -477,6 +524,14 @@ def admin_panel_keyboard(
         )
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
     b.adjust(2)
+    return b.as_markup()
+
+
+def diagnostics_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Обновить", callback_data=CB_PANEL_DIAGNOSTICS, icon="refresh", style="primary")
+    _button(b, "В панель", callback_data=CB_PANEL_BACK, icon="home")
+    b.adjust(1, 1)
     return b.as_markup()
 
 

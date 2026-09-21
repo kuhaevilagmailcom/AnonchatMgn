@@ -27,19 +27,23 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InputMediaPhoto,
     Message,
+    ReplyParameters,
 )
 
 from . import nick as nicklib
 from . import texts
 from .config import Config
-from .db import Database
+from .db import Database, referral_day_start
 from .keyboards import (
     back_menu_keyboard, chat_keyboard, menu_keyboard,
-    profile_keyboard, rating_keyboard,
+    profile_keyboard, rating_keyboard, referral_keyboard, top_keyboard,
+    profile_section_keyboard, online_keyboard,
 )
 from .levels import rank_for
 from .matching import Matchmaker
 from .pack import EmojiPack
+from .engagement import collect_progress_notifications, format_quests
+from . import relay_state
 
 ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "menu"
 log = logging.getLogger(__name__)
@@ -362,7 +366,7 @@ async def send_to(
 
 
 async def send_copy_to_message(
-    bot: Bot, message: Message, chat_id: int
+    bot: Bot, message: Message, chat_id: int, reply_to_message_id: int | None = None
 ) -> tuple[DeliveryResult, Message | None]:
     """Пересылает сообщение и возвращает созданную копию для последующего редактирования.
 
@@ -370,6 +374,11 @@ async def send_copy_to_message(
     Telegram Bot API без forward, чтобы не раскрывать отправителя.
     """
     photo = getattr(message, "photo", None)
+    reply_parameters = (
+        ReplyParameters(message_id=int(reply_to_message_id))
+        if reply_to_message_id
+        else None
+    )
     action = "upload_photo" if photo else "typing"
     try:
         await bot.send_chat_action(chat_id, action)
@@ -386,9 +395,13 @@ async def send_copy_to_message(
                     parse_mode=None,
                     caption_entities=message.caption_entities or None,
                     has_spoiler=bool(getattr(message, "has_media_spoiler", False)),
+                    reply_parameters=reply_parameters,
                 )
             else:
-                sent = await message.send_copy(chat_id=chat_id)
+                sent = await message.send_copy(
+                    chat_id=chat_id,
+                    reply_parameters=reply_parameters,
+                )
             return DeliveryResult.DELIVERED, sent if isinstance(sent, Message) else None
         except TelegramRetryAfter as exc:
             await asyncio.sleep(max(0.0, float(exc.retry_after)))
@@ -525,8 +538,7 @@ async def show_menu(ctx: Ctx) -> None:
 
     body = (
         f"<b>{texts.esc(ctx.nick)}</b>\n\n"
-        f"{state}\n\n"
-        f"🟢 Онлайн сейчас: <b>{online_count(ctx.mm)}</b>"
+        f"{state}"
     )
     kb = menu_keyboard(status, ctx.mm.queue_size(), admin=ctx.is_admin)
     image = {"paired": "03_found.png", "queued": "02_search.png"}.get(status, "01_main_menu.png")
@@ -549,24 +561,108 @@ async def show_rules(ctx: Ctx) -> None:
     await ctx.render_screen("06_rules.png", texts.RULES, back_menu_keyboard())
 
 
-async def show_top(ctx: Ctx) -> None:
+async def show_top(ctx: Ctx, period: str = "week") -> None:
     if await ctx.dialog_locked():
         return
-    rows = await ctx.db.top(10)
-    if not rows:
-        await ctx.reply("🏆 Топ пуст — начни общаться первым.", markup=menu_keyboard())
-        return
+    periods = {
+        "week": (7, "Неделя"),
+        "month": (30, "Месяц"),
+        "all": (0, "Всё время"),
+    }
+    days, title = periods.get(period, periods["week"])
+    rows = await ctx.db.top_period(days, 10)
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-    lines = [f"🏆 <b>Топ · {texts.esc(ctx.cfg.city)}</b>", ""]
-    for i, row in enumerate(rows, start=1):
-        # медали только за места: ранг подписываем словом, иначе 🥇/🥈 слипаются с 🥇 Серебро
-        place = medals.get(i, f"<code>{i}</code>")
-        lines.append(
-            f"{place} <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id']), row['support_stars']))}</b>"
-            f" · <b>{int(row['xp'])} ⭐</b>"
-        )
+    lines = [f"🏆 <b>Топ · {title}</b>", ""]
+    if not rows:
+        lines.append("Пока пусто.")
+    else:
+        for i, row in enumerate(rows, start=1):
+            place = medals.get(i, f"<code>{i}</code>")
+            lines.append(
+                f"{place} <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id']), row['support_stars']))}</b>"
+                f" · <b>{int(row['xp'] or 0)} ⭐</b>"
+            )
     lines += ["", "<i>Ники участники придумывают сами.</i>"]
-    await ctx.render_screen("08_top.png", "\n".join(lines), back_menu_keyboard())
+    await ctx.render_screen("08_top.png", "\n".join(lines), top_keyboard(period))
+
+
+async def show_referral(ctx: Ctx) -> None:
+    bot = await ctx.bot.get_me()
+    link = f"https://t.me/{bot.username}?start=ref_{ctx.user_id}"
+    invited, earned = await ctx.db.referral_stats(ctx.user_id)
+    body = (
+        "🎁 <b>Пригласить друга</b>\n\n"
+        f"Приглашено: <b>{invited}</b>\n"
+        f"Получено: <b>{earned} ⭐</b>\n\n"
+        f"Твоя ссылка:\n<code>{link}</code>"
+    )
+    await ctx.render_screen("04_profile.png", body, referral_keyboard(link))
+
+
+async def show_activity(ctx: Ctx) -> None:
+    if await ctx.dialog_locked():
+        return
+    today = await ctx.db.activity_totals(ctx.user_id, 1)
+    week = await ctx.db.activity_totals(ctx.user_id, 7)
+    month = await ctx.db.activity_totals(ctx.user_id, 30)
+    engagement = await ctx.db.engagement_state(ctx.user_id)
+    me = await ctx.db.get_user(ctx.user_id)
+    body = (
+        "📊 <b>Моя активность</b>\n\n"
+        f"<b>Сегодня</b>\n"
+        f"Диалогов: {today.get('dialogs', 0)} · сообщений: {today.get('messages', 0)} · игр: {today.get('games', 0)}\n\n"
+        f"<b>За 7 дней</b>\n"
+        f"Диалогов: {week.get('dialogs', 0)} · сообщений: {week.get('messages', 0)} · игр: {week.get('games', 0)}\n\n"
+        f"<b>За 30 дней</b>\n"
+        f"Диалогов: {month.get('dialogs', 0)} · сообщений: {month.get('messages', 0)} · игр: {month.get('games', 0)}\n\n"
+        f"<b>Всего</b>\n"
+        f"Диалогов: {int(engagement['dialogs_total'] or 0)} · сообщений: {int(me['messages'] or 0) if me else 0}\n"
+        f"Хороших оценок: {int(me['good_ratings'] or 0) if me else 0} · игр: {int(engagement['games_total'] or 0)}"
+    )
+    await ctx.render_screen("04_profile.png", body, profile_section_keyboard())
+
+
+async def show_streak(ctx: Ctx) -> None:
+    if await ctx.dialog_locked():
+        return
+    row = await ctx.db.engagement_state(ctx.user_id)
+    today = await ctx.db.activity_totals(ctx.user_id, 1)
+    done = int(today.get("dialogs", 0)) > 0
+    today_start = referral_day_start()
+    last_day = int(row["last_active_day"] or 0)
+    current = int(row["current_streak"] or 0)
+    if last_day and last_day < today_start - 86_400:
+        current = 0
+    body = (
+        "🔥 <b>Серия активности</b>\n\n"
+        f"Текущая серия: <b>{current} дней</b>\n"
+        f"Лучшая серия: <b>{int(row['best_streak'] or 0)} дней</b>\n"
+        f"Сегодня: {'выполнено ✅' if done else 'ещё нет'}"
+    )
+    await ctx.render_screen("04_profile.png", body, profile_section_keyboard())
+
+
+async def show_quests(ctx: Ctx) -> None:
+    if await ctx.dialog_locked():
+        return
+    await ctx.render_screen(
+        "04_profile.png",
+        await format_quests(ctx.db, ctx.user_id),
+        profile_section_keyboard(),
+    )
+
+
+async def show_online(ctx: Ctx) -> None:
+    current = ctx.mm.queue_size() + ctx.mm.online_pairs() * 2
+    peak = await ctx.db.online_peak(current)
+    body = (
+        "🟢 <b>Онлайн сейчас</b>\n\n"
+        f"Общаются: <b>{ctx.mm.online_pairs() * 2}</b>\n"
+        f"Ищут собеседника: <b>{ctx.mm.queue_size()}</b>\n"
+        f"Всего сейчас: <b>{current}</b>\n"
+        f"Пик сегодня: <b>{peak}</b>"
+    )
+    await ctx.render_screen("05_settings.png", body, online_keyboard())
 
 
 async def show_profile(ctx: Ctx) -> None:
@@ -696,8 +792,34 @@ async def break_pair(
         return
     if db is not None:
         await db.close_battles_for_users(user_id, partner)
+    relay_state.clear_pair(user_id, partner)
     await send_to(bot, partner, note, kb, pack)
     await send_to(bot, user_id, note, kb, pack)
+
+
+async def _send_progress_notices(ctx: Ctx, user_id: int) -> None:
+    for notice in await collect_progress_notifications(ctx.db, user_id):
+        await send_to(ctx.bot, user_id, notice, pack=ctx.pack)
+
+
+def _dialog_summary_text(summary: dict) -> str:
+    started = float(summary.get("started_at", time.time()))
+    seconds = max(0, int(time.time() - started))
+    mins = max(1, seconds // 60) if seconds else 0
+    counts = summary.get("counts", {}) or {}
+    total_messages = sum(int(v) for v in counts.values())
+    game = summary.get("game_stats", {}) or {}
+    lines = ["💬 <b>Диалог завершён</b>"]
+    if mins:
+        lines.append(f"Время: <b>{mins} мин</b>")
+    lines.append(f"Сообщений: <b>{total_messages}</b>")
+    if int(game.get("battle_games", 0)):
+        lines.append(
+            f"Битва мнений: <b>{int(game.get('battle_matches', 0))}/{int(game.get('battle_questions', 0))}</b> совпадений"
+        )
+    if int(game.get("number_games", 0)):
+        lines.append(f"Числа: <b>{int(game.get('number_exact', 0))}</b> точных совпадений")
+    return "\n".join(lines)
 
 
 async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -> None:
@@ -706,6 +828,7 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
         await ctx.reply(texts.NO_DIALOG, markup=menu_keyboard())
         return
     await ctx.db.close_battles_for_users(ctx.user_id, partner)
+    relay_state.clear_pair(ctx.user_id, partner)
 
     counts: dict[int, int] = summary.get("counts", {}) or {}
     mine = int(counts.get(ctx.user_id, 0))
@@ -715,19 +838,36 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
     match_id = await ctx.db.log_dialog(ctx.user_id, partner, mine, theirs, started, ended_by)
     cap = ctx.cfg.xp_message_cap
     live = mine > 0 and theirs > 0 and (mine + theirs) >= 6
-    my_xp = min(mine, cap) * ctx.cfg.xp_per_message + (ctx.cfg.xp_per_dialog if live else 0)
+    my_xp = 0
     for uid, sent in ((ctx.user_id, mine), (partner, theirs)):
         gain = min(sent, cap) * ctx.cfg.xp_per_message + (ctx.cfg.xp_per_dialog if live else 0)
         if gain:
             await ctx.db.award_xp(uid, gain)
         if sent:
             await ctx.db.bump(uid, "messages", sent)
+        await ctx.db.activity_add(uid, messages=sent, dialogs=1 if live else 0)
+        if live:
+            await ctx.db.record_dialog_engagement(uid)
+            await ctx.db.update_streak(uid)
+        if uid == ctx.user_id:
+            my_xp = gain
 
     ctx.mm.remember_rating([ctx.user_id, partner], match_id)
+    summary_text = _dialog_summary_text(summary)
 
-    await send_to(ctx.bot, partner, notify_partner, menu_keyboard(), ctx.pack)
-    await ctx.reply(note + texts.XP_EARNED.format(xp=my_xp), markup=rating_keyboard())
+    await send_to(
+        ctx.bot, partner,
+        f"{notify_partner}\n\n{summary_text}",
+        menu_keyboard(), ctx.pack,
+    )
+    await ctx.reply(
+        f"{note}{texts.XP_EARNED.format(xp=my_xp)}\n\n{summary_text}",
+        markup=rating_keyboard(),
+    )
     await send_to(ctx.bot, partner, texts.RATING_ASK, rating_keyboard(), ctx.pack)
+
+    await _send_progress_notices(ctx, ctx.user_id)
+    await _send_progress_notices(ctx, partner)
 
 
 async def act_connect(ctx: Ctx) -> None:
@@ -806,8 +946,10 @@ async def apply_rating(ctx: Ctx, positive: bool) -> None:
     if rated_partner is None:
         await ctx.ack(texts.RATING_STALE, alert=True)
         return
+    await ctx.db.activity_add(ctx.user_id, ratings_given=1)
     if positive:
         await ctx.db.award_xp(partner, ctx.cfg.xp_good_rating)
+        await ctx.db.activity_add(partner, good_ratings=1)
         await ctx.ack("Спасибо")
         result_text = texts.RATING_DONE_GOOD.format(xp=ctx.cfg.xp_good_rating)
     else:
@@ -816,12 +958,16 @@ async def apply_rating(ctx: Ctx, positive: bool) -> None:
     await ctx.reply(
         result_text, markup=menu_keyboard(ctx.mm.status(ctx.user_id))
     )
+    await _send_progress_notices(ctx, ctx.user_id)
+    if positive:
+        await _send_progress_notices(ctx, partner)
 
 
 async def forget_everything(ctx: Ctx) -> None:
     partner = ctx.mm.partner(ctx.user_id)
     await ctx.db.close_battles_for_users(ctx.user_id, partner or 0)
     ctx.mm.forget(ctx.user_id)
+    relay_state.clear_user(ctx.user_id)
     await ctx.db.forget_user(ctx.user_id)
     await ctx.reply(
         texts.FORGET_DONE, markup=menu_keyboard()

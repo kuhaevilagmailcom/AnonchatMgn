@@ -17,6 +17,7 @@ from ..actions import Ctx, DeliveryResult, send_to
 from ..battle_questions import BattleQuestion, get_question, questions
 from ..db import Database
 from ..matching import Matchmaker
+from ..engagement import collect_progress_notifications
 from ..number_game import (
     NUMBER_DAILY_REWARD_LIMIT,
     NUMBER_NEAR_DIFFS,
@@ -26,6 +27,11 @@ from ..number_game import (
 )
 
 router = Router(name="games")
+
+
+async def _notify_progress(ctx: Ctx, user_id: int) -> None:
+    for notice in await collect_progress_notifications(ctx.db, user_id):
+        await send_to(ctx.bot, user_id, notice, pack=ctx.pack)
 
 
 def _players(row: Any) -> tuple[int, int]:
@@ -487,6 +493,18 @@ async def cb_number_submit(event: CallbackQuery, ctx: Ctx, db: Database) -> None
     if result == "resolved" and game is not None:
         await ctx.ack("Число принято")
         await _send_number_result(ctx, game, reward_a, reward_b)
+        if str(game["status"]) == "finished":
+            user_a, user_b = _players(game)
+            exact = int(game["matches"] or 0)
+            total = int(game["total_questions"] or NUMBER_ROUNDS)
+            range_max = int(game["range_max"] or 0)
+            ctx.mm.record_game(user_a, "numbers", exact, total)
+            for uid in (user_a, user_b):
+                await db.record_game_engagement(
+                    uid, "numbers", matches=exact, total=total,
+                    number_exact=exact, range_max=range_max,
+                )
+                await _notify_progress(ctx, uid)
         return
     if result == "already":
         await ctx.ack("Ты уже выбрал число", alert=True)
@@ -638,6 +656,16 @@ async def cb_answer(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     if result == "resolved" and game is not None:
         await ctx.ack("Ответ принят")
         await _send_round_result(ctx, game)
+        if str(game["status"]) == "finished":
+            user_a, user_b = _players(game)
+            matches = int(game["matches"] or 0)
+            total = int(game["total_questions"] or 0)
+            ctx.mm.record_game(user_a, "battle", matches, total)
+            for uid in (user_a, user_b):
+                await db.record_game_engagement(
+                    uid, "battle", matches=matches, total=total
+                )
+                await _notify_progress(ctx, uid)
         return
     await ctx.ack("Ответ уже принят или вопрос закрыт", alert=True)
 

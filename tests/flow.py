@@ -113,7 +113,10 @@ class RecordingSession(BaseSession):
         self.outbox.clear()
 
 
-def msg_update(bot: Bot, uid: int, text: str, update_id: int, entities: list[dict] | None = None) -> Update:
+def msg_update(
+    bot: Bot, uid: int, text: str, update_id: int,
+    entities: list[dict] | None = None, reply_to_message_id: int | None = None,
+) -> Update:
     message: dict[str, Any] = {
         "message_id": update_id,
         "date": 1_700_000_000,
@@ -123,6 +126,14 @@ def msg_update(bot: Bot, uid: int, text: str, update_id: int, entities: list[dic
     }
     if entities:
         message["entities"] = entities
+    if reply_to_message_id is not None:
+        message["reply_to_message"] = {
+            "message_id": int(reply_to_message_id),
+            "date": 1_700_000_000,
+            "chat": {"id": uid, "type": "private", "first_name": f"U{uid}"},
+            "from": {"id": 777, "is_bot": True, "first_name": "Анончат"},
+            "text": "анонимная копия",
+        }
     payload = {"update_id": update_id, "message": message}
     return Update.model_validate(payload, context={"bot": bot})
 
@@ -175,10 +186,18 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
 
     step = 0
 
-    async def send(uid: int, text: str, entities: list[dict] | None = None) -> None:
+    async def send(
+        uid: int, text: str, entities: list[dict] | None = None,
+        reply_to_message_id: int | None = None,
+    ) -> int:
         nonlocal step
         step += 1
-        await dp.feed_update(bot, msg_update(bot, uid, text, step, entities))
+        current = step
+        await dp.feed_update(
+            bot,
+            msg_update(bot, uid, text, current, entities, reply_to_message_id),
+        )
+        return current
 
     async def press(uid: int, data: str) -> None:
         nonlocal step
@@ -267,6 +286,20 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     check(session.to(A) == [], "бот не пишет «доставлено анонимно» — человек и так всё понял")
     await send(B, "С Правобережного 🙂")
     check("С Правобережного" in session.last_to(A), "ответ дошёл A")
+
+    session.clear()
+    source_id = await send(A, "Сообщение для reply")
+    copied_message_id = session._mid
+    session.clear()
+    await send(B, "Ответ именно на сообщение", reply_to_message_id=copied_message_id)
+    reply_calls = [
+        item for item in session.to(A)
+        if item.get("method") == "sendMessage" and "Ответ именно" in str(item.get("text", ""))
+    ]
+    check(bool(reply_calls), "reply доставлен собеседнику")
+    reply_params = reply_calls[-1].get("reply_parameters", {})
+    check(int(reply_params.get("message_id", 0)) == source_id,
+          "reply у собеседника привязан к исходному сообщению")
     await send(A, "О, тогда нам по пути — я от Вокзала")
     await send(B, "Бывает 🙂")
     await send(A, "Как тебе наш снег?")
@@ -760,8 +793,21 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(session.outbox[0]["method"] == "answerCallbackQuery",
           "кнопка поиска отпускает интерфейс сразу")
     await send(B, "/start")
-    check("Онлайн сейчас: <b>1</b>" in session.last_to(B),
-          "меню показывает текущий онлайн")
+    check("Онлайн сейчас" not in session.last_to(B),
+          "главное меню не перегружено онлайном")
+    await press(B, "act:settings")
+    settings_message = next(
+        item for item in reversed(session.to(B)) if item.get("reply_markup")
+    )
+    settings_markup = settings_message.get("reply_markup", {})
+    settings_labels = [
+        button["text"] for row in settings_markup.get("inline_keyboard", []) for button in row
+    ]
+    check("Онлайн сейчас" in settings_labels, "онлайн вынесен в настройки")
+    await press(B, "cfg:online")
+    check("Ищут собеседника: <b>1</b>" in session.last_to(B),
+          "экран онлайна показывает очередь")
+    await press(B, "act:menu")
     await press(B, "act:connect")
     check(mm.partner(A) == B, "возраст не разделяет очередь")
     check("Собеседник найден" in session.last_to(A), "экран найденного собеседника отправлен")
@@ -842,7 +888,8 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
             await press(A, f"game:next:{battle_id}:{question_index}")
             check(f"<b>{question_index + 2}/5</b>" in session.last_to(B), "следующий вопрос синхронно показан обоим")
         else:
-            check("Битва окончена" in session.last_to(A) and "4/5" in session.last_to(A),
+            battle_texts = session.texts_to(A)
+            check(any("Битва окончена" in text and "4/5" in text for text in battle_texts),
                   "после пятого вопроса показан итог 4/5")
 
     check(await db.get_battle(battle_id) is None, "завершённая игра удалена из SQLite")
@@ -863,6 +910,8 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     xp_a_before = int((await db.get_user(A))["xp"])
     xp_b_before = int((await db.get_user(B))["xp"])
+    number_reward_a_before = await db.number_daily_reward(A)
+    number_reward_b_before = await db.number_daily_reward(B)
     await press(A, "game:numbers:range:10")
     number_game = await db.number_for_pair(A, B)
     check(bool(number_game and number_game["status"] == "invited"),
@@ -902,13 +951,17 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await press(A, f"game:num:submit:{number_id}:2:1")
     await press(B, f"game:num:set:{number_id}:2:9")
     await press(B, f"game:num:submit:{number_id}:2:9")
-    check("Игра окончена" in session.last_to(A) and "37" in session.last_to(A),
+    number_texts = session.texts_to(A)
+    check(any("Игра окончена" in text and "37" in text for text in number_texts),
           "после трёх раундов показан общий заработок")
     check(await db.number_for_pair(A, B) is None,
           "завершённая игра Числа не хранится как история")
-    check(int((await db.get_user(A))["xp"]) == xp_a_before + 37
-          and int((await db.get_user(B))["xp"]) == xp_b_before + 37,
+    check(await db.number_daily_reward(A) == number_reward_a_before + 37
+          and await db.number_daily_reward(B) == number_reward_b_before + 37,
           "награды Чисел начисляются обоим игрокам")
+    check(int((await db.get_user(A))["xp"]) >= xp_a_before + 37
+          and int((await db.get_user(B))["xp"]) >= xp_b_before + 37,
+          "дополнительные достижения не уменьшают награду Чисел")
 
     await press(ADMIN, "adm:panel:monitor")
     session.clear()
@@ -1001,6 +1054,11 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await send(A, "/stop")
     closed_battle = await db.get_battle(int(active_battle["id"]))
     check(closed_battle is None, "/stop удаляет активную игру из SQLite")
+    dialog_results = session.texts_to(A)
+    check(any("Диалог завершён" in text and "Сообщений:" in text for text in dialog_results),
+          "после диалога показывается краткая статистика")
+    check(any("Битва мнений:" in text and "Числа:" in text for text in dialog_results),
+          "итог диалога показывает только реально сыгранные игры")
     session.clear()
     await press(A, "rate:block")
     check(B in await db.excluded_partners(A), "блок-лист сохраняет пару")
@@ -1065,6 +1123,41 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(await db.get_user(fake) is None, "подтверждение удаляет накрученный профиль")
     check(int((await db.get_user(abuser))["xp"]) == 0, "подтверждение обнуляет очки накрутчика")
     check("Реферальная накрутка удалена" in session.last_to(ADMIN), "владелец получает итог очистки")
+
+    # Новые экраны профиля, /ref, топы и диагностика.
+    session.clear()
+    await send(A, "/ref")
+    check("Пригласить друга" in session.last_to(A), "/ref открывает отдельный реферальный экран")
+    ref_message = next(item for item in reversed(session.to(A)) if item.get("reply_markup"))
+    ref_markup = str(ref_message.get("reply_markup"))
+    check("Скопировать ссылку" in ref_markup and "Отправить другу" in ref_markup,
+          "/ref показывает copy/share кнопки")
+
+    await send(A, "/profile")
+    profile_message = next(item for item in reversed(session.to(A)) if item.get("reply_markup"))
+    profile_markup = str(profile_message.get("reply_markup"))
+    for label in ("Моя активность", "Серия активности", "Квесты дня", "Реферальная ссылка"):
+        check(label in profile_markup, f"в профиле есть «{label}»")
+
+    await press(A, "profile:activity")
+    check("Моя активность" in session.last_to(A), "экран собственной активности открывается")
+    await press(A, "profile:streak")
+    check("Серия активности" in session.last_to(A), "экран серии активности открывается")
+    await press(A, "profile:quests")
+    check("Квесты дня" in session.last_to(A), "экран ежедневных квестов открывается")
+
+    await send(A, "/top")
+    check("Топ · Неделя" in session.last_to(A), "топ по умолчанию открывается за неделю")
+    await press(A, "top:month")
+    check("Топ · Месяц" in session.last_to(A), "топ переключается на месяц")
+    await press(A, "top:all")
+    check("Топ · Всё время" in session.last_to(A), "топ переключается на всё время")
+
+    session.clear()
+    await send(ADMIN, "/admin")
+    await press(ADMIN, "adm:panel:diagnostics")
+    check("Диагностика" in session.last_to(ADMIN) and "Reply-map" in session.last_to(ADMIN),
+          "админская диагностика открывается")
 
     await bot.session.close()
     await db.close()

@@ -21,6 +21,10 @@ from ..actions import (
     show_rules,
     show_top,
     show_welcome,
+    show_referral,
+    show_activity,
+    show_streak,
+    show_quests,
 )
 from ..commands import ensure_for_admin
 from ..config import Config
@@ -58,15 +62,7 @@ async def cmd_start(
 
 @router.message(Command("ref", "invite"))
 async def cmd_referral(message: Message, ctx: Ctx) -> None:
-    bot = await ctx.bot.get_me()
-    link = f"https://t.me/{bot.username}?start=ref_{ctx.user_id}"
-    await ctx.reply(
-        "<b>Пригласи друга</b>\n\n"
-        f"За каждого нового пользователя ты получишь <b>+{REFERRAL_XP} ⭐ очков</b>.\n\n"
-        f"Лимит начислений: <b>{REFERRAL_DAILY_LIMIT} приглашений в сутки</b>.\n\n"
-        f"Твоя ссылка:\n<code>{link}</code>",
-        K.menu_keyboard(ctx.mm.status(ctx.user_id)),
-    )
+    await show_referral(ctx)
 
 
 @router.message(Command("help"))
@@ -204,7 +200,41 @@ async def cb_help(event: CallbackQuery, ctx: Ctx) -> None:
 @router.callback_query(F.data == K.CB_TOP)
 async def cb_top(event: CallbackQuery, ctx: Ctx) -> None:
     await ctx.ack()
-    await show_top(ctx)
+    await show_top(ctx, "week")
+
+
+@router.callback_query(F.data.startswith("top:"))
+async def cb_top_period(event: CallbackQuery, ctx: Ctx) -> None:
+    period = (event.data or "").rsplit(":", 1)[-1]
+    if period not in {"week", "month", "all"}:
+        await ctx.ack("Кнопка устарела", alert=True)
+        return
+    await ctx.ack()
+    await show_top(ctx, period)
+
+
+@router.callback_query(F.data == K.CB_REFERRAL)
+async def cb_referral(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
+    await show_referral(ctx)
+
+
+@router.callback_query(F.data == K.CB_ACTIVITY)
+async def cb_activity(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
+    await show_activity(ctx)
+
+
+@router.callback_query(F.data == K.CB_STREAK)
+async def cb_streak(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
+    await show_streak(ctx)
+
+
+@router.callback_query(F.data == K.CB_QUESTS)
+async def cb_quests(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
+    await show_quests(ctx)
 
 
 @router.callback_query(F.data.startswith("act:"))

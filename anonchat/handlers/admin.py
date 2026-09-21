@@ -31,6 +31,8 @@ from ..db import Database
 from ..levels import rank_for
 from ..matching import Matchmaker
 from ..permissions import ALL_ADMIN_PERMISSIONS, PERMISSION_LABELS, parse_permissions
+from ..diagnostics import METRICS
+from .. import relay_state
 from .reports import format_report_card
 
 router = Router(name="admin")
@@ -79,6 +81,46 @@ async def stats_text(db: Database, mm: Matchmaker, cfg: Config) -> str:
         f"✉️ Сообщений переслано: <b>{s['messages']}</b>\n"
         f"⏳ В очереди: <b>{mm.queue_size()}</b> · в парах: <b>{mm.online_pairs()}</b>\n"
         f"🚩 Открытых жалоб: <b>{s['open_reports']}</b>"
+    )
+
+
+
+async def diagnostics_text(db: Database, mm: Matchmaker) -> str:
+    stats = await db.stats()
+    games = await db.game_diagnostics()
+    queue = mm.queue_debug_snapshot(1)
+    longest = int(queue[0]["waiting_seconds"]) if queue else 0
+    size = db.path.stat().st_size if db.path.exists() else 0
+    uptime = METRICS.uptime_seconds()
+    hours, rem = divmod(uptime, 3600)
+    mins = rem // 60
+    last_cleanup = (
+        time.strftime("%H:%M:%S", time.localtime(METRICS.last_cleanup_at))
+        if METRICS.last_cleanup_at else "ещё не было"
+    )
+    last_save = (
+        time.strftime("%H:%M:%S", time.localtime(METRICS.last_matchmaker_save_at))
+        if METRICS.last_matchmaker_save_at else "ещё не было"
+    )
+    return (
+        "🛠 <b>Диагностика</b>\n\n"
+        f"Аптайм: <b>{hours} ч {mins} мин</b>\n"
+        f"Версия: <code>{texts.esc(METRICS.version)}</code>\n"
+        f"SQLite: <b>{size / 1024 / 1024:.2f} МБ</b>\n\n"
+        f"Пользователей: <b>{stats['users']}</b>\n"
+        f"Очередь: <b>{mm.queue_size()}</b> · самый долгий: <b>{longest // 60} мин</b>\n"
+        f"Активные диалоги: <b>{mm.online_pairs()}</b>\n"
+        f"Активные игры: <b>{games['total']}</b> "
+        f"(⚔️ {games['battle']} · 🔢 {games['numbers']})\n"
+        f"Просроченных игр: <b>{games['stale']}</b>\n"
+        f"Открытых жалоб: <b>{stats['open_reports']}</b>\n\n"
+        f"Временные ошибки Telegram: <b>{METRICS.temp_errors}</b>\n"
+        f"Недоступные пользователи: <b>{METRICS.unavailable}</b>\n"
+        f"Janitor удалил игр: <b>{METRICS.janitor_removed_games}</b>\n"
+        f"Последняя очистка: <b>{last_cleanup}</b>\n"
+        f"Последнее сохранение очереди: <b>{last_save}</b>\n"
+        f"Reply-map в памяти: <b>{relay_state.size()}</b>\n"
+        f"Matchmaker dirty: <b>{'да' if db._matchmaker_dirty else 'нет'}</b>"
     )
 
 
@@ -609,6 +651,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
     data = event.data or ""
     required = {
         K.CB_PANEL_STATS: "stats",
+        K.CB_PANEL_DIAGNOSTICS: "stats",
         K.CB_PANEL_REPORTS: "reports",
         K.CB_PANEL_QUEUE: "queue",
         K.CB_PANEL_FIND: "users",
@@ -637,7 +680,12 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         await panel_screen(ctx, db, mm)
         return
     if data == K.CB_PANEL_STATS:
+        await ctx.ack()
         await ctx.edit(await stats_text(db, mm, ctx.cfg), K.panel_back_keyboard())
+        return
+    if data == K.CB_PANEL_DIAGNOSTICS:
+        await ctx.ack("Обновлено")
+        await ctx.edit(await diagnostics_text(db, mm), K.diagnostics_keyboard())
         return
     if data == K.CB_PANEL_QUEUE:
         await ctx.edit(queue_text(mm), K.panel_back_keyboard())
