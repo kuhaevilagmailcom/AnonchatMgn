@@ -69,8 +69,7 @@ async def settings_screen(ctx: Ctx) -> None:
         f"📍 Берег: <b>{texts.esc(district or 'не выбран')}</b>\n"
         f"Возраст: <b>{int(me['age']) if me and int(me['age'] or 0) else 'не указан'}</b> "
         f"<i>(необязательно)</i>\n"
-        f"Берег: <i>необязательно</i>\n"
-        f"🧭 Ищу: <b>{'только свой берег' if same else 'весь ' + texts.esc(ctx.cfg.city_short)}</b>\n\n"
+        f"🧭 По берегу: <b>{'только свой' if same else 'весь ' + texts.esc(ctx.cfg.city_short)}</b>\n\n"
         f"{texts.SETTINGS_NOTE}"
     )
     kb = K.settings_keyboard(same, district, ctx.nick, gender, looking_for)
