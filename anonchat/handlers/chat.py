@@ -15,6 +15,7 @@ from ..actions import (
 )
 from ..config import Config
 from ..matching import Matchmaker
+from ..monitoring import enqueue_chat_monitor
 from ..diagnostics import METRICS
 from .. import relay_state
 
@@ -93,7 +94,7 @@ async def relay_to_partner(
         relay_state.remember(ctx.user_id, message.message_id, partner, copied.message_id)
     if message.text:
         mm.record_text(ctx.user_id, message.text)
-    await notify_chat_monitors(message, ctx, partner)
+    await enqueue_chat_monitor(message, ctx, partner)
     # молча: человек знает, что написал в анонимный чат, подтверждений не просил
 
 
@@ -139,36 +140,3 @@ async def relay_edited_message(
         relay_state.remember(ctx.user_id, message.message_id, partner_id, copied.message_id)
     elif retry is DeliveryResult.TEMP_ERROR:
         await ctx.reply(texts.DELIVERY_TEMP_ERROR)
-
-
-async def notify_chat_monitors(message: Message, ctx: Ctx, partner_id: int) -> None:
-    """Копирует доставленное сообщение владельцам, включившим наблюдение в панели."""
-    candidates = await ctx.db.admin_ids_with_permission("monitor", ctx.cfg.admin_ids)
-    monitor_ids = [
-        admin_id for admin_id in candidates
-        if await ctx.db.get_kv(f"chat_monitor:{admin_id}") == "1"
-    ]
-    if not monitor_ids:
-        return
-
-    sender = ctx.me or await ctx.db.get_user(ctx.user_id)
-    partner = await ctx.db.get_user(partner_id)
-
-    def identity(row, user_id: int) -> str:
-        username = f"@{row['username']}" if row and row["username"] else "без username"
-        nickname = row["nickname"] if row and row["nickname"] else f"Аноним-{user_id}"
-        return f"{texts.esc(username)} · {texts.esc(nickname)} · <code>{user_id}</code>"
-
-    header = (
-        "👁 <b>Сообщение в активном чате</b>\n"
-        f"От: {identity(sender, ctx.user_id)}\n"
-        f"Собеседник: {identity(partner, partner_id)}"
-    )
-    for admin_id in monitor_ids:
-        if message.text:
-            await send_to(
-                ctx.bot, admin_id, f"{header}\n\n{texts.esc(message.text)}", None, ctx.pack
-            )
-        else:
-            await send_to(ctx.bot, admin_id, header, None, ctx.pack)
-            await send_copy_to(ctx.bot, message, admin_id)
