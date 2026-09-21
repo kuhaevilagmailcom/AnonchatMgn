@@ -105,6 +105,7 @@ async def cmd_report(message: Message, ctx: Ctx) -> None:
 
 @router.callback_query(F.data == K.CB_REPORT)
 async def cb_report(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     await open_report(ctx)
 
 
@@ -120,6 +121,7 @@ async def open_report(ctx: Ctx) -> None:
 # ---------------------------------------------------------------------------------- причина
 @router.callback_query(F.data == "rep:skip")
 async def cb_skip_comment(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
+    await ctx.ack()
     data = await state.get_data()
     await finish_report(ctx, state, data.get("reason", "other"), "")
 
@@ -172,7 +174,11 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
         ctx.user_id, partner, reason, comment, dialog_key=dialog_key, context=context
     )
     if report_id is None:
-        await ctx.reply(texts.REPORT_DUPLICATE, markup=K.menu_keyboard("paired"))
+        await ctx.render_screen(
+            "03_found.png",
+            texts.REPORT_DUPLICATE,
+            K.menu_keyboard("paired"),
+        )
         return
     stored_report = await db.get_report(report_id)
     assert stored_report is not None
@@ -187,10 +193,19 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
         await break_pair(ctx.bot, cfg, mm, partner, texts.MOD_CLOSED_DIALOG, ctx.pack, db)
         auto = texts.REPORT_AUTO_MUTE.format(mins=mins)
 
-    await ctx.reply(
-        texts.REPORT_TAKEN.format(rid=report_id, reason=texts.esc(REASON_TITLES.get(reason, reason)))
-        + auto,
-        markup=K.menu_keyboard(ctx.mm.status(ctx.user_id)),
+    status = ctx.mm.status(ctx.user_id)
+    image = {
+        "paired": "03_found.png",
+        "queued": "02_search.png",
+    }.get(status, "01_main_menu.png")
+    await ctx.render_screen(
+        image,
+        texts.REPORT_TAKEN.format(
+            rid=report_id,
+            reason=texts.esc(REASON_TITLES.get(reason, reason)),
+        ) + auto,
+        K.menu_keyboard(status),
+        live_menu=(status == "free"),
     )
 
 
@@ -217,7 +232,15 @@ async def cb_feedback(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None
 async def feedback_message(message: Message, ctx: Ctx, state: FSMContext) -> None:
     await state.clear()
     delivered = await _deliver_feedback(ctx, message)
-    if delivered:
-        await ctx.reply(texts.FEEDBACK_SENT, K.menu_keyboard(ctx.mm.status(ctx.user_id)))
-    else:
-        await ctx.reply("Не смог доставить сообщение админам. Попробуй ещё раз.")
+    status = ctx.mm.status(ctx.user_id)
+    image = {
+        "paired": "03_found.png",
+        "queued": "02_search.png",
+    }.get(status, "01_main_menu.png")
+    body = texts.FEEDBACK_SENT if delivered else "Не удалось отправить сообщение. Попробуй ещё раз."
+    await ctx.render_screen(
+        image,
+        body,
+        K.menu_keyboard(status),
+        live_menu=(status == "free"),
+    )
