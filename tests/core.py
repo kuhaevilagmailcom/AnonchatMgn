@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from anonchat.db import Database, number_reward_day_start  # noqa: E402
+from anonchat.db import Database, number_reward_day_start, referral_day_start  # noqa: E402
 from anonchat.levels import RANKS, rank_for  # noqa: E402
 from anonchat.matching import Matchmaker  # noqa: E402
 
@@ -1134,6 +1134,56 @@ def test_db_nickname_and_kv() -> None:
             await db.close()
 
     asyncio.run(scenario())  # внутри scenario db закрывается в finally — процесс не зависнет
+
+
+def test_engagement_activity_streak_achievements_and_quests() -> None:
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "engagement.db"
+        db = await Database(path).start()
+        try:
+            await db.ensure_user(501, "u501", "U501")
+            await db.ensure_user(502, "u502", "U502")
+
+            day = referral_day_start()
+            await db.activity_add(501, timestamp=day, messages=20, dialogs=1, xp_earned=25)
+            today = await db.activity_totals(501, 1)
+            assert today["messages"] == 20 and today["dialogs"] == 1
+            top = await db.top_period(7, 10)
+            assert top and int(top[0]["user_id"]) == 501 and int(top[0]["xp"]) == 25
+
+            streak, best = await db.update_streak(501, day)
+            assert (streak, best) == (1, 1)
+            assert await db.update_streak(501, day) == (1, 1)
+            assert await db.update_streak(501, day + 86_400) == (2, 2)
+            assert await db.update_streak(501, day + 3 * 86_400) == (1, 2)
+
+            assert await db.unlock_achievement(501, "test_unique", 25) is True
+            after = int((await db.get_user(501))["xp"])
+            assert await db.unlock_achievement(501, "test_unique", 25) is False
+            assert int((await db.get_user(501))["xp"]) == after
+
+            assert await db.claim_daily_quest(501, day, "quest_test", 25) is True
+            assert await db.claim_daily_quest(501, day, "quest_test", 25) is False
+            assert "quest_test" in await db.daily_quest_claimed(501, day)
+
+            await db.record_game_engagement(
+                501, "battle", matches=5, total=5
+            )
+            await db.record_game_engagement(
+                501, "numbers", matches=1, total=3, number_exact=1, range_max=1000
+            )
+            state = await db.engagement_state(501)
+            assert int(state["games_total"]) == 2
+            assert int(state["battle_perfect_5"]) == 1
+            assert int(state["number_exact_1000"]) == 1
+
+            await db.forget_user(501)
+            assert await db._fetchone("SELECT 1 FROM daily_activity WHERE user_id=501") is None
+            assert await db._fetchone("SELECT 1 FROM user_engagement WHERE user_id=501") is None
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
 
 
 def run_all() -> int:  # python -m tests.core
