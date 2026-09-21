@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import logging
 
 from aiogram import Bot, Dispatcher
@@ -24,6 +25,7 @@ from anonchat.handlers import get_routers
 from anonchat.matching import Matchmaker
 from anonchat.middlewares import DataContext, Throttling
 from anonchat.pack import EmojiPack
+from anonchat.diagnostics import METRICS
 
 log = logging.getLogger("anonchat")
 
@@ -58,6 +60,9 @@ async def janitor(
             await asyncio.sleep(60)
             mm.drop_stale_ratings()
             removed_games = await db.cleanup_stale_games()
+            await db.cleanup_daily_activity()
+            METRICS.last_cleanup_at = int(time.time())
+            METRICS.janitor_removed_games += int(removed_games)
             paired = await reconcile_queue(bot, cfg, db, mm, pack)
             if removed_games:
                 log.info("game janitor: удалено неактивных игр=%s", removed_games)
