@@ -54,11 +54,12 @@ async def reconcile_queue(
         )
 
     pairs = mm.sweep()
+    made = 0
     if pairs:
-        await announce_pairs(bot, cfg, mm, pairs, pack, db)
+        made = await announce_pairs(bot, cfg, mm, pairs, pack, db)
     if expired or pairs:
         db.schedule_matchmaker_save(mm)
-    return len(expired), len(pairs)
+    return len(expired), made
 
 
 async def janitor(
