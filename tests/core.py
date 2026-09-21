@@ -192,6 +192,42 @@ def test_gender_filter() -> None:
     assert restored.status(2) == "queued"
 
 
+def test_stale_queue_cleanup_and_restored_sweep() -> None:
+    mm = Matchmaker()
+    mm.restore({
+        "queue": [
+            {
+                "user_id": 10, "district": "Правый берег",
+                "gender": "m", "looking_for": "f", "excluded": [],
+                "joined_at": 100.0, "active_at": 100.0,
+            },
+            {
+                "user_id": 11, "district": "Правый берег",
+                "gender": "f", "looking_for": "m", "excluded": [],
+                "joined_at": 900.0, "active_at": 950.0,
+            },
+            {
+                "user_id": 12, "district": "",
+                "gender": "m", "looking_for": "f", "excluded": [],
+                "joined_at": 910.0, "active_at": 960.0,
+            },
+        ],
+        "pairs": [],
+        "pending_rating": {},
+    })
+    assert mm.prune_queue(max_age=300, now_ts=1000.0) == [10]
+    assert mm.status(10) == "free"
+    assert mm.queue_size() == 2
+
+    debug = mm.queue_debug_snapshot()
+    assert debug[0]["user_id"] == 11
+    assert debug[0]["gender"] == "f" and debug[0]["looking_for"] == "m"
+
+    pairs = mm.sweep()
+    assert pairs == [(11, 12)]
+    assert mm.partner(11) == 12 and mm.queue_size() == 0
+
+
 # --------------------------------------------------------------------------------- database
 def test_database() -> None:
     holder: dict[str, object] = {}
