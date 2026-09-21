@@ -222,20 +222,24 @@ def number_input_keyboard(
     game_id: int, round_index: int, current: str = ""
 ) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
+    current = "".join(ch for ch in str(current) if ch.isdigit())
     shown = current or "—"
     _button(b, f"Число: {shown}", callback_data="game:num:noop")
     for digit in ("1", "2", "3", "4", "5", "6", "7", "8", "9"):
+        value = f"{current}{digit}" if current else digit
         _button(
             b,
             digit,
-            callback_data=f"game:num:digit:{game_id}:{round_index}:{digit}",
+            callback_data=f"game:num:set:{game_id}:{round_index}:{value}",
         )
-    _button(b, "Стереть", callback_data=f"game:num:back:{game_id}:{round_index}", icon="delete")
-    _button(b, "0", callback_data=f"game:num:digit:{game_id}:{round_index}:0")
+    back = current[:-1] or "x"
+    _button(b, "Стереть", callback_data=f"game:num:set:{game_id}:{round_index}:{back}", icon="delete")
+    zero = f"{current}0" if current else "0"
+    _button(b, "0", callback_data=f"game:num:set:{game_id}:{round_index}:{zero}")
     _button(
         b,
         "Выбрать",
-        callback_data=f"game:num:submit:{game_id}:{round_index}",
+        callback_data=f"game:num:submit:{game_id}:{round_index}:{current or 'x'}",
         icon="check",
         style="success",
     )
