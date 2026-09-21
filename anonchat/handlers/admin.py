@@ -230,7 +230,12 @@ async def game_watch_text(db: Database) -> str:
                 f"Диапазон: <b>1–{int(row['range_max'])}</b>",
                 f"Ответ A: <b>{texts.esc(answer_a)}</b>",
                 f"Ответ B: <b>{texts.esc(answer_b)}</b>",
-                f"Награда за игру: <b>{int(row['reward_total'])} ⭐</b> каждому",
+                f"Награды: <b>A {int(row['reward_total_a'])} ⭐ · B {int(row['reward_total_b'])} ⭐</b>",
+                (
+                    "Награда этой паре доступна"
+                    if int(row["reward_awarded"] or 0)
+                    else "Повторная игра пары · без награды"
+                ),
             ])
         else:
             question_ids = json.loads(str(row["question_ids"] or "[]"))
