@@ -540,6 +540,8 @@ def test_keyboard_styles_and_icons() -> None:
         return [btn.text for row in markup.inline_keyboard for btn in row]
 
     # в диалоге из меню остаются только действия диалога
+    assert texts_of(K.district_keyboard()) == ["Правый берег", "Левый берег", "Назад"]
+
     paired = K.menu_keyboard("paired")
     assert texts_of(paired) == ["Следующий", "Стоп", "Жалоба", "Игры"]
     assert [[button.text for button in row] for row in paired.inline_keyboard] == [
