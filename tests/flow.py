@@ -164,7 +164,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
 
     dp = Dispatcher(storage=MemoryStorage())
     pack = EmojiPack(cfg.emoji_pack_url)
-    for observer in (dp.message, dp.callback_query):
+    for observer in (dp.message, dp.edited_message, dp.callback_query):
         observer.outer_middleware(Throttling(cfg, limit=200))
         observer.middleware(DataContext(cfg, db, mm, pack))
     for router in get_routers():
@@ -575,7 +575,7 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     bot = Bot(cfg.bot_token, session=session, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
     pack = EmojiPack(cfg.emoji_pack_url)
-    for observer in (dp.message, dp.callback_query):
+    for observer in (dp.message, dp.edited_message, dp.callback_query):
         observer.outer_middleware(Throttling(cfg, limit=200))
         observer.middleware(DataContext(cfg, db, mm, pack))
     for router in get_routers():
@@ -583,10 +583,31 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     step = 1000
 
-    async def send(uid: int, text: str) -> None:
+    async def send(uid: int, text: str) -> int:
         nonlocal step
         step += 1
-        await dp.feed_update(bot, msg_update(bot, uid, text, step))
+        message_id = step
+        await dp.feed_update(bot, msg_update(bot, uid, text, message_id))
+        return message_id
+
+    async def edit(uid: int, message_id: int, text: str) -> None:
+        nonlocal step
+        step += 1
+        payload = {
+            "update_id": step,
+            "edited_message": {
+                "message_id": message_id,
+                "date": 1_700_000_000,
+                "edit_date": 1_700_000_100,
+                "chat": {"id": uid, "type": "private", "first_name": f"U{uid}"},
+                "from": {
+                    "id": uid, "is_bot": False, "first_name": f"U{uid}",
+                    "username": f"user{uid}",
+                },
+                "text": text,
+            },
+        }
+        await dp.feed_update(bot, Update.model_validate(payload, context={"bot": bot}))
 
     async def press(uid: int, data: str) -> None:
         nonlocal step
@@ -723,6 +744,20 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check("@user1002" not in session.last_to(A) and f"<code>{B}</code>" not in session.last_to(A)
           and "⭐" not in session.last_to(A),
           "в найденном диалоге не раскрываются ник, очки и id")
+
+    session.clear()
+    original_id = await send(A, "текст до редактирования")
+    check(any(item["method"] == "sendMessage" for item in session.to(B)),
+          "исходный текст сначала доставлен собеседнику")
+    session.clear()
+    await edit(A, original_id, "текст после редактирования")
+    edit_call = next(
+        (item for item in session.to(B) if item["method"] == "editMessageText"), None
+    )
+    check(bool(edit_call), "редактирование исходного сообщения меняет копию у собеседника")
+    check(edit_call["text"] == "текст после редактирования"
+          and int(edit_call.get("message_id", 0)) > 0,
+          "у собеседника редактируется именно ранее созданная копия")
 
     # Фото отправляется напрямую по file_id и переживает кратковременный сбой Telegram.
     session.clear()

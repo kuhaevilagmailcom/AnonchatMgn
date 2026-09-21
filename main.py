@@ -69,7 +69,7 @@ def build(cfg: Config) -> tuple[Bot, Dispatcher, Database, Matchmaker, EmojiPack
     bot = Bot(cfg.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher(storage=MemoryStorage())
 
-    for observer in (dp.message, dp.callback_query):
+    for observer in (dp.message, dp.edited_message, dp.callback_query):
         observer.outer_middleware(Throttling(cfg))
         observer.middleware(DataContext(cfg, db, mm, pack))
     dp.pre_checkout_query.middleware(DataContext(cfg, db, mm, pack))
