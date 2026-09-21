@@ -15,21 +15,10 @@ from ..actions import (
 )
 from ..config import Config
 from ..matching import Matchmaker
+from ..diagnostics import METRICS
+from .. import relay_state
 
 router = Router(name="chat")
-
-# Только оперативная память: source(user_id, message_id) -> (partner_id, copied_message_id).
-# В БД ничего не пишем; после рестарта старые сообщения просто перестанут синхронизироваться.
-_RELAY_COPIES: dict[tuple[int, int], tuple[int, int]] = {}
-_RELAY_COPY_LIMIT = 10_000
-
-
-def _remember_copy(user_id: int, source_message_id: int, partner_id: int, copied_message_id: int) -> None:
-    key = (int(user_id), int(source_message_id))
-    _RELAY_COPIES[key] = (int(partner_id), int(copied_message_id))
-    if len(_RELAY_COPIES) > _RELAY_COPY_LIMIT:
-        for old_key in list(_RELAY_COPIES)[:2_000]:
-            _RELAY_COPIES.pop(old_key, None)
 
 
 @router.message(Command("helpcmd", "menu"))
@@ -75,22 +64,33 @@ async def relay_to_partner(
         mm.uncount_message(ctx.user_id)
         return
 
-    delivery, copied = await send_copy_to_message(ctx.bot, message, partner)
+    reply_target = None
+    if message.reply_to_message is not None:
+        reply_target = relay_state.resolve_reply(
+            ctx.user_id, partner, message.reply_to_message.message_id
+        )
+
+    delivery, copied = await send_copy_to_message(
+        ctx.bot, message, partner, reply_to_message_id=reply_target
+    )
     if delivery is DeliveryResult.TEMP_ERROR:
+        METRICS.temp_errors += 1
         mm.uncount_message(ctx.user_id)
         await ctx.reply(texts.DELIVERY_TEMP_ERROR)
         return
     if delivery is DeliveryResult.UNAVAILABLE:
+        METRICS.unavailable += 1
         mm.uncount_message(ctx.user_id)
         await ctx.db.close_battles_for_users(ctx.user_id, partner)
         mm.forget(ctx.user_id)
+        relay_state.clear_pair(ctx.user_id, partner)
         await ctx.reply(
             texts.PARTNER_UNREACHABLE,
             markup=K.menu_keyboard(),
         )
         return
     if copied is not None:
-        _remember_copy(ctx.user_id, message.message_id, partner, copied.message_id)
+        relay_state.remember(ctx.user_id, message.message_id, partner, copied.message_id)
     if message.text:
         mm.record_text(ctx.user_id, message.text)
     await notify_chat_monitors(message, ctx, partner)
@@ -105,14 +105,14 @@ async def relay_edited_message(
     if ctx.user_id == 0 or message.from_user is None:
         return
 
-    target = _RELAY_COPIES.get((ctx.user_id, message.message_id))
+    target = relay_state.forwarded_target(ctx.user_id, message.message_id)
     if target is None:
         return
 
     partner_id, copied_message_id = target
     if mm.partner(ctx.user_id) != partner_id:
         # После смены собеседника старые сообщения не трогаем.
-        _RELAY_COPIES.pop((ctx.user_id, message.message_id), None)
+        relay_state.forget_source(ctx.user_id, message.message_id)
         return
 
     body = message.text if message.text is not None else message.caption
@@ -136,7 +136,7 @@ async def relay_edited_message(
     # версию новым анонимным сообщением и дальше синхронизируем уже её.
     retry, copied = await send_copy_to_message(ctx.bot, message, partner_id)
     if retry is DeliveryResult.DELIVERED and copied is not None:
-        _remember_copy(ctx.user_id, message.message_id, partner_id, copied.message_id)
+        relay_state.remember(ctx.user_id, message.message_id, partner_id, copied.message_id)
     elif retry is DeliveryResult.TEMP_ERROR:
         await ctx.reply(texts.DELIVERY_TEMP_ERROR)
 
