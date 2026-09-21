@@ -583,13 +583,22 @@ async def show_profile(ctx: Ctx) -> None:
         f"{rank.emoji} {texts.esc(rank.title)}",
         "",
         f"Очки: <b>{int(me['xp'])} ⭐</b>",
-        f"Приглашено пользователей: <b>{invited}</b>",
-        f"Получено за приглашения: <b>{referral_xp} ⭐</b>",
+        f"Сообщений: <b>{messages}</b>",
         f"Диалогов: <b>{me['dialogs']}</b>",
-        f"👍 {me['good_ratings']}   👎 {me['bad_ratings']}",
+        f"Оценки: 👍 {me['good_ratings']} · 👎 {me['bad_ratings']}",
+    ]
+    if not rank.is_max:
+        lines += [
+            f"<code>{rank.bar}</code>",
+            f"До «{texts.esc(rank.next_title)}»: <b>{rank.to_next}</b> сообщений",
+        ]
+    lines += [
+        "",
         f"Возраст: <b>{me['age'] if int(me['age'] or 0) else 'не указан'}</b>",
         f"Пол: <b>{'👨 М' if me['gender'] == 'm' else '👩 Д' if me['gender'] == 'f' else 'не указан'}</b>",
         f"Берег: <b>{texts.esc(me['district']) if me['district'] else 'не указан'}</b>",
+        "",
+        f"Приглашено: <b>{invited}</b> · +<b>{referral_xp} ⭐</b>",
     ]
     if nicklib.is_supporter(me["support_stars"]):
         lines += ["", f"💎 Поддержал проект: {int(me['support_stars'])} ⭐"]
