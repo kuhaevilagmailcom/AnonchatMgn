@@ -1859,13 +1859,15 @@ class Database:
         METRICS.last_matchmaker_save_at = now()
 
     def schedule_matchmaker_save(self, matchmaker) -> None:
-        """Пишет snapshot только если состояние реально изменилось, а не после каждого апдейта."""
-        snapshot_key = json.dumps(
-            matchmaker.snapshot(), ensure_ascii=False, separators=(",", ":"), sort_keys=True
-        )
-        if snapshot_key == self._matchmaker_snapshot_key:
+        """Дешёвый debounce: на каждом апдейте сравниваем только integer revision.
+
+        Snapshot не сериализуется и SQLite не пишется на каждое сообщение. При
+        активном чате состояние сбрасывается на диск максимум раз в 5 секунд.
+        """
+        revision = int(getattr(matchmaker, "persistence_revision", 0))
+        if revision == self._matchmaker_revision:
             return
-        self._matchmaker_snapshot_key = snapshot_key
+        self._matchmaker_revision = revision
         self._matchmaker = matchmaker
         self._matchmaker_dirty = True
         if self._matchmaker_task is None or self._matchmaker_task.done():
@@ -1874,10 +1876,14 @@ class Database:
     async def _save_matchmaker_loop(self) -> None:
         try:
             while True:
-                await asyncio.sleep(0.25)
+                await asyncio.sleep(5)
                 self._matchmaker_dirty = False
                 if self._matchmaker is not None:
-                    await self.save_matchmaker(self._matchmaker.snapshot())
+                    state = self._matchmaker.snapshot()
+                    await self.save_matchmaker(state)
+                    self._matchmaker_snapshot_key = json.dumps(
+                        state, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+                    )
                 if not self._matchmaker_dirty:
                     return
         finally:
@@ -1907,6 +1913,7 @@ class Database:
         if not value:
             return None
         self._matchmaker_snapshot_key = value
+        self._matchmaker_revision = 0
         try:
             state = json.loads(value)
         except json.JSONDecodeError:
