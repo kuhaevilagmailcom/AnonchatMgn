@@ -944,10 +944,10 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     session.clear()
     await send(A, "/send @explicit_user")
-    check(session.to(B) == [] and "Не знаю" in session.last_to(A), "/send удалена")
+    check(session.to(B) == [] and "Команда не найдена" in session.last_to(A), "/send удалена")
     session.clear()
     await send(A, "/user https://t.me/example")
-    check(session.to(B) == [] and "Не знаю" in session.last_to(A), "/user удалена")
+    check(session.to(B) == [] and "Команда не найдена" in session.last_to(A), "/user удалена")
 
     session.clear()
     await payload(A, contact={"phone_number": "+79991234567", "first_name": "X"})
