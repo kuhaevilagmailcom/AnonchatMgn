@@ -213,7 +213,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     # 1. /start — приветствие, авто-ник и минималистичное меню
     await send(A, "/start")
     check("Анонимный чат" in session.last_to(A), "/start показывает приветствие с меню")
-    check("Сейчас ищут" in session.last_to(A), "главное меню показывает размер очереди")
+    check("Онлайн сейчас" in session.last_to(A), "главное меню сразу показывает онлайн")
     check("Аноним-1001" in session.last_to(A), "при первом входе выдаётся авто-ник вместо имени из Telegram")
     check((await db.get_user(A))["nickname"] == "Аноним-1001", "авто-ник сохранился в базу")
     check(session.has_keyboard(A), "в меню есть инлайн-кнопки")
@@ -796,8 +796,8 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(session.outbox[0]["method"] == "answerCallbackQuery",
           "кнопка поиска отпускает интерфейс сразу")
     await send(B, "/start")
-    check("Онлайн сейчас" not in session.last_to(B),
-          "главное меню не перегружено онлайном")
+    check("Онлайн сейчас" in session.last_to(B),
+          "главное меню сразу показывает общий онлайн")
     await press(B, "act:settings")
     settings_message = next(
         item for item in reversed(session.to(B)) if item.get("reply_markup")

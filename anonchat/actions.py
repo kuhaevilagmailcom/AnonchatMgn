@@ -538,7 +538,8 @@ async def show_menu(ctx: Ctx) -> None:
 
     body = (
         f"<b>{texts.esc(ctx.nick)}</b>\n\n"
-        f"{state}"
+        f"{state}\n\n"
+        f"🟢 Онлайн сейчас: <b>{online_count(ctx.mm)}</b>"
     )
     kb = menu_keyboard(status, ctx.mm.queue_size(), admin=ctx.is_admin)
     image = {"paired": "03_found.png", "queued": "02_search.png"}.get(status, "01_main_menu.png")
