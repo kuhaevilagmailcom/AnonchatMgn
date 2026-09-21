@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
 from dataclasses import dataclass, field
 
 @dataclass(slots=True)
@@ -19,11 +20,23 @@ class RuntimeMetrics:
 
     @property
     def version(self) -> str:
-        return (
+        configured = (
             os.getenv("APP_VERSION")
             or os.getenv("GIT_COMMIT")
             or os.getenv("GITHUB_SHA")
-            or "не указан"
-        )[:12]
+        )
+        if configured:
+            return configured[:12]
+        try:
+            root = Path(__file__).resolve().parents[1]
+            head = (root / ".git" / "HEAD").read_text(encoding="utf-8").strip()
+            if head.startswith("ref: "):
+                ref = root / ".git" / head[5:]
+                return ref.read_text(encoding="utf-8").strip()[:12]
+            if head:
+                return head[:12]
+        except OSError:
+            pass
+        return "не указан"
 
 METRICS = RuntimeMetrics()
