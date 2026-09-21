@@ -189,9 +189,8 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
 
     await ctx.reply(
         texts.REPORT_TAKEN.format(rid=report_id, reason=texts.esc(REASON_TITLES.get(reason, reason)))
-        + auto
-        + "\n\nМожешь сразу выйти из диалога: /stop.",
-        markup=K.menu_keyboard(),
+        + auto,
+        markup=K.menu_keyboard(ctx.mm.status(ctx.user_id)),
     )
 
 
