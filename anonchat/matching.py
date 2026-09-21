@@ -230,10 +230,12 @@ class Matchmaker:
 
     def refresh(
         self, user_id: int, *, district: str, same_district: bool,
-        gender: str = "", looking_for: str = "",
+        gender: str = "", looking_for: str = "", excluded: set[int] | None = None,
     ) -> list[tuple[int, int]]:
         if user_id in self._queue:
-            self._queue[user_id].refresh(district, same_district, gender, looking_for)
+            self._queue[user_id].refresh(
+                district, same_district, gender, looking_for, excluded
+            )
             return self.sweep()
         return []
 
