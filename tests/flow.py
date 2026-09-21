@@ -1119,6 +1119,41 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(int((await db.get_user(abuser))["xp"]) == 0, "подтверждение обнуляет очки накрутчика")
     check("Реферальная накрутка удалена" in session.last_to(ADMIN), "владелец получает итог очистки")
 
+    # Новые экраны профиля, /ref, топы и диагностика.
+    session.clear()
+    await send(A, "/ref")
+    check("Пригласить друга" in session.last_to(A), "/ref открывает отдельный реферальный экран")
+    ref_message = next(item for item in reversed(session.to(A)) if item.get("reply_markup"))
+    ref_markup = str(ref_message.get("reply_markup"))
+    check("Скопировать ссылку" in ref_markup and "Отправить другу" in ref_markup,
+          "/ref показывает copy/share кнопки")
+
+    await send(A, "/profile")
+    profile_message = next(item for item in reversed(session.to(A)) if item.get("reply_markup"))
+    profile_markup = str(profile_message.get("reply_markup"))
+    for label in ("Моя активность", "Серия активности", "Квесты дня", "Реферальная ссылка"):
+        check(label in profile_markup, f"в профиле есть «{label}»")
+
+    await press(A, "profile:activity")
+    check("Моя активность" in session.last_to(A), "экран собственной активности открывается")
+    await press(A, "profile:streak")
+    check("Серия активности" in session.last_to(A), "экран серии активности открывается")
+    await press(A, "profile:quests")
+    check("Квесты дня" in session.last_to(A), "экран ежедневных квестов открывается")
+
+    await send(A, "/top")
+    check("Топ · Неделя" in session.last_to(A), "топ по умолчанию открывается за неделю")
+    await press(A, "top:month")
+    check("Топ · Месяц" in session.last_to(A), "топ переключается на месяц")
+    await press(A, "top:all")
+    check("Топ · Всё время" in session.last_to(A), "топ переключается на всё время")
+
+    session.clear()
+    await send(ADMIN, "/admin")
+    await press(ADMIN, "adm:panel:diagnostics")
+    check("Диагностика" in session.last_to(ADMIN) and "Reply-map" in session.last_to(ADMIN),
+          "админская диагностика открывается")
+
     await bot.session.close()
     await db.close()
     print("\nmodern flow test passed")
