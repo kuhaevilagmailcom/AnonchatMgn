@@ -41,6 +41,7 @@ class Pair:
     started_at: float = field(default_factory=time.time)
     counts: dict[int, int] = field(default_factory=dict)
     history: list[tuple[int, str]] = field(default_factory=list)
+    game_stats: dict[str, int] = field(default_factory=dict)
 
     def partner_of(self, user_id: int) -> int:
         return self.b if user_id == self.a else self.a
@@ -239,6 +240,7 @@ class Matchmaker:
             "counts": dict(pair.counts),
             "started_at": pair.started_at,
             "total": pair.total,
+            "game_stats": dict(pair.game_stats),
         }
         return partner, summary
 
@@ -283,6 +285,22 @@ class Matchmaker:
             return
         pair.history.append((user_id, text[:500]))
         del pair.history[:-10]
+
+    def record_game(
+        self, user_id: int, kind: str, matches: int = 0, total: int = 0
+    ) -> None:
+        pair = self._pairs.get(user_id)
+        if pair is None:
+            return
+        stats = pair.game_stats
+        stats["games"] = stats.get("games", 0) + 1
+        if kind == "battle":
+            stats["battle_games"] = stats.get("battle_games", 0) + 1
+            stats["battle_matches"] = stats.get("battle_matches", 0) + max(0, int(matches))
+            stats["battle_questions"] = stats.get("battle_questions", 0) + max(0, int(total))
+        elif kind == "numbers":
+            stats["number_games"] = stats.get("number_games", 0) + 1
+            stats["number_exact"] = stats.get("number_exact", 0) + max(0, int(matches))
 
     def is_paired_with(self, user_id: int, other_id: int) -> bool:
         partner = self.partner(user_id)
@@ -337,6 +355,7 @@ class Matchmaker:
             pairs.append({
                 "a": pair.a, "b": pair.b, "started_at": pair.started_at,
                 "counts": pair.counts, "history": pair.history,
+                "game_stats": pair.game_stats,
             })
         return {
             "queue": [
@@ -371,9 +390,12 @@ class Matchmaker:
             self._queue[candidate.user_id] = candidate
         for item in state.get("pairs", []):
             pair = Pair(
-                int(item["a"]), int(item["b"]), float(item.get("started_at", time.time())),
-                {int(uid): int(count) for uid, count in dict(item.get("counts", {})).items()},
-                [(int(uid), str(text)) for uid, text in item.get("history", [])],
+                a=int(item["a"]),
+                b=int(item["b"]),
+                started_at=float(item.get("started_at", time.time())),
+                counts={int(uid): int(count) for uid, count in dict(item.get("counts", {})).items()},
+                history=[(int(uid), str(text)) for uid, text in item.get("history", [])],
+                game_stats={str(k): int(v) for k, v in dict(item.get("game_stats", {})).items()},
             )
             self._pairs[pair.a] = pair
             self._pairs[pair.b] = pair
