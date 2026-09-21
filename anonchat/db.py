@@ -184,6 +184,7 @@ class Database:
         self._matchmaker = None
         self._matchmaker_dirty = False
         self._matchmaker_task: asyncio.Task | None = None
+        self._matchmaker_snapshot_key = ""
         self._referral_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ lifecycle
@@ -1052,7 +1053,13 @@ class Database:
         )
 
     def schedule_matchmaker_save(self, matchmaker) -> None:
-        """Объединяет частые изменения в одну запись состояния раз в 0,25 секунды."""
+        """Пишет snapshot только если состояние реально изменилось, а не после каждого апдейта."""
+        snapshot_key = json.dumps(
+            matchmaker.snapshot(), ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        )
+        if snapshot_key == self._matchmaker_snapshot_key:
+            return
+        self._matchmaker_snapshot_key = snapshot_key
         self._matchmaker = matchmaker
         self._matchmaker_dirty = True
         if self._matchmaker_task is None or self._matchmaker_task.done():
@@ -1093,6 +1100,7 @@ class Database:
         value = await self.get_kv("matchmaker_state")
         if not value:
             return None
+        self._matchmaker_snapshot_key = value
         try:
             state = json.loads(value)
         except json.JSONDecodeError:
