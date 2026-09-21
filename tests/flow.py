@@ -796,8 +796,8 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(session.outbox[0]["method"] == "answerCallbackQuery",
           "кнопка поиска отпускает интерфейс сразу")
     await send(B, "/start")
-    check("Онлайн сейчас" not in session.last_to(B),
-          "главное меню не перегружено онлайном")
+    check("Онлайн сейчас" in session.last_to(B),
+          "главное меню сразу показывает общий онлайн")
     await press(B, "act:settings")
     settings_message = next(
         item for item in reversed(session.to(B)) if item.get("reply_markup")
