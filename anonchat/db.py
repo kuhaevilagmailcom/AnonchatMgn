@@ -1778,6 +1778,8 @@ class Database:
             "matchmaker_state",
             json.dumps(state, ensure_ascii=False, separators=(",", ":")),
         )
+        from .diagnostics import METRICS
+        METRICS.last_matchmaker_save_at = now()
 
     def schedule_matchmaker_save(self, matchmaker) -> None:
         """Пишет snapshot только если состояние реально изменилось, а не после каждого апдейта."""
