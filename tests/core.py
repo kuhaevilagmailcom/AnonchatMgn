@@ -177,6 +177,18 @@ def test_excluded_users_do_not_match() -> None:
     assert mm.connect(3) == ("paired", 1)
 
 
+def test_gender_filter() -> None:
+    mm = Matchmaker()
+    assert mm.connect(1, gender="m", looking_for="f") == ("queued", 1)
+    assert mm.connect(2, gender="m", looking_for="m") == ("queued", 2)
+    assert mm.connect(3, gender="f", looking_for="m") == ("paired", 1)
+    assert mm.status(2) == "queued"
+
+    restored = Matchmaker()
+    restored.restore(mm.snapshot())
+    assert restored.status(2) == "queued"
+
+
 # --------------------------------------------------------------------------------- database
 def test_database() -> None:
     holder: dict[str, object] = {}
@@ -339,8 +351,9 @@ def test_battle_game_persists_and_synchronizes() -> None:
             else:
                 assert game["status"] == "finished" and int(game["matches"]) == 5
 
+        assert await db.get_battle(game_id) is None, "завершённая игра удаляется из БД"
         history, history_total = await db.list_battles(history=True)
-        assert history_total == 1 and int(history[0]["id"]) == game_id
+        assert history == [] and history_total == 0
 
         assert int((await db.get_user(101))["xp"]) == 25
         assert int((await db.get_user(202))["xp"]) == 25
@@ -360,7 +373,8 @@ def test_battle_game_persists_and_synchronizes() -> None:
         assert int(game["reward_awarded"]) == 1
         assert int((await db.get_user(101))["xp"]) == 50
         assert int((await db.get_user(202))["xp"]) == 50
-        assert (await db.answer_battle(perfect_id, 101, 9, 0))[0] == "closed"
+        assert await db.get_battle(perfect_id) is None
+        assert (await db.answer_battle(perfect_id, 101, 9, 0))[0] == "missing"
         assert int((await db.get_user(101))["xp"]) == 50, "награда выдаётся только один раз"
         await db.close()
 
@@ -791,6 +805,7 @@ def test_db_nickname_and_kv() -> None:
         try:
             assert await db.get_user(7) is not None, "старые данные не потерялись"
             assert (await db.get_user(7))["nickname"] == "", "колонка nickname добавлена на лету"
+            assert (await db.get_user(7))["looking_for"] == "", "предпочтение пола мигрируется без потери базы"
 
             await db.set_profile(7, nickname="Старожил")
             assert (await db.get_user(7))["nickname"] == "Старожил"
