@@ -71,6 +71,8 @@ async def enqueue_chat_monitor(message, ctx, partner_id: int) -> None:
     task = asyncio.create_task(_deliver(message, ctx.bot, ctx.pack, ids, header))
     _PENDING.add(task)
     task.add_done_callback(_PENDING.discard)
+    # Отдаём задаче один такт event loop, но не ждём Telegram API.
+    await asyncio.sleep(0)
 
 
 def pending_count() -> int:
