@@ -202,6 +202,8 @@ def now() -> int:
 
 
 REFERRAL_DAILY_LIMIT = 30
+GAME_INACTIVE_TTL_SECONDS = 2 * 24 * 60 * 60
+
 # Магнитогорск живёт по UTC+5. Фиксированный сдвиг не зависит от часового пояса хостинга.
 REFERRAL_TIMEZONE_OFFSET = 5 * 60 * 60
 
@@ -488,6 +490,49 @@ class Database:
 
     async def get_battle(self, game_id: int) -> aiosqlite.Row | None:
         return await self._fetchone("SELECT * FROM battle_games WHERE id = ?", (game_id,))
+
+    async def cleanup_stale_games(
+        self, max_age: int = GAME_INACTIVE_TTL_SECONDS, timestamp: int | None = None
+    ) -> int:
+        """Удаляет игры без активности дольше заданного срока.
+
+        Для «Чисел» возвращаем наградную попытку паре только если игра зависла
+        до завершения первого раунда. Уже сыгранный хотя бы один раунд считается
+        использованной наградной игрой.
+        """
+        cutoff = (now() if timestamp is None else int(timestamp)) - max(1, int(max_age))
+        rows = await self._fetchall(
+            """SELECT id, user_a, user_b, game_type, status, question_index,
+                      answer_a, answer_b, reward_awarded
+                 FROM battle_games
+                WHERE status IN ('invited', 'active', 'round_done')
+                  AND updated_at < ?""",
+            (cutoff,),
+        )
+        if not rows:
+            return 0
+
+        ids = [int(row["id"]) for row in rows]
+        for row in rows:
+            if (
+                str(row["game_type"] or "battle") == "numbers"
+                and str(row["status"]) == "active"
+                and int(row["question_index"] or 0) == 0
+                and int(row["reward_awarded"] or 0) == 1
+            ):
+                low, high = sorted((int(row["user_a"]), int(row["user_b"])))
+                await self.db.execute(
+                    "DELETE FROM number_game_pairs WHERE user_low=? AND user_high=?",
+                    (low, high),
+                )
+
+        placeholders = ",".join("?" for _ in ids)
+        await self.db.execute(
+            f"DELETE FROM battle_games WHERE id IN ({placeholders})",
+            tuple(ids),
+        )
+        await self.db.commit()
+        return len(ids)
 
     async def list_battles(self, history: bool = False, limit: int = 8) -> tuple[list[aiosqlite.Row], int]:
         if history:
