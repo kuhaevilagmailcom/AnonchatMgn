@@ -1197,6 +1197,44 @@ def test_engagement_activity_streak_achievements_and_quests() -> None:
     asyncio.run(scenario())
 
 
+def test_period_top_backfills_legacy_xp_once() -> None:
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "legacy-top.db"
+        db = await Database(path).start()
+        try:
+            await db.ensure_user(901, "legacy", "Legacy")
+            created = referral_day_start()
+            await db.db.execute(
+                "UPDATE users SET xp=500, created_at=? WHERE user_id=?",
+                (created, 901),
+            )
+            await db.activity_add(901, timestamp=created, xp_earned=120)
+            await db.delete_kv("daily_activity_xp_backfill_v1")
+            await db.db.commit()
+        finally:
+            await db.close()
+
+        db = await Database(path).start()
+        try:
+            totals = await db.activity_totals(901, 7)
+            assert totals["xp_earned"] == 500
+            week = await db.top_period(7, 10)
+            month = await db.top_period(30, 10)
+            assert week and int(week[0]["user_id"]) == 901 and int(week[0]["xp"]) == 500
+            assert month and int(month[0]["user_id"]) == 901 and int(month[0]["xp"]) == 500
+        finally:
+            await db.close()
+
+        db = await Database(path).start()
+        try:
+            totals = await db.activity_totals(901, 7)
+            assert totals["xp_earned"] == 500, "повторный старт не должен дублировать backfill"
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
 def test_relay_state_reply_and_cleanup() -> None:
     from anonchat import relay_state
 
