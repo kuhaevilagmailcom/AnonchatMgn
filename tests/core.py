@@ -554,6 +554,18 @@ def test_number_game_three_rounds_and_rewards() -> None:
             assert await db.number_daily_reward(301) == 0
             assert await db.number_pair_reward_available(301, 302) is True
             assert await db.number_pair_reward_available(301, 303) is True
+
+            # Если пара закрыла чат до первого завершённого раунда, попытка не сгорает.
+            await db.ensure_user(304, "numbers_d", "D")
+            await db.ensure_user(305, "numbers_e", "E")
+            abandoned, created = await db.create_number_invite(304, 305, 100)
+            assert created
+            abandoned_id = int(abandoned["id"])
+            abandoned = await db.accept_number(abandoned_id, 305)
+            assert abandoned is not None and int(abandoned["reward_awarded"]) == 1
+            assert await db.number_pair_reward_available(304, 305) is False
+            assert await db.close_battles_for_users(304, 305) == 1
+            assert await db.number_pair_reward_available(304, 305) is True
         finally:
             await db.close()
 
