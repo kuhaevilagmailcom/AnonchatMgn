@@ -171,6 +171,7 @@ CREATE TABLE IF NOT EXISTS user_engagement (
     achievements      TEXT    NOT NULL DEFAULT '[]',
     quest_day         INTEGER NOT NULL DEFAULT 0,
     quest_claimed     TEXT    NOT NULL DEFAULT '[]',
+    dialogs_total     INTEGER NOT NULL DEFAULT 0,
     games_total       INTEGER NOT NULL DEFAULT 0,
     battle_games_total INTEGER NOT NULL DEFAULT 0,
     number_games_total INTEGER NOT NULL DEFAULT 0,
@@ -1565,6 +1566,14 @@ class Database:
             )
             await self.db.commit()
             return current, best
+
+    async def record_dialog_engagement(self, user_id: int) -> None:
+        await self.engagement_state(user_id)
+        await self.db.execute(
+            "UPDATE user_engagement SET dialogs_total=dialogs_total+1 WHERE user_id=?",
+            (int(user_id),),
+        )
+        await self.db.commit()
 
     async def record_game_engagement(
         self, user_id: int, kind: str, matches: int = 0, total: int = 0,
