@@ -555,6 +555,71 @@ def test_number_game_three_rounds_and_rewards() -> None:
     asyncio.run(scenario())
 
 
+def test_stale_games_cleanup_after_two_days() -> None:
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "stale-games.db"
+        db = await Database(path).start()
+        try:
+            for uid in range(401, 411):
+                await db.ensure_user(uid, f"u{uid}", f"U{uid}")
+
+            stale_battle, _ = await db.create_battle_invite(401, 402, 5)
+            fresh_battle, _ = await db.create_battle_invite(403, 404, 5)
+
+            stale_number, _ = await db.create_number_invite(405, 406, 10)
+            stale_number_id = int(stale_number["id"])
+            accepted = await db.accept_number(stale_number_id, 406)
+            assert accepted is not None and int(accepted["reward_awarded"]) == 1
+            assert (await db.answer_number(stale_number_id, 405, 0, 5))[0] == "waiting"
+            assert await db.number_pair_reward_available(405, 406) is False
+
+            played_number, _ = await db.create_number_invite(407, 408, 10)
+            played_number_id = int(played_number["id"])
+            accepted = await db.accept_number(played_number_id, 408)
+            assert accepted is not None
+            assert (await db.answer_number(played_number_id, 407, 0, 5))[0] == "waiting"
+            state, played, _, _ = await db.answer_number(played_number_id, 408, 0, 5)
+            assert state == "resolved" and played is not None and played["status"] == "round_done"
+            assert await db.number_pair_reward_available(407, 408) is False
+
+            old_ts = 1_000
+            fresh_ts = 200_000
+            await db.db.execute(
+                "UPDATE battle_games SET updated_at=? WHERE id IN (?, ?, ?)",
+                (
+                    old_ts,
+                    int(stale_battle["id"]),
+                    stale_number_id,
+                    played_number_id,
+                ),
+            )
+            await db.db.execute(
+                "UPDATE battle_games SET updated_at=? WHERE id=?",
+                (fresh_ts, int(fresh_battle["id"])),
+            )
+            await db.db.commit()
+
+            removed = await db.cleanup_stale_games(
+                max_age=2 * 24 * 60 * 60,
+                timestamp=fresh_ts + 1,
+            )
+            assert removed == 3
+            assert await db.get_battle(int(stale_battle["id"])) is None
+            assert await db.get_battle(stale_number_id) is None
+            assert await db.get_battle(played_number_id) is None
+            assert await db.get_battle(int(fresh_battle["id"])) is not None
+
+            # Если игра «Числа» протухла до первого завершённого раунда,
+            # наградная попытка пары возвращается.
+            assert await db.number_pair_reward_available(405, 406) is True
+            # После хотя бы одного завершённого раунда попытка уже использована.
+            assert await db.number_pair_reward_available(407, 408) is False
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
 def test_referral_daily_limit_and_mass_cleanup() -> None:
     async def scenario() -> None:
         path = Path(tempfile.mkdtemp()) / "referrals.db"
