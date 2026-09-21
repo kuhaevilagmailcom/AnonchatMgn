@@ -852,22 +852,26 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
 
     live = mine > 0 and theirs > 0 and (mine + theirs) >= 6
     match_id = await ctx.db.log_dialog(
-        ctx.user_id, partner, mine, theirs, started, ended_by, count_dialog=live
+        ctx.user_id, partner, mine, theirs, started, ended_by,
+        count_dialog=live, commit=False,
     )
     cap = ctx.cfg.xp_message_cap
     my_xp = 0
     for uid, sent in ((ctx.user_id, mine), (partner, theirs)):
         gain = min(sent, cap) * ctx.cfg.xp_per_message + (ctx.cfg.xp_per_dialog if live else 0)
         if gain:
-            await ctx.db.award_xp(uid, gain)
+            await ctx.db.award_xp(uid, gain, commit=False)
         if sent:
-            await ctx.db.bump(uid, "messages", sent)
-        await ctx.db.activity_add(uid, messages=sent, dialogs=1 if live else 0)
+            await ctx.db.bump(uid, "messages", sent, commit=False)
+        await ctx.db.activity_add(
+            uid, messages=sent, dialogs=1 if live else 0, commit=False
+        )
         if live:
-            await ctx.db.record_dialog_engagement(uid)
-            await ctx.db.update_streak(uid)
+            await ctx.db.record_dialog_engagement(uid, commit=False)
+            await ctx.db.update_streak(uid, commit=False)
         if uid == ctx.user_id:
             my_xp = gain
+    await ctx.db.db.commit()
 
     ctx.mm.remember_rating([ctx.user_id, partner], match_id)
     summary_text = _dialog_summary_text(summary)
