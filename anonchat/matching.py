@@ -79,9 +79,17 @@ class Matchmaker:
     def __init__(self, queue_limit: int = 500, rating_ttl: int = 900) -> None:
         self.queue_limit = queue_limit
         self.rating_ttl = rating_ttl
-        self._queue: dict[int, Candidate] = {}          #OrderedDict semantics: dict keeps insertion order
+        self._queue: dict[int, Candidate] = {}          # OrderedDict semantics: dict keeps insertion order
         self._pairs: dict[int, Pair] = {}               # user_id -> Pair
         self._pending_rating: dict[int, tuple[int, int, float]] = {}  # uid -> (match_id, partner, ts)
+        self._persistence_revision = 0
+
+    def _touch_persistence(self) -> None:
+        self._persistence_revision += 1
+
+    @property
+    def persistence_revision(self) -> int:
+        return self._persistence_revision
 
     # ------------------------------------------------------------------ state
     def status(self, user_id: int) -> str:
@@ -138,6 +146,7 @@ class Matchmaker:
         pair = Pair(a=a, b=b)
         self._pairs[a] = pair
         self._pairs[b] = pair
+        self._touch_persistence()
         return pair
 
     def _pick(self, me: Candidate) -> int | None:
@@ -185,6 +194,7 @@ class Matchmaker:
             return "paired", partner_id
 
         self._queue[user_id] = me
+        self._touch_persistence()
         return "queued", self.position(user_id)
 
     def sweep(self) -> list[tuple[int, int]]:
@@ -223,6 +233,7 @@ class Matchmaker:
             self._queue[user_id].refresh(
                 district, same_district, gender, looking_for, excluded
             )
+            self._touch_persistence()
             return self.sweep()
         return []
 
@@ -231,10 +242,12 @@ class Matchmaker:
         """Разрывает диалог. Возвращает (partner_id, summary) и сбрасывает счётчики."""
         pair = self._pairs.pop(user_id, None)
         if pair is None:
-            self._queue.pop(user_id, None)
+            if self._queue.pop(user_id, None) is not None:
+                self._touch_persistence()
             return None, {}
         partner = pair.partner_of(user_id)
         self._pairs.pop(partner, None)
+        self._touch_persistence()
         summary = {
             "partner": partner,
             "counts": dict(pair.counts),
@@ -247,8 +260,10 @@ class Matchmaker:
     def forget(self, user_id: int) -> dict:
         """Пользователь недоступен (заблокировал бота / удалён аккаунт)."""
         partner, summary = self.release(user_id)
-        self._queue.pop(user_id, None)
-        self._pending_rating.pop(user_id, None)
+        changed = self._queue.pop(user_id, None) is not None
+        changed = self._pending_rating.pop(user_id, None) is not None or changed
+        if changed:
+            self._touch_persistence()
         return summary
 
     # ------------------------------------------------------------------ chat counters
@@ -257,7 +272,9 @@ class Matchmaker:
         pair = self._pairs.get(user_id)
         if pair is None:
             return None
-        return pair.partner_of(user_id), pair.add_message(user_id)
+        result = pair.partner_of(user_id), pair.add_message(user_id)
+        self._touch_persistence()
+        return result
 
     def uncount_message(self, user_id: int) -> None:
         """Откат счётчика: сообщение не было доставлено — XP за него начислять нельзя."""
@@ -266,6 +283,7 @@ class Matchmaker:
             return
         current = pair.counts.get(user_id, 0)
         pair.counts[user_id] = max(0, current - 1)
+        self._touch_persistence()
 
     def dialog_stats(self, user_id: int) -> dict:
         pair = self._pairs.get(user_id)
@@ -301,6 +319,7 @@ class Matchmaker:
         elif kind == "numbers":
             stats["number_games"] = stats.get("number_games", 0) + 1
             stats["number_exact"] = stats.get("number_exact", 0) + max(0, int(matches))
+        self._touch_persistence()
 
     def is_paired_with(self, user_id: int, other_id: int) -> bool:
         partner = self.partner(user_id)
@@ -313,11 +332,13 @@ class Matchmaker:
             partner = next((u for u in user_ids if u != uid), None)
             if partner is not None:
                 self._pending_rating[uid] = (match_id, partner, ts)
+        self._touch_persistence()
 
     def pop_rating(self, user_id: int) -> tuple[int, int] | None:
         entry = self._pending_rating.pop(user_id, None)
         if entry is None:
             return None
+        self._touch_persistence()
         match_id, partner, ts = entry
         if time.time() - ts > self.rating_ttl:
             return None
@@ -342,6 +363,8 @@ class Matchmaker:
         stale = [uid for uid, (_, _, ts) in self._pending_rating.items() if ts < deadline]
         for uid in stale:
             self._pending_rating.pop(uid, None)
+        if stale:
+            self._touch_persistence()
         return len(stale)
 
     def snapshot(self) -> dict[str, Any]:
@@ -354,7 +377,7 @@ class Matchmaker:
             seen.add(key)
             pairs.append({
                 "a": pair.a, "b": pair.b, "started_at": pair.started_at,
-                "counts": pair.counts, "history": pair.history,
+                "counts": pair.counts,
                 "game_stats": pair.game_stats,
             })
         return {
@@ -394,7 +417,7 @@ class Matchmaker:
                 b=int(item["b"]),
                 started_at=float(item.get("started_at", time.time())),
                 counts={int(uid): int(count) for uid, count in dict(item.get("counts", {})).items()},
-                history=[(int(uid), str(text)) for uid, text in item.get("history", [])],
+                history=[],
                 game_stats={str(k): int(v) for k, v in dict(item.get("game_stats", {})).items()},
             )
             self._pairs[pair.a] = pair
