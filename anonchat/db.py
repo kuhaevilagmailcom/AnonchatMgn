@@ -1057,6 +1057,14 @@ class Database:
         )
         return int(row["user_id"]) if row else None
 
+    async def set_unique_nickname(self, user_id: int, nickname: str) -> bool:
+        """Атомарно для одного процесса проверяет уникальность и сохраняет ник."""
+        async with self._nickname_lock:
+            if await self.nickname_taken(nickname, except_user_id=user_id):
+                return False
+            await self.set_profile(user_id, nickname=nickname)
+            return True
+
     async def set_profile(self, user_id: int, **fields: Any) -> None:
         allowed = {"age", "district", "same_district", "nickname", "gender", "looking_for"}
         if "gender" in fields:
