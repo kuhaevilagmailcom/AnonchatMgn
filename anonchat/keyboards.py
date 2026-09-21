@@ -142,12 +142,10 @@ def district_keyboard() -> InlineKeyboardMarkup:
     for title, value in (
         ("Правый берег", "right"),
         ("Левый берег", "left"),
-        ("Не важно", "none"),
     ):
-        _button(b, title, callback_data=f"cfg:district:{value}",
-                icon="geo" if value != "none" else "check")
+        _button(b, title, callback_data=f"cfg:district:{value}", icon="geo")
     _button(b, "Назад", callback_data=CB_SETTINGS, icon="home")
-    b.adjust(1, 1, 1, 1)
+    b.adjust(1, 1, 1)
     return b.as_markup()
 
 
