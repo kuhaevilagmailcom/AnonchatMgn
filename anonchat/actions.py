@@ -851,9 +851,11 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
     theirs = int(counts.get(partner, 0))
     started = int(summary.get("started_at", time.time()))
 
-    match_id = await ctx.db.log_dialog(ctx.user_id, partner, mine, theirs, started, ended_by)
-    cap = ctx.cfg.xp_message_cap
     live = mine > 0 and theirs > 0 and (mine + theirs) >= 6
+    match_id = await ctx.db.log_dialog(
+        ctx.user_id, partner, mine, theirs, started, ended_by, count_dialog=live
+    )
+    cap = ctx.cfg.xp_message_cap
     my_xp = 0
     for uid, sent in ((ctx.user_id, mine), (partner, theirs)):
         gain = min(sent, cap) * ctx.cfg.xp_per_message + (ctx.cfg.xp_per_dialog if live else 0)
