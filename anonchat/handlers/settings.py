@@ -227,6 +227,9 @@ async def cb_blocks_ask(event: CallbackQuery, ctx: Ctx) -> None:
 async def cb_blocks_yes(
     event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker
 ) -> None:
+    await ctx.ack()
+    if await ctx.dialog_locked():
+        return
     await db.clear_blocks(ctx.user_id)
     me = await db.get_user(ctx.user_id)
     pairs: list[tuple[int, int]] = []
@@ -239,7 +242,6 @@ async def cb_blocks_yes(
             looking_for=(me["looking_for"] or ""),
             excluded=await db.excluded_partners(ctx.user_id),
         )
-    await ctx.ack("Скрытые собеседники сброшены")
     if pairs:
         await announce_pairs(ctx.bot, ctx.cfg, mm, pairs, ctx.pack, db)
         return
