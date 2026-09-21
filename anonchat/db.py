@@ -1466,7 +1466,19 @@ class Database:
                UNION SELECT user_id AS uid FROM blocks WHERE blocked_id = ?""",
             (user_id, user_id),
         )
-        return {int(row["uid"]) for row in rows}
+        result = {int(row["uid"]) for row in rows}
+        if int(recent_seconds) > 0:
+            cutoff = now() - int(recent_seconds)
+            recent = await self._fetchall(
+                """SELECT CASE WHEN user_a=? THEN user_b ELSE user_a END AS uid
+                     FROM matches
+                    WHERE ended_at IS NOT NULL
+                      AND ended_at>=?
+                      AND (user_a=? OR user_b=?)""",
+                (user_id, cutoff, user_id, user_id),
+            )
+            result.update(int(row["uid"]) for row in recent)
+        return result
 
     async def list_reports(self, status: str = "new", limit: int = 20) -> list[aiosqlite.Row]:
         return await self._fetchall(
