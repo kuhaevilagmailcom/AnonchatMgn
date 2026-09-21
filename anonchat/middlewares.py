@@ -69,9 +69,12 @@ class DataContext(BaseMiddleware):
                 me=me,
                 admin_permissions=permissions,
             )
-        result = await handler(event, data)
-        self.db.schedule_matchmaker_save(self.mm)
-        return result
+        try:
+            return await handler(event, data)
+        finally:
+            # Даже если обработчик упал после изменения очереди/пары,
+            # сохраняем фактическое состояние и не откатываемся после рестарта.
+            self.db.schedule_matchmaker_save(self.mm)
 
 
 class Throttling(BaseMiddleware):
