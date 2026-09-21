@@ -44,6 +44,7 @@ from .matching import Matchmaker
 from .pack import EmojiPack
 from .engagement import collect_progress_notifications, format_quests
 from . import relay_state
+from .runtime_state import online_count as presence_online_count
 
 ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "menu"
 log = logging.getLogger(__name__)
@@ -51,7 +52,7 @@ log = logging.getLogger(__name__)
 # Только память процесса: никаких записей message_id/онлайна в SQLite.
 # Нужны для замены старого меню и обновления счётчика без мусора в БД.
 _SCREEN_MESSAGES: dict[int, tuple[int, int]] = {}
-_LIVE_MENUS: dict[int, tuple[int, int, str, bool, int]] = {}
+_LIVE_MENUS: dict[int, tuple[int, int, str, bool, int, float]] = {}
 
 
 class DeliveryResult(Enum):
@@ -159,7 +160,7 @@ class Ctx:
                         if live_menu:
                             _LIVE_MENUS[self.user_id] = (
                                 final.chat.id, final.message_id, self.nick, self.is_admin,
-                                online_count(self.mm),
+                                online_count(self.mm), time.monotonic(),
                             )
                     return final
                 except TelegramBadRequest as exc:
@@ -283,20 +284,29 @@ async def _remember_screen(bot: Bot, user_id: int, message: Message) -> None:
         pass
 
 
-def online_count(mm: Matchmaker) -> int:
-    return mm.queue_size() + mm.online_pairs() * 2
+def online_count(mm: Matchmaker | None = None) -> int:
+    """Реальный онлайн: пользователи, взаимодействовавшие с ботом за последние 5 минут."""
+    return presence_online_count()
 
 
 async def refresh_live_menus(bot: Bot, mm: Matchmaker, pack: EmojiPack | None = None) -> None:
-    """Обновляет открытые главные меню только когда реальный онлайн изменился."""
+    """Редко обновляет только свежие главные меню, не устраивая массовый edit-шторм."""
     size = online_count(mm)
-    for user_id, (chat_id, message_id, nickname, is_admin, previous_size) in list(_LIVE_MENUS.items()):
+    now_mono = time.monotonic()
+    edited = 0
+    for user_id, item in list(_LIVE_MENUS.items()):
+        chat_id, message_id, nickname, is_admin, previous_size, opened_at = item
+        if now_mono - opened_at > 10 * 60:
+            _LIVE_MENUS.pop(user_id, None)
+            continue
         if previous_size == size:
             continue
         status = mm.status(user_id)
         if status != "free":
             _LIVE_MENUS.pop(user_id, None)
             continue
+        if edited >= 50:
+            break
         body = (
             f"<b>{texts.esc(nickname)}</b>\n\n"
             f"{texts.STATUS_FREE}\n\n"
@@ -310,7 +320,10 @@ async def refresh_live_menus(bot: Bot, mm: Matchmaker, pack: EmojiPack | None = 
                     chat_id=chat_id, message_id=message_id,
                     caption=wrapped, reply_markup=markup,
                 )
-                _LIVE_MENUS[user_id] = (chat_id, message_id, nickname, is_admin, size)
+                _LIVE_MENUS[user_id] = (
+                    chat_id, message_id, nickname, is_admin, size, opened_at
+                )
+                edited += 1
                 break
             except TelegramBadRequest as exc:
                 if pack and attempt == 0 and pack.accept(exc):
@@ -588,7 +601,7 @@ async def show_top(ctx: Ctx, period: str = "week") -> None:
 
 
 async def show_referral(ctx: Ctx) -> None:
-    bot = await ctx.bot.get_me()
+    bot = await ctx.bot.me()
     link = f"https://t.me/{bot.username}?start=ref_{ctx.user_id}"
     invited, earned = await ctx.db.referral_stats(ctx.user_id)
     body = (
@@ -654,13 +667,17 @@ async def show_quests(ctx: Ctx) -> None:
 
 
 async def show_online(ctx: Ctx) -> None:
-    current = ctx.mm.queue_size() + ctx.mm.online_pairs() * 2
+    current = online_count(ctx.mm)
+    chatting = ctx.mm.online_pairs() * 2
+    queued = ctx.mm.queue_size()
+    free = max(0, current - chatting - queued)
     peak = await ctx.db.online_peak(current)
     body = (
         "🟢 <b>Онлайн сейчас</b>\n\n"
-        f"Общаются: <b>{ctx.mm.online_pairs() * 2}</b>\n"
-        f"Ищут собеседника: <b>{ctx.mm.queue_size()}</b>\n"
-        f"Всего сейчас: <b>{current}</b>\n"
+        f"Всего: <b>{current}</b>\n"
+        f"Общаются: <b>{chatting}</b>\n"
+        f"Ищут собеседника: <b>{queued}</b>\n"
+        f"Свободны: <b>{free}</b>\n"
         f"Пик сегодня: <b>{peak}</b>"
     )
     await ctx.render_screen("05_settings.png", body, online_keyboard())
@@ -700,9 +717,7 @@ async def show_profile(ctx: Ctx) -> None:
     ]
     if nicklib.is_supporter(me["support_stars"]):
         lines += ["", f"💎 Поддержал проект: {int(me['support_stars'])} ⭐"]
-    bot = await ctx.bot.get_me()
-    referral = f"https://t.me/{bot.username}?start=ref_{ctx.user_id}"
-    await ctx.render_screen("04_profile.png", "\n".join(lines), profile_keyboard(referral))
+    await ctx.render_screen("04_profile.png", "\n".join(lines), profile_keyboard())
 
 
 # --------------------------------------------------------------------- ники
