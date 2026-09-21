@@ -1526,16 +1526,18 @@ class Database:
 
     # ------------------------------------------------------------------ dialogs
     async def log_dialog(
-        self, user_a: int, user_b: int, msg_a: int, msg_b: int, started_at: int, ended_by: int | None
+        self, user_a: int, user_b: int, msg_a: int, msg_b: int, started_at: int,
+        ended_by: int | None, *, count_dialog: bool = True,
     ) -> int:
         cur = await self.db.execute(
             """INSERT INTO matches (started_at, ended_at, user_a, user_b, msg_a, msg_b, ended_by)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (started_at, now(), user_a, user_b, msg_a, msg_b, ended_by),
         )
-        await self.db.execute(
-            "UPDATE users SET dialogs = dialogs + 1 WHERE user_id IN (?, ?)", (user_a, user_b)
-        )
+        if count_dialog:
+            await self.db.execute(
+                "UPDATE users SET dialogs = dialogs + 1 WHERE user_id IN (?, ?)", (user_a, user_b)
+            )
         await self.db.commit()
         return int(cur.lastrowid)
 
