@@ -1162,9 +1162,20 @@ def test_engagement_activity_streak_achievements_and_quests() -> None:
             assert await db.unlock_achievement(501, "test_unique", 25) is False
             assert int((await db.get_user(501))["xp"]) == after
 
+            results = await asyncio.gather(
+                db.unlock_achievement(502, "race_unique", 50),
+                db.unlock_achievement(502, "race_unique", 50),
+            )
+            assert sorted(results) == [False, True]
+            assert int((await db.get_user(502))["xp"]) == 50
+
             assert await db.claim_daily_quest(501, day, "quest_test", 25) is True
             assert await db.claim_daily_quest(501, day, "quest_test", 25) is False
             assert "quest_test" in await db.daily_quest_claimed(501, day)
+            next_day = day + 86_400
+            assert await db.claim_daily_quest(501, next_day, "quest_test", 25) is True
+            assert "quest_test" in await db.daily_quest_claimed(501, next_day)
+            assert await db.daily_quest_claimed(501, day) == set()
 
             await db.record_game_engagement(
                 501, "battle", matches=5, total=5
