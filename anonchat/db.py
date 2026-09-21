@@ -506,7 +506,7 @@ class Database:
                       answer_a, answer_b, reward_awarded
                  FROM battle_games
                 WHERE status IN ('invited', 'active', 'round_done')
-                  AND updated_at < ?""",
+                  AND updated_at <= ?""",
             (cutoff,),
         )
         if not rows:
