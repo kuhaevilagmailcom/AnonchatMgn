@@ -722,6 +722,7 @@ async def act_connect(ctx: Ctx) -> None:
         await ctx.reply(texts.ALREADY_PAIRED, markup=menu_keyboard("paired"))
         return
     if status == "queued":
+        ctx.mm.touch_queue(ctx.user_id)
         await ctx.render_screen(
             "02_search.png",
             texts.QUEUED.format(city=texts.esc(ctx.cfg.city), pos=ctx.mm.position(ctx.user_id) or 1,
