@@ -923,6 +923,25 @@ def test_db_nickname_and_kv() -> None:
                    ban_reason TEXT NOT NULL DEFAULT '', mute_until INTEGER NOT NULL DEFAULT 0)"""
         )
         old.execute("INSERT INTO users (user_id, first_name, xp) VALUES (7, 'Олд', 100)")
+        old.execute(
+            """CREATE TABLE battle_games (
+                   id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   user_a INTEGER NOT NULL, user_b INTEGER NOT NULL,
+                   inviter_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'invited',
+                   question_ids TEXT NOT NULL DEFAULT '[]',
+                   question_index INTEGER NOT NULL DEFAULT 0,
+                   answer_a INTEGER, answer_b INTEGER,
+                   matches INTEGER NOT NULL DEFAULT 0,
+                   total_questions INTEGER NOT NULL DEFAULT 5,
+                   reward_awarded INTEGER NOT NULL DEFAULT 0,
+                   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL
+               )"""
+        )
+        old.execute(
+            """INSERT INTO battle_games(
+                   user_a, user_b, inviter_id, status, created_at, updated_at
+               ) VALUES (7, 8, 7, 'invited', 1, 1)"""
+        )
         old.commit()
         old.close()
 
@@ -931,6 +950,9 @@ def test_db_nickname_and_kv() -> None:
             assert await db.get_user(7) is not None, "старые данные не потерялись"
             assert (await db.get_user(7))["nickname"] == "", "колонка nickname добавлена на лету"
             assert (await db.get_user(7))["looking_for"] == "", "предпочтение пола мигрируется без потери базы"
+            old_game = await db.get_battle(1)
+            assert old_game is not None and old_game["game_type"] == "battle"
+            assert int(old_game["range_max"]) == 0 and int(old_game["reward_total"]) == 0
 
             await db.set_profile(7, nickname="Старожил")
             assert (await db.get_user(7))["nickname"] == "Старожил"
