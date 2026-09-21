@@ -616,7 +616,7 @@ async def show_activity(ctx: Ctx) -> None:
         f"<b>За 30 дней</b>\n"
         f"Диалогов: {month.get('dialogs', 0)} · сообщений: {month.get('messages', 0)} · игр: {month.get('games', 0)}\n\n"
         f"<b>Всего</b>\n"
-        f"Диалогов: {int(me['dialogs'] or 0) if me else 0} · сообщений: {int(me['messages'] or 0) if me else 0}\n"
+        f"Диалогов: {int(engagement['dialogs_total'] or 0)} · сообщений: {int(me['messages'] or 0) if me else 0}\n"
         f"Хороших оценок: {int(me['good_ratings'] or 0) if me else 0} · игр: {int(engagement['games_total'] or 0)}"
     )
     await ctx.render_screen("04_profile.png", body, profile_section_keyboard())
@@ -847,6 +847,7 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
             await ctx.db.bump(uid, "messages", sent)
         await ctx.db.activity_add(uid, messages=sent, dialogs=1 if live else 0)
         if live:
+            await ctx.db.record_dialog_engagement(uid)
             await ctx.db.update_streak(uid)
         if uid == ctx.user_id:
             my_xp = gain
