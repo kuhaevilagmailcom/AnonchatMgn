@@ -436,10 +436,15 @@ def test_battle_game_persists_and_synchronizes() -> None:
 
 def test_number_game_three_rounds_and_rewards() -> None:
     from anonchat.number_game import (
-        NUMBER_NEAR_DIFFS, NUMBER_REWARDS, NUMBER_ROUNDS, number_reward,
+        NUMBER_DAILY_REWARD_LIMIT,
+        NUMBER_NEAR_DIFFS,
+        NUMBER_REWARDS,
+        NUMBER_ROUNDS,
+        number_reward,
     )
 
     assert NUMBER_ROUNDS == 3
+    assert NUMBER_DAILY_REWARD_LIMIT == 300
     assert NUMBER_REWARDS == {10: 25, 100: 50, 1000: 100}
     assert NUMBER_NEAR_DIFFS == {10: 1, 100: 2, 1000: 5}
     assert number_reward(10, 5, 5) == 25
@@ -474,28 +479,67 @@ def test_number_game_three_rounds_and_rewards() -> None:
 
             # Раунд 1: точное совпадение = 25 каждому.
             assert (await db.answer_number(game_id, 301, 0, 5))[0] == "waiting"
-            state, game = await db.answer_number(game_id, 302, 0, 5)
+            state, game, reward_a, reward_b = await db.answer_number(game_id, 302, 0, 5)
             assert state == "resolved" and game is not None
-            assert int(game["reward_total"]) == 25
+            assert (reward_a, reward_b) == (25, 25)
+            assert int(game["reward_total_a"]) == 25 and int(game["reward_total_b"]) == 25
             game = await db.advance_number(game_id, 301, 0)
             assert game is not None and int(game["question_index"]) == 1
 
             # Раунд 2: разница 1 = половина, для 25 это 12 целых ⭐.
             assert (await db.answer_number(game_id, 301, 1, 4))[0] == "waiting"
-            state, game = await db.answer_number(game_id, 302, 1, 5)
+            state, game, reward_a, reward_b = await db.answer_number(game_id, 302, 1, 5)
             assert state == "resolved" and game is not None
-            assert int(game["reward_total"]) == 37
+            assert (reward_a, reward_b) == (12, 12)
+            assert int(game["reward_total_a"]) == 37 and int(game["reward_total_b"]) == 37
             game = await db.advance_number(game_id, 302, 1)
             assert game is not None and int(game["question_index"]) == 2
 
             # Раунд 3: большая разница = без награды, после него игра удаляется.
             assert (await db.answer_number(game_id, 301, 2, 1))[0] == "waiting"
-            state, game = await db.answer_number(game_id, 302, 2, 9)
+            state, game, reward_a, reward_b = await db.answer_number(game_id, 302, 2, 9)
             assert state == "resolved" and game is not None
-            assert game["status"] == "finished" and int(game["reward_total"]) == 37
+            assert (reward_a, reward_b) == (0, 0)
+            assert game["status"] == "finished"
+            assert int(game["reward_total_a"]) == 37 and int(game["reward_total_b"]) == 37
             assert await db.get_battle(game_id) is None
             assert int((await db.get_user(301))["xp"]) == 37
             assert int((await db.get_user(302))["xp"]) == 37
+
+            # С той же парой следующая игра идёт без награды.
+            again, created = await db.create_number_invite(302, 301, 1000)
+            assert created
+            again_id = int(again["id"])
+            again = await db.accept_number(again_id, 301)
+            assert again is not None and int(again["reward_awarded"]) == 0
+            assert (await db.answer_number(again_id, 302, 0, 999))[0] == "waiting"
+            state, again, reward_a, reward_b = await db.answer_number(again_id, 301, 0, 999)
+            assert state == "resolved" and (reward_a, reward_b) == (0, 0)
+            assert int((await db.get_user(301))["xp"]) == 37
+            assert int((await db.get_user(302))["xp"]) == 37
+            await db.cancel_battle(again_id)
+
+            # Дневной лимит личный: одному можно упереться в 300, второму получить полную награду.
+            await db.ensure_user(303, "numbers_c", "C")
+            day_start = __import__("anonchat.db", fromlist=["number_reward_day_start"]).number_reward_day_start()
+            await db.db.execute(
+                """INSERT INTO number_daily_rewards(user_id, day_start, stars)
+                   VALUES (?, ?, ?)""",
+                (301, day_start, 290),
+            )
+            await db.db.commit()
+            capped, created = await db.create_number_invite(301, 303, 1000)
+            assert created
+            capped_id = int(capped["id"])
+            capped = await db.accept_number(capped_id, 303)
+            assert capped is not None and int(capped["reward_awarded"]) == 1
+            assert (await db.answer_number(capped_id, 301, 0, 500))[0] == "waiting"
+            state, capped, reward_a, reward_b = await db.answer_number(capped_id, 303, 0, 500)
+            assert state == "resolved"
+            assert (reward_a, reward_b) == (10, 100)
+            assert await db.number_daily_reward(301) == 300
+            assert await db.number_daily_reward(303) == 100
+            await db.cancel_battle(capped_id)
         finally:
             await db.close()
 
