@@ -139,15 +139,16 @@ def test_district_priority_and_fallback() -> None:
     assert mm.connect(2, district="Левый берег") == ("paired", 1)
 
     # Если есть выбор, свой берег приоритетнее даже если человек с другого берега ждёт дольше.
+    # Первые двое взаимно исключены, чтобы оба успели оказаться в очереди для проверки выбора.
     mm2 = Matchmaker()
     assert mm2.connect(
-        10, district="Левый берег", gender="f", looking_for="m"
+        10, district="Левый берег", excluded={11}
     ) == ("queued", 1)
     assert mm2.connect(
-        11, district="Правый берег", gender="f", looking_for="m"
+        11, district="Правый берег", excluded={10}
     ) == ("queued", 2)
     assert mm2.connect(
-        12, district="Правый берег", gender="m", looking_for="f"
+        12, district="Правый берег"
     ) == ("paired", 11)
     assert mm2.status(10) == "queued"
 
