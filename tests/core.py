@@ -549,6 +549,11 @@ def test_number_game_three_rounds_and_rewards() -> None:
             assert await db.number_daily_reward(301) == 300
             assert await db.number_daily_reward(303) == 100
             await db.cancel_battle(capped_id)
+
+            await db.forget_user(301)
+            assert await db.number_daily_reward(301) == 0
+            assert await db.number_pair_reward_available(301, 302) is True
+            assert await db.number_pair_reward_available(301, 303) is True
         finally:
             await db.close()
 
