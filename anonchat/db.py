@@ -445,8 +445,12 @@ class Database:
             return list(await cur.fetchall())
 
     # ------------------------------------------------------------------ users
-    async def ensure_user(self, user_id: int, username: str | None, first_name: str) -> aiosqlite.Row:
-        existing = await self.get_user(user_id)
+    async def ensure_user(
+        self, user_id: int, username: str | None, first_name: str,
+        *, existing: aiosqlite.Row | None = None,
+    ) -> aiosqlite.Row:
+        if existing is None:
+            existing = await self.get_user(user_id)
         if existing is not None and existing["profile_deleted"]:
             restricted = bool(existing["banned"] or int(existing["mute_until"] or 0) > now())
             if restricted:
@@ -492,13 +496,20 @@ class Database:
     ) -> frozenset[str]:
         if user_id in owner_ids:
             return ALL_ADMIN_PERMISSIONS
+        cached = self._admin_permissions_cache.get(int(user_id))
+        now_mono = time.monotonic()
+        if cached is not None and now_mono - cached[0] < 30:
+            return cached[1]
         row = await self._fetchone("SELECT permissions FROM admins WHERE user_id = ?", (user_id,))
-        if row is None:
-            return frozenset()
-        return frozenset(
-            item for item in str(row["permissions"] or "").split(",")
-            if item in ALL_ADMIN_PERMISSIONS
+        permissions = (
+            frozenset(
+                item for item in str(row["permissions"] or "").split(",")
+                if item in ALL_ADMIN_PERMISSIONS
+            )
+            if row is not None else frozenset()
         )
+        self._admin_permissions_cache[int(user_id)] = (now_mono, permissions)
+        return permissions
 
     async def set_admin(
         self, user_id: int, permissions: set[str] | frozenset[str], granted_by: int
@@ -518,11 +529,13 @@ class Database:
             (user_id, serialize_permissions(clean), granted_by, ts, ts),
         )
         await self.db.commit()
+        self._admin_permissions_cache.pop(int(user_id), None)
         return clean
 
     async def remove_admin(self, user_id: int) -> bool:
         cur = await self.db.execute("DELETE FROM admins WHERE user_id = ?", (user_id,))
         await self.db.commit()
+        self._admin_permissions_cache.pop(int(user_id), None)
         return cur.rowcount > 0
 
     async def list_admins(self) -> list[aiosqlite.Row]:
