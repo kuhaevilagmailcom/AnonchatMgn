@@ -747,16 +747,17 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     session.clear()
     original_id = await send(A, "текст до редактирования")
-    sent_copy = next(item for item in session.to(B) if item["method"] == "sendMessage")
-    copied_message_id = int(sent_copy.get("message_id", 0) or 0)
+    check(any(item["method"] == "sendMessage" for item in session.to(B)),
+          "исходный текст сначала доставлен собеседнику")
     session.clear()
     await edit(A, original_id, "текст после редактирования")
     edit_call = next(
         (item for item in session.to(B) if item["method"] == "editMessageText"), None
     )
     check(bool(edit_call), "редактирование исходного сообщения меняет копию у собеседника")
-    check(edit_call["text"] == "текст после редактирования",
-          "у собеседника появляется новая версия текста")
+    check(edit_call["text"] == "текст после редактирования"
+          and int(edit_call.get("message_id", 0)) > 0,
+          "у собеседника редактируется именно ранее созданная копия")
 
     # Фото отправляется напрямую по file_id и переживает кратковременный сбой Telegram.
     session.clear()
