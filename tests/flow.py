@@ -408,6 +408,15 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     reports = await db.list_reports("new")
     check(len(reports) == 1 and reports[0]["target_id"] == C, "жалоба легла в базу")
     check(mm.partner(A) == C, "жалоба сама по себе диалог не рвёт")
+    report_markup = session.to(A)[-1].get("reply_markup", {})
+    report_labels = [
+        button["text"]
+        for row in report_markup.get("inline_keyboard", [])
+        for button in row
+    ]
+    check("Стоп" in report_labels and "Игры" in report_labels
+          and "Найти собеседника" not in report_labels,
+          "после жалобы остаётся меню текущего диалога")
 
     # 10. админ мутит нарушителя и закрывает жалобу
     session.clear()
