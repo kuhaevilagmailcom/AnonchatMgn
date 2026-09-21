@@ -1965,7 +1965,22 @@ class Database:
             state = json.loads(value)
         except json.JSONDecodeError:
             return None
-        return state if isinstance(state, dict) else None
+        if not isinstance(state, dict):
+            return None
+
+        # Старые версии клали последние сообщения пары в snapshot. Удаляем их
+        # с диска сразу при старте; контекст жалобы теперь живёт только в RAM.
+        sanitized = False
+        for pair in state.get("pairs", []):
+            if isinstance(pair, dict) and "history" in pair:
+                pair.pop("history", None)
+                sanitized = True
+        if sanitized:
+            await self.save_matchmaker(state)
+            self._matchmaker_snapshot_key = json.dumps(
+                state, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+            )
+        return state
 
     async def delete_kv(self, key: str) -> None:
         await self.db.execute("DELETE FROM kv WHERE key = ?", (key,))
