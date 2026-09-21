@@ -141,11 +141,19 @@ class Ctx:
                             if new_file_id != cached:
                                 await self.db.set_kv(key, new_file_id)
                                 cached = new_file_id
+                        if (
+                            isinstance(self.event, CallbackQuery)
+                            and target.message_id != final.message_id
+                        ):
+                            try:
+                                await self.bot.delete_message(target.chat.id, target.message_id)
+                            except TelegramAPIError:
+                                pass
                         await _remember_screen(self.bot, self.user_id, final)
                         if live_menu:
                             _LIVE_MENUS[self.user_id] = (
                                 final.chat.id, final.message_id, self.nick, self.is_admin,
-                                self.mm.queue_size(),
+                                online_count(self.mm),
                             )
                     return final
                 except TelegramBadRequest as exc:
@@ -158,11 +166,19 @@ class Ctx:
                 await self.db.delete_kv(key)
         fallback = await self.reply(caption, markup)
         if fallback is not None:
+            if (
+                isinstance(self.event, CallbackQuery)
+                and target.message_id != fallback.message_id
+            ):
+                try:
+                    await self.bot.delete_message(target.chat.id, target.message_id)
+                except TelegramAPIError:
+                    pass
             await _remember_screen(self.bot, self.user_id, fallback)
             if live_menu:
                 _LIVE_MENUS[self.user_id] = (
                     fallback.chat.id, fallback.message_id, self.nick, self.is_admin,
-                    self.mm.queue_size(),
+                    online_count(self.mm),
                 )
         return fallback
 
@@ -259,9 +275,13 @@ async def _remember_screen(bot: Bot, user_id: int, message: Message) -> None:
         pass
 
 
+def online_count(mm: Matchmaker) -> int:
+    return mm.queue_size() + mm.online_pairs() * 2
+
+
 async def refresh_live_menus(bot: Bot, mm: Matchmaker, pack: EmojiPack | None = None) -> None:
-    """Обновляет открытые главные меню только когда размер очереди действительно изменился."""
-    size = mm.queue_size()
+    """Обновляет открытые главные меню только когда реальный онлайн изменился."""
+    size = online_count(mm)
     for user_id, (chat_id, message_id, nickname, is_admin, previous_size) in list(_LIVE_MENUS.items()):
         if previous_size == size:
             continue
@@ -272,7 +292,7 @@ async def refresh_live_menus(bot: Bot, mm: Matchmaker, pack: EmojiPack | None = 
         body = (
             f"<b>{texts.esc(nickname)}</b>\n\n"
             f"{texts.STATUS_FREE}\n\n"
-            f"🟢 Сейчас ищут: <b>{size}</b>"
+            f"🟢 Онлайн сейчас: <b>{size}</b>"
         )
         markup = menu_keyboard("free", size, admin=is_admin)
         for attempt in range(2):
@@ -408,7 +428,7 @@ async def show_menu(ctx: Ctx) -> None:
     body = (
         f"<b>{texts.esc(ctx.nick)}</b>\n\n"
         f"{state}\n\n"
-        f"🟢 Сейчас ищут: <b>{ctx.mm.queue_size()}</b>"
+        f"🟢 Онлайн сейчас: <b>{online_count(ctx.mm)}</b>"
     )
     kb = menu_keyboard(status, ctx.mm.queue_size(), admin=ctx.is_admin)
     image = {"paired": "03_found.png", "queued": "02_search.png"}.get(status, "01_main_menu.png")
@@ -421,10 +441,10 @@ async def show_welcome(ctx: Ctx) -> None:
 
 
 async def show_help(ctx: Ctx) -> None:
-    await ctx.reply(
-        texts.HELP,
-        markup=menu_keyboard(ctx.mm.status(ctx.user_id)),
-    )
+    _LIVE_MENUS.pop(ctx.user_id, None)
+    if await ctx.edit(texts.HELP, back_menu_keyboard()):
+        return
+    await ctx.reply(texts.HELP, markup=back_menu_keyboard())
 
 
 async def show_rules(ctx: Ctx) -> None:
