@@ -828,6 +828,64 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check("5 вопросов" in str(session.to(A)[-1].get("reply_markup")),
           "сыграть ещё работает без хранения старой игры")
 
+    # Новая игра «Числа»: три раунда, диапазон выбирает инициатор.
+    await send(A, "/game")
+    check("Числа" in str(session.to(A)[-1].get("reply_markup")),
+          "в меню игр появилась игра Числа")
+    await press(A, "game:numbers")
+    range_markup = str(session.to(A)[-1].get("reply_markup"))
+    check("1–10" in range_markup and "1–1000" in range_markup,
+          "инициатор выбирает диапазон игры Числа")
+
+    xp_a_before = int((await db.get_user(A))["xp"])
+    xp_b_before = int((await db.get_user(B))["xp"])
+    await press(A, "game:numbers:range:10")
+    number_game = await db.number_for_pair(A, B)
+    check(bool(number_game and number_game["status"] == "invited"),
+          "предложение игры Числа сохранено в SQLite")
+    number_id = int(number_game["id"])
+    check("Числа" in session.last_to(B) and "3" in session.last_to(B),
+          "собеседник получает приглашение на три раунда")
+    await press(B, f"game:num:yes:{number_id}")
+    check("раунд 1/3" in session.last_to(A).lower()
+          and "раунд 1/3" in session.last_to(B).lower(),
+          "после согласия начинается первый раунд")
+
+    # 1-й раунд: точное совпадение 5 и 5 = +25 каждому.
+    await press(A, f"game:num:set:{number_id}:0:5")
+    await press(A, f"game:num:submit:{number_id}:0:5")
+    await press(B, f"game:num:set:{number_id}:0:5")
+    await press(B, f"game:num:submit:{number_id}:0:5")
+    check("Точное совпадение" in session.last_to(A) and "25" in session.last_to(A),
+          "точное совпадение начисляет 25 звёзд в диапазоне 1–10")
+
+    await press(A, f"game:num:next:{number_id}:0")
+    check("раунд 2/3" in session.last_to(B).lower(), "игра переходит ко второму раунду")
+
+    # 2-й раунд: разница ровно 1 = половина награды, то есть 12 целых ⭐.
+    await press(A, f"game:num:set:{number_id}:1:4")
+    await press(A, f"game:num:submit:{number_id}:1:4")
+    await press(B, f"game:num:set:{number_id}:1:5")
+    await press(B, f"game:num:submit:{number_id}:1:5")
+    check("Почти совпало" in session.last_to(A) and "12" in session.last_to(A),
+          "разница в один даёт половину целой награды")
+
+    await press(B, f"game:num:next:{number_id}:1")
+    check("раунд 3/3" in session.last_to(A).lower(), "игра переходит к третьему раунду")
+
+    # 3-й раунд: далеко друг от друга = без награды.
+    await press(A, f"game:num:set:{number_id}:2:1")
+    await press(A, f"game:num:submit:{number_id}:2:1")
+    await press(B, f"game:num:set:{number_id}:2:9")
+    await press(B, f"game:num:submit:{number_id}:2:9")
+    check("Игра окончена" in session.last_to(A) and "37" in session.last_to(A),
+          "после трёх раундов показан общий заработок")
+    check(await db.number_for_pair(A, B) is None,
+          "завершённая игра Числа не хранится как история")
+    check(int((await db.get_user(A))["xp"]) == xp_a_before + 37
+          and int((await db.get_user(B))["xp"]) == xp_b_before + 37,
+          "награды Чисел начисляются обоим игрокам")
+
     await press(ADMIN, "adm:panel:monitor")
     session.clear()
     await send(A, "слежение выключено")

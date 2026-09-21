@@ -7,6 +7,7 @@ import random
 from typing import Any
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
@@ -16,6 +17,7 @@ from ..actions import Ctx, DeliveryResult, send_to
 from ..battle_questions import BattleQuestion, get_question, questions
 from ..db import Database
 from ..matching import Matchmaker
+from ..number_game import NUMBER_REWARDS, NUMBER_ROUNDS, number_reward
 
 router = Router(name="games")
 
@@ -38,9 +40,25 @@ def _total(row: Any) -> int:
     return int(row["total_questions"])
 
 
+def _game_type(row: Any) -> str:
+    try:
+        return str(row["game_type"] or "battle")
+    except (KeyError, IndexError):
+        return "battle"
+
+
+def _number_answered(row: Any, user_id: int) -> bool:
+    column = "answer_a" if int(row["user_a"]) == user_id else "answer_b"
+    return row[column] is not None
+
+
 async def _require_current_game(ctx: Ctx, db: Database, game_id: int) -> Any | None:
     row = await db.get_battle(game_id)
-    if row is None or ctx.user_id not in set(_players(row)):
+    if (
+        row is None
+        or _game_type(row) != "battle"
+        or ctx.user_id not in set(_players(row))
+    ):
         await ctx.ack("Игра не найдена", alert=True)
         return None
     if not _current_pair(ctx.mm, row):
@@ -48,6 +66,101 @@ async def _require_current_game(ctx: Ctx, db: Database, game_id: int) -> Any | N
         await ctx.ack("Диалог уже завершён", alert=True)
         return None
     return row
+
+
+async def _require_current_number(ctx: Ctx, db: Database, game_id: int) -> Any | None:
+    row = await db.get_battle(game_id)
+    if (
+        row is None
+        or _game_type(row) != "numbers"
+        or ctx.user_id not in set(_players(row))
+    ):
+        await ctx.ack("Игра не найдена", alert=True)
+        return None
+    if not _current_pair(ctx.mm, row):
+        await db.cancel_battle(game_id)
+        await ctx.ack("Диалог уже завершён", alert=True)
+        return None
+    return row
+
+
+def _number_prompt(row: Any) -> str:
+    round_index = int(row["question_index"])
+    range_max = int(row["range_max"])
+    return (
+        f"🔢 <b>Числа · раунд {round_index + 1}/{NUMBER_ROUNDS}</b>\n\n"
+        f"Выбери число от <b>1</b> до <b>{range_max}</b>.\n"
+        "Собеседник увидит его только после своего выбора."
+    )
+
+
+async def _send_number_round(ctx: Ctx, row: Any) -> None:
+    body = _number_prompt(row)
+    game_id = int(row["id"])
+    round_index = int(row["question_index"])
+    for user_id in _players(row):
+        await send_to(
+            ctx.bot,
+            user_id,
+            body,
+            K.number_input_keyboard(game_id, round_index),
+            ctx.pack,
+        )
+
+
+async def _send_number_result(ctx: Ctx, row: Any) -> None:
+    user_a, user_b = _players(row)
+    answer_a = int(row["answer_a"])
+    answer_b = int(row["answer_b"])
+    diff = abs(answer_a - answer_b)
+    reward = number_reward(int(row["range_max"]), answer_a, answer_b)
+
+    if diff == 0:
+        body_a = body_b = (
+            f"🎯 <b>Точное совпадение!</b>\n"
+            f"Вы оба выбрали <b>{answer_a}</b>.\n"
+            f"+<b>{reward} ⭐</b> каждому."
+        )
+    elif diff == 1:
+        body_a = (
+            f"🔥 <b>Почти совпало!</b>\n"
+            f"Ты: <b>{answer_a}</b> · собеседник: <b>{answer_b}</b>\n"
+            f"Разница всего <b>1</b> · +<b>{reward} ⭐</b> каждому."
+        )
+        body_b = (
+            f"🔥 <b>Почти совпало!</b>\n"
+            f"Ты: <b>{answer_b}</b> · собеседник: <b>{answer_a}</b>\n"
+            f"Разница всего <b>1</b> · +<b>{reward} ⭐</b> каждому."
+        )
+    else:
+        body_a = (
+            f"🔢 <b>Не совпало</b>\n"
+            f"Ты: <b>{answer_a}</b> · собеседник: <b>{answer_b}</b>\n"
+            "В этом раунде без награды."
+        )
+        body_b = (
+            f"🔢 <b>Не совпало</b>\n"
+            f"Ты: <b>{answer_b}</b> · собеседник: <b>{answer_a}</b>\n"
+            "В этом раунде без награды."
+        )
+
+    if str(row["status"]) == "finished":
+        total_reward = int(row["reward_total"])
+        exact = int(row["matches"])
+        final = (
+            f"🔢 <b>Игра окончена</b>\n"
+            f"Сыграно раундов: <b>{NUMBER_ROUNDS}</b>\n"
+            f"Точных совпадений: <b>{exact}/{NUMBER_ROUNDS}</b>\n"
+            f"Получено за игру: <b>{total_reward} ⭐</b> каждому."
+        )
+        markup = K.number_end_keyboard()
+        body_a = f"{body_a}\n\n{final}"
+        body_b = f"{body_b}\n\n{final}"
+    else:
+        markup = K.number_next_keyboard(int(row["id"]), int(row["question_index"]))
+
+    await send_to(ctx.bot, user_a, body_a, markup, ctx.pack)
+    await send_to(ctx.bot, user_b, body_b, markup, ctx.pack)
 
 
 async def _send_question(ctx: Ctx, row: Any) -> None:
@@ -135,14 +248,251 @@ async def cb_return(event: CallbackQuery, ctx: Ctx) -> None:
     await ctx.reply("💬 Можно продолжать общение.", K.chat_keyboard())
 
 
+@router.callback_query(F.data == K.CB_NUMBERS)
+async def cb_numbers(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    partner = ctx.mm.partner(ctx.user_id)
+    if partner is None:
+        await ctx.ack("Сначала найди собеседника", alert=True)
+        return
+
+    existing = await db.game_for_pair(ctx.user_id, partner)
+    if existing is not None:
+        if _game_type(existing) != "numbers":
+            await ctx.ack("Сначала заверши текущую игру", alert=True)
+            return
+        status = str(existing["status"])
+        game_id = int(existing["id"])
+        range_max = int(existing["range_max"])
+        if status == "invited":
+            if int(existing["inviter_id"]) == ctx.user_id:
+                await ctx.ack("Предложение уже отправлено", alert=True)
+            else:
+                await ctx.reply(
+                    f"🔢 Собеседник предлагает сыграть в Числа · 1–{range_max}.",
+                    K.number_invite_keyboard(game_id),
+                )
+            return
+        if status == "active":
+            await ctx.ack("Игра уже идёт")
+            if _number_answered(existing, ctx.user_id):
+                await ctx.reply("🔢 Число принято. Ждём выбор собеседника…")
+            else:
+                await ctx.reply(
+                    _number_prompt(existing),
+                    K.number_input_keyboard(game_id, int(existing["question_index"])),
+                )
+            return
+        await ctx.reply(
+            "🔢 Раунд завершён. Можно перейти дальше.",
+            K.number_next_keyboard(game_id, int(existing["question_index"])),
+        )
+        return
+
+    await ctx.ack()
+    await ctx.reply(
+        "🔢 <b>Числа · 3 раунда</b>\n\n"
+        "Выбери диапазон. Чем он больше, тем выше награда за совпадение.",
+        K.number_range_keyboard(),
+    )
+
+
+@router.callback_query(F.data.startswith("game:numbers:range:"))
+async def cb_number_range(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    try:
+        range_max = int((event.data or "").rsplit(":", 1)[1])
+    except (TypeError, ValueError):
+        await ctx.ack("Неверный диапазон", alert=True)
+        return
+    if range_max not in NUMBER_REWARDS:
+        await ctx.ack("Можно выбрать 1–10, 1–100 или 1–1000", alert=True)
+        return
+
+    partner = ctx.mm.partner(ctx.user_id)
+    if partner is None:
+        await ctx.ack("Сначала найди собеседника", alert=True)
+        return
+
+    game, created = await db.create_number_invite(ctx.user_id, partner, range_max)
+    if not created:
+        await ctx.ack("У вас уже есть активная игра", alert=True)
+        return
+
+    base = NUMBER_REWARDS[range_max]
+    near = base // 2
+    result = await send_to(
+        ctx.bot,
+        partner,
+        f"🔢 <b>Собеседник предлагает сыграть в Числа</b>\n"
+        f"Диапазон: <b>1–{range_max}</b> · раундов: <b>{NUMBER_ROUNDS}</b>\n"
+        f"Точное совпадение: <b>{base} ⭐</b> · разница 1: <b>{near} ⭐</b>",
+        K.number_invite_keyboard(int(game["id"])),
+        ctx.pack,
+    )
+    if result is DeliveryResult.UNAVAILABLE:
+        await db.cancel_battle(int(game["id"]))
+        await ctx.reply("Не получилось отправить предложение.")
+        return
+    await ctx.ack()
+    await ctx.reply("🔢 Предложение отправлено. Ждём ответа собеседника…")
+
+
+@router.callback_query(F.data.startswith("game:num:yes:"))
+async def cb_number_accept(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    try:
+        game_id = int((event.data or "").rsplit(":", 1)[1])
+    except (TypeError, ValueError):
+        await ctx.ack("Игра не найдена", alert=True)
+        return
+    row = await _require_current_number(ctx, db, game_id)
+    if row is None:
+        return
+    game = await db.accept_number(game_id, ctx.user_id)
+    if game is None:
+        await ctx.ack("На это предложение уже ответили", alert=True)
+        return
+    await ctx.ack("Игра началась")
+    await _send_number_round(ctx, game)
+
+
+@router.callback_query(F.data.startswith("game:num:no:"))
+async def cb_number_decline(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    try:
+        game_id = int((event.data or "").rsplit(":", 1)[1])
+    except (TypeError, ValueError):
+        await ctx.ack("Игра не найдена", alert=True)
+        return
+    row = await _require_current_number(ctx, db, game_id)
+    if row is None:
+        return
+    declined = await db.decline_number(game_id, ctx.user_id)
+    if declined is None:
+        await ctx.ack("Предложение уже закрыто", alert=True)
+        return
+    await ctx.ack("Не сейчас")
+    await send_to(
+        ctx.bot,
+        int(declined["inviter_id"]),
+        "Собеседник пока не хочет играть в Числа.",
+        K.chat_keyboard(),
+        ctx.pack,
+    )
+
+
+@router.callback_query(F.data == "game:num:noop")
+async def cb_number_noop(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
+
+
+@router.callback_query(F.data.startswith("game:num:set:"))
+async def cb_number_set(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    try:
+        _, _, _, raw_game, raw_round, raw_value = (event.data or "").split(":")
+        game_id, round_index = int(raw_game), int(raw_round)
+    except (TypeError, ValueError):
+        await ctx.ack("Не получилось выбрать число", alert=True)
+        return
+
+    row = await _require_current_number(ctx, db, game_id)
+    if row is None:
+        return
+    if str(row["status"]) != "active" or int(row["question_index"]) != round_index:
+        await ctx.ack("Этот раунд уже закрыт", alert=True)
+        return
+    if _number_answered(row, ctx.user_id):
+        await ctx.ack("Ты уже выбрал число", alert=True)
+        return
+
+    current = "" if raw_value == "x" else raw_value
+    if current:
+        if not current.isdigit():
+            await ctx.ack("Неверное число", alert=True)
+            return
+        value = int(current)
+        range_max = int(row["range_max"])
+        if value < 1:
+            await ctx.ack(f"Выбери число от 1 до {range_max}", alert=True)
+            return
+        if value > range_max:
+            await ctx.ack(f"Максимум {range_max}", alert=True)
+            return
+
+    await ctx.ack()
+    if event.message is not None:
+        try:
+            await event.message.edit_reply_markup(
+                reply_markup=K.number_input_keyboard(game_id, round_index, current)
+            )
+        except TelegramAPIError:
+            pass
+
+
+@router.callback_query(F.data.startswith("game:num:submit:"))
+async def cb_number_submit(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    try:
+        _, _, _, raw_game, raw_round, raw_value = (event.data or "").split(":")
+        game_id, round_index = int(raw_game), int(raw_round)
+        value = 0 if raw_value == "x" else int(raw_value)
+    except (TypeError, ValueError):
+        await ctx.ack("Не получилось выбрать число", alert=True)
+        return
+
+    row = await _require_current_number(ctx, db, game_id)
+    if row is None:
+        return
+    range_max = int(row["range_max"])
+    if not 1 <= value <= range_max:
+        await ctx.ack(f"Выбери число от 1 до {range_max}", alert=True)
+        return
+
+    result, game = await db.answer_number(game_id, ctx.user_id, round_index, value)
+    if result == "waiting":
+        await ctx.ack("Число принято")
+        await ctx.reply("🔢 Число принято. Ждём выбор собеседника…")
+        return
+    if result == "resolved" and game is not None:
+        await ctx.ack("Число принято")
+        await _send_number_result(ctx, game)
+        return
+    if result == "already":
+        await ctx.ack("Ты уже выбрал число", alert=True)
+        return
+    if result == "invalid":
+        await ctx.ack(f"Число должно быть от 1 до {range_max}", alert=True)
+        return
+    await ctx.ack("Этот раунд уже закрыт", alert=True)
+
+
+@router.callback_query(F.data.startswith("game:num:next:"))
+async def cb_number_next(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    try:
+        _, _, _, raw_game, raw_round = (event.data or "").split(":")
+        game_id, round_index = int(raw_game), int(raw_round)
+    except (TypeError, ValueError):
+        await ctx.ack("Раунд уже закрыт", alert=True)
+        return
+
+    row = await _require_current_number(ctx, db, game_id)
+    if row is None:
+        return
+    game = await db.advance_number(game_id, ctx.user_id, round_index)
+    if game is None:
+        await ctx.ack("Собеседник уже перешёл дальше", alert=True)
+        return
+    await ctx.ack()
+    await _send_number_round(ctx, game)
+
+
 @router.callback_query(F.data == K.CB_BATTLE)
 async def cb_battle(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     partner = ctx.mm.partner(ctx.user_id)
     if partner is None:
         await ctx.ack("Сначала найди собеседника", alert=True)
         return
-    existing = await db.battle_for_pair(ctx.user_id, partner)
+    existing = await db.game_for_pair(ctx.user_id, partner)
     if existing is not None:
+        if _game_type(existing) != "battle":
+            await ctx.ack("Сначала заверши текущую игру", alert=True)
+            return
         status = str(existing["status"])
         if status == "invited":
             if int(existing["inviter_id"]) == ctx.user_id:
@@ -189,7 +539,7 @@ async def cb_battle_length(event: CallbackQuery, ctx: Ctx, db: Database) -> None
         return
     game, created = await db.create_battle_invite(ctx.user_id, partner, total)
     if not created:
-        await ctx.ack("Игра для этой пары уже создана", alert=True)
+        await ctx.ack("У вас уже есть активная игра", alert=True)
         return
     result = await send_to(
         ctx.bot,

@@ -12,6 +12,7 @@ from typing import Any, Sequence
 
 import aiosqlite
 
+from .number_game import NUMBER_ROUNDS, NUMBER_REWARDS, number_reward
 from .permissions import ALL_ADMIN_PERMISSIONS, serialize_permissions
 
 SCHEMA = """
@@ -109,6 +110,7 @@ CREATE TABLE IF NOT EXISTS battle_games (
     user_a         INTEGER NOT NULL,
     user_b         INTEGER NOT NULL,
     inviter_id     INTEGER NOT NULL,
+    game_type      TEXT    NOT NULL DEFAULT 'battle',
     status         TEXT    NOT NULL DEFAULT 'invited',
     question_ids   TEXT    NOT NULL DEFAULT '[]',
     question_index INTEGER NOT NULL DEFAULT 0,
@@ -117,6 +119,8 @@ CREATE TABLE IF NOT EXISTS battle_games (
     matches        INTEGER NOT NULL DEFAULT 0,
     total_questions INTEGER NOT NULL DEFAULT 5,
     reward_awarded INTEGER NOT NULL DEFAULT 0,
+    range_max      INTEGER NOT NULL DEFAULT 0,
+    reward_total   INTEGER NOT NULL DEFAULT 0,
     created_at     INTEGER NOT NULL,
     updated_at     INTEGER NOT NULL
 );
@@ -163,6 +167,9 @@ _REPORT_MIGRATIONS: tuple[tuple[str, str], ...] = (
 _BATTLE_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("total_questions", "ALTER TABLE battle_games ADD COLUMN total_questions INTEGER NOT NULL DEFAULT 5"),
     ("reward_awarded", "ALTER TABLE battle_games ADD COLUMN reward_awarded INTEGER NOT NULL DEFAULT 0"),
+    ("game_type", "ALTER TABLE battle_games ADD COLUMN game_type TEXT NOT NULL DEFAULT 'battle'"),
+    ("range_max", "ALTER TABLE battle_games ADD COLUMN range_max INTEGER NOT NULL DEFAULT 0"),
+    ("reward_total", "ALTER TABLE battle_games ADD COLUMN reward_total INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -399,11 +406,31 @@ class Database:
         rows = await self._fetchall("SELECT user_id FROM admins")
         return sorted(set(owner_ids) | {int(row["user_id"]) for row in rows})
 
-    # ------------------------------------------------------------------ battle game
-    async def battle_for_pair(self, user_a: int, user_b: int) -> aiosqlite.Row | None:
+    # ------------------------------------------------------------------ games
+    async def game_for_pair(self, user_a: int, user_b: int) -> aiosqlite.Row | None:
         return await self._fetchone(
             """SELECT * FROM battle_games
                WHERE status IN ('invited', 'active', 'round_done')
+                 AND ((user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?))
+               ORDER BY id DESC LIMIT 1""",
+            (user_a, user_b, user_b, user_a),
+        )
+
+    async def battle_for_pair(self, user_a: int, user_b: int) -> aiosqlite.Row | None:
+        return await self._fetchone(
+            """SELECT * FROM battle_games
+               WHERE game_type='battle'
+                 AND status IN ('invited', 'active', 'round_done')
+                 AND ((user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?))
+               ORDER BY id DESC LIMIT 1""",
+            (user_a, user_b, user_b, user_a),
+        )
+
+    async def number_for_pair(self, user_a: int, user_b: int) -> aiosqlite.Row | None:
+        return await self._fetchone(
+            """SELECT * FROM battle_games
+               WHERE game_type='numbers'
+                 AND status IN ('invited', 'active', 'round_done')
                  AND ((user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?))
                ORDER BY id DESC LIMIT 1""",
             (user_a, user_b, user_b, user_a),
@@ -441,8 +468,8 @@ class Database:
         ts = now()
         cur = await self.db.execute(
             """INSERT OR IGNORE INTO battle_games(
-                   user_a, user_b, inviter_id, total_questions, created_at, updated_at
-               ) VALUES (?, ?, ?, ?, ?, ?)""",
+                   user_a, user_b, inviter_id, game_type, total_questions, created_at, updated_at
+               ) VALUES (?, ?, ?, 'battle', ?, ?, ?)""",
             (inviter_id, partner_id, inviter_id, total_questions, ts, ts),
         )
         await self.db.commit()
@@ -450,7 +477,7 @@ class Database:
         row = (
             await self.get_battle(int(cur.lastrowid))
             if created
-            else await self.battle_for_pair(inviter_id, partner_id)
+            else await self.game_for_pair(inviter_id, partner_id)
         )
         assert row is not None
         return row, created
@@ -462,7 +489,8 @@ class Database:
             """UPDATE battle_games
                SET status='active', question_ids=?, question_index=0,
                    answer_a=NULL, answer_b=NULL, matches=0, reward_awarded=0, updated_at=?
-               WHERE id=? AND status='invited' AND user_b=? AND inviter_id<>?""",
+               WHERE id=? AND game_type='battle'
+                 AND status='invited' AND user_b=? AND inviter_id<>?""",
             (json.dumps([int(item) for item in question_ids]), now(), game_id, user_id, user_id),
         )
         await self.db.commit()
@@ -470,10 +498,14 @@ class Database:
 
     async def decline_battle(self, game_id: int, user_id: int) -> aiosqlite.Row | None:
         row = await self.get_battle(game_id)
-        if row is None or int(row["user_b"]) != user_id:
+        if (
+            row is None
+            or str(row["game_type"] or "battle") != "battle"
+            or int(row["user_b"]) != user_id
+        ):
             return None
         cur = await self.db.execute(
-            "DELETE FROM battle_games WHERE id=? AND status='invited'",
+            "DELETE FROM battle_games WHERE id=? AND game_type='battle' AND status='invited'",
             (game_id,),
         )
         await self.db.commit()
@@ -483,7 +515,11 @@ class Database:
         self, game_id: int, user_id: int, question_index: int, choice: int
     ) -> tuple[str, aiosqlite.Row | None]:
         row = await self.get_battle(game_id)
-        if row is None or user_id not in {int(row["user_a"]), int(row["user_b"])}:
+        if (
+            row is None
+            or str(row["game_type"] or "battle") != "battle"
+            or user_id not in {int(row["user_a"]), int(row["user_b"])}
+        ):
             return "missing", row
         if row["status"] != "active" or int(row["question_index"]) != question_index:
             return "closed", row
@@ -525,7 +561,11 @@ class Database:
         self, game_id: int, user_id: int, question_index: int
     ) -> aiosqlite.Row | None:
         row = await self.get_battle(game_id)
-        if row is None or user_id not in {int(row["user_a"]), int(row["user_b"])}:
+        if (
+            row is None
+            or str(row["game_type"] or "battle") != "battle"
+            or user_id not in {int(row["user_a"]), int(row["user_b"])}
+        ):
             return None
         cur = await self.db.execute(
             """UPDATE battle_games
@@ -533,6 +573,134 @@ class Database:
                    answer_a=NULL, answer_b=NULL, updated_at=?
                WHERE id=? AND status='round_done' AND question_index=?""",
             (now(), game_id, question_index),
+        )
+        await self.db.commit()
+        return await self.get_battle(game_id) if cur.rowcount else None
+
+    async def create_number_invite(
+        self, inviter_id: int, partner_id: int, range_max: int
+    ) -> tuple[aiosqlite.Row, bool]:
+        range_max = int(range_max)
+        if range_max not in NUMBER_REWARDS:
+            raise ValueError("Неверный диапазон игры Числа")
+        ts = now()
+        cur = await self.db.execute(
+            """INSERT OR IGNORE INTO battle_games(
+                   user_a, user_b, inviter_id, game_type, total_questions,
+                   range_max, reward_total, created_at, updated_at
+               ) VALUES (?, ?, ?, 'numbers', ?, ?, 0, ?, ?)""",
+            (inviter_id, partner_id, inviter_id, NUMBER_ROUNDS, range_max, ts, ts),
+        )
+        await self.db.commit()
+        created = cur.rowcount > 0
+        row = (
+            await self.get_battle(int(cur.lastrowid))
+            if created
+            else await self.game_for_pair(inviter_id, partner_id)
+        )
+        assert row is not None
+        return row, created
+
+    async def accept_number(self, game_id: int, user_id: int) -> aiosqlite.Row | None:
+        cur = await self.db.execute(
+            """UPDATE battle_games
+               SET status='active', question_index=0,
+                   answer_a=NULL, answer_b=NULL, matches=0,
+                   reward_total=0, updated_at=?
+               WHERE id=? AND game_type='numbers' AND status='invited'
+                 AND user_b=? AND inviter_id<>?""",
+            (now(), game_id, user_id, user_id),
+        )
+        await self.db.commit()
+        return await self.get_battle(game_id) if cur.rowcount else None
+
+    async def decline_number(self, game_id: int, user_id: int) -> aiosqlite.Row | None:
+        row = await self.get_battle(game_id)
+        if (
+            row is None
+            or str(row["game_type"] or "") != "numbers"
+            or int(row["user_b"]) != user_id
+        ):
+            return None
+        cur = await self.db.execute(
+            "DELETE FROM battle_games WHERE id=? AND game_type='numbers' AND status='invited'",
+            (game_id,),
+        )
+        await self.db.commit()
+        return row if cur.rowcount else None
+
+    async def answer_number(
+        self, game_id: int, user_id: int, round_index: int, value: int
+    ) -> tuple[str, aiosqlite.Row | None]:
+        row = await self.get_battle(game_id)
+        if (
+            row is None
+            or str(row["game_type"] or "") != "numbers"
+            or user_id not in {int(row["user_a"]), int(row["user_b"])}
+        ):
+            return "missing", row
+        range_max = int(row["range_max"] or 0)
+        if range_max not in NUMBER_REWARDS or not 1 <= int(value) <= range_max:
+            return "invalid", row
+        if row["status"] != "active" or int(row["question_index"]) != round_index:
+            return "closed", row
+
+        column = "answer_a" if int(row["user_a"]) == user_id else "answer_b"
+        cur = await self.db.execute(
+            f"""UPDATE battle_games SET {column}=?, updated_at=?
+                 WHERE id=? AND game_type='numbers' AND status='active'
+                   AND question_index=? AND {column} IS NULL""",
+            (int(value), now(), game_id, round_index),
+        )
+        if not cur.rowcount:
+            await self.db.commit()
+            return "already", await self.get_battle(game_id)
+
+        game = await self.get_battle(game_id)
+        if game is None or game["answer_a"] is None or game["answer_b"] is None:
+            await self.db.commit()
+            return "waiting", game
+
+        reward = number_reward(range_max, int(game["answer_a"]), int(game["answer_b"]))
+        exact = int(game["answer_a"]) == int(game["answer_b"])
+        status = "finished" if round_index >= NUMBER_ROUNDS - 1 else "round_done"
+        resolved = await self.db.execute(
+            """UPDATE battle_games
+               SET matches=matches+?,
+                   reward_total=reward_total+?,
+                   status=?, updated_at=?
+               WHERE id=? AND game_type='numbers' AND status='active'
+                 AND question_index=? AND answer_a IS NOT NULL AND answer_b IS NOT NULL""",
+            (1 if exact else 0, reward, status, now(), game_id, round_index),
+        )
+        game = await self.get_battle(game_id)
+        if resolved.rowcount and reward > 0 and game is not None:
+            await self.db.execute(
+                "UPDATE users SET xp=xp+? WHERE user_id IN (?, ?)",
+                (reward, int(game["user_a"]), int(game["user_b"])),
+            )
+        if resolved.rowcount and game is not None and status == "finished":
+            await self.db.execute("DELETE FROM battle_games WHERE id=?", (game_id,))
+        await self.db.commit()
+        return ("resolved" if resolved.rowcount else "waiting"), game
+
+    async def advance_number(
+        self, game_id: int, user_id: int, round_index: int
+    ) -> aiosqlite.Row | None:
+        row = await self.get_battle(game_id)
+        if (
+            row is None
+            or str(row["game_type"] or "") != "numbers"
+            or user_id not in {int(row["user_a"]), int(row["user_b"])}
+        ):
+            return None
+        cur = await self.db.execute(
+            """UPDATE battle_games
+               SET status='active', question_index=question_index+1,
+                   answer_a=NULL, answer_b=NULL, updated_at=?
+               WHERE id=? AND game_type='numbers'
+                 AND status='round_done' AND question_index=?""",
+            (now(), game_id, round_index),
         )
         await self.db.commit()
         return await self.get_battle(game_id) if cur.rowcount else None
