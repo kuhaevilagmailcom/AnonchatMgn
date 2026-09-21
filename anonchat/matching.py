@@ -65,11 +65,8 @@ def compatible(x: Candidate, y: Candidate) -> bool:
 
 
 def bank_score(x: Candidate, y: Candidate) -> int:
-    """Чем выше score, тем сильнее эта пара удовлетворяет приоритету своего берега."""
-    same_bank = bool(x.district and y.district and x.district == y.district)
-    if not same_bank:
-        return 0
-    return int(bool(x.same_district)) + int(bool(y.same_district))
+    """Одинаковый выбранный берег всегда приоритетнее, но не блокирует другие пары."""
+    return int(bool(x.district and y.district and x.district == y.district))
 
 
 class Matchmaker:
