@@ -661,6 +661,17 @@ def test_referral_daily_limit_and_mass_cleanup() -> None:
             await db.db.commit()
 
             paid_id, admin_id, ordinary_id = invitees[0], invitees[1], invitees[2]
+            low, high = sorted((ordinary_id, referrer))
+            await db.db.execute(
+                "INSERT INTO number_game_pairs(user_low, user_high, consumed_at) VALUES (?, ?, 1)",
+                (low, high),
+            )
+            await db.db.execute(
+                "INSERT INTO number_daily_rewards(user_id, day_start, stars) VALUES (?, ?, 25)",
+                (ordinary_id, number_reward_day_start()),
+            )
+            await db.db.commit()
+
             created, _ = await db.record_payment(
                 paid_id, "support", 1, "cleanup-payment", "", "support:test"
             )
@@ -679,6 +690,8 @@ def test_referral_daily_limit_and_mass_cleanup() -> None:
             assert int((await db.get_user(referrer))["xp"]) == 0
             assert await db.referral_stats(referrer) == (0, 0)
             assert await db.get_user(ordinary_id) is None
+            assert await db.number_pair_reward_available(ordinary_id, referrer) is True
+            assert await db.number_daily_reward(ordinary_id) == 0
             assert await db.get_user(paid_id) is not None
             assert await db.get_user(admin_id) is not None
             payment = await db._fetchone(
