@@ -33,6 +33,7 @@ CB_BLOCK = "rate:block"
 CB_NICK = "cfg:nick:ask"
 CB_GAMES = "game:menu"
 CB_BATTLE = "game:battle"
+CB_NUMBERS = "game:numbers"
 CB_FEEDBACK = "cfg:feedback"
 
 
@@ -193,6 +194,70 @@ def settings_keyboard(
 def games_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "Битва мнений", callback_data=CB_BATTLE, icon="bonus", style="primary")
+    _button(b, "Числа", callback_data=CB_NUMBERS, icon="stars", style="success")
+    _button(b, "Вернуться в чат", callback_data="game:return", icon="home")
+    b.adjust(1, 1, 1)
+    return b.as_markup()
+
+
+def number_range_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "1–10 · 25 ⭐", callback_data="game:numbers:range:10", style="primary")
+    _button(b, "1–100 · 50 ⭐", callback_data="game:numbers:range:100", style="primary")
+    _button(b, "1–1000 · 100 ⭐", callback_data="game:numbers:range:1000", style="success")
+    _button(b, "Назад", callback_data=CB_GAMES, icon="home")
+    b.adjust(1, 1, 1, 1)
+    return b.as_markup()
+
+
+def number_invite_keyboard(game_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Играть", callback_data=f"game:num:yes:{game_id}", icon="check", style="success")
+    _button(b, "Не сейчас", callback_data=f"game:num:no:{game_id}", icon="delete")
+    b.adjust(2)
+    return b.as_markup()
+
+
+def number_input_keyboard(
+    game_id: int, round_index: int, current: str = ""
+) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    shown = current or "—"
+    _button(b, f"Число: {shown}", callback_data="game:num:noop")
+    for digit in ("1", "2", "3", "4", "5", "6", "7", "8", "9"):
+        _button(
+            b,
+            digit,
+            callback_data=f"game:num:digit:{game_id}:{round_index}:{digit}",
+        )
+    _button(b, "Стереть", callback_data=f"game:num:back:{game_id}:{round_index}", icon="delete")
+    _button(b, "0", callback_data=f"game:num:digit:{game_id}:{round_index}:0")
+    _button(
+        b,
+        "Выбрать",
+        callback_data=f"game:num:submit:{game_id}:{round_index}",
+        icon="check",
+        style="success",
+    )
+    b.adjust(1, 3, 3, 3, 3)
+    return b.as_markup()
+
+
+def number_next_keyboard(game_id: int, round_index: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(
+        b,
+        "Следующий раунд",
+        callback_data=f"game:num:next:{game_id}:{round_index}",
+        icon="next",
+        style="primary",
+    )
+    return b.as_markup()
+
+
+def number_end_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Сыграть ещё", callback_data=CB_NUMBERS, icon="refresh", style="success")
     _button(b, "Вернуться в чат", callback_data="game:return", icon="home")
     b.adjust(1, 1)
     return b.as_markup()
