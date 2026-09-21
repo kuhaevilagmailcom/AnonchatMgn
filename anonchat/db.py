@@ -262,6 +262,9 @@ class Database:
                 await self.db.execute(sql)
         async with self.db.execute("PRAGMA table_info(battle_games)") as cur:
             battle_cols = {row[1] for row in await cur.fetchall()}
+        number_antifarm_added = (
+            "reward_total_a" not in battle_cols or "reward_total_b" not in battle_cols
+        )
         for name, sql in _BATTLE_MIGRATIONS:
             if name not in battle_cols:
                 await self.db.execute(sql)
@@ -278,17 +281,19 @@ class Database:
             "DELETE FROM number_daily_rewards WHERE day_start < ?",
             (number_reward_day_start() - 7 * 86_400,),
         )
-        # Игра «Числа», начатая до обновления антифарма, уже считается попыткой этой пары.
-        await self.db.execute(
-            """INSERT OR IGNORE INTO number_game_pairs(user_low, user_high, consumed_at)
-               SELECT MIN(user_a, user_b), MAX(user_a, user_b), updated_at
-                 FROM battle_games
-                WHERE game_type='numbers' AND status IN ('active', 'round_done')"""
-        )
-        await self.db.execute(
-            """UPDATE battle_games SET reward_awarded=0
-                WHERE game_type='numbers' AND status IN ('active', 'round_done')"""
-        )
+        # Только при первом переходе на антифарм: уже начатая старая игра считается
+        # использованной попыткой пары. На обычных рестартах новые игры не трогаем.
+        if number_antifarm_added:
+            await self.db.execute(
+                """INSERT OR IGNORE INTO number_game_pairs(user_low, user_high, consumed_at)
+                   SELECT MIN(user_a, user_b), MAX(user_a, user_b), updated_at
+                     FROM battle_games
+                    WHERE game_type='numbers' AND status IN ('active', 'round_done')"""
+            )
+            await self.db.execute(
+                """UPDATE battle_games SET reward_awarded=0
+                    WHERE game_type='numbers' AND status IN ('active', 'round_done')"""
+            )
         if added or "nick_key" in cols:
             await self._backfill_nick_keys()
         # Старые версии хранили административные районы. Теперь пользователю доступны
