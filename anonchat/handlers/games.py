@@ -17,7 +17,13 @@ from ..actions import Ctx, DeliveryResult, send_to
 from ..battle_questions import BattleQuestion, get_question, questions
 from ..db import Database
 from ..matching import Matchmaker
-from ..number_game import NUMBER_NEAR_DIFFS, NUMBER_REWARDS, NUMBER_ROUNDS, number_reward
+from ..number_game import (
+    NUMBER_DAILY_REWARD_LIMIT,
+    NUMBER_NEAR_DIFFS,
+    NUMBER_REWARDS,
+    NUMBER_ROUNDS,
+    number_reward,
+)
 
 router = Router(name="games")
 
@@ -87,10 +93,16 @@ async def _require_current_number(ctx: Ctx, db: Database, game_id: int) -> Any |
 def _number_prompt(row: Any) -> str:
     round_index = int(row["question_index"])
     range_max = int(row["range_max"])
+    reward_note = (
+        f"Награды активны · лимит <b>{NUMBER_DAILY_REWARD_LIMIT} ⭐</b> в сутки."
+        if int(row["reward_awarded"] or 0)
+        else "С этим собеседником награда уже использована — игра идёт без ⭐."
+    )
     return (
         f"🔢 <b>Числа · раунд {round_index + 1}/{NUMBER_ROUNDS}</b>\n\n"
         f"Выбери число от <b>1</b> до <b>{range_max}</b>.\n"
-        "Собеседник увидит его только после своего выбора."
+        "Собеседник увидит его только после своего выбора.\n"
+        f"{reward_note}"
     )
 
 
@@ -108,54 +120,81 @@ async def _send_number_round(ctx: Ctx, row: Any) -> None:
         )
 
 
-async def _send_number_result(ctx: Ctx, row: Any) -> None:
+async def _send_number_result(
+    ctx: Ctx, row: Any, reward_a: int, reward_b: int
+) -> None:
     user_a, user_b = _players(row)
     answer_a = int(row["answer_a"])
     answer_b = int(row["answer_b"])
     diff = abs(answer_a - answer_b)
-    reward = number_reward(int(row["range_max"]), answer_a, answer_b)
+    raw_reward = number_reward(int(row["range_max"]), answer_a, answer_b)
+    reward_enabled = bool(int(row["reward_awarded"] or 0))
+
+    def reward_line(actual: int) -> str:
+        if raw_reward <= 0:
+            return "В этом раунде без награды."
+        if not reward_enabled:
+            return "С этой парой награда уже использована · +<b>0 ⭐</b>."
+        if actual <= 0:
+            return (
+                f"Дневной лимит <b>{NUMBER_DAILY_REWARD_LIMIT} ⭐</b> достигнут · "
+                "+<b>0 ⭐</b>."
+            )
+        if actual < raw_reward:
+            return (
+                f"+<b>{actual} ⭐</b> · сработал дневной лимит "
+                f"{NUMBER_DAILY_REWARD_LIMIT} ⭐."
+            )
+        return f"+<b>{actual} ⭐</b>."
 
     if diff == 0:
-        body_a = body_b = (
+        head_a = head_b = (
             f"🎯 <b>Точное совпадение!</b>\n"
             f"Вы оба выбрали <b>{answer_a}</b>.\n"
-            f"+<b>{reward} ⭐</b> каждому."
         )
     elif 1 <= diff <= NUMBER_NEAR_DIFFS.get(int(row["range_max"]), 0):
-        body_a = (
+        head_a = (
             f"🔥 <b>Почти совпало!</b>\n"
             f"Ты: <b>{answer_a}</b> · собеседник: <b>{answer_b}</b>\n"
-            f"Разница <b>{diff}</b> · +<b>{reward} ⭐</b> каждому."
+            f"Разница <b>{diff}</b>.\n"
         )
-        body_b = (
+        head_b = (
             f"🔥 <b>Почти совпало!</b>\n"
             f"Ты: <b>{answer_b}</b> · собеседник: <b>{answer_a}</b>\n"
-            f"Разница <b>{diff}</b> · +<b>{reward} ⭐</b> каждому."
+            f"Разница <b>{diff}</b>.\n"
         )
     else:
-        body_a = (
+        head_a = (
             f"🔢 <b>Не совпало</b>\n"
             f"Ты: <b>{answer_a}</b> · собеседник: <b>{answer_b}</b>\n"
-            "В этом раунде без награды."
         )
-        body_b = (
+        head_b = (
             f"🔢 <b>Не совпало</b>\n"
             f"Ты: <b>{answer_b}</b> · собеседник: <b>{answer_a}</b>\n"
-            "В этом раунде без награды."
         )
 
+    body_a = f"{head_a}{reward_line(reward_a)}"
+    body_b = f"{head_b}{reward_line(reward_b)}"
+
     if str(row["status"]) == "finished":
-        total_reward = int(row["reward_total"])
+        total_a = int(row["reward_total_a"] or 0)
+        total_b = int(row["reward_total_b"] or 0)
         exact = int(row["matches"])
-        final = (
+        final_a = (
             f"🔢 <b>Игра окончена</b>\n"
             f"Сыграно раундов: <b>{NUMBER_ROUNDS}</b>\n"
             f"Точных совпадений: <b>{exact}/{NUMBER_ROUNDS}</b>\n"
-            f"Получено за игру: <b>{total_reward} ⭐</b> каждому."
+            f"Ты получил за игру: <b>{total_a} ⭐</b>."
+        )
+        final_b = (
+            f"🔢 <b>Игра окончена</b>\n"
+            f"Сыграно раундов: <b>{NUMBER_ROUNDS}</b>\n"
+            f"Точных совпадений: <b>{exact}/{NUMBER_ROUNDS}</b>\n"
+            f"Ты получил за игру: <b>{total_b} ⭐</b>."
         )
         markup = K.number_end_keyboard()
-        body_a = f"{body_a}\n\n{final}"
-        body_b = f"{body_b}\n\n{final}"
+        body_a = f"{body_a}\n\n{final_a}"
+        body_b = f"{body_b}\n\n{final_b}"
     else:
         markup = K.number_next_keyboard(int(row["id"]), int(row["question_index"]))
 
@@ -312,6 +351,7 @@ async def cb_number_range(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         await ctx.ack("Сначала найди собеседника", alert=True)
         return
 
+    reward_available = await db.number_pair_reward_available(ctx.user_id, partner)
     game, created = await db.create_number_invite(ctx.user_id, partner, range_max)
     if not created:
         await ctx.ack("У вас уже есть активная игра", alert=True)
@@ -326,7 +366,12 @@ async def cb_number_range(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         f"🔢 <b>Собеседник предлагает сыграть в Числа</b>\n"
         f"Диапазон: <b>1–{range_max}</b> · раундов: <b>{NUMBER_ROUNDS}</b>\n"
         f"Точное совпадение: <b>{base} ⭐</b> · "
-        f"разница до {near_diff}: <b>{near} ⭐</b>",
+        f"разница до {near_diff}: <b>{near} ⭐</b>\n"
+        + (
+            f"Награды доступны · дневной лимит {NUMBER_DAILY_REWARD_LIMIT} ⭐."
+            if reward_available
+            else "Вы уже играли вместе — эта игра будет без награды."
+        ),
         K.number_invite_keyboard(int(game["id"])),
         ctx.pack,
     )
@@ -446,14 +491,16 @@ async def cb_number_submit(event: CallbackQuery, ctx: Ctx, db: Database) -> None
         await ctx.ack(f"Выбери число от 1 до {range_max}", alert=True)
         return
 
-    result, game = await db.answer_number(game_id, ctx.user_id, round_index, value)
+    result, game, reward_a, reward_b = await db.answer_number(
+        game_id, ctx.user_id, round_index, value
+    )
     if result == "waiting":
         await ctx.ack("Число принято")
         await ctx.reply("🔢 Число принято. Ждём выбор собеседника…")
         return
     if result == "resolved" and game is not None:
         await ctx.ack("Число принято")
-        await _send_number_result(ctx, game)
+        await _send_number_result(ctx, game, reward_a, reward_b)
         return
     if result == "already":
         await ctx.ack("Ты уже выбрал число", alert=True)
