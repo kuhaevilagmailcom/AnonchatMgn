@@ -588,7 +588,7 @@ async def show_profile(ctx: Ctx) -> None:
         f"Диалогов: <b>{me['dialogs']}</b>",
         f"👍 {me['good_ratings']}   👎 {me['bad_ratings']}",
         f"Возраст: <b>{me['age']}</b>",
-        f"Пол: <b>{'👨 М' if me['gender'] == 'm' else '👩 Ж' if me['gender'] == 'f' else 'не указан'}</b>",
+        f"Пол: <b>{'👨 М' if me['gender'] == 'm' else '👩 Д' if me['gender'] == 'f' else 'не указан'}</b>",
         f"Берег: <b>{texts.esc(me['district']) if me['district'] else 'не указан'}</b>",
     ]
     if nicklib.is_supporter(me["support_stars"]):
