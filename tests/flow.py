@@ -1043,9 +1043,11 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
           "админ видит данные даже в своём активном чате")
     session.fail_once["sendMessage"] = "temp"
     await send(D, "временная ошибка")
-    check(mm.partner(D) == E, "TEMP_ERROR не разрывает пару")
-    check(mm.dialog_stats(D).get("counts", {}).get(D, 0) == 0, "TEMP_ERROR откатывает count_message")
-    check("Попробуй ещё раз" in session.last_to(D), "при TEMP_ERROR пользователь видит короткую ошибку")
+    check(mm.partner(D) == E, "временная ошибка Telegram не разрывает пару")
+    check(mm.dialog_stats(D).get("counts", {}).get(D, 0) == 1,
+          "после успешного повтора сообщение учитывается один раз")
+    check("временная ошибка" in session.last_to(E),
+          "после временной ошибки сообщение доставляется повторной попыткой")
     session.fail_once["sendMessage"] = "forbidden"
     await send(D, "недоступен")
     check(mm.status(D) == "free" and mm.status(E) == "free", "UNAVAILABLE разрывает пару")
