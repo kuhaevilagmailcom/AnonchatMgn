@@ -68,7 +68,7 @@ async def collect_progress_notifications(db, user_id: int) -> list[str]:
         return []
     engagement = await db.engagement_state(user_id)
     totals = {
-        "dialogs": int(user["dialogs"] or 0),
+        "dialogs": int(engagement["dialogs_total"] or 0),
         "messages": int(user["messages"] or 0),
         "good_ratings": int(user["good_ratings"] or 0),
         "games_total": int(engagement["games_total"] or 0),
