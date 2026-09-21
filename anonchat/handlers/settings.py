@@ -77,6 +77,7 @@ async def settings_screen(ctx: Ctx) -> None:
 
 @router.callback_query(F.data == "cfg:age:ask")
 async def cb_age_ask(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     if await ctx.dialog_locked():
         return
     await ctx.edit("<b>Сколько тебе лет?</b>", K.age_keyboard())
@@ -84,6 +85,7 @@ async def cb_age_ask(event: CallbackQuery, ctx: Ctx) -> None:
 
 @router.callback_query(F.data == "cfg:gender:ask")
 async def cb_gender_ask(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     if await ctx.dialog_locked():
         return
     await ctx.edit("<b>Твой пол</b>", K.gender_keyboard())
@@ -102,6 +104,7 @@ async def cb_gender(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker
 
 @router.callback_query(F.data == "cfg:looking:ask")
 async def cb_looking_ask(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     if await ctx.dialog_locked():
         return
     await ctx.edit("<b>Кого ищем?</b>", K.looking_for_keyboard())
@@ -126,6 +129,7 @@ async def cmd_settings(message: Message, ctx: Ctx) -> None:
 
 @router.callback_query(F.data == K.CB_SETTINGS)
 async def cb_settings(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     await settings_screen(ctx)
 
 
@@ -147,6 +151,7 @@ async def cmd_nick(message: Message, ctx: Ctx, state: FSMContext) -> None:
 
 @router.callback_query(F.data == K.CB_NICK)
 async def cb_nick_ask(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
+    await ctx.ack()
     if await ctx.dialog_locked():
         return
     await state.set_state(ProfileStates.nick)
@@ -171,6 +176,7 @@ async def nick_text(message: Message, ctx: Ctx, state: FSMContext) -> None:
 # ---------------------------------------------------------------------------------- берег
 @router.callback_query(F.data == "cfg:district:ask")
 async def cb_district_ask(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     if await ctx.dialog_locked():
         return
     await ctx.edit(f"На каком берегу {texts.esc(ctx.cfg.city_short)} ты находишься?", K.district_keyboard())
@@ -199,15 +205,21 @@ async def cb_same_toggle(event: CallbackQuery, ctx: Ctx, db: Database, mm: Match
 # ---------------------------------------------------------------------------------- сброс / удаление
 @router.callback_query(F.data == "cfg:reset")
 async def cb_reset(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker) -> None:
+    await ctx.ack()
     if await ctx.dialog_locked():
         return
-    await _apply(ctx, db, mm, district="", same_district=0)
-    await ctx.reply(texts.RESET_DONE)
+    await _apply(
+        ctx, db, mm,
+        district="", same_district=0, gender="", looking_for="", age=0,
+    )
     await settings_screen(ctx)
 
 
 @router.callback_query(F.data == "cfg:blocks:ask")
 async def cb_blocks_ask(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
+    if await ctx.dialog_locked():
+        return
     await ctx.edit("Вернуть в поиск всех скрытых людей?", K.confirm_blocks_keyboard())
 
 
@@ -236,11 +248,13 @@ async def cb_blocks_yes(
 
 @router.callback_query(F.data == "cfg:blocks:no")
 async def cb_blocks_no(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     await settings_screen(ctx)
 
 
 @router.callback_query(F.data == "cfg:forget:ask")
 async def cb_forget_ask(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     if await ctx.dialog_locked():
         return
     await ctx.edit(
@@ -251,6 +265,7 @@ async def cb_forget_ask(event: CallbackQuery, ctx: Ctx) -> None:
 
 @router.callback_query(F.data == "cfg:forget:yes")
 async def cb_forget_yes(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     if await ctx.dialog_locked():
         return
     await forget_everything(ctx)
@@ -280,6 +295,7 @@ async def cmd_profile(message: Message, ctx: Ctx) -> None:
 
 @router.callback_query(F.data == K.CB_PROFILE)
 async def cb_profile(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
     await show_profile(ctx)
 
 
