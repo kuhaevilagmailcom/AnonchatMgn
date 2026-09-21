@@ -132,21 +132,24 @@ def test_matchmaker_snapshot_restore() -> None:
     assert restored.status(3) == "queued"
 
 
-def test_district_filter_and_sweep() -> None:
+def test_district_priority_and_fallback() -> None:
+    # Если своего берега нет — другой берег подходит сразу, без вечного ожидания.
     mm = Matchmaker()
-    mm.connect(1, district="Правобережный", same_district=True)
-    # второй тоже хочет «только свой», но район другой — не сводим
-    assert mm.connect(2, district="Левобережный", same_district=True) == ("queued", 2)
-    assert mm.queue_size() == 2
+    assert mm.connect(1, district="Правый берег") == ("queued", 1)
+    assert mm.connect(2, district="Левый берег") == ("paired", 1)
 
-    # первый снял фильтр — sweep обязан найти пару
-    mm.refresh(1, district="Правобережный", same_district=False)
-    assert mm.status(1) == "paired" and mm.status(2) == "paired"
-
-    # одинаковые районы совместимы всегда
+    # Если есть выбор, свой берег приоритетнее даже если человек с другого берега ждёт дольше.
     mm2 = Matchmaker()
-    mm2.connect(3, district="Орджоникидзевский", same_district=True)
-    assert mm2.connect(4, district="Орджоникидзевский", same_district=True) == ("paired", 3)
+    assert mm2.connect(
+        10, district="Левый берег", gender="f", looking_for="m"
+    ) == ("queued", 1)
+    assert mm2.connect(
+        11, district="Правый берег", gender="f", looking_for="m"
+    ) == ("queued", 2)
+    assert mm2.connect(
+        12, district="Правый берег", gender="m", looking_for="f"
+    ) == ("paired", 11)
+    assert mm2.status(10) == "queued"
 
 
 def test_forget_and_ratings() -> None:
@@ -164,10 +167,10 @@ def test_forget_and_ratings() -> None:
 
 def test_queue_limit() -> None:
     mm = Matchmaker(queue_limit=2)
-    # держим всех в очереди разными районами, иначе они мгновенно свелись бы
-    assert mm.connect(1, district="Правобережный", same_district=True) == ("queued", 1)
-    assert mm.connect(2, district="Левобережный", same_district=True) == ("queued", 2)
-    assert mm.connect(3, district="Орджоникидзевский", same_district=True) == ("full", None)
+    # Оба ищут девушек и потому не подходят друг другу — очередь остаётся заполненной.
+    assert mm.connect(1, gender="m", looking_for="f") == ("queued", 1)
+    assert mm.connect(2, gender="m", looking_for="f") == ("queued", 2)
+    assert mm.connect(3, gender="m", looking_for="f") == ("full", None)
 
 
 def test_excluded_users_do_not_match() -> None:
