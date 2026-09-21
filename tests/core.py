@@ -434,6 +434,67 @@ def test_battle_game_persists_and_synchronizes() -> None:
     asyncio.run(scenario())
 
 
+def test_number_game_three_rounds_and_rewards() -> None:
+    from anonchat.number_game import NUMBER_REWARDS, NUMBER_ROUNDS, number_reward
+
+    assert NUMBER_ROUNDS == 3
+    assert NUMBER_REWARDS == {10: 25, 100: 50, 1000: 100}
+    assert number_reward(10, 5, 5) == 25
+    assert number_reward(10, 5, 6) == 12
+    assert number_reward(100, 44, 44) == 50
+    assert number_reward(100, 44, 45) == 25
+    assert number_reward(1000, 777, 777) == 100
+    assert number_reward(1000, 777, 778) == 50
+    assert number_reward(1000, 1, 3) == 0
+
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "numbers.db"
+        db = await Database(path).start()
+        try:
+            await db.ensure_user(301, "numbers_a", "A")
+            await db.ensure_user(302, "numbers_b", "B")
+
+            invite, created = await db.create_number_invite(301, 302, 10)
+            assert created and invite["game_type"] == "numbers"
+            assert int(invite["total_questions"]) == 3 and int(invite["range_max"]) == 10
+            game_id = int(invite["id"])
+
+            conflict, conflict_created = await db.create_battle_invite(302, 301, 5)
+            assert not conflict_created and int(conflict["id"]) == game_id
+
+            game = await db.accept_number(game_id, 302)
+            assert game is not None and game["status"] == "active"
+
+            # Раунд 1: точное совпадение = 25 каждому.
+            assert (await db.answer_number(game_id, 301, 0, 5))[0] == "waiting"
+            state, game = await db.answer_number(game_id, 302, 0, 5)
+            assert state == "resolved" and game is not None
+            assert int(game["reward_total"]) == 25
+            game = await db.advance_number(game_id, 301, 0)
+            assert game is not None and int(game["question_index"]) == 1
+
+            # Раунд 2: разница 1 = половина, для 25 это 12 целых ⭐.
+            assert (await db.answer_number(game_id, 301, 1, 4))[0] == "waiting"
+            state, game = await db.answer_number(game_id, 302, 1, 5)
+            assert state == "resolved" and game is not None
+            assert int(game["reward_total"]) == 37
+            game = await db.advance_number(game_id, 302, 1)
+            assert game is not None and int(game["question_index"]) == 2
+
+            # Раунд 3: большая разница = без награды, после него игра удаляется.
+            assert (await db.answer_number(game_id, 301, 2, 1))[0] == "waiting"
+            state, game = await db.answer_number(game_id, 302, 2, 9)
+            assert state == "resolved" and game is not None
+            assert game["status"] == "finished" and int(game["reward_total"]) == 37
+            assert await db.get_battle(game_id) is None
+            assert int((await db.get_user(301))["xp"]) == 37
+            assert int((await db.get_user(302))["xp"]) == 37
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
 def test_referral_daily_limit_and_mass_cleanup() -> None:
     async def scenario() -> None:
         path = Path(tempfile.mkdtemp()) / "referrals.db"
@@ -547,7 +608,10 @@ def test_keyboard_styles_and_icons() -> None:
         K.chat_keyboard(), K.profile_keyboard("https://t.me/test_bot?start=ref_1"),
         K.district_keyboard(), K.gender_keyboard(), K.looking_for_keyboard(),
         K.settings_keyboard(True, "Правый берег", "Лена О", "m", "f"),
-        K.games_keyboard(), K.battle_invite_keyboard(1),
+        K.games_keyboard(), K.number_range_keyboard(), K.number_invite_keyboard(1),
+        K.number_input_keyboard(1, 0), K.number_input_keyboard(1, 0, "10"),
+        K.number_next_keyboard(1, 0), K.number_end_keyboard(),
+        K.battle_invite_keyboard(1),
         K.battle_answer_keyboard(1, 0, "ночь", "утро"),
         K.battle_next_keyboard(1, 0), K.battle_end_keyboard(),
         K.report_keyboard(), K.rating_keyboard(), K.confirm_stop_keyboard(),
@@ -596,6 +660,10 @@ def test_keyboard_styles_and_icons() -> None:
     assert texts_of(paired) == ["Следующий", "Стоп", "Жалоба", "Игры"]
     assert [[button.text for button in row] for row in paired.inline_keyboard] == [
         ["Следующий"], ["Стоп", "Жалоба"], ["Игры"],
+    ]
+    assert texts_of(K.games_keyboard()) == ["Битва мнений", "Числа", "Вернуться в чат"]
+    assert texts_of(K.number_range_keyboard()) == [
+        "1–10 · 25 ⭐", "1–100 · 50 ⭐", "1–1000 · 100 ⭐", "Назад",
     ]
     assert texts_of(K.battle_length_keyboard()) == ["5 вопросов", "10 вопросов", "Назад"]
     # панель модератора: 9 разделов, счётчик жалоб в подписи
