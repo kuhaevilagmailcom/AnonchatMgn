@@ -335,7 +335,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     session.clear()
     await press(A, "act:settings")
     await press(A, "cfg:district:right")
-    check((await db.get_user(A))["district"] == "Правобережный", "район сохранился")
+    check((await db.get_user(A))["district"] == "Правый берег", "берег сохранился")
     await send(A, "/profile")
     card = session.last_to(A)
     check("Старт" in card and "🔰" in card, "профиль показывает ранг по числу сообщений")
