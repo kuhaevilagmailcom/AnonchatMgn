@@ -1,4 +1,4 @@
-"""Матчмейкер: очередь поиска, подбор пар по району, активные диалоги.
+"""Матчмейкер: очередь поиска, подбор пар по полу и приоритету берега, активные диалоги.
 
 Операции выполняются в памяти, а снимок состояния сохраняется в SQLite middleware-слоем.
 Поэтому после рестарта восстанавливаются очередь, активные пары и ожидание оценки.
@@ -54,16 +54,22 @@ class Pair:
 
 
 def compatible(x: Candidate, y: Candidate) -> bool:
-    """Проверяет блокировки, предпочтение пола и фильтр по берегу целиком в памяти."""
+    """Жёсткие ограничения: блокировки и выбранный пол. Берег — только приоритет."""
     if y.user_id in x.excluded or x.user_id in y.excluded:
         return False
     if x.looking_for and y.gender != x.looking_for:
         return False
     if y.looking_for and x.gender != y.looking_for:
         return False
-    if x.same_district and y.same_district and x.district and y.district:
-        return x.district == y.district
     return True
+
+
+def bank_score(x: Candidate, y: Candidate) -> int:
+    """Чем выше score, тем сильнее эта пара удовлетворяет приоритету своего берега."""
+    same_bank = bool(x.district and y.district and x.district == y.district)
+    if not same_bank:
+        return 0
+    return int(bool(x.same_district)) + int(bool(y.same_district))
 
 
 class Matchmaker:
@@ -118,13 +124,15 @@ class Matchmaker:
         return pair
 
     def _pick(self, me: Candidate) -> int | None:
-        """Самый старый кандидат из очереди, подходящий по фильтрам."""
-        for other in sorted(self._queue.values(), key=lambda c: c.joined_at):
-            if other.user_id == me.user_id:
-                continue
-            if compatible(me, other):
-                return other.user_id
-        return None
+        """Берём лучший вариант: свой берег приоритетнее, затем самый старый в очереди."""
+        candidates = [
+            other for other in self._queue.values()
+            if other.user_id != me.user_id and compatible(me, other)
+        ]
+        if not candidates:
+            return None
+        candidates.sort(key=lambda other: (-bank_score(me, other), other.joined_at))
+        return candidates[0].user_id
 
     def connect(
         self, user_id: int, *, district: str = "", same_district: bool = False,
@@ -157,20 +165,28 @@ class Matchmaker:
         return "queued", self.position(user_id)
 
     def sweep(self) -> list[tuple[int, int]]:
-        """Разбираем зависшую очередь (например, после смены настроек)."""
-        pairs: list[tuple[int, int]] = []
-        ordered = sorted(self._queue.values(), key=lambda c: c.joined_at)
-        taken: set[int] = set()
-        for i, first in enumerate(ordered):
-            if first.user_id in taken:
-                continue
-            for other in ordered[i + 1 :]:
-                if other.user_id in taken:
+        """Сначала собираем пары по предпочтительному берегу, затем любые допустимые."""
+        candidates = sorted(self._queue.values(), key=lambda c: c.joined_at)
+        ranked: list[tuple[int, float, float, int, int]] = []
+        for i, first in enumerate(candidates):
+            for other in candidates[i + 1:]:
+                if not compatible(first, other):
                     continue
-                if compatible(first, other):
-                    pairs.append((first.user_id, other.user_id))
-                    taken.update({first.user_id, other.user_id})
-                    break
+                ranked.append((
+                    -bank_score(first, other),
+                    min(first.joined_at, other.joined_at),
+                    max(first.joined_at, other.joined_at),
+                    first.user_id,
+                    other.user_id,
+                ))
+        ranked.sort()
+        pairs: list[tuple[int, int]] = []
+        taken: set[int] = set()
+        for _score, _oldest, _newest, a, b in ranked:
+            if a in taken or b in taken:
+                continue
+            pairs.append((a, b))
+            taken.update({a, b})
         for a, b in pairs:
             self._pair(a, b)
         return pairs
