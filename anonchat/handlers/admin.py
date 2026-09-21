@@ -196,13 +196,11 @@ def _game_user(row, side: str) -> str:
     return f"<b>{texts.esc(nick)}</b> · {texts.esc(username)} · <code>{user_id}</code>"
 
 
-async def game_watch_text(db: Database, history: bool = False) -> str:
-    rows, total = await db.list_battles(history, 6)
-    title = "📜 <b>Последние игры</b>" if history else "🎮 <b>Активные игры</b>"
-    lines = [f"{title} · всего: <b>{total}</b>", ""]
+async def game_watch_text(db: Database) -> str:
+    rows, total = await db.list_battles(False, 6)
+    lines = [f"🎮 <b>Активные игры</b> · всего: <b>{total}</b>", ""]
     status_labels = {
         "invited": "ожидает согласия", "active": "идёт", "round_done": "ответили оба",
-        "finished": "завершена", "cancelled": "прервана", "declined": "отклонена",
     }
     for row in rows:
         status = str(row["status"])
@@ -231,9 +229,9 @@ async def game_watch_text(db: Database, history: bool = False) -> str:
     return "\n".join(lines)
 
 
-async def game_watch_screen(ctx: Ctx, db: Database, history: bool = False) -> None:
-    body = await game_watch_text(db, history)
-    markup = K.game_watch_keyboard(history)
+async def game_watch_screen(ctx: Ctx, db: Database) -> None:
+    body = await game_watch_text(db)
+    markup = K.game_watch_keyboard()
     if not await ctx.edit(body, markup):
         await ctx.reply(body, markup)
 
@@ -833,11 +831,11 @@ async def cb_game_watch(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         await ctx.ack("У тебя нет этого права", alert=True)
         return
     view = (event.data or "").rsplit(":", 1)[-1]
-    if view not in {"active", "history"}:
+    if view != "active":
         await ctx.ack("Кнопка устарела", alert=True)
         return
     await ctx.ack("Обновлено")
-    await game_watch_screen(ctx, db, history=view == "history")
+    await game_watch_screen(ctx, db)
 
 
 @router.callback_query(F.data.startswith("adm:purge_refs:"))
