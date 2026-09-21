@@ -139,15 +139,16 @@ def test_district_priority_and_fallback() -> None:
     assert mm.connect(2, district="Левый берег") == ("paired", 1)
 
     # Если есть выбор, свой берег приоритетнее даже если человек с другого берега ждёт дольше.
+    # Первые двое взаимно исключены, чтобы оба успели оказаться в очереди для проверки выбора.
     mm2 = Matchmaker()
     assert mm2.connect(
-        10, district="Левый берег", gender="f", looking_for="m"
+        10, district="Левый берег", excluded={11}
     ) == ("queued", 1)
     assert mm2.connect(
-        11, district="Правый берег", gender="f", looking_for="m"
+        11, district="Правый берег", excluded={10}
     ) == ("queued", 2)
     assert mm2.connect(
-        12, district="Правый берег", gender="m", looking_for="f"
+        12, district="Правый берег"
     ) == ("paired", 11)
     assert mm2.status(10) == "queued"
 
@@ -167,10 +168,10 @@ def test_forget_and_ratings() -> None:
 
 def test_queue_limit() -> None:
     mm = Matchmaker(queue_limit=2)
-    # Оба ищут девушек и потому не подходят друг другу — очередь остаётся заполненной.
-    assert mm.connect(1, gender="m", looking_for="f") == ("queued", 1)
-    assert mm.connect(2, gender="m", looking_for="f") == ("queued", 2)
-    assert mm.connect(3, gender="m", looking_for="f") == ("full", None)
+    # Только блокировки остаются жёстким ограничением.
+    assert mm.connect(1, excluded={2}) == ("queued", 1)
+    assert mm.connect(2, excluded={1}) == ("queued", 2)
+    assert mm.connect(3) == ("full", None)
 
 
 def test_excluded_users_do_not_match() -> None:
@@ -181,15 +182,27 @@ def test_excluded_users_do_not_match() -> None:
 
 
 def test_gender_filter() -> None:
+    # Если выбранного пола нет, бот не держит людей в очереди бесконечно — матчится любой.
+    fallback = Matchmaker()
+    assert fallback.connect(1, gender="m", looking_for="f") == ("queued", 1)
+    assert fallback.connect(2, gender="m", looking_for="f") == ("paired", 1)
+
+    # Если есть выбор, желаемый пол важнее берега.
     mm = Matchmaker()
-    assert mm.connect(1, gender="m", looking_for="f") == ("queued", 1)
-    assert mm.connect(2, gender="m", looking_for="m") == ("queued", 2)
-    assert mm.connect(3, gender="f", looking_for="m") == ("paired", 1)
-    assert mm.status(2) == "queued"
+    assert mm.connect(
+        10, district="Левый берег", gender="f", looking_for="m", excluded={11}
+    ) == ("queued", 1)
+    assert mm.connect(
+        11, district="Правый берег", gender="m", looking_for="", excluded={10}
+    ) == ("queued", 2)
+    assert mm.connect(
+        12, district="Правый берег", gender="m", looking_for="f"
+    ) == ("paired", 10)
+    assert mm.status(11) == "queued"
 
     restored = Matchmaker()
     restored.restore(mm.snapshot())
-    assert restored.status(2) == "queued"
+    assert restored.status(11) == "queued"
 
 
 def test_restored_queue_is_permanent_and_sweeps() -> None:
