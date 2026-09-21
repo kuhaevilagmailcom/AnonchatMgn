@@ -212,24 +212,37 @@ async def game_watch_text(db: Database) -> str:
     }
     for row in rows:
         status = str(row["status"])
+        game_type = str(row["game_type"] or "battle")
         total_questions = int(row["total_questions"])
         current = min(int(row["question_index"]) + 1, total_questions)
+        title = "Числа" if game_type == "numbers" else "Битва мнений"
+        unit = "Раунд" if game_type == "numbers" else "Вопрос"
         lines.extend([
-            f"<b>Игра #{row['id']} · {status_labels.get(status, status)}</b>",
-            f"Вопрос: <b>{current}/{total_questions}</b> · совпадений: <b>{row['matches']}</b>",
+            f"<b>{title} #{row['id']} · {status_labels.get(status, status)}</b>",
+            f"{unit}: <b>{current}/{total_questions}</b> · совпадений: <b>{row['matches']}</b>",
             f"A: {_game_user(row, 'a')}",
             f"B: {_game_user(row, 'b')}",
         ])
-        question_ids = json.loads(str(row["question_ids"] or "[]"))
-        if question_ids and int(row["question_index"]) < len(question_ids):
-            question = get_question(int(question_ids[int(row["question_index"])]))
-            answer_a = "ждёт ответа" if row["answer_a"] is None else question.option(int(row["answer_a"]))
-            answer_b = "ждёт ответа" if row["answer_b"] is None else question.option(int(row["answer_b"]))
+        if game_type == "numbers":
+            answer_a = "ждёт ответа" if row["answer_a"] is None else str(row["answer_a"])
+            answer_b = "ждёт ответа" if row["answer_b"] is None else str(row["answer_b"])
             lines.extend([
-                f"Тема: {texts.esc(question.text)}",
+                f"Диапазон: <b>1–{int(row['range_max'])}</b>",
                 f"Ответ A: <b>{texts.esc(answer_a)}</b>",
                 f"Ответ B: <b>{texts.esc(answer_b)}</b>",
+                f"Награда за игру: <b>{int(row['reward_total'])} ⭐</b> каждому",
             ])
+        else:
+            question_ids = json.loads(str(row["question_ids"] or "[]"))
+            if question_ids and int(row["question_index"]) < len(question_ids):
+                question = get_question(int(question_ids[int(row["question_index"])]))
+                answer_a = "ждёт ответа" if row["answer_a"] is None else question.option(int(row["answer_a"]))
+                answer_b = "ждёт ответа" if row["answer_b"] is None else question.option(int(row["answer_b"]))
+                lines.extend([
+                    f"Тема: {texts.esc(question.text)}",
+                    f"Ответ A: <b>{texts.esc(answer_a)}</b>",
+                    f"Ответ B: <b>{texts.esc(answer_b)}</b>",
+                ])
         lines.extend([f"Обновлено: {time.strftime('%d.%m · %H:%M:%S', time.localtime(row['updated_at']))}", ""])
     if not rows:
         lines.append("Сейчас здесь пусто.")
