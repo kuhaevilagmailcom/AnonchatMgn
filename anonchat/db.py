@@ -12,7 +12,12 @@ from typing import Any, Sequence
 
 import aiosqlite
 
-from .number_game import NUMBER_ROUNDS, NUMBER_REWARDS, number_reward
+from .number_game import (
+    NUMBER_DAILY_REWARD_LIMIT,
+    NUMBER_ROUNDS,
+    NUMBER_REWARDS,
+    number_reward,
+)
 from .permissions import ALL_ADMIN_PERMISSIONS, serialize_permissions
 
 SCHEMA = """
@@ -121,8 +126,24 @@ CREATE TABLE IF NOT EXISTS battle_games (
     reward_awarded INTEGER NOT NULL DEFAULT 0,
     range_max      INTEGER NOT NULL DEFAULT 0,
     reward_total   INTEGER NOT NULL DEFAULT 0,
+    reward_total_a INTEGER NOT NULL DEFAULT 0,
+    reward_total_b INTEGER NOT NULL DEFAULT 0,
     created_at     INTEGER NOT NULL,
     updated_at     INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS number_game_pairs (
+    user_low    INTEGER NOT NULL,
+    user_high   INTEGER NOT NULL,
+    consumed_at INTEGER NOT NULL,
+    PRIMARY KEY (user_low, user_high)
+);
+
+CREATE TABLE IF NOT EXISTS number_daily_rewards (
+    user_id   INTEGER NOT NULL,
+    day_start INTEGER NOT NULL,
+    stars     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day_start)
 );
 
 CREATE TABLE IF NOT EXISTS kv (
@@ -142,6 +163,7 @@ CREATE INDEX IF NOT EXISTS idx_admins_granted_by ON admins(granted_by, updated_a
 CREATE INDEX IF NOT EXISTS idx_battle_users_a ON battle_games(user_a, status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_battle_users_b ON battle_games(user_b, status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_battle_status_updated ON battle_games(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_number_daily_day ON number_daily_rewards(day_start);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_battle_live_pair
 ON battle_games(MIN(user_a, user_b), MAX(user_a, user_b))
 WHERE status IN ('invited', 'active', 'round_done');
@@ -170,6 +192,8 @@ _BATTLE_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("game_type", "ALTER TABLE battle_games ADD COLUMN game_type TEXT NOT NULL DEFAULT 'battle'"),
     ("range_max", "ALTER TABLE battle_games ADD COLUMN range_max INTEGER NOT NULL DEFAULT 0"),
     ("reward_total", "ALTER TABLE battle_games ADD COLUMN reward_total INTEGER NOT NULL DEFAULT 0"),
+    ("reward_total_a", "ALTER TABLE battle_games ADD COLUMN reward_total_a INTEGER NOT NULL DEFAULT 0"),
+    ("reward_total_b", "ALTER TABLE battle_games ADD COLUMN reward_total_b INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -187,6 +211,10 @@ def referral_day_start(timestamp: int | None = None) -> int:
     return ((value + REFERRAL_TIMEZONE_OFFSET) // 86_400) * 86_400 - REFERRAL_TIMEZONE_OFFSET
 
 
+def number_reward_day_start(timestamp: int | None = None) -> int:
+    return referral_day_start(timestamp)
+
+
 class Database:
     def __init__(self, path: Path | str) -> None:
         self.path = Path(path)
@@ -196,6 +224,7 @@ class Database:
         self._matchmaker_task: asyncio.Task | None = None
         self._matchmaker_snapshot_key = ""
         self._referral_lock = asyncio.Lock()
+        self._number_reward_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> "Database":
@@ -243,6 +272,11 @@ class Database:
         # Историю игр не храним: после обновления удаляем старые завершённые записи.
         await self.db.execute(
             "DELETE FROM battle_games WHERE status NOT IN ('invited', 'active', 'round_done')"
+        )
+        # Для дневного лимита нужны только свежие агрегаты. Старше недели они бесполезны.
+        await self.db.execute(
+            "DELETE FROM number_daily_rewards WHERE day_start < ?",
+            (number_reward_day_start() - 7 * 86_400,),
         )
         if added or "nick_key" in cols:
             await self._backfill_nick_keys()
