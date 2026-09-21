@@ -261,9 +261,12 @@ class Database:
         self._matchmaker_dirty = False
         self._matchmaker_task: asyncio.Task | None = None
         self._matchmaker_snapshot_key = ""
+        self._matchmaker_revision = -1
         self._referral_lock = asyncio.Lock()
         self._number_reward_lock = asyncio.Lock()
         self._engagement_lock = asyncio.Lock()
+        self._nickname_lock = asyncio.Lock()
+        self._admin_permissions_cache: dict[int, tuple[float, frozenset[str]]] = {}
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> "Database":
