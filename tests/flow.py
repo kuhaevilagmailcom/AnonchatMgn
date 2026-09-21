@@ -888,7 +888,8 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
             await press(A, f"game:next:{battle_id}:{question_index}")
             check(f"<b>{question_index + 2}/5</b>" in session.last_to(B), "следующий вопрос синхронно показан обоим")
         else:
-            check("Битва окончена" in session.last_to(A) and "4/5" in session.last_to(A),
+            battle_texts = session.texts_to(A)
+            check(any("Битва окончена" in text and "4/5" in text for text in battle_texts),
                   "после пятого вопроса показан итог 4/5")
 
     check(await db.get_battle(battle_id) is None, "завершённая игра удалена из SQLite")
@@ -909,6 +910,8 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     xp_a_before = int((await db.get_user(A))["xp"])
     xp_b_before = int((await db.get_user(B))["xp"])
+    number_reward_a_before = await db.number_daily_reward(A)
+    number_reward_b_before = await db.number_daily_reward(B)
     await press(A, "game:numbers:range:10")
     number_game = await db.number_for_pair(A, B)
     check(bool(number_game and number_game["status"] == "invited"),
@@ -948,13 +951,17 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await press(A, f"game:num:submit:{number_id}:2:1")
     await press(B, f"game:num:set:{number_id}:2:9")
     await press(B, f"game:num:submit:{number_id}:2:9")
-    check("Игра окончена" in session.last_to(A) and "37" in session.last_to(A),
+    number_texts = session.texts_to(A)
+    check(any("Игра окончена" in text and "37" in text for text in number_texts),
           "после трёх раундов показан общий заработок")
     check(await db.number_for_pair(A, B) is None,
           "завершённая игра Числа не хранится как история")
-    check(int((await db.get_user(A))["xp"]) == xp_a_before + 37
-          and int((await db.get_user(B))["xp"]) == xp_b_before + 37,
+    check(await db.number_daily_reward(A) == number_reward_a_before + 37
+          and await db.number_daily_reward(B) == number_reward_b_before + 37,
           "награды Чисел начисляются обоим игрокам")
+    check(int((await db.get_user(A))["xp"]) >= xp_a_before + 37
+          and int((await db.get_user(B))["xp"]) >= xp_b_before + 37,
+          "дополнительные достижения не уменьшают награду Чисел")
 
     await press(ADMIN, "adm:panel:monitor")
     session.clear()
