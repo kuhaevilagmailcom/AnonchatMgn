@@ -905,7 +905,10 @@ async def act_connect(ctx: Ctx) -> None:
         return
 
     prefs = ctx.prefs
-    prefs["excluded"] = await ctx.db.excluded_partners(ctx.user_id)
+    prefs["excluded"] = await ctx.db.excluded_partners(
+        ctx.user_id,
+        recent_seconds=max(0, int(ctx.cfg.recent_partner_cooldown_minutes)) * 60,
+    )
     for _ in range(8):
         outcome, payload = ctx.mm.connect(ctx.user_id, **prefs)
         if outcome == "paired":
