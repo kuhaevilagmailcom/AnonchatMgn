@@ -102,7 +102,7 @@ async def _send_round_result(ctx: Ctx, row: Any) -> None:
         )
     if row["status"] == "finished":
         final = _final_text(int(row["matches"]), _total(row))
-        markup = K.battle_end_keyboard(int(row["id"]))
+        markup = K.battle_end_keyboard()
         body_a = f"{body_a}\n\n{final}"
         body_b = f"{body_b}\n\n{final}"
     else:
@@ -276,11 +276,9 @@ async def cb_next_question(event: CallbackQuery, ctx: Ctx, db: Database) -> None
     await _send_question(ctx, game)
 
 
-@router.callback_query(F.data.startswith("game:again:"))
-async def cb_again(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
-    game_id = int((event.data or "").rsplit(":", 1)[1])
-    old = await db.get_battle(game_id)
-    if old is None or ctx.user_id not in set(_players(old)) or not _current_pair(ctx.mm, old):
+@router.callback_query(F.data == "game:again")
+async def cb_again(event: CallbackQuery, ctx: Ctx) -> None:
+    if ctx.mm.partner(ctx.user_id) is None:
         await ctx.ack("Диалог уже завершён", alert=True)
         return
     await ctx.ack()
