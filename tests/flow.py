@@ -97,7 +97,9 @@ class RecordingSession(BaseSession):
         values = []
         for item in self.to(chat_id):
             media = item.get("media") if isinstance(item.get("media"), dict) else {}
-            values.append(str(item.get("text") or item.get("caption") or media.get("caption") or ""))
+            value = item.get("text") or item.get("caption") or media.get("caption")
+            if value:
+                values.append(str(value))
         return values
 
     def last_to(self, chat_id: int) -> str:
