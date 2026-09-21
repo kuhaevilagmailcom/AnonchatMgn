@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from anonchat.db import Database  # noqa: E402
+from anonchat.db import Database, number_reward_day_start  # noqa: E402
 from anonchat.levels import RANKS, rank_for  # noqa: E402
 from anonchat.matching import Matchmaker  # noqa: E402
 
@@ -521,10 +521,11 @@ def test_number_game_three_rounds_and_rewards() -> None:
 
             # Дневной лимит личный: одному можно упереться в 300, второму получить полную награду.
             await db.ensure_user(303, "numbers_c", "C")
-            day_start = __import__("anonchat.db", fromlist=["number_reward_day_start"]).number_reward_day_start()
+            day_start = number_reward_day_start()
             await db.db.execute(
                 """INSERT INTO number_daily_rewards(user_id, day_start, stars)
-                   VALUES (?, ?, ?)""",
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(user_id, day_start) DO UPDATE SET stars=excluded.stars""",
                 (301, day_start, 290),
             )
             await db.db.commit()
