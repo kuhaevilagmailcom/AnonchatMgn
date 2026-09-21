@@ -42,6 +42,11 @@ from .pack import EmojiPack
 
 ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "menu"
 
+# Только память процесса: никаких записей message_id/онлайна в SQLite.
+# Нужны для замены старого меню и обновления счётчика без мусора в БД.
+_SCREEN_MESSAGES: dict[int, tuple[int, int]] = {}
+_LIVE_MENUS: dict[int, tuple[int, int, str, bool, int]] = {}
+
 
 class DeliveryResult(Enum):
     DELIVERED = "delivered"
@@ -101,9 +106,12 @@ class Ctx:
         return False
 
     async def render_screen(
-        self, image: str, caption: str, markup: InlineKeyboardMarkup | None = None
+        self, image: str, caption: str, markup: InlineKeyboardMarkup | None = None,
+        *, live_menu: bool = False,
     ) -> Message | None:
-        """Меняет картинку, подпись и клавиатуру одним экраном; при ошибке отправляет новый."""
+        """Держит один актуальный экран: старое меню удаляется, новое редактируется/заменяется."""
+        if not live_menu:
+            _LIVE_MENUS.pop(self.user_id, None)
         target = self.event.message if isinstance(self.event, CallbackQuery) else self.event
         if target is None:
             return None
@@ -126,9 +134,17 @@ class Ctx:
                         )
                     else:
                         result = await target.answer_photo(source, caption=body, reply_markup=markup)
-                    if isinstance(result, Message) and result.photo:
-                        await self.db.set_kv(key, result.photo[-1].file_id)
-                    return result if isinstance(result, Message) else target
+                    final = result if isinstance(result, Message) else target
+                    if isinstance(final, Message):
+                        if final.photo:
+                            await self.db.set_kv(key, final.photo[-1].file_id)
+                        await _remember_screen(self.bot, self.user_id, final)
+                        if live_menu:
+                            _LIVE_MENUS[self.user_id] = (
+                                final.chat.id, final.message_id, self.nick, self.is_admin,
+                                self.mm.queue_size(),
+                            )
+                    return final
                 except TelegramBadRequest as exc:
                     if wrapped and self.pack.accept(exc):
                         continue
@@ -137,7 +153,15 @@ class Ctx:
                     break
             if isinstance(source, str):
                 await self.db.delete_kv(key)
-        return await self.reply(caption, markup)
+        fallback = await self.reply(caption, markup)
+        if fallback is not None:
+            await _remember_screen(self.bot, self.user_id, fallback)
+            if live_menu:
+                _LIVE_MENUS[self.user_id] = (
+                    fallback.chat.id, fallback.message_id, self.nick, self.is_admin,
+                    self.mm.queue_size(),
+                )
+        return fallback
 
     async def screen(
         self, image: str, caption: str, markup: InlineKeyboardMarkup | None = None
@@ -220,6 +244,53 @@ class Ctx:
 
 
 # --------------------------------------------------------------------- low-level
+async def _remember_screen(bot: Bot, user_id: int, message: Message) -> None:
+    current = (message.chat.id, message.message_id)
+    previous = _SCREEN_MESSAGES.get(user_id)
+    _SCREEN_MESSAGES[user_id] = current
+    if previous is None or previous == current:
+        return
+    try:
+        await bot.delete_message(previous[0], previous[1])
+    except TelegramAPIError:
+        pass
+
+
+async def refresh_live_menus(bot: Bot, mm: Matchmaker, pack: EmojiPack | None = None) -> None:
+    """Обновляет открытые главные меню только когда размер очереди действительно изменился."""
+    size = mm.queue_size()
+    for user_id, (chat_id, message_id, nickname, is_admin, previous_size) in list(_LIVE_MENUS.items()):
+        if previous_size == size:
+            continue
+        status = mm.status(user_id)
+        if status != "free":
+            _LIVE_MENUS.pop(user_id, None)
+            continue
+        body = (
+            f"<b>{texts.esc(nickname)}</b>\n\n"
+            f"{texts.STATUS_FREE}\n\n"
+            f"🟢 Сейчас ищут: <b>{size}</b>"
+        )
+        markup = menu_keyboard("free", size, admin=is_admin)
+        for attempt in range(2):
+            wrapped = pack.wrap(body) if pack and attempt == 0 else (pack.strip(body) if pack else body)
+            try:
+                await bot.edit_message_caption(
+                    chat_id=chat_id, message_id=message_id,
+                    caption=wrapped, reply_markup=markup,
+                )
+                _LIVE_MENUS[user_id] = (chat_id, message_id, nickname, is_admin, size)
+                break
+            except TelegramBadRequest as exc:
+                if pack and attempt == 0 and pack.accept(exc):
+                    continue
+                _LIVE_MENUS.pop(user_id, None)
+                break
+            except TelegramAPIError:
+                _LIVE_MENUS.pop(user_id, None)
+                break
+
+
 async def _send_text(
     target: Message, text: str, markup: InlineKeyboardMarkup | None, pack: EmojiPack, **kw: Any
 ) -> Message | None:
@@ -335,7 +406,7 @@ async def show_menu(ctx: Ctx) -> None:
     )
     kb = menu_keyboard(status, ctx.mm.queue_size(), admin=ctx.is_admin)
     image = {"paired": "03_found.png", "queued": "02_search.png"}.get(status, "01_main_menu.png")
-    await ctx.render_screen(image, body, kb)
+    await ctx.render_screen(image, body, kb, live_menu=(status == "free"))
 
 
 async def show_welcome(ctx: Ctx) -> None:
@@ -394,7 +465,7 @@ async def show_profile(ctx: Ctx) -> None:
         f"Диалогов: <b>{me['dialogs']}</b>",
         f"👍 {me['good_ratings']}   👎 {me['bad_ratings']}",
         f"Возраст: <b>{me['age']}</b>",
-        f"Район: <b>{texts.esc(me['district']) if me['district'] else 'не указан'}</b>",
+        f"Берег: <b>{texts.esc(me['district']) if me['district'] else 'не указан'}</b>",
     ]
     if nicklib.is_supporter(me["support_stars"]):
         lines += ["", f"💎 Поддержал проект: {int(me['support_stars'])} ⭐"]
@@ -433,40 +504,17 @@ async def set_nick(ctx: Ctx, raw: str) -> tuple[bool, str]:
 
 
 # --------------------------------------------------------------------- пары
-def partner_card(row: Any, user_id: int) -> str:
-    """Публичная карточка собеседника: только анонимный ник и очки."""
-    if row is None:
-        return f"🙂 <b>{texts.esc(nicklib.display('', user_id))}</b>"
-    return texts.MATCHED_CARD.format(
-        nick=texts.esc(nicklib.display(row["nickname"], user_id, row["support_stars"]))
-    ) + f"\n⭐ <b>{int(row['xp'])}</b>"
-
-
-def matched_text(card: str, you: str) -> str:
-    return texts.MATCHED.format(card=card, you=texts.esc(you))
-
-
 async def announce_pair(ctx: Ctx, user_id: int, partner_id: int) -> bool:
-    """Сообщаем обоим о паре — без кнопок: в диалоге мешают, всё есть командами.
-
-    Каждый видит карточку другого и свой собственный ник. Возвращает False, если
-    собеседник недоступен (заблокировал бота).
-    """
-    partner_row = await ctx.db.get_user(partner_id)
-    my_row = await ctx.db.get_user(user_id)
-    partner_nick = nicklib.display(partner_row["nickname"], partner_id, partner_row["support_stars"]) if partner_row \
-        else nicklib.display("", partner_id)
-    my_nick = nicklib.display(my_row["nickname"], user_id, my_row["support_stars"]) if my_row else ctx.nick
-
+    """Сообщаем о найденной паре без ника, очков и других идентификаторов собеседника."""
     found_kb = chat_keyboard()
     result = await send_screen_to(
-        ctx.bot, partner_id, "03_found.png",
-        matched_text(partner_card(my_row, user_id), partner_nick), found_kb, ctx.pack, ctx.db
+        ctx.bot, partner_id, "03_found.png", texts.MATCHED, found_kb, ctx.pack, ctx.db
     )
     if result is DeliveryResult.UNAVAILABLE:
         return False
-    await send_screen_to(ctx.bot, user_id, "03_found.png",
-                         matched_text(partner_card(partner_row, partner_id), my_nick), found_kb, ctx.pack, ctx.db)
+    await send_screen_to(
+        ctx.bot, user_id, "03_found.png", texts.MATCHED, found_kb, ctx.pack, ctx.db
+    )
     return True
 
 
@@ -478,25 +526,19 @@ async def announce_pairs(
     pack: EmojiPack | None = None,
     db: Database | None = None,
 ) -> int:
-    """Разослать «собеседник найден» тем, кого свёл sweep() после смены настроек."""
+    """Разослать «собеседник найден» без раскрытия публичного ника внутри чата."""
     kb = menu_keyboard()
     made = 0
     for a, b in pairs:
-        row_a = await db.get_user(a) if db else None
-        row_b = await db.get_user(b) if db else None
-        nick_a = nicklib.display(row_a["nickname"], a, row_a["support_stars"]) if row_a else nicklib.display("", a)
-        nick_b = nicklib.display(row_b["nickname"], b, row_b["support_stars"]) if row_b else nicklib.display("", b)
         result = await send_screen_to(
-            bot, b, "03_found.png", matched_text(partner_card(row_a, a), nick_b),
-            chat_keyboard(), pack, db,
+            bot, b, "03_found.png", texts.MATCHED, chat_keyboard(), pack, db,
         )
         if result is DeliveryResult.UNAVAILABLE:
             mm.forget(b)
             await send_to(bot, a, texts.PARTNER_LEFT, kb, pack)
             continue
         await send_screen_to(
-            bot, a, "03_found.png", matched_text(partner_card(row_b, b), nick_a),
-            chat_keyboard(), pack, db,
+            bot, a, "03_found.png", texts.MATCHED, chat_keyboard(), pack, db,
         )
         made += 1
     return made
