@@ -7,6 +7,12 @@ NUMBER_REWARDS: dict[int, int] = {
     1000: 100,
 }
 
+NUMBER_NEAR_DIFFS: dict[int, int] = {
+    10: 1,
+    100: 2,
+    1000: 5,
+}
+
 
 def number_reward(range_max: int, first: int, second: int) -> int:
     """Награда каждому игроку за один раунд."""
@@ -16,6 +22,6 @@ def number_reward(range_max: int, first: int, second: int) -> int:
     diff = abs(int(first) - int(second))
     if diff == 0:
         return base
-    if diff == 1:
+    if 1 <= diff <= NUMBER_NEAR_DIFFS.get(int(range_max), 0):
         return base // 2
     return 0
