@@ -27,6 +27,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     InputMediaPhoto,
     Message,
+    ReplyParameters,
 )
 
 from . import nick as nicklib
@@ -362,7 +363,7 @@ async def send_to(
 
 
 async def send_copy_to_message(
-    bot: Bot, message: Message, chat_id: int
+    bot: Bot, message: Message, chat_id: int, reply_to_message_id: int | None = None
 ) -> tuple[DeliveryResult, Message | None]:
     """Пересылает сообщение и возвращает созданную копию для последующего редактирования.
 
@@ -370,6 +371,11 @@ async def send_copy_to_message(
     Telegram Bot API без forward, чтобы не раскрывать отправителя.
     """
     photo = getattr(message, "photo", None)
+    reply_parameters = (
+        ReplyParameters(message_id=int(reply_to_message_id))
+        if reply_to_message_id
+        else None
+    )
     action = "upload_photo" if photo else "typing"
     try:
         await bot.send_chat_action(chat_id, action)
@@ -386,9 +392,13 @@ async def send_copy_to_message(
                     parse_mode=None,
                     caption_entities=message.caption_entities or None,
                     has_spoiler=bool(getattr(message, "has_media_spoiler", False)),
+                    reply_parameters=reply_parameters,
                 )
             else:
-                sent = await message.send_copy(chat_id=chat_id)
+                sent = await message.send_copy(
+                    chat_id=chat_id,
+                    reply_parameters=reply_parameters,
+                )
             return DeliveryResult.DELIVERED, sent if isinstance(sent, Message) else None
         except TelegramRetryAfter as exc:
             await asyncio.sleep(max(0.0, float(exc.retry_after)))
