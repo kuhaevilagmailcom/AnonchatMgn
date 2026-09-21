@@ -33,7 +33,7 @@ from aiogram.types import (
 from . import nick as nicklib
 from . import texts
 from .config import Config
-from .db import Database
+from .db import Database, referral_day_start
 from .keyboards import (
     back_menu_keyboard, chat_keyboard, menu_keyboard,
     profile_keyboard, rating_keyboard, referral_keyboard, top_keyboard,
@@ -628,9 +628,14 @@ async def show_streak(ctx: Ctx) -> None:
     row = await ctx.db.engagement_state(ctx.user_id)
     today = await ctx.db.activity_totals(ctx.user_id, 1)
     done = int(today.get("dialogs", 0)) > 0
+    today_start = referral_day_start()
+    last_day = int(row["last_active_day"] or 0)
+    current = int(row["current_streak"] or 0)
+    if last_day and last_day < today_start - 86_400:
+        current = 0
     body = (
         "🔥 <b>Серия активности</b>\n\n"
-        f"Текущая серия: <b>{int(row['current_streak'] or 0)} дней</b>\n"
+        f"Текущая серия: <b>{current} дней</b>\n"
         f"Лучшая серия: <b>{int(row['best_streak'] or 0)} дней</b>\n"
         f"Сегодня: {'выполнено ✅' if done else 'ещё нет'}"
     )
@@ -840,8 +845,9 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
             await ctx.db.award_xp(uid, gain)
         if sent:
             await ctx.db.bump(uid, "messages", sent)
-        await ctx.db.activity_add(uid, messages=sent, dialogs=1)
-        await ctx.db.update_streak(uid)
+        await ctx.db.activity_add(uid, messages=sent, dialogs=1 if live else 0)
+        if live:
+            await ctx.db.update_streak(uid)
         if uid == ctx.user_id:
             my_xp = gain
 
