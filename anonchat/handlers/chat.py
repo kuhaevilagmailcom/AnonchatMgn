@@ -33,6 +33,16 @@ ALLOWED_TYPES = frozenset(
 )
 
 
+def _allowed_message(message: Message) -> bool:
+    if message.content_type in ALLOWED_TYPES:
+        return True
+    # Некоторые клиенты отправляют выбранную картинку как document, а визуально
+    # пользователь всё равно воспринимает её как обычную фотографию.
+    document = message.document
+    mime = (document.mime_type or "").lower() if document else ""
+    return bool(document and mime.startswith("image/"))
+
+
 @router.message(Command("helpcmd", "menu"))
 async def cmd_menu(message: Message, ctx: Ctx, state: FSMContext) -> None:
     await state.clear()
@@ -57,7 +67,7 @@ async def relay_to_partner(
     if await ctx.restricted():
         return
 
-    if message.content_type not in ALLOWED_TYPES:
+    if not _allowed_message(message):
         await ctx.reply(texts.UNKNOWN_TYPE)
         return
 
