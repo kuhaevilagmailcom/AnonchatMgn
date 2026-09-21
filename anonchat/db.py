@@ -708,6 +708,11 @@ class Database:
                      AND user_b=? AND inviter_id<>?""",
                 (reward_enabled, now(), game_id, user_id, user_id),
             )
+            if not cur.rowcount and reward_enabled:
+                await self.db.execute(
+                    "DELETE FROM number_game_pairs WHERE user_low=? AND user_high=?",
+                    (low, high),
+                )
             await self.db.commit()
             return await self.get_battle(game_id) if cur.rowcount else None
 
@@ -765,6 +770,18 @@ class Database:
             exact = int(game["answer_a"]) == int(game["answer_b"])
             status = "finished" if round_index >= NUMBER_ROUNDS - 1 else "round_done"
 
+            resolved = await self.db.execute(
+                """UPDATE battle_games
+                   SET matches=matches+?,
+                       status=?, updated_at=?
+                   WHERE id=? AND game_type='numbers' AND status='active'
+                     AND question_index=? AND answer_a IS NOT NULL AND answer_b IS NOT NULL""",
+                (1 if exact else 0, status, now(), game_id, round_index),
+            )
+            if not resolved.rowcount:
+                await self.db.commit()
+                return "waiting", await self.get_battle(game_id), 0, 0
+
             reward_a = 0
             reward_b = 0
             if int(game["reward_awarded"] or 0) and raw_reward > 0:
@@ -776,36 +793,19 @@ class Database:
                     int(game["user_b"]), raw_reward, day_start
                 )
 
-            resolved = await self.db.execute(
+            await self.db.execute(
                 """UPDATE battle_games
-                   SET matches=matches+?,
-                       reward_total=reward_total+?,
+                   SET reward_total=reward_total+?,
                        reward_total_a=reward_total_a+?,
-                       reward_total_b=reward_total_b+?,
-                       status=?, updated_at=?
-                   WHERE id=? AND game_type='numbers' AND status='active'
-                     AND question_index=? AND answer_a IS NOT NULL AND answer_b IS NOT NULL""",
-                (
-                    1 if exact else 0,
-                    min(reward_a, reward_b),
-                    reward_a,
-                    reward_b,
-                    status,
-                    now(),
-                    game_id,
-                    round_index,
-                ),
+                       reward_total_b=reward_total_b+?
+                   WHERE id=?""",
+                (min(reward_a, reward_b), reward_a, reward_b, game_id),
             )
             game = await self.get_battle(game_id)
-            if resolved.rowcount and game is not None and status == "finished":
+            if game is not None and status == "finished":
                 await self.db.execute("DELETE FROM battle_games WHERE id=?", (game_id,))
             await self.db.commit()
-            return (
-                "resolved" if resolved.rowcount else "waiting",
-                game,
-                reward_a if resolved.rowcount else 0,
-                reward_b if resolved.rowcount else 0,
-            )
+            return "resolved", game, reward_a, reward_b
 
     async def advance_number(
         self, game_id: int, user_id: int, round_index: int
