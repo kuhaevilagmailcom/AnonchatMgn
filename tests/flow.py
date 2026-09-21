@@ -838,13 +838,27 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(any(item["method"] == "sendContact" for item in session.to(ADMIN)),
           "владелец получает копию медиа и контактов из чата")
 
-    for body, label in (
-        ({"location": {"latitude": 53.4, "longitude": 58.9}}, "location"),
-        ({"document": {"file_id": "f", "file_unique_id": "u"}}, "документ"),
-    ):
-        session.clear()
-        await payload(A, **body)
-        check(session.to(B) == [], f"{label} не пересылается")
+    session.clear()
+    await payload(A, location={"latitude": 53.4, "longitude": 58.9})
+    check(any(item["method"] == "sendLocation" for item in session.to(B)),
+          "геолокация пересылается собеседнику")
+
+    session.clear()
+    await payload(A, document={"file_id": "f", "file_unique_id": "u", "file_name": "archive.zip"})
+    check(any(item["method"] == "sendDocument" for item in session.to(B)),
+          "обычный документ пересылается собеседнику")
+
+    session.clear()
+    await payload(
+        A,
+        venue={
+            "location": {"latitude": 53.4, "longitude": 58.9},
+            "title": "Место",
+            "address": "Магнитогорск",
+        },
+    )
+    check(any(item["method"] == "sendVenue" for item in session.to(B)),
+          "место/venue пересылается собеседнику")
 
     await send(A, "обычное сообщение")
     await send(B, "ответ")
