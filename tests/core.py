@@ -1145,11 +1145,22 @@ def test_engagement_activity_streak_achievements_and_quests() -> None:
             await db.ensure_user(502, "u502", "U502")
 
             day = referral_day_start()
-            await db.activity_add(501, timestamp=day, messages=20, dialogs=1, xp_earned=25)
+            await db.award_xp(501, 300)
+            await db.activity_add(501, timestamp=day, messages=20, dialogs=1)
+            await db.award_xp(502, 1000)
+            await db.activity_add(502, timestamp=day - 10 * 86_400, messages=5, dialogs=1)
+
             today = await db.activity_totals(501, 1)
             assert today["messages"] == 20 and today["dialogs"] == 1
-            top = await db.top_period(7, 10)
-            assert top and int(top[0]["user_id"]) == 501 and int(top[0]["xp"]) == 25
+
+            week_top = await db.top_period(7, 10)
+            assert week_top and int(week_top[0]["user_id"]) == 501
+            assert int(week_top[0]["xp"]) == 300
+            assert all(int(row["user_id"]) != 502 for row in week_top)
+
+            month_top = await db.top_period(30, 10)
+            assert month_top and int(month_top[0]["user_id"]) == 502
+            assert int(month_top[0]["xp"]) == 1000
 
             streak, best = await db.update_streak(501, day)
             assert (streak, best) == (1, 1)
