@@ -239,7 +239,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     # 2. A жмёт поиск — встаёт в очередь
     session.clear()
     await press(A, "act:connect")
-    check("Ищу пару" in session.last_to(A), "кнопка 🔎 ставит в очередь")
+    check("Ищу собеседника" in session.last_to(A), "кнопка поиска ставит в очередь")
     check(mm.status(A) == "queued", "матчмейкер видит A в очереди")
 
     # 3. B жмёт поиск — сводим обоих
@@ -273,7 +273,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     # 5. мусорные типы не пересылаем, команды не теряем
     session.clear()
     await send(A, "/unknowncmd")
-    check("Не знаю такой команды" in session.last_to(A), "неизвестная команда не улетает собеседнику")
+    check("Команда не найдена" in session.last_to(A), "неизвестная команда не улетает собеседнику")
 
     # 5b. пока идёт диалог — свои экраны закрыты, надо /stop
     session.clear()
@@ -303,7 +303,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     session.clear()
     await send(A, "/stop")
     check(mm.status(A) == "free" and mm.status(B) == "free", "после /stop оба свободны")
-    check("Остановить диалог" in " ".join(session.texts_to(A)) or "диалог остановлен" in session.last_to(A).lower(),
+    check("Закрыть диалог" in " ".join(session.texts_to(A)) or "диалог закрыт" in session.last_to(A).lower(),
           "A получил подтверждение остановки")
     check("собеседник вышел" in " ".join(session.texts_to(B)).lower(), "B узнал, что собеседник вышел")
     row_a = await db.get_user(A)
@@ -818,7 +818,7 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
             await press(A, f"game:next:{battle_id}:{question_index}")
             check(f"<b>{question_index + 2}/5</b>" in session.last_to(B), "следующий вопрос синхронно показан обоим")
         else:
-            check("Битва окончена" in session.last_to(A) and "80%" in session.last_to(A),
+            check("Битва окончена" in session.last_to(A) and "4/5" in session.last_to(A),
                   "после пятого вопроса показан итог 4/5")
 
     check(await db.get_battle(battle_id) is None, "завершённая игра удалена из SQLite")
