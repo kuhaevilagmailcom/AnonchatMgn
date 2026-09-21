@@ -33,6 +33,7 @@ from anonchat.matching import Matchmaker
 from anonchat.middlewares import DataContext, Throttling
 from anonchat.pack import ICONS as PACK_ICONS
 from anonchat.pack import EmojiPack
+from anonchat import relay_state
 
 ADMIN = 999
 A, B, C, D, E = 1001, 1002, 1003, 1004, 1005
@@ -659,11 +660,12 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
         step += 1
         await dp.feed_update(bot, cb_update(bot, uid, data, step))
 
-    async def payload(uid: int, **content: Any) -> None:
+    async def payload(uid: int, **content: Any) -> int:
         nonlocal step
         step += 1
+        message_id = step
         message = {
-            "message_id": step, "date": 1_700_000_000,
+            "message_id": message_id, "date": 1_700_000_000,
             "chat": {"id": uid, "type": "private", "first_name": f"U{uid}"},
             "from": {"id": uid, "is_bot": False, "first_name": f"U{uid}"},
             **content,
@@ -671,6 +673,7 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
         await dp.feed_update(bot, Update.model_validate(
             {"update_id": step, "message": message}, context={"bot": bot}
         ))
+        return message_id
 
     def check(value: bool, label: str) -> None:
         if not value:
@@ -829,6 +832,17 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
           and int(edit_call.get("message_id", 0)) > 0,
           "у собеседника редактируется именно ранее созданная копия")
 
+    # Если Telegram больше не даёт редактировать копию, обработчик не падает
+    # и забывает старую связь message_id.
+    session.clear()
+    unavailable_source = await send(A, "сообщение перед недоступным edit")
+    check(relay_state.forwarded_target(A, unavailable_source) is not None,
+          "reply-map помнит сообщение до edit")
+    session.fail_once["editMessageText"] = "forbidden"
+    await edit(A, unavailable_source, "редактирование при недоступном собеседнике")
+    check(relay_state.forwarded_target(A, unavailable_source) is None,
+          "недоступный edit безопасно очищает reply-map")
+
     # Фото отправляется напрямую по file_id и переживает кратковременный сбой Telegram.
     session.clear()
     session.fail_once["sendPhoto"] = "temp"
@@ -840,6 +854,38 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(any(item["method"] == "sendPhoto" for item in session.to(B)),
           "фото доходит после временной ошибки Telegram")
     check(mm.partner(A) == B, "временная ошибка фото не разрывает диалог")
+
+    # Reply на медиа должен сохранить привязку к исходному сообщению.
+    session.clear()
+    photo_source = await payload(
+        A,
+        photo=[{"file_id": "reply-photo", "file_unique_id": "reply-photo-u", "width": 640, "height": 640}],
+        caption="фото для reply",
+    )
+    forwarded = relay_state.forwarded_target(A, photo_source)
+    check(forwarded is not None and forwarded[0] == B, "reply-map запомнил фото")
+    copied_photo_id = int(forwarded[1])
+    session.clear()
+    await payload(
+        B,
+        photo=[{"file_id": "reply-answer", "file_unique_id": "reply-answer-u", "width": 320, "height": 320}],
+        caption="ответ на фото",
+        reply_to_message={
+            "message_id": copied_photo_id,
+            "date": 1_700_000_000,
+            "chat": {"id": B, "type": "private", "first_name": f"U{B}"},
+            "from": {"id": 777, "is_bot": True, "first_name": "Анончат"},
+            "text": "анонимная копия",
+        },
+    )
+    media_reply = next(
+        (item for item in session.to(A)
+         if item.get("method") == "sendPhoto" and item.get("caption") == "ответ на фото"),
+        None,
+    )
+    check(bool(media_reply), "media-reply доставлен")
+    check(int((media_reply.get("reply_parameters") or {}).get("message_id", 0)) == photo_source,
+          "media-reply привязан к исходному фото")
 
     # Некоторые Telegram-клиенты присылают картинку как image/document.
     session.clear()
