@@ -140,25 +140,24 @@ def profile_keyboard(referral_url: str = "") -> InlineKeyboardMarkup:
 def district_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     for title, value in (
-        ("Правобережный", "right"),
-        ("Левобережный", "left"),
-        ("Орджоникидзевский", "ordz"),
+        ("Правый берег", "right"),
+        ("Левый берег", "left"),
         ("Не важно", "none"),
     ):
         _button(b, title, callback_data=f"cfg:district:{value}",
                 icon="geo" if value != "none" else "check")
     _button(b, "Назад", callback_data=CB_SETTINGS, icon="home")
-    b.adjust(1, 1, 1, 1, 1)
+    b.adjust(1, 1, 1, 1)
     return b.as_markup()
 
 
 def settings_keyboard(same_district: bool, district: str, nickname: str) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, f"Ник: {nickname}", callback_data=CB_NICK, icon="profile")
-    _button(b, f"Район: {district or 'не выбран'}", callback_data="cfg:district:ask", icon="geo")
+    _button(b, f"Берег: {district or 'не выбран'}", callback_data="cfg:district:ask", icon="geo")
     _button(
         b,
-        "Ищу: мой район" if same_district else "Ищу: весь город",
+        "Ищу: мой берег" if same_district else "Ищу: весь город",
         callback_data="cfg:same:toggle",
         icon="view",
     )

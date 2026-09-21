@@ -184,6 +184,7 @@ class Database:
         self._matchmaker = None
         self._matchmaker_dirty = False
         self._matchmaker_task: asyncio.Task | None = None
+        self._matchmaker_snapshot_key = ""
         self._referral_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ lifecycle
@@ -231,6 +232,19 @@ class Database:
         )
         if added or "nick_key" in cols:
             await self._backfill_nick_keys()
+        # Старые версии хранили административные районы. Теперь пользователю доступны
+        # только два берега; известные значения переносим, неоднозначный Орджоникидзевский
+        # сбрасываем, чтобы человек выбрал берег заново.
+        await self.db.execute(
+            """UPDATE users
+               SET district = CASE
+                   WHEN district = 'Правобережный' THEN 'Правый берег'
+                   WHEN district = 'Левобережный' THEN 'Левый берег'
+                   WHEN district = 'Орджоникидзевский' THEN ''
+                   ELSE district
+               END
+               WHERE district IN ('Правобережный', 'Левобережный', 'Орджоникидзевский')"""
+        )
         if support_added:
             await self.db.execute(
                 """UPDATE users SET support_stars = (
@@ -1052,7 +1066,13 @@ class Database:
         )
 
     def schedule_matchmaker_save(self, matchmaker) -> None:
-        """Объединяет частые изменения в одну запись состояния раз в 0,25 секунды."""
+        """Пишет snapshot только если состояние реально изменилось, а не после каждого апдейта."""
+        snapshot_key = json.dumps(
+            matchmaker.snapshot(), ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        )
+        if snapshot_key == self._matchmaker_snapshot_key:
+            return
+        self._matchmaker_snapshot_key = snapshot_key
         self._matchmaker = matchmaker
         self._matchmaker_dirty = True
         if self._matchmaker_task is None or self._matchmaker_task.done():
@@ -1093,6 +1113,7 @@ class Database:
         value = await self.get_kv("matchmaker_state")
         if not value:
             return None
+        self._matchmaker_snapshot_key = value
         try:
             state = json.loads(value)
         except json.JSONDecodeError:
