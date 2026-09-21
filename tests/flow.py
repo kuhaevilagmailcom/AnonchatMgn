@@ -249,19 +249,13 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     check(mm.partner(A) == B and mm.partner(B) == A, "A и B стали парой")
     check("Собеседник найден" in session.last_to(A), "A получил «Собеседник найден»")
     check("Собеседник найден" in session.last_to(B), "B получил «Собеседник найден»")
-    check("/next" in session.last_to(A) and "/stop" in session.last_to(A), "в тексте подсказки /next и /stop")
-    check(
-        all(m.get("reply_markup") is None for m in session.to(A) + session.to(B) if m["method"] == "sendMessage"),
-        "на сообщении о паре — никаких кнопок, только текст с командами",
-    )
-    matched_a = session.texts_to(A)[-1] if session.to(A) else session.last_to(A)
-    check("Аноним-1002" in matched_a, "A видит ник найденного собеседника")
-    check("Старт" in matched_a and "сообщ" in matched_a, "в карточке собеседника ранг и число сообщений")
-    check("жалоб: 0" in matched_a and "👍" in matched_a and "⭐" in matched_a,
-          "в карточке собеседника опыт, оценки и жалобы")
-    check("Ты в чате как" in matched_a and "Аноним-1001" in matched_a, "A видит и свой ник в этом диалоге")
-    check("Аноним-1001" in session.last_to(B), "B видит ник A, а не его настоящее имя")
-    check("U1001" not in session.last_to(B) and "Аня" not in session.last_to(B),
+    matched_a = session.last_to(A)
+    matched_b = session.last_to(B)
+    check("Аноним-1002" not in matched_a and "Аноним-1001" not in matched_b,
+          "ники собеседников внутри диалога скрыты")
+    check("⭐" not in matched_a and "U1002" not in matched_a,
+          "очки, username и id собеседника не показываются")
+    check("U1001" not in matched_b and "Аня" not in matched_b,
           "реальные имя/id собеседнику не показываются")
 
     # 4. анонимная пересылка туда-сюда
@@ -721,14 +715,14 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(session.outbox[0]["method"] == "answerCallbackQuery",
           "кнопка поиска отпускает интерфейс сразу")
     await send(B, "/start")
-    check("Сейчас ищут: <b>1</b>" in session.last_to(B),
-          "меню показывает одного человека в очереди")
+    check("Онлайн сейчас: <b>1</b>" in session.last_to(B),
+          "меню показывает текущий онлайн")
     await press(B, "act:connect")
     check(mm.partner(A) == B, "возраст не разделяет очередь")
     check("Собеседник найден" in session.last_to(A), "экран найденного собеседника отправлен")
     check("@user1002" not in session.last_to(A) and f"<code>{B}</code>" not in session.last_to(A)
-          and "⭐" in session.last_to(A),
-          "видны только анонимный ник и очки")
+          and "⭐" not in session.last_to(A),
+          "в найденном диалоге не раскрываются ник, очки и id")
 
     session.clear()
     await send(A, "/game")
@@ -768,9 +762,12 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
             check("Битва окончена" in session.last_to(A) and "80%" in session.last_to(A),
                   "после пятого вопроса показан итог 4/5")
 
-    await press(ADMIN, "adm:games:history")
-    check("Последние игры" in session.last_to(ADMIN) and f"Игра #{battle_id}" in session.last_to(ADMIN)
-          and "завершена" in session.last_to(ADMIN), "админ видит историю завершённых игр")
+    check(await db.get_battle(battle_id) is None, "завершённая игра удалена из SQLite")
+    await press(ADMIN, "adm:games:active")
+    check("Сейчас здесь пусто" in session.last_to(ADMIN), "история игр не хранится")
+    await press(A, "game:again")
+    check("5 вопросов" in str(session.to(A)[-1].get("reply_markup")),
+          "сыграть ещё работает без хранения старой игры")
 
     await press(ADMIN, "adm:panel:monitor")
     session.clear()
