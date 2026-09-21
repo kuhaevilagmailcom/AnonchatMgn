@@ -1000,7 +1000,7 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await press(B, f"game:yes:{int(active_battle['id'])}")
     await send(A, "/stop")
     closed_battle = await db.get_battle(int(active_battle["id"]))
-    check(closed_battle["status"] == "cancelled", "/stop закрывает активную игру в SQLite")
+    check(closed_battle is None, "/stop удаляет активную игру из SQLite")
     session.clear()
     await press(A, "rate:block")
     check(B in await db.excluded_partners(A), "блок-лист сохраняет пару")
