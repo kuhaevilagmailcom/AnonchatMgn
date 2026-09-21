@@ -332,10 +332,11 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     check((await db.get_user(A))["district"] == "Правый берег", "берег сохранился")
     await send(A, "/profile")
     card = session.last_to(A)
-    check("Старт" in card and "🔰" in card, "профиль показывает ранг по числу сообщений")
-    check("<code>▱▱▱▱" in card, "полоса прогресса до следующего ранга на месте")
-    check("⭐" in card and "Сообщений" in card and "✍️" in card, "профиль — карточка со статистикой")
-    check("до «Бронза»" in card and "1 000" in card, "видно, сколько осталось до Бронзы")
+    check("Новичок" in card and "🌱" in card, "профиль показывает текущий ранг")
+    check("<code>" in card and "▱" in card, "полоса прогресса до следующего ранга на месте")
+    check("⭐" in card and "Сообщений" in card and "Диалогов" in card,
+          "профиль показывает основные показатели")
+    check("До «Общительный»" in card, "видно прогресс до следующего ранга")
 
     # 8b. свой ник вместо реального имени
     session.clear()
