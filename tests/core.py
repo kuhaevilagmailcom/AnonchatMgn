@@ -1005,6 +1005,9 @@ def test_db_nickname_and_kv() -> None:
             old_game = await db.get_battle(1)
             assert old_game is not None and old_game["game_type"] == "battle"
             assert int(old_game["range_max"]) == 0 and int(old_game["reward_total"]) == 0
+            assert int(old_game["reward_total_a"]) == 0 and int(old_game["reward_total_b"]) == 0
+            assert await db.number_pair_reward_available(7, 8) is True
+            assert await db.number_daily_reward(7) == 0
 
             await db.set_profile(7, nickname="Старожил")
             assert (await db.get_user(7))["nickname"] == "Старожил"
