@@ -1537,20 +1537,27 @@ class Database:
         return {key: int(row[key] or 0) for key in row.keys()} if row else {}
 
     async def top_period(self, days: int, limit: int = 10) -> list[aiosqlite.Row]:
+        """Период ограничивает активных участников, но место всегда считает полный баланс ⭐."""
         if int(days) <= 0:
             return await self.top(limit)
         start = referral_day_start() - (max(1, int(days)) - 1) * 86_400
         return await self._fetchall(
             """SELECT u.user_id, u.nickname, u.support_stars,
-                      SUM(a.xp_earned) AS xp,
-                      SUM(a.dialogs) AS dialogs,
-                      SUM(a.messages) AS messages
-                 FROM daily_activity a
-                 JOIN users u ON u.user_id=a.user_id
-                WHERE a.day_start>=? AND u.banned=0
-                GROUP BY u.user_id
-                HAVING SUM(a.xp_earned) > 0 OR SUM(a.dialogs) > 0 OR SUM(a.messages) > 0
-                ORDER BY SUM(a.xp_earned) DESC, SUM(a.dialogs) DESC, SUM(a.messages) DESC
+                      u.xp AS xp, u.dialogs AS dialogs, u.messages AS messages
+                 FROM users u
+                WHERE u.banned=0
+                  AND EXISTS (
+                      SELECT 1
+                        FROM daily_activity a
+                       WHERE a.user_id=u.user_id
+                         AND a.day_start>=?
+                         AND (
+                             a.messages>0 OR a.dialogs>0 OR a.games>0
+                             OR a.ratings_given>0 OR a.good_ratings>0
+                             OR a.xp_earned>0
+                         )
+                  )
+                ORDER BY u.xp DESC, u.dialogs DESC, u.messages DESC
                 LIMIT ?""",
             (start, max(1, min(int(limit), 50))),
         )
