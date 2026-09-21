@@ -16,11 +16,12 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import ErrorEvent
 
-from anonchat.actions import refresh_live_menus
+from anonchat.actions import announce_pairs, refresh_live_menus, send_to
 from anonchat.commands import ADMIN_COMMANDS, COMMANDS, register_common
 from anonchat.config import Config
 from anonchat.db import Database
 from anonchat.handlers import get_routers
+from anonchat.keyboards import menu_keyboard
 from anonchat.matching import Matchmaker
 from anonchat.middlewares import DataContext, Throttling
 from anonchat.pack import EmojiPack
@@ -37,12 +38,43 @@ __all__ = [
 ]
 
 
-async def janitor(mm: Matchmaker) -> None:
-    """Раз в пару минут подчищаем протухшие приглашения оценить диалог."""
+async def reconcile_queue(
+    bot: Bot, cfg: Config, db: Database, mm: Matchmaker, pack: EmojiPack
+) -> tuple[int, int]:
+    """Чистит неактивный поиск и сводит совместимых людей, уже стоящих в очереди."""
+    expired = mm.prune_queue()
+    for user_id in expired:
+        await send_to(
+            bot,
+            user_id,
+            "⌛️ Поиск остановлен: ты был в очереди больше 15 минут без активности. "
+            "Нажми «Поиск собеседника», чтобы начать снова.",
+            menu_keyboard(),
+            pack,
+        )
+
+    pairs = mm.sweep()
+    if pairs:
+        await announce_pairs(bot, cfg, mm, pairs, pack, db)
+    if expired or pairs:
+        db.schedule_matchmaker_save(mm)
+    return len(expired), len(pairs)
+
+
+async def janitor(
+    bot: Bot, cfg: Config, db: Database, mm: Matchmaker, pack: EmojiPack
+) -> None:
+    """Подчищает оценки, старую очередь и регулярно пересобирает возможные пары."""
     while True:
         try:
-            await asyncio.sleep(120)
+            await asyncio.sleep(60)
             mm.drop_stale_ratings()
+            expired, paired = await reconcile_queue(bot, cfg, db, mm, pack)
+            if expired or paired:
+                log.info(
+                    "queue janitor: удалено неактивных=%s, создано пар=%s",
+                    expired, paired,
+                )
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
@@ -123,7 +155,13 @@ async def main() -> None:  # pragma: no cover
             log.info("модераторы: %s · панель — командой /admin", cfg.admin_markup())
         else:
             log.warning("Администраторы не настроены.")
-        janitor_task = asyncio.create_task(janitor(mm))
+        expired, paired = await reconcile_queue(bot, cfg, database, mm, pack)
+        if expired or paired:
+            log.info(
+                "startup queue reconcile: удалено неактивных=%s, создано пар=%s",
+                expired, paired,
+            )
+        janitor_task = asyncio.create_task(janitor(bot, cfg, database, mm, pack))
         menu_task = asyncio.create_task(menu_refresher(bot, mm, pack))
 
     try:
