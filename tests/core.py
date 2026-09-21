@@ -1186,6 +1186,20 @@ def test_engagement_activity_streak_achievements_and_quests() -> None:
     asyncio.run(scenario())
 
 
+def test_relay_state_reply_and_cleanup() -> None:
+    from anonchat import relay_state
+
+    relay_state.clear_user(1)
+    relay_state.clear_user(2)
+    relay_state.remember(1, 101, 2, 201)
+    assert relay_state.resolve_reply(2, 1, 201) == 101
+    assert relay_state.resolve_reply(1, 2, 101) == 201
+    assert relay_state.size() >= 1
+    relay_state.clear_pair(1, 2)
+    assert relay_state.resolve_reply(2, 1, 201) is None
+    assert relay_state.forwarded_target(1, 101) is None
+
+
 def run_all() -> int:  # python -m tests.core
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:
