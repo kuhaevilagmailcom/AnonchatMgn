@@ -53,6 +53,7 @@ log = logging.getLogger(__name__)
 # Нужны для замены старого меню и обновления счётчика без мусора в БД.
 _SCREEN_MESSAGES: dict[int, tuple[int, int]] = {}
 _LIVE_MENUS: dict[int, tuple[int, int, str, bool, int, float]] = {}
+_FILE_ID_CACHE: dict[str, str] = {}
 
 
 class DeliveryResult(Enum):
@@ -129,7 +130,11 @@ class Ctx:
             return await self.reply(caption, markup)
 
         key = f"menu_file_id:{image}"
-        cached = await self.db.get_kv(key)
+        cached = _FILE_ID_CACHE.get(key, "")
+        if not cached:
+            cached = await self.db.get_kv(key)
+            if cached:
+                _FILE_ID_CACHE[key] = cached
         sources: list[str | FSInputFile] = ([cached] if cached else []) + [FSInputFile(path)]
         for source in sources:
             for wrapped in (True, False):
@@ -146,6 +151,7 @@ class Ctx:
                         if final.photo:
                             new_file_id = final.photo[-1].file_id
                             if new_file_id != cached:
+                                _FILE_ID_CACHE[key] = new_file_id
                                 await self.db.set_kv(key, new_file_id)
                                 cached = new_file_id
                         if (
@@ -170,6 +176,7 @@ class Ctx:
                 except TelegramAPIError:
                     break
             if isinstance(source, str):
+                _FILE_ID_CACHE.pop(key, None)
                 await self.db.delete_kv(key)
         fallback = await self.reply(caption, markup)
         if fallback is not None:
@@ -509,7 +516,11 @@ async def send_screen_to(
     if not path.exists():
         return await send_to(bot, chat_id, caption, markup, pack)
     key = f"menu_file_id:{image}"
-    cached = await db.get_kv(key) if db else ""
+    cached = _FILE_ID_CACHE.get(key, "")
+    if not cached and db:
+        cached = await db.get_kv(key)
+        if cached:
+            _FILE_ID_CACHE[key] = cached
     photo: str | FSInputFile = cached or FSInputFile(path)
     for attempt in range(2):
         body = pack.wrap(caption) if pack and attempt == 0 else (pack.strip(caption) if pack else caption)
@@ -518,6 +529,7 @@ async def send_screen_to(
             if db and sent.photo:
                 new_file_id = sent.photo[-1].file_id
                 if new_file_id != cached:
+                    _FILE_ID_CACHE[key] = new_file_id
                     await db.set_kv(key, new_file_id)
                     cached = new_file_id
             _LIVE_MENUS.pop(chat_id, None)
@@ -527,6 +539,7 @@ async def send_screen_to(
             if attempt == 0 and pack is not None and pack.accept(exc):
                 continue
             if cached:
+                _FILE_ID_CACHE.pop(key, None)
                 await db.delete_kv(key)
                 cached = ""
                 photo = FSInputFile(path)
