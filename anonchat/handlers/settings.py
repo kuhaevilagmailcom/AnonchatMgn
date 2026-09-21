@@ -1,4 +1,4 @@
-"""Настройки профиля: ник, возраст, район, фильтр и удаление данных."""
+"""Настройки профиля: ник, возраст, берег, фильтр и удаление данных."""
 
 from __future__ import annotations
 
@@ -25,9 +25,8 @@ def _nick_prompt(ctx: Ctx) -> str:
 
 DISTRICTS = {
     "none": "",
-    "right": "Правобережный",
-    "left": "Левобережный",
-    "ordz": "Орджоникидзевский",
+    "right": "Правый берег",
+    "left": "Левый берег",
 }
 
 class ProfileStates(StatesGroup):
@@ -59,11 +58,11 @@ async def settings_screen(ctx: Ctx) -> None:
     body = (
         f"{texts.SETTINGS_TITLE}\n\n"
         f"🙋 Ник: <b>{texts.esc(ctx.nick)}</b>\n"
-        f"📍 Район: <b>{texts.esc(district or 'не выбран')}</b>\n"
+        f"📍 Берег: <b>{texts.esc(district or 'не выбран')}</b>\n"
         f"Возраст: <b>{int(me['age']) if me and int(me['age'] or 0) else 'не указан'}</b> "
         f"<i>(необязательно)</i>\n"
-        f"Район: <i>необязательно</i>\n"
-        f"🧭 Ищу: <b>{'только свой район' if same else 'весь ' + texts.esc(ctx.cfg.city_short)}</b>\n\n"
+        f"Берег: <i>необязательно</i>\n"
+        f"🧭 Ищу: <b>{'только свой берег' if same else 'весь ' + texts.esc(ctx.cfg.city_short)}</b>\n\n"
         f"{texts.SETTINGS_NOTE}"
     )
     kb = K.settings_keyboard(same, district, ctx.nick)
@@ -127,12 +126,12 @@ async def nick_text(message: Message, ctx: Ctx, state: FSMContext) -> None:
     await settings_screen(ctx)
 
 
-# ---------------------------------------------------------------------------------- район
+# ---------------------------------------------------------------------------------- берег
 @router.callback_query(F.data == "cfg:district:ask")
 async def cb_district_ask(event: CallbackQuery, ctx: Ctx) -> None:
     if await ctx.dialog_locked():
         return
-    await ctx.edit(f"С каким районом {texts.esc(ctx.cfg.city_short)} ты себя ассоциируешь?", K.district_keyboard())
+    await ctx.edit(f"На каком берегу {texts.esc(ctx.cfg.city_short)} ты находишься?", K.district_keyboard())
 
 
 @router.callback_query(F.data.startswith("cfg:district:"))
@@ -141,11 +140,11 @@ async def cb_district(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmak
         return
     key = event.data.split(":", 2)[2]
     await _apply(ctx, db, mm, district=DISTRICTS.get(key, ""))
-    await ctx.ack("Район обновлён")
+    await ctx.ack("Берег обновлён")
     await settings_screen(ctx)
 
 
-# ---------------------------------------------------------------------------------- «только мой район»
+# ---------------------------------------------------------------------------------- «только мой берег»
 @router.callback_query(F.data == "cfg:same:toggle")
 async def cb_same_toggle(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker) -> None:
     if await ctx.dialog_locked():
@@ -153,7 +152,7 @@ async def cb_same_toggle(event: CallbackQuery, ctx: Ctx, db: Database, mm: Match
     me = ctx.me or await db.get_user(ctx.user_id)
     new = 0 if (me and me["same_district"]) else 1
     await _apply(ctx, db, mm, same_district=new)
-    await ctx.ack("Ищем только в своём районе" if new else "Ищем по всему городу")
+    await ctx.ack("Ищем только на своём берегу" if new else "Ищем по всему городу")
     await settings_screen(ctx)
 
 
