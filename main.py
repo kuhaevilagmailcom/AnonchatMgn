@@ -61,6 +61,7 @@ async def janitor(
             mm.drop_stale_ratings()
             removed_games = await db.cleanup_stale_games()
             await db.cleanup_daily_activity()
+            await db.online_peak(mm.queue_size() + mm.online_pairs() * 2)
             METRICS.last_cleanup_at = int(time.time())
             METRICS.janitor_removed_games += int(removed_games)
             paired = await reconcile_queue(bot, cfg, db, mm, pack)
@@ -131,6 +132,10 @@ async def main() -> None:  # pragma: no cover
         mm.restore(saved_matchmaker)
     await database.cleanup_report_context(cfg.report_context_retention_days)
     removed_games = await database.cleanup_stale_games()
+    await database.cleanup_daily_activity()
+    await database.online_peak(mm.queue_size() + mm.online_pairs() * 2)
+    METRICS.last_cleanup_at = int(time.time())
+    METRICS.janitor_removed_games += int(removed_games)
     if removed_games:
         log.info("startup game cleanup: удалено неактивных игр=%s", removed_games)
 
