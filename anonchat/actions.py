@@ -137,7 +137,10 @@ class Ctx:
                     final = result if isinstance(result, Message) else target
                     if isinstance(final, Message):
                         if final.photo:
-                            await self.db.set_kv(key, final.photo[-1].file_id)
+                            new_file_id = final.photo[-1].file_id
+                            if new_file_id != cached:
+                                await self.db.set_kv(key, new_file_id)
+                                cached = new_file_id
                         await _remember_screen(self.bot, self.user_id, final)
                         if live_menu:
                             _LIVE_MENUS[self.user_id] = (
@@ -370,7 +373,10 @@ async def send_screen_to(
         try:
             sent = await bot.send_photo(chat_id, photo, caption=body, reply_markup=markup)
             if db and sent.photo:
-                await db.set_kv(key, sent.photo[-1].file_id)
+                new_file_id = sent.photo[-1].file_id
+                if new_file_id != cached:
+                    await db.set_kv(key, new_file_id)
+                    cached = new_file_id
             return DeliveryResult.DELIVERED
         except TelegramBadRequest as exc:
             if attempt == 0 and pack is not None and pack.accept(exc):
