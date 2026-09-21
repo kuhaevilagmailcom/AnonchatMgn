@@ -587,7 +587,7 @@ async def show_profile(ctx: Ctx) -> None:
         f"Получено за приглашения: <b>{referral_xp} ⭐</b>",
         f"Диалогов: <b>{me['dialogs']}</b>",
         f"👍 {me['good_ratings']}   👎 {me['bad_ratings']}",
-        f"Возраст: <b>{me['age']}</b>",
+        f"Возраст: <b>{me['age'] if int(me['age'] or 0) else 'не указан'}</b>",
         f"Пол: <b>{'👨 М' if me['gender'] == 'm' else '👩 Д' if me['gender'] == 'f' else 'не указан'}</b>",
         f"Берег: <b>{texts.esc(me['district']) if me['district'] else 'не указан'}</b>",
     ]
@@ -636,9 +636,13 @@ async def announce_pair(ctx: Ctx, user_id: int, partner_id: int) -> bool:
     )
     if result is DeliveryResult.UNAVAILABLE:
         return False
-    await send_screen_to(
+    own_result = await send_screen_to(
         ctx.bot, user_id, "03_found.png", texts.MATCHED, found_kb, ctx.pack, ctx.db
     )
+    if own_result is DeliveryResult.UNAVAILABLE:
+        ctx.mm.forget(user_id)
+        await send_to(ctx.bot, partner_id, texts.PARTNER_LEFT, menu_keyboard(), ctx.pack)
+        return False
     return True
 
 
@@ -756,7 +760,7 @@ async def act_connect(ctx: Ctx) -> None:
             markup=menu_keyboard(),
         )
         return
-    await ctx.reply("Не успел никого подобрать — попробуй ещё раз.",
+    await ctx.reply("Не удалось подобрать собеседника. Попробуй ещё раз.",
                     markup=menu_keyboard())
 
 
