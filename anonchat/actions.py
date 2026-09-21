@@ -232,10 +232,11 @@ class Ctx:
             auto = nicklib.auto_nick(self.user_id)
             for salt in range(32):
                 candidate = nicklib.auto_nick(self.user_id + salt * 1_000_003)
-                if not await self.db.nickname_taken(candidate, except_user_id=self.user_id):
+                if await self.db.set_unique_nickname(self.user_id, candidate):
                     auto = candidate
                     break
-            await self.db.set_profile(self.user_id, nickname=auto)
+            else:
+                await self.db.set_profile(self.user_id, nickname=auto)
             self.me = await self.db.get_user(self.user_id)
         return self.nick
 
@@ -741,10 +742,8 @@ async def set_nick(ctx: Ctx, raw: str) -> tuple[bool, str]:
     candidate, error = nicklib.validate(value)
     if error:
         return False, texts.NICK_BAD.format(error=texts.esc(error))
-    if await ctx.db.nickname_taken(candidate, except_user_id=ctx.user_id):
+    if not await ctx.db.set_unique_nickname(ctx.user_id, candidate):
         return False, texts.NICK_TAKEN
-
-    await ctx.db.set_profile(ctx.user_id, nickname=candidate)
     ctx.me = await ctx.db.get_user(ctx.user_id)
     return True, texts.NICK_SAVED.format(nick=texts.esc(candidate))
 
