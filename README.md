@@ -79,7 +79,7 @@ MENU_RATE_LIMIT=60
 
 ## База данных
 
-SQLite обновляется при старте без удаления существующих данных. Основные таблицы: `users`, `admins`, `matches`, `battle_games`, `reports`, `blocks`, `referrals`, `payments`, `kv`. `telegram_payment_charge_id` уникален, поэтому один платёж не обрабатывается повторно. Контекст закрытых жалоб очищается после срока `REPORT_CONTEXT_RETENTION_DAYS`.
+SQLite обновляется при старте без удаления существующих данных. Основные таблицы: `users`, `admins`, `matches`, `battle_games`, `number_game_pairs`, `number_daily_rewards`, `reports`, `blocks`, `referrals`, `payments`, `kv`. `telegram_payment_charge_id` уникален, поэтому один платёж не обрабатывается повторно. Контекст закрытых жалоб очищается после срока `REPORT_CONTEXT_RETENTION_DAYS`.
 
 ## Telegram Stars
 
