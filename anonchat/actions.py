@@ -355,7 +355,7 @@ async def send_to(
             await asyncio.sleep(max(0.0, float(exc.retry_after)))
             continue
         except TelegramForbiddenError:
-            return DeliveryResult.UNAVAILABLE, None
+            return DeliveryResult.UNAVAILABLE
         except TelegramAPIError:
             return DeliveryResult.TEMP_ERROR
     return DeliveryResult.TEMP_ERROR
@@ -392,7 +392,7 @@ async def send_copy_to_message(
         except TelegramRetryAfter as exc:
             await asyncio.sleep(max(0.0, float(exc.retry_after)))
         except TelegramForbiddenError:
-            return DeliveryResult.UNAVAILABLE
+            return DeliveryResult.UNAVAILABLE, None
         except TelegramBadRequest as exc:
             error = str(exc).lower()
             log.warning(
