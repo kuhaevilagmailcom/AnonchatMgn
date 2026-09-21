@@ -889,27 +889,55 @@ class Database:
         await self.db.commit()
         return await self.get_battle(game_id) if cur.rowcount else None
 
+    async def _release_unplayed_number_pair(self, row: Any) -> None:
+        if (
+            str(row["game_type"] or "battle") == "numbers"
+            and str(row["status"]) == "active"
+            and int(row["question_index"] or 0) == 0
+            and int(row["reward_awarded"] or 0) == 1
+        ):
+            low, high = sorted((int(row["user_a"]), int(row["user_b"])))
+            await self.db.execute(
+                "DELETE FROM number_game_pairs WHERE user_low=? AND user_high=?",
+                (low, high),
+            )
+
     async def cancel_battle(self, game_id: int) -> bool:
-        cur = await self.db.execute(
-            "DELETE FROM battle_games WHERE id=? AND status IN ('invited', 'active', 'round_done')",
-            (game_id,),
-        )
-        await self.db.commit()
-        return cur.rowcount > 0
+        async with self._number_reward_lock:
+            row = await self.get_battle(game_id)
+            if row is None or str(row["status"]) not in {"invited", "active", "round_done"}:
+                return False
+            await self._release_unplayed_number_pair(row)
+            cur = await self.db.execute(
+                "DELETE FROM battle_games WHERE id=? AND status IN ('invited', 'active', 'round_done')",
+                (game_id,),
+            )
+            await self.db.commit()
+            return cur.rowcount > 0
 
     async def close_battles_for_users(self, *user_ids: int) -> int:
         ids = sorted({int(user_id) for user_id in user_ids if user_id})
         if not ids:
             return 0
         placeholders = ",".join("?" for _ in ids)
-        cur = await self.db.execute(
-            f"""DELETE FROM battle_games
-                 WHERE status IN ('invited', 'active', 'round_done')
-                   AND (user_a IN ({placeholders}) OR user_b IN ({placeholders}))""",
-            (*ids, *ids),
-        )
-        await self.db.commit()
-        return cur.rowcount
+        params = (*ids, *ids)
+        async with self._number_reward_lock:
+            rows = await self._fetchall(
+                f"""SELECT * FROM battle_games
+                     WHERE status IN ('invited', 'active', 'round_done')
+                       AND (user_a IN ({placeholders}) OR user_b IN ({placeholders}))""",
+                params,
+            )
+            for row in rows:
+                await self._release_unplayed_number_pair(row)
+            cur = await self.db.execute(
+                f"""DELETE FROM battle_games
+                     WHERE status IN ('invited', 'active', 'round_done')
+                       AND (user_a IN ({placeholders}) OR user_b IN ({placeholders}))""",
+                params,
+            )
+            await self.db.commit()
+            return cur.rowcount
 
     async def nickname_taken(self, nickname: str, except_user_id: int = 0) -> int | None:
         """Ник должен быть уникальным — иначе топ превращается в «Аноним, Аноним, Аноним».
