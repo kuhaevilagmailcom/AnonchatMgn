@@ -16,6 +16,7 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import ErrorEvent
 
+from anonchat.actions import refresh_live_menus
 from anonchat.commands import ADMIN_COMMANDS, COMMANDS, register_common
 from anonchat.config import Config
 from anonchat.db import Database
@@ -46,6 +47,18 @@ async def janitor(mm: Matchmaker) -> None:
             raise
         except Exception:  # noqa: BLE001
             log.exception("janitor: что-то пошло не так, продолжаем")
+
+
+async def menu_refresher(bot: Bot, mm: Matchmaker, pack: EmojiPack) -> None:
+    """Обновляет открытые главные меню только при изменении размера очереди."""
+    while True:
+        try:
+            await asyncio.sleep(5)
+            await refresh_live_menus(bot, mm, pack)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            log.exception("menu_refresher: ошибка обновления меню")
 
 
 def build(cfg: Config) -> tuple[Bot, Dispatcher, Database, Matchmaker, EmojiPack]:
@@ -94,10 +107,11 @@ async def main() -> None:  # pragma: no cover
     await database.cleanup_report_context(cfg.report_context_retention_days)
 
     janitor_task: asyncio.Task | None = None
+    menu_task: asyncio.Task | None = None
 
     @dp.startup()
     async def on_startup(bot: Bot) -> None:
-        nonlocal janitor_task
+        nonlocal janitor_task, menu_task
         try:
             await bot.delete_webhook(drop_pending_updates=cfg.drop_pending_updates)
         except TelegramAPIError as exc:
@@ -110,12 +124,15 @@ async def main() -> None:  # pragma: no cover
         else:
             log.warning("Администраторы не настроены.")
         janitor_task = asyncio.create_task(janitor(mm))
+        menu_task = asyncio.create_task(menu_refresher(bot, mm, pack))
 
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
         if janitor_task is not None:
             janitor_task.cancel()
+        if menu_task is not None:
+            menu_task.cancel()
         await database.flush_matchmaker(mm)
         await dp.storage.close()
         await bot.session.close()
