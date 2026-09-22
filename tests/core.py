@@ -95,7 +95,12 @@ def test_levels_progress() -> None:
     gold = rank_for(350)
     assert gold.title == "Свой"
     vip = rank_for(1_000)
-    assert vip.title == "Легенда" and vip.is_max and vip.to_next is None
+    assert vip.title == "Легенда" and not vip.is_max
+    assert vip.to_next == 1_500 and vip.next_title == "Ветеран"
+    assert rank_for(2_500).title == "Ветеран"
+    assert rank_for(5_000).title == "Элита"
+    titan = rank_for(10_000)
+    assert titan.title == "Титан" and titan.is_max and titan.to_next is None
     assert rank_for(99_999_999).index == len(RANKS)
 
     # человекочитаемые числа с неразрывными пробелами
