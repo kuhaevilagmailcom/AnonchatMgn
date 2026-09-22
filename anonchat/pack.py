@@ -61,9 +61,43 @@ class EmojiPack:
         self.enabled = True
         # символ -> (id, чем его показывать внутри тега)
         self._map: dict[str, tuple[str, str]] = {}
+        self._progress_bar: list[tuple[str, str]] = []
         for _name, (emoji_id, canonical, aliases) in PACK.items():
             for glyph in (canonical, *aliases):
                 self._map.setdefault(glyph, (emoji_id, canonical))
+
+    async def load_progress_bar(self, bot, name: str = "progressBarEmoji") -> int:
+        """Загружает отдельный custom-emoji набор только для прогресс-бара профиля."""
+        try:
+            sticker_set = await bot.get_sticker_set(name=name)
+        except Exception:
+            self._progress_bar = []
+            return 0
+
+        sticker_type = getattr(sticker_set, "sticker_type", "")
+        sticker_type = getattr(sticker_type, "value", sticker_type)
+        if sticker_type and str(sticker_type) != "custom_emoji":
+            self._progress_bar = []
+            return 0
+
+        items: list[tuple[str, str]] = []
+        for sticker in getattr(sticker_set, "stickers", ()) or ():
+            custom_id = str(getattr(sticker, "custom_emoji_id", "") or "")
+            glyph = str(getattr(sticker, "emoji", "") or "").strip()
+            if custom_id and glyph:
+                items.append((custom_id, glyph))
+        self._progress_bar = items
+        return len(items)
+
+    def progress_bar(self, progress: float) -> str:
+        """Возвращает один emoji состояния прогресса из progressBarEmoji."""
+        if not self.enabled or not self._progress_bar:
+            return ""
+        value = min(1.0, max(0.0, float(progress or 0.0)))
+        index = min(len(self._progress_bar) - 1, round(value * (len(self._progress_bar) - 1)))
+        emoji_id, glyph = self._progress_bar[index]
+        return f'<tg-emoji emoji-id="{emoji_id}">{glyph}</tg-emoji>'
+
     def known(self) -> int:
         return len(self._map)
 
@@ -85,6 +119,15 @@ class EmojiPack:
         out: list[str] = []
         i, n, budget = 0, len(text), limit
         while i < n:
+            # Уже собранный custom emoji (например progressBarEmoji) не трогаем,
+            # чтобы не получить вложенный <tg-emoji>.
+            if text.startswith("<tg-emoji", i):
+                end = text.find("</tg-emoji>", i)
+                if end != -1:
+                    end += len("</tg-emoji>")
+                    out.append(text[i:end])
+                    i = end
+                    continue
             matched = False
             if budget:
                 for key in keys:
