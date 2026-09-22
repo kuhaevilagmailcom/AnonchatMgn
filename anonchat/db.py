@@ -1971,12 +1971,18 @@ class Database:
 
     # ------------------------------------------------------------------ events / polls
     async def xp_multiplier(self) -> int:
+        """Эффективный множитель: Пн/Ср/Пт по Магнитогорску автоматически не ниже x2."""
         if self._xp_multiplier_cache in {1, 2, 3}:
-            return int(self._xp_multiplier_cache)
-        raw = await self.get_kv("xp_multiplier", "1")
-        value = int(raw) if str(raw).isdigit() and int(raw) in {1, 2, 3} else 1
-        self._xp_multiplier_cache = value
-        return value
+            manual = int(self._xp_multiplier_cache)
+        else:
+            raw = await self.get_kv("xp_multiplier", "1")
+            manual = int(raw) if str(raw).isdigit() and int(raw) in {1, 2, 3} else 1
+            self._xp_multiplier_cache = manual
+
+        # UTC+5: Monday=0, Wednesday=2, Friday=4.
+        mgn_weekday = time.gmtime(now() + REFERRAL_TIMEZONE_OFFSET).tm_wday
+        scheduled = 2 if mgn_weekday in {0, 2, 4} else 1
+        return max(manual, scheduled)
 
     async def set_xp_multiplier(self, value: int) -> int:
         value = int(value)
@@ -1984,7 +1990,7 @@ class Database:
             raise ValueError("Множитель может быть только x1, x2 или x3")
         self._xp_multiplier_cache = value
         await self.set_kv("xp_multiplier", str(value))
-        return value
+        return await self.xp_multiplier()
 
     async def create_poll(
         self, question: str, option_a: str, option_b: str, created_by: int
