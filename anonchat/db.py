@@ -180,6 +180,26 @@ CREATE TABLE IF NOT EXISTS user_engagement (
     number_exact_1000 INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS polls (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    question   TEXT    NOT NULL,
+    option_a   TEXT    NOT NULL,
+    option_b   TEXT    NOT NULL,
+    active     INTEGER NOT NULL DEFAULT 1,
+    created_by INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    closed_at  INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS poll_votes (
+    poll_id    INTEGER NOT NULL,
+    user_id    INTEGER NOT NULL,
+    choice     INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (poll_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS kv (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -189,6 +209,10 @@ CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_reports_target ON reports(target_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_users_xp ON users(xp DESC);
 CREATE INDEX IF NOT EXISTS idx_users_messages ON users(messages DESC);
+CREATE INDEX IF NOT EXISTS idx_users_created ON users(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen DESC);
+CREATE INDEX IF NOT EXISTS idx_polls_active ON polls(active, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_poll_votes_poll_choice ON poll_votes(poll_id, choice);
 CREATE INDEX IF NOT EXISTS idx_matches_recent ON matches(ended_at, user_a, user_b);
 CREATE INDEX IF NOT EXISTS idx_blocks_reverse ON blocks(blocked_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id, created_at);
@@ -267,6 +291,8 @@ class Database:
         self._engagement_lock = asyncio.Lock()
         self._nickname_lock = asyncio.Lock()
         self._admin_permissions_cache: dict[int, tuple[float, frozenset[str]]] = {}
+        self._top_cache: dict[tuple[int, int], tuple[float, list[aiosqlite.Row]]] = {}
+        self._xp_multiplier_cache: int | None = None
 
     # ------------------------------------------------------------------ lifecycle
     async def start(self) -> "Database":
@@ -1640,23 +1666,38 @@ class Database:
         return {key: int(row[key] or 0) for key in row.keys()} if row else {}
 
     async def top_period(self, days: int, limit: int = 10) -> list[aiosqlite.Row]:
-        if int(days) <= 0:
-            return await self.top(limit)
-        start = referral_day_start() - (max(1, int(days)) - 1) * 86_400
-        return await self._fetchall(
-            """SELECT u.user_id, u.nickname, u.support_stars,
-                      SUM(a.xp_earned) AS xp,
-                      SUM(a.dialogs) AS dialogs,
-                      SUM(a.messages) AS messages
-                 FROM daily_activity a
-                 JOIN users u ON u.user_id=a.user_id
-                WHERE a.day_start>=? AND u.banned=0
-                GROUP BY u.user_id
-                HAVING SUM(a.xp_earned) > 0 OR SUM(a.dialogs) > 0 OR SUM(a.messages) > 0
-                ORDER BY SUM(a.xp_earned) DESC, SUM(a.dialogs) DESC, SUM(a.messages) DESC
-                LIMIT ?""",
-            (start, max(1, min(int(limit), 50))),
-        )
+        days = int(days)
+        limit = max(1, min(int(limit), 50))
+        key = (days, limit)
+        cached = self._top_cache.get(key)
+        now_mono = time.monotonic()
+        if cached is not None and now_mono - cached[0] < 45:
+            return cached[1]
+
+        if days <= 0:
+            rows = await self.top(limit)
+        else:
+            start = referral_day_start() - (max(1, days) - 1) * 86_400
+            rows = await self._fetchall(
+                """SELECT u.user_id, u.nickname, u.support_stars,
+                          SUM(a.xp_earned) AS xp,
+                          SUM(a.dialogs) AS dialogs,
+                          SUM(a.messages) AS messages
+                     FROM daily_activity a
+                     JOIN users u ON u.user_id=a.user_id
+                    WHERE a.day_start>=? AND u.banned=0
+                    GROUP BY u.user_id
+                    HAVING SUM(a.xp_earned) > 0 OR SUM(a.dialogs) > 0 OR SUM(a.messages) > 0
+                    ORDER BY SUM(a.xp_earned) DESC, SUM(a.dialogs) DESC, SUM(a.messages) DESC
+                    LIMIT ?""",
+                (start, limit),
+            )
+        self._top_cache[key] = (now_mono, rows)
+        if len(self._top_cache) > 12:
+            self._top_cache = {
+                k: v for k, v in self._top_cache.items() if now_mono - v[0] < 60
+            }
+        return rows
 
     async def update_streak(
         self, user_id: int, timestamp: int | None = None, *, commit: bool = True
@@ -1816,6 +1857,46 @@ class Database:
         await self.db.commit()
         return int(cur.rowcount or 0)
 
+    async def cleanup_service_data(self) -> dict[str, int]:
+        """Редкая безопасная чистка служебной истории, не затрагивающая профили и активные данные."""
+        ts = now()
+        old_matches = await self.db.execute(
+            "DELETE FROM matches WHERE ended_at IS NOT NULL AND ended_at < ?",
+            (ts - 90 * 86_400,),
+        )
+        old_reports = await self.db.execute(
+            """DELETE FROM reports
+               WHERE status='done' AND handled_at IS NOT NULL AND handled_at < ?""",
+            (ts - 90 * 86_400,),
+        )
+        old_poll_ids = [
+            int(row["id"]) for row in await self._fetchall(
+                "SELECT id FROM polls WHERE active=0 AND closed_at IS NOT NULL AND closed_at < ?",
+                (ts - 30 * 86_400,),
+            )
+        ]
+        poll_votes = 0
+        polls = 0
+        if old_poll_ids:
+            for offset in range(0, len(old_poll_ids), 400):
+                chunk = old_poll_ids[offset:offset + 400]
+                marks = ",".join("?" for _ in chunk)
+                cur_votes = await self.db.execute(
+                    f"DELETE FROM poll_votes WHERE poll_id IN ({marks})", tuple(chunk)
+                )
+                cur_polls = await self.db.execute(
+                    f"DELETE FROM polls WHERE id IN ({marks})", tuple(chunk)
+                )
+                poll_votes += int(cur_votes.rowcount or 0)
+                polls += int(cur_polls.rowcount or 0)
+        await self.db.commit()
+        return {
+            "matches": int(old_matches.rowcount or 0),
+            "reports": int(old_reports.rowcount or 0),
+            "polls": polls,
+            "poll_votes": poll_votes,
+        }
+
     async def game_diagnostics(self) -> dict[str, int]:
         cutoff = now() - GAME_INACTIVE_TTL_SECONDS
         row = await self._fetchone(
@@ -1862,6 +1943,9 @@ class Database:
         week = await self._fetchone(
             "SELECT COUNT(*) AS c FROM users WHERE last_seen > ?", (now() - 7 * 86400,)
         )
+        today = await self._fetchone(
+            "SELECT COUNT(*) AS c FROM users WHERE created_at >= ?", (referral_day_start(),)
+        )
         dialogs = await self._fetchone("SELECT COUNT(*) AS c FROM matches")
         msgs = await self._fetchone("SELECT COALESCE(SUM(messages), 0) AS c FROM users")
         open_reports = await self._fetchone(
@@ -1869,6 +1953,7 @@ class Database:
         )
         return {
             "users": int(total["c"]) if total else 0,
+            "new_today": int(today["c"]) if today else 0,
             "active_week": int(week["c"]) if week else 0,
             "dialogs": int(dialogs["c"]) if dialogs else 0,
             "messages": int(msgs["c"]) if msgs else 0,
@@ -1882,6 +1967,108 @@ class Database:
                FROM users WHERE banned = 0
                ORDER BY xp DESC, dialogs DESC, messages DESC LIMIT ?""",
             (limit,),
+        )
+
+    # ------------------------------------------------------------------ events / polls
+    async def xp_multiplier(self) -> int:
+        if self._xp_multiplier_cache in {1, 2, 3}:
+            return int(self._xp_multiplier_cache)
+        raw = await self.get_kv("xp_multiplier", "1")
+        value = int(raw) if str(raw).isdigit() and int(raw) in {1, 2, 3} else 1
+        self._xp_multiplier_cache = value
+        return value
+
+    async def set_xp_multiplier(self, value: int) -> int:
+        value = int(value)
+        if value not in {1, 2, 3}:
+            raise ValueError("Множитель может быть только x1, x2 или x3")
+        self._xp_multiplier_cache = value
+        await self.set_kv("xp_multiplier", str(value))
+        return value
+
+    async def create_poll(
+        self, question: str, option_a: str, option_b: str, created_by: int
+    ) -> int:
+        question = str(question or "").strip()[:250]
+        option_a = str(option_a or "").strip()[:80]
+        option_b = str(option_b or "").strip()[:80]
+        if not question or not option_a or not option_b:
+            raise ValueError("Вопрос и оба варианта обязательны")
+        ts = now()
+        await self.db.execute(
+            "UPDATE polls SET active=0, closed_at=? WHERE active=1", (ts,)
+        )
+        cur = await self.db.execute(
+            """INSERT INTO polls(question, option_a, option_b, active, created_by, created_at)
+               VALUES (?, ?, ?, 1, ?, ?)""",
+            (question, option_a, option_b, int(created_by), ts),
+        )
+        await self.db.commit()
+        return int(cur.lastrowid)
+
+    async def active_poll(self) -> aiosqlite.Row | None:
+        return await self._fetchone(
+            "SELECT * FROM polls WHERE active=1 ORDER BY id DESC LIMIT 1"
+        )
+
+    async def close_active_poll(self) -> bool:
+        cur = await self.db.execute(
+            "UPDATE polls SET active=0, closed_at=? WHERE active=1", (now(),)
+        )
+        await self.db.commit()
+        return bool(cur.rowcount)
+
+    async def vote_poll(self, poll_id: int, user_id: int, choice: int) -> bool:
+        if int(choice) not in {0, 1}:
+            return False
+        poll = await self._fetchone(
+            "SELECT id FROM polls WHERE id=? AND active=1", (int(poll_id),)
+        )
+        if poll is None:
+            return False
+        ts = now()
+        await self.db.execute(
+            """INSERT INTO poll_votes(poll_id, user_id, choice, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(poll_id, user_id) DO UPDATE SET
+                   choice=excluded.choice, updated_at=excluded.updated_at""",
+            (int(poll_id), int(user_id), int(choice), ts, ts),
+        )
+        await self.db.commit()
+        return True
+
+    async def poll_vote_for(self, poll_id: int, user_id: int) -> int | None:
+        row = await self._fetchone(
+            "SELECT choice FROM poll_votes WHERE poll_id=? AND user_id=?",
+            (int(poll_id), int(user_id)),
+        )
+        return int(row["choice"]) if row is not None else None
+
+    async def poll_results(self, poll_id: int) -> dict[str, int]:
+        row = await self._fetchone(
+            """SELECT COUNT(*) AS total,
+                      SUM(CASE WHEN choice=0 THEN 1 ELSE 0 END) AS a,
+                      SUM(CASE WHEN choice=1 THEN 1 ELSE 0 END) AS b
+                 FROM poll_votes WHERE poll_id=?""",
+            (int(poll_id),),
+        )
+        total = int(row["total"] or 0) if row else 0
+        a = int(row["a"] or 0) if row else 0
+        b = int(row["b"] or 0) if row else 0
+        if total <= 0:
+            return {"total": 0, "a": 0, "b": 0, "pct_a": 0, "pct_b": 0}
+        pct_a = round(a * 100 / total)
+        return {"total": total, "a": a, "b": b, "pct_a": pct_a, "pct_b": 100 - pct_a}
+
+    async def poll_voters(self, poll_id: int, limit: int = 200) -> list[aiosqlite.Row]:
+        return await self._fetchall(
+            """SELECT v.user_id, v.choice, v.updated_at,
+                      u.nickname, u.username, u.first_name, u.support_stars
+                 FROM poll_votes v
+                 LEFT JOIN users u ON u.user_id=v.user_id
+                WHERE v.poll_id=?
+                ORDER BY v.updated_at DESC LIMIT ?""",
+            (int(poll_id), max(1, min(int(limit), 500))),
         )
 
     # ------------------------------------------------------------------ kv (id эмодзи пака и пр.)
