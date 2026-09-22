@@ -1990,8 +1990,8 @@ class Database:
         self, question: str, option_a: str, option_b: str, created_by: int
     ) -> int:
         question = str(question or "").strip()[:250]
-        option_a = str(option_a or "").strip()[:80]
-        option_b = str(option_b or "").strip()[:80]
+        option_a = str(option_a or "").strip()[:48]
+        option_b = str(option_b or "").strip()[:48]
         if not question or not option_a or not option_b:
             raise ValueError("Вопрос и оба варианта обязательны")
         ts = now()
