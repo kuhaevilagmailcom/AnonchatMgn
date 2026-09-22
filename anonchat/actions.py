@@ -599,13 +599,12 @@ async def show_top(ctx: Ctx, period: str = "week") -> None:
     }
     days, title = periods.get(period, periods["week"])
     rows = await ctx.db.top_period(days, 10)
-    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     lines = [f"🏆 <b>Топ · {title}</b>", ""]
     if not rows:
         lines.append("Пока пусто.")
     else:
         for i, row in enumerate(rows, start=1):
-            place = ctx.pack.top_flag(i) or medals.get(i, f"<code>{i}</code>")
+            place = ctx.pack.top_flag(i) or f"<code>{i}</code>"
             lines.append(
                 f"{place} <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id']), row['support_stars']))}</b>"
                 f" · <b>{int(row['xp'] or 0)} ⭐</b>"
