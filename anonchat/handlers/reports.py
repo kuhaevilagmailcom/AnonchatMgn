@@ -75,7 +75,7 @@ def _feedback_header(ctx: Ctx, message: Message) -> str:
     username = f"@{message.from_user.username}" if message.from_user and message.from_user.username else "без username"
     first_name = message.from_user.first_name if message.from_user else "-"
     return (
-        "💌 <b>Отзыв / обратная связь</b>\n"
+        "💌 <b>Обратная связь</b>\n"
         f"От: <code>{ctx.user_id}</code> · {texts.esc(username)} · {texts.esc(first_name)}"
     )
 
