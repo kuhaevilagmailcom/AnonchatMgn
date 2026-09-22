@@ -92,6 +92,16 @@ async def relay_to_partner(
         return
     if copied is not None:
         relay_state.remember(ctx.user_id, message.message_id, partner, copied.message_id)
+
+    # x2/x3 не пишет SQLite на каждое сообщение: бонус копится в RAM диалога
+    # и начисляется одним запросом при завершении.
+    multiplier = await ctx.db.xp_multiplier()
+    if multiplier > 1 and _sent <= max(0, int(cfg.xp_message_cap)):
+        mm.add_bonus_xp(
+            ctx.user_id,
+            (multiplier - 1) * max(0, int(cfg.xp_per_message)),
+        )
+
     if message.text:
         mm.record_text(ctx.user_id, message.text)
     await enqueue_chat_monitor(message, ctx, partner)
