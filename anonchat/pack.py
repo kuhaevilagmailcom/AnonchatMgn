@@ -100,47 +100,39 @@ class EmojiPack:
         return f'<tg-emoji emoji-id="{emoji_id}">{glyph}</tg-emoji>'
 
     async def load_top_flags(self, bot, name: str = "FestiveFlags") -> int:
-        """Загружает FestiveFlags отдельно и использует его только в экране топа."""
-        try:
-            sticker_set = await bot.get_sticker_set(name=name)
-        except Exception:
-            self._top_flags = {}
-            return 0
-
-        sticker_type = getattr(sticker_set, "sticker_type", "")
-        sticker_type = getattr(sticker_type, "value", sticker_type)
-        if sticker_type and str(sticker_type) != "custom_emoji":
-            self._top_flags = {}
-            return 0
-
-        digit_glyphs = {
-            "1": 1, "1️⃣": 1,
-            "2": 2, "2️⃣": 2,
-            "3": 3, "3️⃣": 3,
-            "4": 4, "4️⃣": 4,
-            "5": 5, "5️⃣": 5,
-            "6": 6, "6️⃣": 6,
-            "7": 7, "7️⃣": 7,
-            "8": 8, "8️⃣": 8,
-            "9": 9, "9️⃣": 9,
-            "10": 10, "🔟": 10,
+        """FestiveFlags для топа: используем только фиксированные ID мест 1–10."""
+        self._top_flags = {
+            1: ("5461033346152804686", "1"),
+            2: ("5469622950032321924", "2"),
+            3: ("5460917699863393660", "3"),
+            4: ("5188675391010645868", "4"),
+            5: ("5190762616267485914", "5"),
+            6: ("5469750759669118937", "6"),
+            7: ("5469710391271501767", "7"),
+            8: ("5469662901818108143", "8"),
+            9: ("5474619534595862352", "9"),
+            0: ("5458531398853865378", "0"),
         }
-        items: dict[int, tuple[str, str]] = {}
-        for sticker in getattr(sticker_set, "stickers", ()) or ():
-            custom_id = str(getattr(sticker, "custom_emoji_id", "") or "")
-            glyph = str(getattr(sticker, "emoji", "") or "").strip()
-            place = digit_glyphs.get(glyph)
-            if custom_id and place is not None:
-                items[place] = (custom_id, str(place))
-        self._top_flags = items
-        return len(items)
+        return 10
 
     def top_flag(self, place: int) -> str:
-        """Цифровой custom emoji 1–10 из FestiveFlags; буквенные элементы игнорируются."""
+        """Цифровые custom emoji мест. Для 10 выводим отдельные custom emoji 1 и 0."""
         number = int(place)
-        if not self.enabled or number not in self._top_flags:
+        if not self.enabled:
             return ""
-        emoji_id, glyph = self._top_flags[number]
+        if number == 10:
+            one = self._top_flags.get(1)
+            zero = self._top_flags.get(0)
+            if not one or not zero:
+                return ""
+            return (
+                f'<tg-emoji emoji-id="{one[0]}">{one[1]}</tg-emoji>'
+                f'<tg-emoji emoji-id="{zero[0]}">{zero[1]}</tg-emoji>'
+            )
+        item = self._top_flags.get(number)
+        if not item:
+            return ""
+        emoji_id, glyph = item
         return f'<tg-emoji emoji-id="{emoji_id}">{glyph}</tg-emoji>'
 
     def known(self) -> int:
