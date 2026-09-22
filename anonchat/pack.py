@@ -17,7 +17,11 @@
 
 from __future__ import annotations
 
+import logging
 import re
+from collections.abc import Iterable
+
+log = logging.getLogger(__name__)
 
 TG_EMOJI_OPEN = re.compile(r"<tg-emoji[^>]*>")
 TG_EMOJI_CLOSE = re.compile(r"</tg-emoji>")
@@ -54,6 +58,31 @@ PACK: dict[str, tuple[str, str, tuple[str, ...]]] = {
 #: имя -> id, для кнопок (icon_custom_emoji_id)
 ICONS: dict[str, str] = {name: emoji_id for name, (emoji_id, _, _) in PACK.items()}
 
+DEFAULT_EXTRA_PACKS: tuple[str, ...] = (
+    "TgAndroidIcons",
+    "CryptoGIFTPODARKI",
+    "progressBarEmoji",
+)
+
+# semantic icon name -> canonical fallback glyph from PACK
+_CANONICAL_BY_NAME: dict[str, str] = {
+    name: canonical for name, (_emoji_id, canonical, _aliases) in PACK.items()
+}
+
+
+def _sticker_glyphs(sticker) -> tuple[str, ...]:
+    values: list[str] = []
+    emoji = str(getattr(sticker, "emoji", "") or "").strip()
+    if emoji:
+        values.append(emoji)
+    # Telegram may expose additional emoji variants in emoji_list.
+    for item in getattr(sticker, "emoji_list", None) or ():
+        value = str(item or "").strip()
+        if value and value not in values:
+            values.append(value)
+    return tuple(values)
+
+
 
 class EmojiPack:
     def __init__(self, url: str = "") -> None:
@@ -64,6 +93,48 @@ class EmojiPack:
         for _name, (emoji_id, canonical, aliases) in PACK.items():
             for glyph in (canonical, *aliases):
                 self._map.setdefault(glyph, (emoji_id, canonical))
+
+    def register_sticker_set(self, stickers: Iterable[object], *, override: bool = True) -> int:
+        """Добавляет custom emoji из Telegram StickerSet в RAM.
+
+        В текстах подмена идёт по стандартному emoji, указанному у sticker.
+        Для кнопок semantic-иконка обновляется только если glyph совпадает с
+        каноническим знаком уже известной иконки.
+        """
+        added = 0
+        canonical_to_names: dict[str, list[str]] = {}
+        for name, canonical in _CANONICAL_BY_NAME.items():
+            canonical_to_names.setdefault(canonical, []).append(name)
+
+        for sticker in stickers:
+            custom_id = str(getattr(sticker, "custom_emoji_id", "") or "")
+            if not custom_id:
+                continue
+            for glyph in _sticker_glyphs(sticker):
+                if override or glyph not in self._map:
+                    self._map[glyph] = (custom_id, glyph)
+                    added += 1
+                for name in canonical_to_names.get(glyph, ()):
+                    if override or name not in ICONS:
+                        ICONS[name] = custom_id
+        return added
+
+    async def load_sticker_sets(self, bot, names: Iterable[str] = DEFAULT_EXTRA_PACKS) -> int:
+        """Загружает наборы один раз при старте; при ошибке остаётся fallback PACK."""
+        total = 0
+        for name in names:
+            try:
+                sticker_set = await bot.get_sticker_set(name=name)
+            except Exception as exc:  # Telegram/API failure must not block bot startup
+                log.warning("emoji pack %s не загрузился: %s", name, exc)
+                continue
+            if str(getattr(sticker_set, "sticker_type", "")) != "custom_emoji":
+                log.warning("emoji pack %s не custom_emoji — пропускаю", name)
+                continue
+            count = self.register_sticker_set(getattr(sticker_set, "stickers", ()))
+            total += count
+            log.info("emoji pack %s: подключено %s emoji", name, count)
+        return total
     def known(self) -> int:
         return len(self._map)
 
