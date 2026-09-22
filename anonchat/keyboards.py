@@ -40,6 +40,7 @@ CB_STREAK = "profile:streak"
 CB_QUESTS = "profile:quests"
 CB_REFERRAL = "profile:ref"
 CB_ONLINE = "cfg:online"
+CB_POLL = "poll:open"
 
 
 #: Bot API принимает только эти три цвета кнопки («warning» отвергает — проверено живьём)
@@ -67,7 +68,9 @@ def _button(
 CB_ADMIN_PANEL = "adm:panel"
 
 
-def menu_keyboard(status: str = "free", queue_size: int = 0, admin: bool = False) -> InlineKeyboardMarkup:
+def menu_keyboard(
+    status: str = "free", queue_size: int = 0, admin: bool = False, poll_active: bool = False
+) -> InlineKeyboardMarkup:
     """Главное меню.
 
     В диалоге оставляем только действия диалога: профиль/настройки во время
@@ -93,9 +96,11 @@ def menu_keyboard(status: str = "free", queue_size: int = 0, admin: bool = False
     _button(b, "Профиль", callback_data=CB_PROFILE, icon="profile")
     _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
     _button(b, "Топ", callback_data=CB_TOP, icon="stats")
+    if poll_active:
+        _button(b, "Опрос", callback_data=CB_POLL, icon="ticket", style="primary")
     _button(b, "Правила", callback_data=CB_RULES, icon="ticket")
     _button(b, "Помощь", callback_data=CB_HELP, icon="support")
-    rows = [1, 2, 2, 1]
+    rows = [1, 2, 2, 1] if not poll_active else [1, 2, 2, 2]
     if admin:
         _button(b, "Панель модератора", callback_data=CB_ADMIN_PANEL, icon="bonus", style="primary")
         rows.append(1)
@@ -471,6 +476,8 @@ CB_PANEL_MONITOR = "adm:panel:monitor"
 CB_PANEL_GAMES = "adm:panel:games"
 CB_PANEL_BACKUP = "adm:panel:backup"
 CB_PANEL_DIAGNOSTICS = "adm:panel:diagnostics"
+CB_PANEL_MULTIPLIER = "adm:panel:xp"
+CB_PANEL_POLL = "adm:panel:poll"
 CB_PANEL_BACK = "adm:panel:back"
 
 
@@ -479,6 +486,8 @@ def admin_panel_keyboard(
     permissions: frozenset[str] | set[str] | None = None,
     owner: bool = False,
     monitor_enabled: bool = False,
+    xp_multiplier: int = 1,
+    poll_active: bool = False,
 ) -> InlineKeyboardMarkup:
     """Панель модератора: никаких команд в счёт, всё кнопками."""
     b = InlineKeyboardBuilder()
@@ -511,6 +520,16 @@ def admin_panel_keyboard(
     if "points" in permissions:
         _button(b, "Выдать / снять очки", callback_data=CB_PANEL_POINTS, icon="stars")
     if owner:
+        _button(
+            b, f"Множитель: x{int(xp_multiplier)}",
+            callback_data=CB_PANEL_MULTIPLIER, icon="stars",
+            style="success" if int(xp_multiplier) > 1 else "primary",
+        )
+        _button(
+            b, f"Опрос дня{' · ВКЛ' if poll_active else ''}",
+            callback_data=CB_PANEL_POLL, icon="ticket",
+            style="success" if poll_active else "primary",
+        )
         _button(b, "Администраторы", callback_data=CB_PANEL_ADMINS, icon="bonus", style="primary")
         _button(b, "Скачать базу", callback_data=CB_PANEL_BACKUP, icon="link", style="primary")
     if owner or "monitor" in permissions:
@@ -524,6 +543,51 @@ def admin_panel_keyboard(
         )
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
     b.adjust(2)
+    return b.as_markup()
+
+
+def xp_multiplier_keyboard(current: int = 1) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for value in (1, 2, 3):
+        _button(
+            b, f"• x{value}" if value == int(current) else f"x{value}",
+            callback_data=f"adm:panel:xp:{value}",
+            icon="stars",
+            style="success" if value == int(current) else "",
+        )
+    _button(b, "В панель", callback_data=CB_PANEL_BACK, icon="home")
+    b.adjust(3, 1)
+    return b.as_markup()
+
+
+def admin_poll_keyboard(active: bool = False) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Создать новый", callback_data="adm:panel:poll:create", icon="add", style="success")
+    if active:
+        _button(b, "Кто голосовал", callback_data="adm:panel:poll:voters", icon="view")
+        _button(b, "Закрыть опрос", callback_data="adm:panel:poll:close", icon="delete", style="danger")
+    _button(b, "В панель", callback_data=CB_PANEL_BACK, icon="home")
+    b.adjust(1, 1, 1, 1)
+    return b.as_markup()
+
+
+def poll_keyboard(
+    poll_id: int, option_a: str, option_b: str, pct_a: int, pct_b: int,
+    selected: int | None = None,
+) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(
+        b, f"{option_a} · {pct_a}%",
+        callback_data=f"poll:vote:{int(poll_id)}:0",
+        style="success" if selected == 0 else "primary",
+    )
+    _button(
+        b, f"{option_b} · {pct_b}%",
+        callback_data=f"poll:vote:{int(poll_id)}:1",
+        style="success" if selected == 1 else "primary",
+    )
+    _button(b, "Назад", callback_data=CB_MENU, icon="home")
+    b.adjust(1, 1, 1)
     return b.as_markup()
 
 
