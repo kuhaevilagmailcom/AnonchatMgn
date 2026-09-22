@@ -62,6 +62,7 @@ class EmojiPack:
         # символ -> (id, чем его показывать внутри тега)
         self._map: dict[str, tuple[str, str]] = {}
         self._progress_bar: list[tuple[str, str]] = []
+        self._top_flags: list[tuple[str, str]] = []
         for _name, (emoji_id, canonical, aliases) in PACK.items():
             for glyph in (canonical, *aliases):
                 self._map.setdefault(glyph, (emoji_id, canonical))
@@ -96,6 +97,37 @@ class EmojiPack:
         value = min(1.0, max(0.0, float(progress or 0.0)))
         index = min(len(self._progress_bar) - 1, round(value * (len(self._progress_bar) - 1)))
         emoji_id, glyph = self._progress_bar[index]
+        return f'<tg-emoji emoji-id="{emoji_id}">{glyph}</tg-emoji>'
+
+    async def load_top_flags(self, bot, name: str = "FestiveFlags") -> int:
+        """Загружает FestiveFlags отдельно и использует его только в экране топа."""
+        try:
+            sticker_set = await bot.get_sticker_set(name=name)
+        except Exception:
+            self._top_flags = []
+            return 0
+
+        sticker_type = getattr(sticker_set, "sticker_type", "")
+        sticker_type = getattr(sticker_type, "value", sticker_type)
+        if sticker_type and str(sticker_type) != "custom_emoji":
+            self._top_flags = []
+            return 0
+
+        items: list[tuple[str, str]] = []
+        for sticker in getattr(sticker_set, "stickers", ()) or ():
+            custom_id = str(getattr(sticker, "custom_emoji_id", "") or "")
+            glyph = str(getattr(sticker, "emoji", "") or "").strip()
+            if custom_id and glyph:
+                items.append((custom_id, glyph))
+        self._top_flags = items
+        return len(items)
+
+    def top_flag(self, place: int) -> str:
+        """Custom emoji для места в топе; за пределами набора отдаёт пустую строку."""
+        index = max(0, int(place) - 1)
+        if not self.enabled or index >= len(self._top_flags):
+            return ""
+        emoji_id, glyph = self._top_flags[index]
         return f'<tg-emoji emoji-id="{emoji_id}">{glyph}</tg-emoji>'
 
     def known(self) -> int:
