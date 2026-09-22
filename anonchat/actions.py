@@ -297,9 +297,12 @@ def online_count(mm: Matchmaker | None = None) -> int:
     return presence_online_count()
 
 
-async def refresh_live_menus(bot: Bot, mm: Matchmaker, pack: EmojiPack | None = None) -> None:
+async def refresh_live_menus(
+    bot: Bot, mm: Matchmaker, pack: EmojiPack | None = None, db: Database | None = None
+) -> None:
     """Редко обновляет только свежие главные меню, не устраивая массовый edit-шторм."""
     size = online_count(mm)
+    poll_active = bool(await db.active_poll()) if db is not None else False
     now_mono = time.monotonic()
     edited = 0
     for user_id, item in list(_LIVE_MENUS.items()):
@@ -320,7 +323,7 @@ async def refresh_live_menus(bot: Bot, mm: Matchmaker, pack: EmojiPack | None = 
             f"{texts.STATUS_FREE}\n\n"
             f"🟢 Онлайн сейчас: <b>{size}</b>"
         )
-        markup = menu_keyboard("free", size, admin=is_admin)
+        markup = menu_keyboard("free", size, admin=is_admin, poll_active=poll_active)
         for attempt in range(2):
             wrapped = pack.wrap(body) if pack and attempt == 0 else (pack.strip(body) if pack else body)
             try:
@@ -568,7 +571,10 @@ async def show_menu(ctx: Ctx) -> None:
         f"{state}\n\n"
         f"🟢 Онлайн сейчас: <b>{online_count(ctx.mm)}</b>"
     )
-    kb = menu_keyboard(status, ctx.mm.queue_size(), admin=ctx.is_admin)
+    poll_active = bool(await ctx.db.active_poll()) if status == "free" else False
+    kb = menu_keyboard(
+        status, ctx.mm.queue_size(), admin=ctx.is_admin, poll_active=poll_active
+    )
     image = {"paired": "03_found.png", "queued": "02_search.png"}.get(status, "01_main_menu.png")
     await ctx.render_screen(image, body, kb, live_menu=(status == "free"))
 
