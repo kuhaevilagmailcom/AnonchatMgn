@@ -62,7 +62,7 @@ class EmojiPack:
         # символ -> (id, чем его показывать внутри тега)
         self._map: dict[str, tuple[str, str]] = {}
         self._progress_bar: list[tuple[str, str]] = []
-        self._top_flags: list[tuple[str, str]] = []
+        self._top_flags: dict[int, tuple[str, str]] = {}
         for _name, (emoji_id, canonical, aliases) in PACK.items():
             for glyph in (canonical, *aliases):
                 self._map.setdefault(glyph, (emoji_id, canonical))
@@ -113,21 +113,34 @@ class EmojiPack:
             self._top_flags = []
             return 0
 
-        items: list[tuple[str, str]] = []
+        digit_glyphs = {
+            "1": 1, "1️⃣": 1,
+            "2": 2, "2️⃣": 2,
+            "3": 3, "3️⃣": 3,
+            "4": 4, "4️⃣": 4,
+            "5": 5, "5️⃣": 5,
+            "6": 6, "6️⃣": 6,
+            "7": 7, "7️⃣": 7,
+            "8": 8, "8️⃣": 8,
+            "9": 9, "9️⃣": 9,
+            "10": 10, "🔟": 10,
+        }
+        items: dict[int, tuple[str, str]] = {}
         for sticker in getattr(sticker_set, "stickers", ()) or ():
             custom_id = str(getattr(sticker, "custom_emoji_id", "") or "")
             glyph = str(getattr(sticker, "emoji", "") or "").strip()
-            if custom_id and glyph:
-                items.append((custom_id, glyph))
+            place = digit_glyphs.get(glyph)
+            if custom_id and place is not None:
+                items[place] = (custom_id, str(place))
         self._top_flags = items
         return len(items)
 
     def top_flag(self, place: int) -> str:
-        """Custom emoji для места в топе; за пределами набора отдаёт пустую строку."""
-        index = max(0, int(place) - 1)
-        if not self.enabled or index >= len(self._top_flags):
+        """Цифровой custom emoji 1–10 из FestiveFlags; буквенные элементы игнорируются."""
+        number = int(place)
+        if not self.enabled or number not in self._top_flags:
             return ""
-        emoji_id, glyph = self._top_flags[index]
+        emoji_id, glyph = self._top_flags[number]
         return f'<tg-emoji emoji-id="{emoji_id}">{glyph}</tg-emoji>'
 
     def known(self) -> int:
