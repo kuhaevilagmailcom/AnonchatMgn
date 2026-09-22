@@ -151,6 +151,9 @@ async def main() -> None:  # pragma: no cover
         except TelegramAPIError as exc:
             log.warning("delete_webhook не сработал: %s", exc)
         await register_commands(bot, cfg)
+        loaded_emoji = await pack.load_sticker_sets(bot)
+        if loaded_emoji:
+            log.info("custom emoji: динамически подключено %s вариантов", loaded_emoji)
         me = await bot.get_me()
         log.info("Анонимный чат %s запущен: @%s (id=%s)", cfg.city_short, me.username, me.id)
         if cfg.admin_ids:
