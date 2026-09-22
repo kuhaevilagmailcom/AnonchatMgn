@@ -168,7 +168,7 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
     history = dialog.get("history", []) or []
     context = "\n".join(
         f"— {'жалующийся' if int(uid) == ctx.user_id else 'собеседник'}: {text}"
-        for uid, text in history[-10:]
+        for uid, text in history[-6:]
     )
     report_id, day_count = await db.add_report(
         ctx.user_id, partner, reason, comment, dialog_key=dialog_key, context=context
