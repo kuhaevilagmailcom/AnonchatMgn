@@ -915,6 +915,19 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
     await _send_progress_notices(ctx, partner)
 
 
+def _queued_search_text(ctx: Ctx, pos: int) -> str:
+    body = texts.QUEUED.format(
+        city=texts.esc(ctx.cfg.city),
+        pos=max(1, int(pos)),
+        size=ctx.mm.queue_size(),
+    )
+    # Онлайн — люди, взаимодействовавшие с ботом за последние 5 минут.
+    # Предупреждение нужно только при реально небольшом количестве людей.
+    if online_count(ctx.mm) < 10:
+        body += f"\n\n<i>{texts.LOW_ONLINE_NOTICE}</i>"
+    return body
+
+
 async def act_connect(ctx: Ctx) -> None:
     await ctx.ack()
     if await ctx.restricted():
@@ -927,8 +940,7 @@ async def act_connect(ctx: Ctx) -> None:
     if status == "queued":
         await ctx.render_screen(
             "02_search.png",
-            texts.QUEUED.format(city=texts.esc(ctx.cfg.city), pos=ctx.mm.position(ctx.user_id) or 1,
-                                size=ctx.mm.queue_size()),
+            _queued_search_text(ctx, ctx.mm.position(ctx.user_id) or 1),
             menu_keyboard("queued", ctx.mm.queue_size()),
         )
         return
@@ -948,8 +960,7 @@ async def act_connect(ctx: Ctx) -> None:
         if outcome == "queued":
             await ctx.render_screen(
                 "02_search.png",
-                texts.QUEUED.format(city=texts.esc(ctx.cfg.city), pos=payload or 1,
-                                    size=ctx.mm.queue_size()),
+                _queued_search_text(ctx, payload or 1),
                 menu_keyboard("queued", ctx.mm.queue_size()),
             )
             return
