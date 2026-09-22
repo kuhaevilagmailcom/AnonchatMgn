@@ -56,6 +56,7 @@ async def janitor(
     bot: Bot, cfg: Config, db: Database, mm: Matchmaker, pack: EmojiPack
 ) -> None:
     """Подчищает устаревшее состояние и регулярно пересобирает возможные пары."""
+    last_maintenance = 0.0
     while True:
         try:
             await asyncio.sleep(60)
@@ -63,6 +64,10 @@ async def janitor(
             removed_games = await db.cleanup_stale_games()
             await db.cleanup_daily_activity()
             await db.online_peak(presence_online_count())
+            if time.time() - last_maintenance >= 3600:
+                await db.cleanup_report_context(cfg.report_context_retention_days)
+                await db.cleanup_service_data()
+                last_maintenance = time.time()
             METRICS.last_cleanup_at = int(time.time())
             METRICS.janitor_removed_games += int(removed_games)
             paired = await reconcile_queue(bot, cfg, db, mm, pack)
@@ -76,7 +81,9 @@ async def janitor(
             log.exception("janitor: что-то пошло не так, продолжаем")
 
 
-async def menu_refresher(bot: Bot, mm: Matchmaker, pack: EmojiPack, db: Database) -> None:
+async def menu_refresher(
+    bot: Bot, mm: Matchmaker, pack: EmojiPack, db: Database | None = None
+) -> None:
     """Редко обновляет только свежие открытые главные меню."""
     while True:
         try:
@@ -134,6 +141,7 @@ async def main() -> None:  # pragma: no cover
     await database.cleanup_report_context(cfg.report_context_retention_days)
     removed_games = await database.cleanup_stale_games()
     await database.cleanup_daily_activity()
+    await database.cleanup_service_data()
     await database.online_peak(presence_online_count())
     METRICS.last_cleanup_at = int(time.time())
     METRICS.janitor_removed_games += int(removed_games)
