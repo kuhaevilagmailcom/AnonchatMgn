@@ -42,6 +42,7 @@ class Pair:
     counts: dict[int, int] = field(default_factory=dict)
     history: list[tuple[int, str]] = field(default_factory=list)
     game_stats: dict[str, int] = field(default_factory=dict)
+    bonus_xp: dict[int, int] = field(default_factory=dict)
 
     def partner_of(self, user_id: int) -> int:
         return self.b if user_id == self.a else self.a
@@ -254,6 +255,7 @@ class Matchmaker:
             "started_at": pair.started_at,
             "total": pair.total,
             "game_stats": dict(pair.game_stats),
+            "bonus_xp": dict(pair.bonus_xp),
         }
         return partner, summary
 
@@ -285,6 +287,15 @@ class Matchmaker:
         pair.counts[user_id] = max(0, current - 1)
         self._touch_persistence()
 
+    def add_bonus_xp(self, user_id: int, amount: int) -> None:
+        """Копит бонус x2/x3 в RAM; в SQLite он попадёт одним начислением при закрытии диалога."""
+        pair = self._pairs.get(user_id)
+        amount = max(0, int(amount))
+        if pair is None or amount <= 0:
+            return
+        pair.bonus_xp[user_id] = pair.bonus_xp.get(user_id, 0) + amount
+        self._touch_persistence()
+
     def dialog_stats(self, user_id: int) -> dict:
         pair = self._pairs.get(user_id)
         if pair is None:
@@ -301,8 +312,8 @@ class Matchmaker:
         pair = self._pairs.get(user_id)
         if pair is None or not text:
             return
-        pair.history.append((user_id, text[:500]))
-        del pair.history[:-10]
+        pair.history.append((user_id, text[:350]))
+        del pair.history[:-6]
 
     def record_game(
         self, user_id: int, kind: str, matches: int = 0, total: int = 0
@@ -379,6 +390,7 @@ class Matchmaker:
                 "a": pair.a, "b": pair.b, "started_at": pair.started_at,
                 "counts": pair.counts,
                 "game_stats": pair.game_stats,
+                "bonus_xp": pair.bonus_xp,
             })
         return {
             "queue": [
@@ -419,6 +431,7 @@ class Matchmaker:
                 counts={int(uid): int(count) for uid, count in dict(item.get("counts", {})).items()},
                 history=[],
                 game_stats={str(k): int(v) for k, v in dict(item.get("game_stats", {})).items()},
+                bonus_xp={int(uid): int(value) for uid, value in dict(item.get("bonus_xp", {})).items()},
             )
             self._pairs[pair.a] = pair
             self._pairs[pair.b] = pair
