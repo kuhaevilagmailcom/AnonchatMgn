@@ -77,6 +77,7 @@ async def stats_text(db: Database, mm: Matchmaker, cfg: Config) -> str:
     return (
         f"📈 <b>Анончат {texts.esc(cfg.city_short)} · сводка</b>\n\n"
         f"👥 Пользователей: <b>{s['users']}</b>\n"
+        f"🆕 Пришло сегодня: <b>{s['new_today']}</b>\n"
         f"🟢 Активны за 7 дней: <b>{s['active_week']}</b>\n"
         f"💬 Диалогов сыграно: <b>{s['dialogs']}</b>\n"
         f"✉️ Сообщений переслано: <b>{s['messages']}</b>\n"
@@ -320,6 +321,42 @@ async def admins_text(db: Database, owner_ids: tuple[int, ...]) -> str:
     return "\n".join(lines)
 
 
+async def poll_admin_text(db: Database) -> str:
+    poll = await db.active_poll()
+    if poll is None:
+        return "📊 <b>Опрос дня</b>\n\nСейчас активного опроса нет."
+    results = await db.poll_results(int(poll["id"]))
+    return (
+        "📊 <b>Опрос дня · активен</b>\n\n"
+        f"{texts.esc(poll['question'])}\n\n"
+        f"1. {texts.esc(poll['option_a'])} — <b>{results['pct_a']}%</b>\n"
+        f"2. {texts.esc(poll['option_b'])} — <b>{results['pct_b']}%</b>\n\n"
+        f"Всего голосов: <b>{results['total']}</b>"
+    )
+
+
+async def poll_voters_text(db: Database) -> str:
+    poll = await db.active_poll()
+    if poll is None:
+        return "Активного опроса нет."
+    rows = await db.poll_voters(int(poll["id"]), 100)
+    lines = ["👀 <b>Кто как проголосовал</b>", ""]
+    for row in rows:
+        uid = int(row["user_id"])
+        nick = nicklib.display(row["nickname"] or "", uid, int(row["support_stars"] or 0))
+        username = f"@{row['username']}" if row["username"] else "без username"
+        answer = poll["option_a"] if int(row["choice"]) == 0 else poll["option_b"]
+        lines.append(
+            f"<code>{uid}</code> · <b>{texts.esc(nick)}</b> · {texts.esc(username)}\n"
+            f"↳ {texts.esc(answer)}"
+        )
+    if not rows:
+        lines.append("Пока никто не проголосовал.")
+    if len(rows) >= 100:
+        lines += ["", "<i>Показаны последние 100 голосов.</i>"]
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------------- санкции
 async def do_ban(ctx: Ctx, db: Database, mm: Matchmaker, cfg: Config, uid: int, reason: str) -> str:
     await db.set_ban(uid, True, reason)
@@ -391,15 +428,20 @@ class AdminStates(StatesGroup):
 async def panel_screen(ctx: Ctx, db: Database, mm: Matchmaker, edit: bool = True) -> None:
     await db.cleanup_report_context(ctx.cfg.report_context_retention_days)
     s = await db.stats()
+    multiplier = await db.xp_multiplier()
+    active_poll = await db.active_poll()
     body = (
         f"{texts.PANEL_TITLE.format(city=texts.esc(ctx.cfg.city))}\n\n"
-        f"👥 {s['users']} · 🟢 {s['active_week']} · ⏳ {mm.queue_size()} · 💬 {mm.online_pairs()}\n"
+        f"👥 {s['users']} · 🆕 сегодня {s['new_today']} · 🟢 {s['active_week']}\n"
+        f"⏳ {mm.queue_size()} · 💬 {mm.online_pairs()} · ⭐ x{multiplier}\n"
         f"🚩 открытых жалоб: <b>{s['open_reports']}</b>\n\n"
         f"{texts.PANEL_NOTE}"
     )
     kb = K.admin_panel_keyboard(
         int(s["open_reports"]), ctx.admin_permissions, owner=ctx.is_owner,
         monitor_enabled=await db.get_kv(f"chat_monitor:{ctx.user_id}") == "1",
+        xp_multiplier=multiplier,
+        poll_active=active_poll is not None,
     )
     if edit and await ctx.edit(body, kb):
         return
@@ -651,6 +693,47 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         await ctx.ack("Не для тебя", alert=True)
         return
     data = event.data or ""
+
+    if data.startswith("adm:panel:xp:"):
+        if not ctx.is_owner:
+            await ctx.ack("Только для владельца", alert=True)
+            return
+        raw = data.rsplit(":", 1)[-1]
+        if raw not in {"1", "2", "3"}:
+            await ctx.ack("Кнопка устарела", alert=True)
+            return
+        value = await db.set_xp_multiplier(int(raw))
+        await ctx.ack(f"Множитель x{value} включён")
+        await ctx.edit(
+            f"⭐ <b>Множитель очков за сообщения</b>\n\nСейчас: <b>x{value}</b>",
+            K.xp_multiplier_keyboard(value),
+        )
+        return
+
+    if data.startswith("adm:panel:poll:"):
+        if not ctx.is_owner:
+            await ctx.ack("Только для владельца", alert=True)
+            return
+        action = data.rsplit(":", 1)[-1]
+        if action == "create":
+            await state.set_state(AdminStates.await_input)
+            await state.update_data(adm="poll_question")
+            await ctx.edit(
+                "📊 <b>Новый опрос</b>\n\nПришли вопрос одним сообщением.",
+                K.panel_cancel_keyboard(),
+            )
+            await ctx.ack()
+            return
+        if action == "close":
+            closed = await db.close_active_poll()
+            await ctx.ack("Опрос закрыт" if closed else "Активного опроса нет")
+            await ctx.edit(await poll_admin_text(db), K.admin_poll_keyboard(False))
+            return
+        if action == "voters":
+            await ctx.ack()
+            await ctx.edit(await poll_voters_text(db), K.admin_poll_keyboard(True))
+            return
+
     required = {
         K.CB_PANEL_STATS: "stats",
         K.CB_PANEL_DIAGNOSTICS: "stats",
@@ -676,6 +759,26 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         return
     if data == K.CB_PANEL_BACKUP and not ctx.is_owner:
         await ctx.ack("Только для владельца", alert=True)
+        return
+    if data == K.CB_PANEL_MULTIPLIER:
+        if not ctx.is_owner:
+            await ctx.ack("Только для владельца", alert=True)
+            return
+        value = await db.xp_multiplier()
+        await ctx.ack()
+        await ctx.edit(
+            f"⭐ <b>Множитель очков за сообщения</b>\n\nСейчас: <b>x{value}</b>\n"
+            "x2/x3 действует только на сообщения, отправленные пока событие включено.",
+            K.xp_multiplier_keyboard(value),
+        )
+        return
+    if data == K.CB_PANEL_POLL:
+        if not ctx.is_owner:
+            await ctx.ack("Только для владельца", alert=True)
+            return
+        poll = await db.active_poll()
+        await ctx.ack()
+        await ctx.edit(await poll_admin_text(db), K.admin_poll_keyboard(poll is not None))
         return
     if data == K.CB_PANEL_BACK:
         await state.clear()
@@ -778,6 +881,46 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
     data = await state.get_data()
     what = (data or {}).get("adm", "")
     raw = (message.text or message.caption or "").strip()
+
+    if what in {"poll_question", "poll_options"} and not ctx.is_owner:
+        await state.clear()
+        await ctx.reply("Создавать опрос может только владелец.")
+        return
+
+    if what == "poll_question":
+        if raw in {"-", "—", "--", "/cancel", "отмена"}:
+            await state.clear()
+            await ctx.reply(texts.PANEL_CANCELLED)
+            await panel_screen(ctx, db, mm, edit=False)
+            return
+        if not raw:
+            await ctx.reply("Вопрос не может быть пустым.")
+            return
+        await state.set_state(AdminStates.await_input)
+        await state.update_data(adm="poll_options", poll_question=raw[:250])
+        await ctx.reply(
+            "Теперь пришли <b>два варианта</b> каждый с новой строки.\n\n"
+            "Например:\n<code>Ночь\nДень</code>",
+            K.panel_cancel_keyboard(),
+        )
+        return
+
+    if what == "poll_options":
+        question = str((data or {}).get("poll_question", "")).strip()
+        options = [part.strip() for part in raw.splitlines() if part.strip()]
+        if len(options) != 2:
+            options = [part.strip() for part in raw.split("|") if part.strip()]
+        if len(options) != 2:
+            await ctx.reply("Нужно ровно два варианта: две строки или через <code>|</code>.")
+            return
+        await state.clear()
+        poll_id = await db.create_poll(question, options[0], options[1], ctx.user_id)
+        await ctx.reply(
+            f"✅ Опрос #{poll_id} запущен. Кнопка «Опрос» уже появилась в главном меню.",
+            K.admin_poll_keyboard(True),
+        )
+        return
+
     await state.clear()
 
     required = {
