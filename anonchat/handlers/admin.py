@@ -339,7 +339,7 @@ async def poll_voters_text(db: Database) -> str:
     poll = await db.active_poll()
     if poll is None:
         return "Активного опроса нет."
-    rows = await db.poll_voters(int(poll["id"]), 100)
+    rows = await db.poll_voters(int(poll["id"]), 50)
     lines = ["👀 <b>Кто как проголосовал</b>", ""]
     for row in rows:
         uid = int(row["user_id"])
@@ -352,8 +352,8 @@ async def poll_voters_text(db: Database) -> str:
         )
     if not rows:
         lines.append("Пока никто не проголосовал.")
-    if len(rows) >= 100:
-        lines += ["", "<i>Показаны последние 100 голосов.</i>"]
+    if len(rows) >= 50:
+        lines += ["", "<i>Показаны последние 50 голосов.</i>"]
     return "\n".join(lines)
 
 
