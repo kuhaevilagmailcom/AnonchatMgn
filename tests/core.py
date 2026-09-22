@@ -1082,47 +1082,6 @@ def test_pack_emoji() -> None:
     assert pack.accept(Exception("Bad Request: can't parse entities: tg-emoji is unsupported")) is True
     assert pack.enabled is False
     assert pack.wrap("🧲 старт") == "🧲 старт"
-    # дополнительные наборы загружаются один раз при старте и меняют только свои роли
-    from types import SimpleNamespace
-
-    async def dynamic_sets() -> None:
-        saved_icons = dict(ICONS)
-        try:
-            class FakeBot:
-                async def get_sticker_set(self, name: str):
-                    if name == "bad":
-                        raise RuntimeError("temporary")
-                    if name == "TgAndroidIcons":
-                        stickers = [
-                            SimpleNamespace(custom_emoji_id="9001", emoji="🏠", emoji_list=None),
-                        ]
-                    elif name == "CryptoGIFTPODARKI":
-                        stickers = [
-                            SimpleNamespace(custom_emoji_id="9002", emoji="🎁", emoji_list=None),
-                        ]
-                    else:
-                        stickers = [
-                            SimpleNamespace(custom_emoji_id="9003", emoji="🔄", emoji_list=None),
-                        ]
-                    return SimpleNamespace(
-                        sticker_type="custom_emoji", stickers=stickers
-                    )
-
-            dynamic = EmojiPack()
-            loaded = await dynamic.load_sticker_sets(
-                FakeBot(), ("TgAndroidIcons", "CryptoGIFTPODARKI", "progressBarEmoji", "bad")
-            )
-            assert loaded == 3
-            assert ICONS["home"] == "9001"
-            assert ICONS["gift"] == "9002"
-            assert ICONS["refresh"] != "9003", "progress-пак не должен менять UI refresh"
-            assert "9002" in dynamic.wrap("🎁 подарок")
-            assert "9003" in dynamic.wrap("🔄 прогресс")
-        finally:
-            ICONS.clear()
-            ICONS.update(saved_icons)
-
-    asyncio.run(dynamic_sets())
 
 
 # --------------------------------------------------------------------------------- база: ник + миграция

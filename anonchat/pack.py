@@ -17,11 +17,7 @@
 
 from __future__ import annotations
 
-import logging
 import re
-from collections.abc import Iterable
-
-log = logging.getLogger(__name__)
 
 TG_EMOJI_OPEN = re.compile(r"<tg-emoji[^>]*>")
 TG_EMOJI_CLOSE = re.compile(r"</tg-emoji>")
@@ -58,32 +54,6 @@ PACK: dict[str, tuple[str, str, tuple[str, ...]]] = {
 #: имя -> id, для кнопок (icon_custom_emoji_id)
 ICONS: dict[str, str] = {name: emoji_id for name, (emoji_id, _, _) in PACK.items()}
 
-DEFAULT_EXTRA_PACKS: tuple[str, ...] = (
-    "TgAndroidIcons",
-    "CryptoGIFTPODARKI",
-    "progressBarEmoji",
-)
-
-# glyph -> semantic icon names; aliases also count (✅ can replace the check icon).
-_NAMES_BY_GLYPH: dict[str, tuple[str, ...]] = {}
-for _name, (_emoji_id, _canonical, _aliases) in PACK.items():
-    for _glyph in (_canonical, *_aliases):
-        _NAMES_BY_GLYPH[_glyph] = (*_NAMES_BY_GLYPH.get(_glyph, ()), _name)
-
-
-def _sticker_glyphs(sticker) -> tuple[str, ...]:
-    values: list[str] = []
-    emoji = str(getattr(sticker, "emoji", "") or "").strip()
-    if emoji:
-        values.append(emoji)
-    # Telegram may expose additional emoji variants in emoji_list.
-    for item in getattr(sticker, "emoji_list", None) or ():
-        value = str(item or "").strip()
-        if value and value not in values:
-            values.append(value)
-    return tuple(values)
-
-
 
 class EmojiPack:
     def __init__(self, url: str = "") -> None:
@@ -94,59 +64,6 @@ class EmojiPack:
         for _name, (emoji_id, canonical, aliases) in PACK.items():
             for glyph in (canonical, *aliases):
                 self._map.setdefault(glyph, (emoji_id, canonical))
-
-    def register_sticker_set(
-        self,
-        stickers: Iterable[object],
-        *,
-        override_text: bool = True,
-        button_names: set[str] | frozenset[str] | None = None,
-    ) -> int:
-        """Добавляет custom emoji из Telegram StickerSet в RAM.
-
-        button_names=None разрешает замену всех совпавших UI-иконок.
-        Пустой set означает: использовать набор только внутри текста.
-        """
-        added = 0
-        for sticker in stickers:
-            custom_id = str(getattr(sticker, "custom_emoji_id", "") or "")
-            if not custom_id:
-                continue
-            for glyph in _sticker_glyphs(sticker):
-                if override_text or glyph not in self._map:
-                    self._map[glyph] = (custom_id, glyph)
-                    added += 1
-                for name in _NAMES_BY_GLYPH.get(glyph, ()):
-                    if button_names is None or name in button_names:
-                        ICONS[name] = custom_id
-        return added
-
-    async def load_sticker_sets(self, bot, names: Iterable[str] = DEFAULT_EXTRA_PACKS) -> int:
-        """Загружает наборы один раз при старте; при ошибке остаётся fallback PACK."""
-        button_policy: dict[str, set[str] | None] = {
-            "TgAndroidIcons": None,
-            "CryptoGIFTPODARKI": {"gift", "stars", "bonus", "money"},
-            "progressBarEmoji": set(),
-        }
-        total = 0
-        for name in tuple(names):
-            try:
-                sticker_set = await bot.get_sticker_set(name=name)
-            except Exception as exc:
-                log.warning("emoji pack %s не загрузился: %s", name, exc)
-                continue
-            sticker_type = getattr(sticker_set, "sticker_type", "")
-            sticker_type = getattr(sticker_type, "value", sticker_type)
-            if str(sticker_type) != "custom_emoji":
-                log.warning("emoji pack %s не custom_emoji — пропускаю", name)
-                continue
-            count = self.register_sticker_set(
-                getattr(sticker_set, "stickers", ()),
-                button_names=button_policy.get(name, set()),
-            )
-            total += count
-            log.info("emoji pack %s: подключено %s emoji", name, count)
-        return total
     def known(self) -> int:
         return len(self._map)
 
