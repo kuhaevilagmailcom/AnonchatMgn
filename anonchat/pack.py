@@ -104,13 +104,13 @@ class EmojiPack:
         try:
             sticker_set = await bot.get_sticker_set(name=name)
         except Exception:
-            self._top_flags = []
+            self._top_flags = {}
             return 0
 
         sticker_type = getattr(sticker_set, "sticker_type", "")
         sticker_type = getattr(sticker_type, "value", sticker_type)
         if sticker_type and str(sticker_type) != "custom_emoji":
-            self._top_flags = []
+            self._top_flags = {}
             return 0
 
         digit_glyphs = {
