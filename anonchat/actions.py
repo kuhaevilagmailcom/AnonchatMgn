@@ -923,7 +923,7 @@ def _queued_search_text(ctx: Ctx, pos: int) -> str:
     )
     # Онлайн — люди, взаимодействовавшие с ботом за последние 5 минут.
     # Предупреждение нужно только при реально небольшом количестве людей.
-    if online_count(ctx.mm) < 10:
+    if online_count(ctx.mm) < 5:
         body += f"\n\n<i>{texts.LOW_ONLINE_NOTICE}</i>"
     return body
 
