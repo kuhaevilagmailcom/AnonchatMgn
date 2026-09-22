@@ -605,7 +605,7 @@ async def show_top(ctx: Ctx, period: str = "week") -> None:
         lines.append("Пока пусто.")
     else:
         for i, row in enumerate(rows, start=1):
-            place = medals.get(i, f"<code>{i}</code>")
+            place = ctx.pack.top_flag(i) or medals.get(i, f"<code>{i}</code>")
             lines.append(
                 f"{place} <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id']), row['support_stars']))}</b>"
                 f" · <b>{int(row['xp'] or 0)} ⭐</b>"
