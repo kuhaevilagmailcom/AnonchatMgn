@@ -154,6 +154,9 @@ async def main() -> None:  # pragma: no cover
         progress_count = await pack.load_progress_bar(bot)
         if progress_count:
             log.info("progressBarEmoji: загружено %s состояний для профиля", progress_count)
+        top_flags_count = await pack.load_top_flags(bot)
+        if top_flags_count:
+            log.info("FestiveFlags: загружено %s эмодзи для топа", top_flags_count)
         me = await bot.get_me()
         log.info("Анонимный чат %s запущен: @%s (id=%s)", cfg.city_short, me.username, me.id)
         if cfg.admin_ids:
