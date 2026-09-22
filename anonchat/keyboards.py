@@ -233,7 +233,7 @@ def settings_keyboard(
     _button(b, "Возраст", callback_data="cfg:age:ask", icon="stars")
     _button(b, "Сбросить скрытых", callback_data="cfg:blocks:ask", icon="refresh")
     _button(b, "Онлайн сейчас", callback_data=CB_ONLINE, icon="view")
-    _button(b, "Отзыв / обратная связь", callback_data=CB_FEEDBACK, icon="support")
+    _button(b, "Обратная связь", callback_data=CB_FEEDBACK, icon="support")
     _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
     _button(b, "Удалить профиль", callback_data="cfg:forget:ask", icon="delete", style="danger")
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
