@@ -577,12 +577,12 @@ def poll_keyboard(
 ) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(
-        b, f"{option_a} · {pct_a}%",
+        b, f"{option_a[:48]} · {pct_a}%",
         callback_data=f"poll:vote:{int(poll_id)}:0",
         style="success" if selected == 0 else "primary",
     )
     _button(
-        b, f"{option_b} · {pct_b}%",
+        b, f"{option_b[:48]} · {pct_b}%",
         callback_data=f"poll:vote:{int(poll_id)}:1",
         style="success" if selected == 1 else "primary",
     )
