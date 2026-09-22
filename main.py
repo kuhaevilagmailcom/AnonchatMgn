@@ -76,12 +76,12 @@ async def janitor(
             log.exception("janitor: что-то пошло не так, продолжаем")
 
 
-async def menu_refresher(bot: Bot, mm: Matchmaker, pack: EmojiPack) -> None:
+async def menu_refresher(bot: Bot, mm: Matchmaker, pack: EmojiPack, db: Database) -> None:
     """Редко обновляет только свежие открытые главные меню."""
     while True:
         try:
             await asyncio.sleep(30)
-            await refresh_live_menus(bot, mm, pack)
+            await refresh_live_menus(bot, mm, pack, db)
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001
@@ -167,7 +167,7 @@ async def main() -> None:  # pragma: no cover
         if paired:
             log.info("startup queue reconcile: создано пар=%s", paired)
         janitor_task = asyncio.create_task(janitor(bot, cfg, database, mm, pack))
-        menu_task = asyncio.create_task(menu_refresher(bot, mm, pack))
+        menu_task = asyncio.create_task(menu_refresher(bot, mm, pack, database))
 
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
