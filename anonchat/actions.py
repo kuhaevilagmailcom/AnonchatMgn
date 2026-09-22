@@ -717,8 +717,9 @@ async def show_profile(ctx: Ctx) -> None:
         f"Оценки: 👍 {me['good_ratings']} · 👎 {me['bad_ratings']}",
     ]
     if not rank.is_max:
+        progress_bar = ctx.pack.progress_bar(rank.progress)
         lines += [
-            f"<code>{rank.bar}</code>",
+            progress_bar or f"<code>{rank.bar}</code>",
             f"До «{texts.esc(rank.next_title)}»: <b>{rank.to_next}</b> сообщений",
         ]
     lines += [
