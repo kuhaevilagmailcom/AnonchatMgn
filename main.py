@@ -15,7 +15,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import ErrorEvent
+from aiogram.types import ErrorEvent, MenuButtonWebApp, WebAppInfo
 
 from anonchat.actions import announce_pairs, refresh_live_menus
 from anonchat.commands import ADMIN_COMMANDS, COMMANDS, register_common
@@ -24,6 +24,7 @@ from anonchat.db import Database
 from anonchat.handlers import get_routers
 from anonchat.matching import Matchmaker
 from anonchat.middlewares import DataContext, Throttling
+from anonchat.miniapp_api import start_miniapp_server
 from anonchat.pack import EmojiPack
 from anonchat.diagnostics import METRICS
 from anonchat.runtime_state import online_count as presence_online_count
@@ -150,15 +151,34 @@ async def main() -> None:  # pragma: no cover
 
     janitor_task: asyncio.Task | None = None
     menu_task: asyncio.Task | None = None
+    miniapp_server = None
 
     @dp.startup()
     async def on_startup(bot: Bot) -> None:
-        nonlocal janitor_task, menu_task
+        nonlocal janitor_task, menu_task, miniapp_server
         try:
             await bot.delete_webhook(drop_pending_updates=cfg.drop_pending_updates)
         except TelegramAPIError as exc:
             log.warning("delete_webhook не сработал: %s", exc)
         await register_commands(bot, cfg)
+        if cfg.miniapp_enabled:
+            miniapp_server = await start_miniapp_server(bot, cfg, database, mm, pack)
+            log.info("Mini App HTTP server запущен")
+            if cfg.miniapp_url.startswith("https://"):
+                try:
+                    await bot.set_chat_menu_button(
+                        menu_button=MenuButtonWebApp(
+                            text="Открыть АНОН МГН",
+                            web_app=WebAppInfo(url=cfg.miniapp_url),
+                        )
+                    )
+                    log.info("Mini App menu button: %s", cfg.miniapp_url)
+                except TelegramAPIError as exc:
+                    log.warning("Не удалось обновить Mini App menu button: %s", exc)
+            elif cfg.miniapp_url:
+                log.warning("MINIAPP_URL должен начинаться с https://")
+            else:
+                log.warning("MINIAPP_URL не задан: сервер работает, но menu button не обновлён")
         progress_count = await pack.load_progress_bar(bot)
         if progress_count:
             log.info("progressBarEmoji: загружено %s состояний для профиля", progress_count)
@@ -184,6 +204,8 @@ async def main() -> None:  # pragma: no cover
             janitor_task.cancel()
         if menu_task is not None:
             menu_task.cancel()
+        if miniapp_server is not None:
+            await miniapp_server.stop()
         await database.flush_matchmaker(mm)
         await dp.storage.close()
         await bot.session.close()
