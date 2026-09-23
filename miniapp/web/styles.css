@@ -6,6 +6,8 @@
   --danger:#ff6679;--radius:24px;--shadow:0 18px 48px rgba(0,0,0,.32);--safe-bottom:env(safe-area-inset-bottom,0px);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--pink);outline-offset:3px}
+button[disabled]{opacity:.48;cursor:not-allowed;filter:saturate(.55)}
 html{background:var(--bg);scroll-behavior:smooth}
 body{margin:0;background:linear-gradient(180deg,#0b0d10 0%,#090b0e 46%,#07090b 100%);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",Inter,"Segoe UI",sans-serif;min-height:100vh;overflow-x:hidden}
 button,input,textarea,select{font:inherit;color:inherit}button{border:0;background:none;cursor:pointer}img{display:block;max-width:100%}

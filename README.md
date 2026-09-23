@@ -70,7 +70,7 @@ BOT_TOKEN=
 ADMIN_IDS=
 DATABASE_PATH=data/anonchat_mgn.db
 
-MINIAPP_ENABLED=true
+MINIAPP_ENABLED=false
 MINIAPP_URL=https://твой-домен-хостинга.example
 MINIAPP_WEB_DIR=miniapp/web
 MINIAPP_HOST=0.0.0.0
@@ -110,9 +110,12 @@ Mini App запускается внутри того же процесса, ч�
 4. задать `BOT_TOKEN`, `ADMIN_IDS` и публичный HTTPS-адрес в `MINIAPP_URL`;
 5. разрешить входящий порт из переменной `PORT` (локально используется `8080`).
 
-При старте бот сам устанавливает Telegram Menu Button на `MINIAPP_URL`. Проверка
-доступности: `GET /api/miniapp/health`. Все приватные API требуют подписанный
-`X-Telegram-Init-Data`; сервер не доверяет данным пользователя без HMAC-проверки.
+Mini App по умолчанию выключен и никогда не добавляется в Telegram Menu Button,
+поэтому обычные пользователи не видят его. Для скрытого ручного запуска задай
+`MINIAPP_ENABLED=true`; ошибка его HTTP-сервера не останавливает polling бота.
+Проверка доступности: `GET /api/miniapp/health`. Все приватные API требуют
+подписанный `X-Telegram-Init-Data`; сервер не доверяет данным пользователя без
+HMAC-проверки.
 
 ## База данных
 

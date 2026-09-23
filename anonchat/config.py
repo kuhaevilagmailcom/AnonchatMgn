@@ -84,7 +84,7 @@ class Config:
     subscription_channel: str = "@anonmgn"
     subscription_channel_url: str = "https://t.me/anonmgn"
     subscription_reward: int = 100
-    miniapp_enabled: bool = True
+    miniapp_enabled: bool = False
     miniapp_url: str = ""
 
     # limits
@@ -133,7 +133,7 @@ class Config:
             subscription_reward=int(
                 env("SUBSCRIPTION_REWARD", str(cls._default("subscription_reward")))
             ),
-            miniapp_enabled=_bool(env("MINIAPP_ENABLED", "true")),
+            miniapp_enabled=_bool(env("MINIAPP_ENABLED", "false")),
             miniapp_url=(
                 env("MINIAPP_URL", "")
                 or env("PUBLIC_URL", "")
