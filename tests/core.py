@@ -43,6 +43,8 @@ def test_config_defaults(monkeypatch=None) -> None:
         assert cfg.max_message_len == 3000
         assert cfg.xp_good_rating == 10
         assert cfg.recent_partner_cooldown_minutes == 30
+        assert cfg.subscription_channel == "@anonmgn"
+        assert cfg.subscription_reward == 100
 
         # id администраторов не зашиваются в публичный код
         os.environ["ADMIN_IDS"] = ""
@@ -283,6 +285,15 @@ def test_database() -> None:
         assert await db.award_referral(11, 10, 50) is False
         assert await db.award_referral(21, 21, 50) is False
 
+        assert await db.reward_claimed(10, "channel_subscription_v1") is False
+        before_reward = int((await db.get_user(10))["xp"])
+        assert await db.claim_one_time_reward(10, "channel_subscription_v1", 100) is True
+        after_reward = int((await db.get_user(10))["xp"])
+        assert after_reward == before_reward + 100
+        assert await db.reward_claimed(10, "channel_subscription_v1") is True
+        assert await db.claim_one_time_reward(10, "channel_subscription_v1", 100) is False
+        assert int((await db.get_user(10))["xp"]) == after_reward
+
         created, support_total = await db.record_payment(
             10, "support", 1, "charge-1", "", "support:10:1:x"
         )
@@ -368,6 +379,7 @@ def test_database() -> None:
 
         await db.forget_user(10)
         assert await db.get_user(10) is None
+        assert await db.reward_claimed(10, "channel_subscription_v1") is True
         assert (await db.stats())["dialogs"] == 1  # обезличенная история нужна для статистики
         await db.close()
 
