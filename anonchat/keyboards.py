@@ -137,20 +137,24 @@ def profile_keyboard(
     _button(b, "Серия активности", callback_data=CB_STREAK, icon="bonus")
     _button(b, "Квесты дня", callback_data=CB_QUESTS, icon="ticket")
     _button(b, "Реферальная ссылка", callback_data=CB_REFERRAL, icon="gift")
-    if subscription_claimed:
-        _button(
-            b, f"{int(subscription_reward)} ⭐️ за подписку · получено",
-            callback_data=CB_SUBSCRIBE_REWARD, icon="check"
-        )
-    else:
+
+    # После успешного получения награды кнопку больше не показываем вообще.
+    # Флаг берётся из БД через reward_claimed(), поэтому отписка и повторная
+    # подписка не возвращают кнопку и не позволяют получить награду второй раз.
+    if not subscription_claimed:
         _button(
             b, f"{int(subscription_reward)} ⭐️ за подписку",
             callback_data=CB_SUBSCRIBE_REWARD, icon="stars", style="success"
         )
+
     _button(b, "Изменить ник", callback_data=CB_NICK, icon="edit")
     _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
     _button(b, "Назад", callback_data=CB_MENU, icon="home")
-    b.adjust(2, 2, 1, 2, 1)
+
+    if subscription_claimed:
+        b.adjust(2, 2, 2, 1)
+    else:
+        b.adjust(2, 2, 1, 2, 1)
     return b.as_markup()
 
 
