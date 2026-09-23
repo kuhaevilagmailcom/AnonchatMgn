@@ -266,45 +266,6 @@ async def cb_reset(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker)
     await settings_screen(ctx)
 
 
-@router.callback_query(F.data == "cfg:blocks:ask")
-async def cb_blocks_ask(event: CallbackQuery, ctx: Ctx) -> None:
-    await ctx.ack()
-    if await ctx.dialog_locked():
-        return
-    await ctx.edit("Вернуть в поиск всех скрытых людей?", K.confirm_blocks_keyboard())
-
-
-@router.callback_query(F.data == "cfg:blocks:yes")
-async def cb_blocks_yes(
-    event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker
-) -> None:
-    await ctx.ack()
-    if await ctx.dialog_locked():
-        return
-    await db.clear_blocks(ctx.user_id)
-    me = await db.get_user(ctx.user_id)
-    pairs: list[tuple[int, int]] = []
-    if me is not None:
-        pairs = mm.refresh(
-            ctx.user_id,
-            district=me["district"],
-            same_district=bool(me["same_district"]),
-            gender=(me["gender"] or ""),
-            looking_for=(me["looking_for"] or ""),
-            excluded=await db.excluded_partners(ctx.user_id),
-        )
-    if pairs:
-        await announce_pairs(ctx.bot, ctx.cfg, mm, pairs, ctx.pack, db)
-        return
-    await settings_screen(ctx)
-
-
-@router.callback_query(F.data == "cfg:blocks:no")
-async def cb_blocks_no(event: CallbackQuery, ctx: Ctx) -> None:
-    await ctx.ack()
-    await settings_screen(ctx)
-
-
 @router.callback_query(F.data == "cfg:forget:ask")
 async def cb_forget_ask(event: CallbackQuery, ctx: Ctx) -> None:
     await ctx.ack()
