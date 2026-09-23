@@ -325,11 +325,8 @@ def test_database() -> None:
         rid2, unique_count = await db.add_report(10, 11, "spam", "новый диалог", "10:11:2")
         assert rid2 is not None and unique_count == 1, "один человек не накручивает авто-мут"
         await db.ensure_user(12, None, "Катя")
-        await db.block_user(10, 11)
-        await db.block_user(12, 10)
-        assert await db.clear_blocks(10) == 1
         excluded = await db.excluded_partners(10, recent_seconds=0)
-        assert 11 not in excluded and 12 in excluded
+        assert excluded == set(), "вечных скрытых собеседников больше нет"
         rid3, unique_count = await db.add_report(12, 11, "spam", "независимая", "11:12:1")
         assert rid3 is not None and unique_count == 2
         reports = await db.list_reports("new")
@@ -814,7 +811,7 @@ def test_keyboard_styles_and_icons() -> None:
         K.battle_answer_keyboard(1, 0, "ночь", "утро"),
         K.battle_next_keyboard(1, 0), K.battle_end_keyboard(),
         K.report_keyboard(), K.rating_keyboard(), K.confirm_stop_keyboard(),
-        K.confirm_forget_keyboard(), K.confirm_blocks_keyboard(),
+        K.confirm_forget_keyboard(),
         K.back_menu_keyboard(), K.skip_cancel_keyboard(),
         K.admin_report_keyboard(1),
         K.restricted_list_keyboard("ban", [10, 11], 0, 2),
