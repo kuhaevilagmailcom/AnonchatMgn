@@ -29,7 +29,6 @@ CB_RULES = "act:rules"
 CB_TOP = "act:top"
 CB_SUPPORT = "act:support"
 CB_CONTINUE = "onboard:continue"
-CB_BLOCK = "rate:block"
 CB_NICK = "cfg:nick:ask"
 CB_GAMES = "game:menu"
 CB_BATTLE = "game:battle"
@@ -259,13 +258,12 @@ def settings_keyboard(
     _button(b, f"Ищу: {looking_label}", callback_data="cfg:looking:ask")
     _button(b, f"Берег: {district or 'не выбран'}", callback_data="cfg:district:ask", icon="geo")
     _button(b, "Возраст", callback_data="cfg:age:ask", icon="stars")
-    _button(b, "Сбросить скрытых", callback_data="cfg:blocks:ask", icon="refresh")
     _button(b, "Онлайн сейчас", callback_data=CB_ONLINE, icon="view")
     _button(b, "Обратная связь", callback_data=CB_FEEDBACK, icon="support")
     _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
     _button(b, "Удалить профиль", callback_data="cfg:forget:ask", icon="delete", style="danger")
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
-    b.adjust(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+    b.adjust(1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
     return b.as_markup()
 
 
@@ -412,9 +410,8 @@ def rating_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "👍 Норм", callback_data="rate:1", icon="bonus", style="success")
     _button(b, "Не зашло", callback_data="rate:0", icon="warn")
-    _button(b, "Больше не встречаться", callback_data=CB_BLOCK, icon="delete")
     _button(b, "Найти ещё", callback_data=CB_CONNECT, icon="view")
-    b.adjust(2, 1, 1)
+    b.adjust(2, 1)
     return b.as_markup()
 
 
@@ -430,14 +427,6 @@ def confirm_forget_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "Да, удалить всё", callback_data="cfg:forget:yes", icon="delete", style="danger")
     _button(b, "Отмена", callback_data="cfg:forget:no", icon="check")
-    b.adjust(2)
-    return b.as_markup()
-
-
-def confirm_blocks_keyboard() -> InlineKeyboardMarkup:
-    b = InlineKeyboardBuilder()
-    _button(b, "Да", callback_data="cfg:blocks:yes", icon="check", style="danger")
-    _button(b, "Отмена", callback_data="cfg:blocks:no", icon="home")
     b.adjust(2)
     return b.as_markup()
 
