@@ -879,7 +879,7 @@ def test_keyboard_styles_and_icons() -> None:
     assert texts_of(K.menu_keyboard("free", admin=True))[-1] == "Панель модератора"
     assert "Поддержать проект" not in texts_of(K.menu_keyboard("free"))
     assert "Поддержать проект" in texts_of(K.settings_keyboard(False, "", "Ник"))
-    assert "Отзыв / обратная связь" in texts_of(K.settings_keyboard(False, "", "Ник"))
+    assert "Обратная связь" in texts_of(K.settings_keyboard(False, "", "Ник"))
 
 
 def test_contact_filter() -> None:
