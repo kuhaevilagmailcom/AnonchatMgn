@@ -24,7 +24,6 @@ from anonchat.db import Database
 from anonchat.handlers import get_routers
 from anonchat.matching import Matchmaker
 from anonchat.middlewares import DataContext, Throttling
-from anonchat.miniapp_api import start_miniapp_server
 from anonchat.pack import EmojiPack
 from anonchat.diagnostics import METRICS
 from anonchat.runtime_state import online_count as presence_online_count
@@ -151,23 +150,15 @@ async def main() -> None:  # pragma: no cover
 
     janitor_task: asyncio.Task | None = None
     menu_task: asyncio.Task | None = None
-    miniapp_server = None
 
     @dp.startup()
     async def on_startup(bot: Bot) -> None:
-        nonlocal janitor_task, menu_task, miniapp_server
+        nonlocal janitor_task, menu_task
         try:
             await bot.delete_webhook(drop_pending_updates=cfg.drop_pending_updates)
         except TelegramAPIError as exc:
             log.warning("delete_webhook не сработал: %s", exc)
         await register_commands(bot, cfg)
-        if cfg.miniapp_enabled:
-            try:
-                miniapp_server = await start_miniapp_server(bot, cfg, database, mm, pack)
-                log.info("Скрытый Mini App HTTP server запущен без Telegram Menu Button")
-            except Exception:
-                miniapp_server = None
-                log.exception("Mini App не запустился; основной бот продолжает работу")
         progress_count = await pack.load_progress_bar(bot)
         if progress_count:
             log.info("progressBarEmoji: загружено %s состояний для профиля", progress_count)
@@ -193,8 +184,6 @@ async def main() -> None:  # pragma: no cover
             janitor_task.cancel()
         if menu_task is not None:
             menu_task.cancel()
-        if miniapp_server is not None:
-            await miniapp_server.stop()
         await database.flush_matchmaker(mm)
         await dp.storage.close()
         await bot.session.close()
