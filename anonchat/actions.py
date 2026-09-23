@@ -737,7 +737,14 @@ async def show_profile(ctx: Ctx) -> None:
     ]
     if nicklib.is_supporter(me["support_stars"]):
         lines += ["", f"💎 Поддержал проект: {int(me['support_stars'])} ⭐"]
-    await ctx.render_screen("04_profile.png", "\n".join(lines), profile_keyboard())
+    subscription_claimed = await ctx.db.reward_claimed(
+        ctx.user_id, "channel_subscription_v1"
+    )
+    await ctx.render_screen(
+        "04_profile.png",
+        "\n".join(lines),
+        profile_keyboard(subscription_claimed=subscription_claimed),
+    )
 
 
 # --------------------------------------------------------------------- ники
