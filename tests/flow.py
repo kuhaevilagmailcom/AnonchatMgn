@@ -759,7 +759,7 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     session.clear()
     await press(A, "cfg:feedback")
     await payload(A, photo=[{"file_id": "feedback-photo", "file_unique_id": "feedback", "width": 1, "height": 1}])
-    check(any("Отзыв / обратная связь" in text for text in session.texts_to(ADMIN)),
+    check(any("Обратная связь" in text for text in session.texts_to(ADMIN)),
           "обратная связь уходит владельцу")
     check(any(item["method"] == "sendPhoto" for item in session.to(D)),
           "медиаотзыв уходит всем назначенным админам")
