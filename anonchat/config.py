@@ -81,8 +81,8 @@ class Config:
     city: str = "Магнитогорск"
     city_short: str = "МГН"
     emoji_pack_url: str = "https://t.me/addemoji/NewsEmoji"
-    subscription_channel: str = ""
-    subscription_channel_url: str = ""
+    subscription_channel: str = "@anonmgn"
+    subscription_channel_url: str = "https://t.me/anonmgn"
     subscription_reward: int = 100
 
     # limits
