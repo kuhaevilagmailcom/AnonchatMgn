@@ -8,7 +8,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import BufferedInputFile, CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message
 
 from .. import keyboards as K
 from .. import nick as nicklib
@@ -31,32 +31,12 @@ class FeedbackStates(StatesGroup):
     message = State()
 
 
-async def notify_admins(
-    ctx: Ctx,
-    body: str,
-    markup=None,
-    report_id: int | None = None,
-    txt_content: str = "",
-) -> None:
+async def notify_admins(ctx: Ctx, body: str, markup=None, report_id: int | None = None) -> None:
     admin_ids = await ctx.db.admin_ids_with_permission("reports", ctx.cfg.admin_ids)
     for admin_id in admin_ids:
         permissions = await ctx.db.get_admin_permissions(admin_id, ctx.cfg.admin_ids)
         actual_markup = K.admin_report_keyboard(report_id, permissions) if report_id else markup
         await send_to(ctx.bot, admin_id, body, actual_markup, ctx.pack)
-        if report_id and txt_content:
-            try:
-                document = BufferedInputFile(
-                    txt_content.encode("utf-8"),
-                    filename=f"report_{int(report_id)}.txt",
-                )
-                await ctx.bot.send_document(
-                    chat_id=admin_id,
-                    document=document,
-                    caption=f"Контекст жалобы #{int(report_id)}",
-                )
-            except Exception:
-                # TXT — дополнительный канал доставки. Ошибка файла не должна ломать жалобу.
-                pass
 
 
 def format_report_card(row, day_count: int | None = None, *, is_new: bool = False) -> str:
@@ -89,22 +69,6 @@ def format_report_card(row, day_count: int | None = None, *, is_new: bool = Fals
         f"<code>{reporter_id}</code> · {texts.esc(reporter_username)}"
         f"{daily}\n\nВыбери действие кнопками ниже."
     )
-
-
-def _report_txt(stored_report, context: str) -> str:
-    reason = REASON_TITLES.get(str(stored_report["reason"]), str(stored_report["reason"]))
-    lines = [
-        f"ЖАЛОБА #{int(stored_report['id'])}",
-        f"Причина: {reason}",
-        f"Жалующийся ID: {int(stored_report['reporter_id'])}",
-        f"Собеседник ID: {int(stored_report['target_id'])}",
-        "",
-        "Последние сообщения из временного контекста:",
-        context or "Текстового контекста нет.",
-    ]
-    if stored_report["comment"]:
-        lines += ["", f"Комментарий: {stored_report['comment']}"]
-    return "\n".join(lines)
 
 
 def _feedback_header(ctx: Ctx, message: Message) -> str:
@@ -219,12 +183,7 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
     stored_report = await db.get_report(report_id)
     assert stored_report is not None
     card = format_report_card(stored_report, day_count, is_new=True)
-    await notify_admins(
-        ctx,
-        card,
-        report_id=report_id,
-        txt_content=_report_txt(stored_report, context),
-    )
+    await notify_admins(ctx, card, report_id=report_id)
 
     auto = ""
     if cfg.auto_mute_reports > 0 and day_count >= cfg.auto_mute_reports:
