@@ -96,21 +96,6 @@ async def cmd_stop(message: Message, ctx: Ctx) -> None:
     await act_stop(ctx)
 
 
-@router.message(Command("unblock"))
-async def cmd_unblock(message: Message, ctx: Ctx, db: Database) -> None:
-    cleared = await db.clear_blocks(ctx.user_id)
-    if cleared:
-        await ctx.reply(
-            f"Скрытые собеседники сброшены: {cleared}.",
-            K.menu_keyboard(ctx.mm.status(ctx.user_id)),
-        )
-    else:
-        await ctx.reply(
-            "Список скрытых пуст.",
-            K.menu_keyboard(ctx.mm.status(ctx.user_id)),
-        )
-
-
 # ---------------------------------------------------------------------------------- кнопки меню
 @router.callback_query(F.data == K.CB_MENU)
 async def cb_menu(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
@@ -252,17 +237,6 @@ async def cb_rate_good(event: CallbackQuery, ctx: Ctx) -> None:
 @router.callback_query(F.data == "rate:0")
 async def cb_rate_bad(event: CallbackQuery, ctx: Ctx) -> None:
     await apply_rating(ctx, positive=False)
-
-
-@router.callback_query(F.data == K.CB_BLOCK)
-async def cb_block(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
-    partner = ctx.mm.rating_partner(ctx.user_id)
-    if partner is None:
-        await ctx.ack("Этот разговор уже закрыт", alert=True)
-        return
-    await db.block_user(ctx.user_id, partner)
-    await ctx.ack("Больше не попадёт в поиск")
-    await ctx.reply("Готово.", markup=K.menu_keyboard())
 
 
 @router.callback_query(F.data.startswith("rate:"))
