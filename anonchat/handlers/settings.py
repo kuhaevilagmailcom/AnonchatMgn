@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -33,6 +34,46 @@ DISTRICTS = {
 
 class ProfileStates(StatesGroup):
     nick = State()
+
+
+SUBSCRIPTION_REWARD_KEY = "channel_subscription_v1"
+
+
+def _subscription_chat_id(raw: str) -> int | str | None:
+    value = str(raw or "").strip()
+    if not value:
+        return None
+    if value.startswith("https://t.me/"):
+        value = value.removeprefix("https://t.me/").split("?", 1)[0].strip("/")
+        if value.startswith("+"):
+            return None
+        value = f"@{value.lstrip('@')}"
+    if value.lstrip("-").isdigit():
+        return int(value)
+    if not value.startswith("@"):
+        value = f"@{value}"
+    return value
+
+
+def _subscription_url(channel: str, explicit_url: str = "") -> str:
+    if str(explicit_url or "").strip():
+        return str(explicit_url).strip()
+    value = str(channel or "").strip()
+    if value.startswith("https://t.me/"):
+        return value
+    if value.startswith("@"):
+        return f"https://t.me/{value[1:]}"
+    if value and not value.lstrip("-").isdigit():
+        return f"https://t.me/{value.lstrip('@')}"
+    return ""
+
+
+def _member_is_subscribed(member: object) -> bool:
+    status = getattr(getattr(member, "status", ""), "value", getattr(member, "status", ""))
+    status = str(status)
+    if status in {"member", "administrator", "creator"}:
+        return True
+    return status == "restricted" and bool(getattr(member, "is_member", False))
 
 
 async def _apply(ctx: Ctx, db: Database, mm: Matchmaker, **fields) -> None:
@@ -297,6 +338,72 @@ async def cmd_forget(message: Message, ctx: Ctx) -> None:
         "Удалить профиль? Это действие нельзя отменить.",
         markup=K.confirm_forget_keyboard(),
     )
+
+
+# ---------------------------------------------------------------------------------- награда за подписку
+@router.callback_query(F.data == K.CB_SUBSCRIBE_REWARD)
+async def cb_subscription_reward(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    if await ctx.dialog_locked():
+        return
+    if await db.reward_claimed(ctx.user_id, SUBSCRIPTION_REWARD_KEY):
+        await ctx.ack("Эта награда уже получена", alert=True)
+        return
+
+    target = _subscription_chat_id(ctx.cfg.subscription_channel)
+    if target is None:
+        await ctx.ack("Канал пока не подключён", alert=True)
+        return
+
+    await ctx.ack()
+    amount = max(1, int(ctx.cfg.subscription_reward))
+    body = (
+        f"⭐️ <b>{amount} ⭐️ за подписку</b>\n\n"
+        "Подпишись на наш Telegram-канал, затем нажми «Проверить подписку».\n\n"
+        "Награда выдаётся один раз."
+    )
+    await ctx.edit(
+        body,
+        K.subscription_reward_keyboard(
+            _subscription_url(ctx.cfg.subscription_channel, ctx.cfg.subscription_channel_url)
+        ),
+    )
+
+
+@router.callback_query(F.data == K.CB_SUBSCRIBE_CHECK)
+async def cb_subscription_check(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    if await ctx.dialog_locked():
+        return
+
+    amount = max(1, int(ctx.cfg.subscription_reward))
+    if await db.reward_claimed(ctx.user_id, SUBSCRIPTION_REWARD_KEY):
+        await ctx.ack("Ты уже получил эту награду", alert=True)
+        return
+
+    target = _subscription_chat_id(ctx.cfg.subscription_channel)
+    if target is None:
+        await ctx.ack("Канал пока не подключён", alert=True)
+        return
+
+    try:
+        member = await ctx.bot.get_chat_member(chat_id=target, user_id=ctx.user_id)
+    except TelegramAPIError:
+        await ctx.ack("Не удалось проверить подписку. Попробуй позже.", alert=True)
+        return
+
+    if not _member_is_subscribed(member):
+        await ctx.ack("Сначала подпишись на канал", alert=True)
+        return
+
+    claimed = await db.claim_one_time_reward(
+        ctx.user_id, SUBSCRIPTION_REWARD_KEY, amount
+    )
+    if not claimed:
+        await ctx.ack("Ты уже получил эту награду", alert=True)
+        return
+
+    ctx.me = await db.get_user(ctx.user_id)
+    await ctx.ack(f"+{amount} ⭐️")
+    await show_profile(ctx)
 
 
 # ---------------------------------------------------------------------------------- профиль / отмена
