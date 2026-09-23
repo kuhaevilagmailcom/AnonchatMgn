@@ -1106,20 +1106,16 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(any("Битва мнений:" in text and "Числа:" in text for text in dialog_results),
           "итог диалога показывает только реально сыгранные игры")
     session.clear()
-    await press(A, "rate:block")
-    check(B in await db.excluded_partners(A), "блок-лист сохраняет пару")
-    check(session.to(B) == [], "собеседник не получает уведомление о блоке")
+    check(B not in await db.excluded_partners(A, recent_seconds=0),
+          "вечной блокировки собеседника больше нет")
     await press(A, "act:connect")
     await press(B, "act:connect")
-    check(mm.partner(A) != B, "заблокированные собеседники не соединяются снова")
+    check(mm.partner(A) != B, "недавняя пара временно не соединяется повторно")
     await press(C, "act:connect")
     check(mm.partner(A) == C, "очередь выбирает следующего подходящего пользователя")
 
     await send(A, "/stop")
     await press(A, "act:settings")
-    await press(A, "cfg:blocks:ask")
-    await press(A, "cfg:blocks:yes")
-    check(B not in await db.excluded_partners(A, recent_seconds=0), "пользователь сбрасывает свой block list")
     await press(A, "cfg:nick:ask")
     await send(A, "/start")
     old_nick = (await db.get_user(A))["nickname"]
