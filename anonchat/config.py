@@ -82,6 +82,7 @@ class Config:
     city_short: str = "МГН"
     emoji_pack_url: str = "https://t.me/addemoji/NewsEmoji"
     subscription_channel: str = ""
+    subscription_channel_url: str = ""
     subscription_reward: int = 100
 
     # limits
@@ -123,6 +124,9 @@ class Config:
             emoji_pack_url=env("EMOJI_PACK_URL", cls._default("emoji_pack_url")),
             subscription_channel=env(
                 "SUBSCRIPTION_CHANNEL", cls._default("subscription_channel")
+            ).strip(),
+            subscription_channel_url=env(
+                "SUBSCRIPTION_CHANNEL_URL", cls._default("subscription_channel_url")
             ).strip(),
             subscription_reward=int(
                 env("SUBSCRIPTION_REWARD", str(cls._default("subscription_reward")))
