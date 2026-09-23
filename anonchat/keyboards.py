@@ -41,6 +41,8 @@ CB_QUESTS = "profile:quests"
 CB_REFERRAL = "profile:ref"
 CB_ONLINE = "cfg:online"
 CB_POLL = "poll:open"
+CB_SUBSCRIBE_REWARD = "profile:subscribe"
+CB_SUBSCRIBE_CHECK = "profile:subscribe:check"
 
 
 #: Bot API принимает только эти три цвета кнопки («warning» отвергает — проверено живьём)
@@ -127,16 +129,32 @@ def chat_keyboard() -> InlineKeyboardMarkup:
     return menu_keyboard("paired")
 
 
-def profile_keyboard(referral_url: str = "") -> InlineKeyboardMarkup:
+def profile_keyboard(
+    referral_url: str = "", subscription_claimed: bool = False
+) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "Моя активность", callback_data=CB_ACTIVITY, icon="stats")
     _button(b, "Серия активности", callback_data=CB_STREAK, icon="bonus")
     _button(b, "Квесты дня", callback_data=CB_QUESTS, icon="ticket")
     _button(b, "Реферальная ссылка", callback_data=CB_REFERRAL, icon="gift")
+    if subscription_claimed:
+        _button(b, "100 ⭐️ за подписку · получено", callback_data=CB_SUBSCRIBE_REWARD, icon="check")
+    else:
+        _button(b, "100 ⭐️ за подписку", callback_data=CB_SUBSCRIBE_REWARD, icon="stars", style="success")
     _button(b, "Изменить ник", callback_data=CB_NICK, icon="edit")
     _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
     _button(b, "Назад", callback_data=CB_MENU, icon="home")
-    b.adjust(2, 2, 2, 1)
+    b.adjust(2, 2, 1, 2, 1)
+    return b.as_markup()
+
+
+def subscription_reward_keyboard(channel_url: str = "") -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    if channel_url:
+        _button(b, "Подписаться", url=channel_url, icon="gift", style="success")
+    _button(b, "Проверить подписку", callback_data=CB_SUBSCRIBE_CHECK, icon="check", style="primary")
+    _button(b, "Назад в профиль", callback_data=CB_PROFILE, icon="home")
+    b.adjust(1, 1, 1)
     return b.as_markup()
 
 
