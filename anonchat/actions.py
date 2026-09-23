@@ -743,7 +743,10 @@ async def show_profile(ctx: Ctx) -> None:
     await ctx.render_screen(
         "04_profile.png",
         "\n".join(lines),
-        profile_keyboard(subscription_claimed=subscription_claimed),
+        profile_keyboard(
+            subscription_claimed=subscription_claimed,
+            subscription_reward=ctx.cfg.subscription_reward,
+        ),
     )
 
 
