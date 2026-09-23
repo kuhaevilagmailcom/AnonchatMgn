@@ -102,6 +102,14 @@ CREATE TABLE IF NOT EXISTS payments (
     payload                    TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS reward_claims (
+    user_id    INTEGER NOT NULL,
+    reward_key TEXT    NOT NULL,
+    amount     INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, reward_key)
+);
+
 CREATE TABLE IF NOT EXISTS admins (
     user_id      INTEGER PRIMARY KEY,
     permissions TEXT    NOT NULL DEFAULT '',
@@ -1139,6 +1147,45 @@ class Database:
             await self.db.commit()
         row = await self._fetchone("SELECT xp FROM users WHERE user_id = ?", (user_id,))
         return int(row["xp"]) if row else 0
+
+    async def reward_claimed(self, user_id: int, reward_key: str) -> bool:
+        row = await self._fetchone(
+            "SELECT 1 FROM reward_claims WHERE user_id=? AND reward_key=? LIMIT 1",
+            (int(user_id), str(reward_key)),
+        )
+        return row is not None
+
+    async def claim_one_time_reward(
+        self, user_id: int, reward_key: str, amount: int
+    ) -> bool:
+        """Атомарно выдаёт одноразовую награду. Повторный claim ничего не начисляет."""
+        reward_key = str(reward_key or "").strip()
+        amount = max(0, int(amount))
+        if not reward_key or amount <= 0:
+            return False
+        ts = now()
+        cur = await self.db.execute(
+            """INSERT OR IGNORE INTO reward_claims(user_id, reward_key, amount, created_at)
+               VALUES (?, ?, ?, ?)""",
+            (int(user_id), reward_key, amount, ts),
+        )
+        if cur.rowcount != 1:
+            await self.db.commit()
+            return False
+        await self.db.execute(
+            "UPDATE users SET xp=xp+? WHERE user_id=?",
+            (amount, int(user_id)),
+        )
+        await self.db.execute(
+            """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+               VALUES (?, ?, ?)
+               ON CONFLICT(user_id, day_start)
+               DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
+            (int(user_id), referral_day_start(ts), amount),
+        )
+        await self.db.commit()
+        self._top_cache.clear()
+        return True
 
     async def award_referral(
         self,
