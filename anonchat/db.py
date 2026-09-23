@@ -77,13 +77,6 @@ CREATE TABLE IF NOT EXISTS reports (
     handled_at  INTEGER
 );
 
-CREATE TABLE IF NOT EXISTS blocks (
-    user_id     INTEGER NOT NULL,
-    blocked_id  INTEGER NOT NULL,
-    created_at  INTEGER NOT NULL,
-    PRIMARY KEY (user_id, blocked_id)
-);
-
 CREATE TABLE IF NOT EXISTS referrals (
     invitee_id  INTEGER PRIMARY KEY,
     referrer_id INTEGER NOT NULL,
@@ -222,7 +215,6 @@ CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen DESC);
 CREATE INDEX IF NOT EXISTS idx_polls_active ON polls(active, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_poll_votes_poll_choice ON poll_votes(poll_id, choice);
 CREATE INDEX IF NOT EXISTS idx_matches_recent ON matches(ended_at, user_a, user_b);
-CREATE INDEX IF NOT EXISTS idx_blocks_reverse ON blocks(blocked_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_admins_granted_by ON admins(granted_by, updated_at);
@@ -367,6 +359,9 @@ class Database:
 
     async def _migrate(self) -> None:
         """Старые базы могут не иметь новых колонок — добавляем, не теряя данные."""
+        # Функция «Больше не встречаться» удалена. Старые вечные блокировки
+        # снимаем всем сразу, чтобы бывшие скрытые пользователи снова матчились.
+        await self.db.execute("DROP TABLE IF EXISTS blocks")
         async with self.db.execute("PRAGMA table_info(users)") as cur:
             cols = {row[1] for row in await cur.fetchall()}
         support_added = "support_stars" not in cols
@@ -1347,10 +1342,6 @@ class Database:
                 marks = ",".join("?" for _ in chunk)
                 twice = (*chunk, *chunk)
                 await cleanup.execute(
-                    f"DELETE FROM blocks WHERE user_id IN ({marks}) OR blocked_id IN ({marks})",
-                    twice,
-                )
-                await cleanup.execute(
                     f"DELETE FROM reports WHERE reporter_id IN ({marks}) OR target_id IN ({marks})",
                     twice,
                 )
@@ -1529,28 +1520,9 @@ class Database:
         )
         return int(cur.lastrowid), int(day["c"]) if day else 1
 
-    async def block_user(self, user_id: int, blocked_id: int) -> None:
-        await self.db.execute(
-            "INSERT OR IGNORE INTO blocks(user_id, blocked_id, created_at) VALUES (?, ?, ?)",
-            (user_id, blocked_id, now()),
-        )
-        await self.db.commit()
-
-    async def clear_blocks(self, user_id: int) -> int:
-        cur = await self.db.execute(
-            "DELETE FROM blocks WHERE user_id = ?",
-            (user_id,),
-        )
-        await self.db.commit()
-        return int(cur.rowcount or 0)
-
     async def excluded_partners(self, user_id: int, recent_seconds: int = 0) -> set[int]:
-        rows = await self._fetchall(
-            """SELECT blocked_id AS uid FROM blocks WHERE user_id = ?
-               UNION SELECT user_id AS uid FROM blocks WHERE blocked_id = ?""",
-            (user_id, user_id),
-        )
-        result = {int(row["uid"]) for row in rows}
+        """Только временно исключает недавно завершённые пары; вечных блокировок больше нет."""
+        result: set[int] = set()
         if int(recent_seconds) > 0:
             cutoff = now() - int(recent_seconds)
             recent = await self._fetchall(
