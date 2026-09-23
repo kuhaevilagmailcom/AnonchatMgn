@@ -81,6 +81,8 @@ class Config:
     city: str = "Магнитогорск"
     city_short: str = "МГН"
     emoji_pack_url: str = "https://t.me/addemoji/NewsEmoji"
+    subscription_channel: str = ""
+    subscription_reward: int = 100
 
     # limits
     max_message_len: int = 3000
@@ -119,6 +121,12 @@ class Config:
             city=env("CITY_NAME", cls._default("city")),
             city_short=env("CITY_SHORT", cls._default("city_short")),
             emoji_pack_url=env("EMOJI_PACK_URL", cls._default("emoji_pack_url")),
+            subscription_channel=env(
+                "SUBSCRIPTION_CHANNEL", cls._default("subscription_channel")
+            ).strip(),
+            subscription_reward=int(
+                env("SUBSCRIPTION_REWARD", str(cls._default("subscription_reward")))
+            ),
             auto_mute_reports=int(env("AUTO_MUTE_REPORTS", str(cls._default("auto_mute_reports")))),
             auto_mute_minutes=int(env("AUTO_MUTE_MINUTES", str(cls._default("auto_mute_minutes")))),
             report_context_retention_days=int(
