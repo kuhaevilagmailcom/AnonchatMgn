@@ -85,7 +85,7 @@ class Config:
     subscription_channel_url: str = "https://t.me/anonmgn"
     subscription_reward: int = 100
     miniapp_enabled: bool = True
-    miniapp_url: str = "https://elite-crmp.ru/web/index.html"
+    miniapp_url: str = "https://bot-1789383103-4489-furadev.bothost.tech"
 
     # limits
     max_message_len: int = 3000
