@@ -1290,6 +1290,15 @@ def test_relay_state_reply_and_cleanup() -> None:
     assert relay_state.forwarded_target(1, 101) is None
 
 
+def test_word_game_word_pool() -> None:
+    from anonchat.word_game import WORDS, WORD_DAILY_REWARD_LIMIT
+
+    assert WORD_DAILY_REWARD_LIMIT == 300
+    assert len(WORDS) >= 500
+    assert len(WORDS) == len(set(WORDS))
+    assert {"магнитка", "могну", "магнитогорск", "черемша"} <= set(WORDS)
+
+
 def run_all() -> int:  # python -m tests.core
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:
