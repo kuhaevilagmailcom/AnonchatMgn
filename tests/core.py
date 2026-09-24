@@ -1376,7 +1376,7 @@ def test_miniapp_health_static_and_origin_guard() -> None:
         web_dir = Path(__file__).resolve().parents[1] / "miniapp" / "web"
         miniapp = MiniAppServer(
             None,
-            SimpleNamespace(miniapp_url="https://elite-crmp.ru/web/index.html"),
+            SimpleNamespace(miniapp_url="https://bot-1789383103-4489-furadev.bothost.tech"),
             None,
             None,
             None,
