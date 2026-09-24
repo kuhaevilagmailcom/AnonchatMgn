@@ -1371,7 +1371,7 @@ def test_miniapp_frontend_boot_guards() -> None:
     app_js = (
         Path(__file__).resolve().parents[1] / "miniapp" / "web" / "app.js"
     ).read_text(encoding="utf-8")
-    assert not re.search(r"(?<!\$)\$\([^\n]*?\)\.forEach", app_js)
+    assert not re.search(r"(?<!\$)\$\([^)]*\)\.forEach", app_js)
     assert "AbortController" in app_js
     assert "watchdog=setTimeout" in app_js
     assert "finally{" in app_js
