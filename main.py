@@ -15,7 +15,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import ErrorEvent, MenuButtonWebApp, WebAppInfo
+from aiogram.types import ErrorEvent
 
 from anonchat.actions import announce_pairs, refresh_live_menus
 from anonchat.commands import ADMIN_COMMANDS, COMMANDS, register_common
@@ -169,17 +169,6 @@ async def main() -> None:  # pragma: no cover
                 log.info("Mini App API запущен")
             except Exception:  # noqa: BLE001
                 log.exception("Mini App API не запустился; polling бота продолжает работу")
-            if cfg.miniapp_url.startswith("https://"):
-                try:
-                    await bot.set_chat_menu_button(
-                        menu_button=MenuButtonWebApp(
-                            text="Открыть АНОН МГН",
-                            web_app=WebAppInfo(url=cfg.miniapp_url),
-                        )
-                    )
-                    log.info("Mini App menu button: %s", cfg.miniapp_url)
-                except TelegramAPIError:
-                    log.exception("Не удалось обновить кнопку Mini App")
         progress_count = await pack.load_progress_bar(bot)
         if progress_count:
             log.info("progressBarEmoji: загружено %s состояний для профиля", progress_count)
