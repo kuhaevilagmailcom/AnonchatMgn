@@ -1365,6 +1365,18 @@ def test_miniapp_status_payload_is_authoritative() -> None:
     assert paired_b["status"] == "paired" and paired_b["position"] is None
 
 
+def test_miniapp_frontend_boot_guards() -> None:
+    import re
+
+    app_js = (
+        Path(__file__).resolve().parents[1] / "miniapp" / "web" / "app.js"
+    ).read_text(encoding="utf-8")
+    assert not re.search(r"(?<!\$)\$\([^\n]*?\)\.forEach", app_js)
+    assert "AbortController" in app_js
+    assert "watchdog=setTimeout" in app_js
+    assert "finally{" in app_js
+
+
 def test_miniapp_health_static_and_origin_guard() -> None:
     from types import SimpleNamespace
 
