@@ -857,7 +857,7 @@ def test_keyboard_styles_and_icons() -> None:
     assert [[button.text for button in row] for row in paired.inline_keyboard] == [
         ["Следующий"], ["Стоп", "Жалоба"], ["Игры"],
     ]
-    assert texts_of(K.games_keyboard()) == ["Битва мнений", "Числа", "Вернуться в чат"]
+    assert texts_of(K.games_keyboard()) == ["Битва мнений", "Числа", "Объясни слово", "Вернуться в чат"]
     assert texts_of(K.number_range_keyboard()) == [
         "1–10 · 25 ⭐", "1–100 · 50 ⭐", "1–1000 · 100 ⭐", "Назад",
     ]
