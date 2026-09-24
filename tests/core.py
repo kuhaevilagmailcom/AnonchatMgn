@@ -1336,6 +1336,35 @@ def test_miniapp_init_data_signature() -> None:
         raise AssertionError("initData с чужой подписью должен отклоняться")
 
 
+def test_miniapp_status_payload_is_authoritative() -> None:
+    from types import SimpleNamespace
+
+    from anonchat.miniapp_api import MiniAppServer
+
+    mm = Matchmaker()
+    miniapp = MiniAppServer(
+        None,
+        SimpleNamespace(miniapp_url="", bot_token="test"),
+        None,
+        mm,
+        None,
+        web_dir=Path(__file__).resolve().parents[1] / "miniapp" / "web",
+    )
+
+    free = miniapp._status_payload(101)
+    assert free["status"] == "free" and free["position"] is None
+
+    assert mm.connect(101) == ("queued", 1)
+    queued = miniapp._status_payload(101)
+    assert queued["status"] == "queued" and queued["position"] == 1
+
+    assert mm.connect(202) == ("paired", 101)
+    paired_a = miniapp._status_payload(101)
+    paired_b = miniapp._status_payload(202)
+    assert paired_a["status"] == "paired" and paired_a["position"] is None
+    assert paired_b["status"] == "paired" and paired_b["position"] is None
+
+
 def test_miniapp_health_static_and_origin_guard() -> None:
     from types import SimpleNamespace
 
@@ -1359,6 +1388,7 @@ def test_miniapp_health_static_and_origin_guard() -> None:
             health = await client.get("/api/miniapp/health")
             assert health.status == 200
             assert (await health.json())["service"] == "anon-mgn-miniapp"
+            assert "no-store" in health.headers["Cache-Control"]
 
             own_origin = str(client.make_url("/")).rstrip("/")
             same_origin = await client.get(
@@ -1368,10 +1398,13 @@ def test_miniapp_health_static_and_origin_guard() -> None:
             assert same_origin.headers["Access-Control-Allow-Origin"] == own_origin
 
             configured_origin = await client.get(
-                "/api/miniapp/health", headers={"Origin": "https://elite-crmp.ru"}
+                "/api/miniapp/health",
+                headers={"Origin": "https://bot-1789383103-4489-furadev.bothost.tech"},
             )
             assert configured_origin.status == 200
-            assert configured_origin.headers["Access-Control-Allow-Origin"] == "https://elite-crmp.ru"
+            assert configured_origin.headers["Access-Control-Allow-Origin"] == (
+                "https://bot-1789383103-4489-furadev.bothost.tech"
+            )
 
             foreign = await client.get(
                 "/api/miniapp/health", headers={"Origin": "https://evil.example"}
