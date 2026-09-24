@@ -546,8 +546,14 @@ class MiniAppServer:
     async def security_headers(self, request: web.Request, handler):
         origin = request.headers.get("Origin", "").rstrip("/")
         origin_host = urlsplit(origin).netloc.lower() if origin else ""
-        request_host = request.headers.get("X-Forwarded-Host", request.host).lower()
-        same_origin = bool(origin_host and origin_host == request_host)
+        request_hosts = {str(request.host or "").strip().lower()}
+        forwarded_host = request.headers.get("X-Forwarded-Host", "")
+        request_hosts.update(
+            item.strip().lower()
+            for item in forwarded_host.split(",")
+            if item.strip()
+        )
+        same_origin = bool(origin_host and origin_host in request_hosts)
         origin_allowed = same_origin or origin in self.allowed_origins
         if origin and request.path.startswith("/api/") and not origin_allowed:
             raise _json_error(403, "Источник Mini App не разрешён")
