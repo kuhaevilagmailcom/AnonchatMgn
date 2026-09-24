@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
@@ -151,11 +153,19 @@ async def cb_stop(event: CallbackQuery, ctx: Ctx, cfg: Config) -> None:
         await ctx.ack()
         await ctx.reply(texts.NO_DIALOG, markup=K.menu_keyboard())
         return
+    stats = ctx.mm.dialog_stats(ctx.user_id)
+    started = float(stats.get("started_at", 0) or 0)
+    elapsed = max(0, int(time.time() - started)) if started else 0
+    if elapsed >= 5 * 60:
+        await ctx.ack()
+        mins = max(1, elapsed // 60)
+        await ctx.edit(
+            f"Диалог идёт уже <b>{mins} мин</b>. Точно остановить?",
+            K.confirm_stop_keyboard(),
+        )
+        return
     await ctx.ack()
-    await ctx.edit(
-        "Закрыть диалог?",
-        K.confirm_stop_keyboard(),
-    )
+    await act_stop(ctx)
 
 
 @router.callback_query(F.data == K.CB_STOP_YES)
