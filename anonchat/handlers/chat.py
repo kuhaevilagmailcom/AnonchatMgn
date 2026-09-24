@@ -17,7 +17,9 @@ from ..config import Config
 from ..matching import Matchmaker
 from ..monitoring import enqueue_chat_monitor
 from ..diagnostics import METRICS
+from ..engagement import collect_progress_notifications
 from .. import relay_state
+from .. import word_game as WG
 
 router = Router(name="chat")
 
@@ -44,6 +46,18 @@ async def relay_to_partner(
         return
 
     if await ctx.restricted():
+        return
+
+    current_partner = mm.partner(ctx.user_id)
+    if (
+        message.text
+        and current_partner is not None
+        and WG.explainer_used_secret(ctx.user_id, current_partner, message.text)
+    ):
+        await ctx.reply(
+            "🗣 Не пиши само слово. Объясни его другими словами.",
+            K.chat_keyboard(),
+        )
         return
 
     result = mm.count_message(ctx.user_id)
@@ -93,6 +107,56 @@ async def relay_to_partner(
     if copied is not None:
         relay_state.remember(ctx.user_id, message.message_id, partner, copied.message_id)
 
+    if message.text:
+        guessed = WG.resolve_guess(ctx.user_id, partner, message.text)
+        if guessed is not None:
+            awarded = await ctx.db.award_word_guess(
+                guessed.guesser_id, guessed.explainer_id
+            )
+            game = WG.get_by_id(guessed.game_id)
+            reward_line = (
+                f"+<b>{awarded} ⭐</b>."
+                if awarded > 0
+                else "Сегодня награда за эту игру уже исчерпана."
+            )
+            end_line = (
+                f"\n\n🏁 <b>Игра окончена</b> · {guessed.total_rounds} слов."
+                if guessed.finished
+                else ""
+            )
+            markup = (
+                K.word_end_keyboard()
+                if guessed.finished
+                else K.word_next_keyboard(guessed.game_id, guessed.round_index)
+            )
+            await send_to(
+                ctx.bot,
+                guessed.guesser_id,
+                f"🎯 <b>Угадал!</b>\nСлово: <b>{texts.esc(guessed.word)}</b>\n"
+                f"{reward_line}{end_line}",
+                markup,
+                ctx.pack,
+            )
+            await send_to(
+                ctx.bot,
+                guessed.explainer_id,
+                f"🎯 <b>Слово угадано!</b>\n"
+                f"Слово: <b>{texts.esc(guessed.word)}</b>{end_line}",
+                markup,
+                ctx.pack,
+            )
+            if guessed.finished and game is not None:
+                mm.record_game(game.user_a, "words", guessed.correct_total, guessed.total_rounds)
+                for uid in (game.user_a, game.user_b):
+                    await ctx.db.record_game_engagement(
+                        uid, "words",
+                        matches=guessed.correct_total,
+                        total=guessed.total_rounds,
+                    )
+                    for notice in await collect_progress_notifications(ctx.db, uid):
+                        await send_to(ctx.bot, uid, notice, pack=ctx.pack)
+                WG.remove(guessed.game_id)
+
     # x2/x3 не пишет SQLite на каждое сообщение: бонус копится в RAM диалога
     # и начисляется одним запросом при завершении.
     multiplier = await ctx.db.xp_multiplier()
@@ -127,6 +191,15 @@ async def relay_edited_message(
         return
 
     body = message.text if message.text is not None else message.caption
+    if (
+        message.text
+        and WG.explainer_used_secret(ctx.user_id, partner_id, message.text)
+    ):
+        await ctx.reply(
+            "🗣 Не пиши само слово. Объясни его другими словами.",
+            K.chat_keyboard(),
+        )
+        return
     if body is not None and len(body) > cfg.max_message_len:
         await ctx.reply(texts.TOO_LONG.format(limit=cfg.max_message_len))
         return
