@@ -204,16 +204,21 @@ async def cb_feedback(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None
     )
 
 
-@router.message(FeedbackStates.user_message, F.text, ~F.text.startswith("/"))
+@router.message(FeedbackStates.user_message)
 async def feedback_text(
     message: Message, ctx: Ctx, state: FSMContext, db: Database
 ) -> None:
-    body = (message.text or "").strip()
-    if not body:
-        await ctx.reply("Сообщение пустое. Напиши текст.")
-        return
+    body = (message.text or message.caption or "").strip()
     if len(body) > 2000:
         await ctx.reply("Слишком длинно. Максимум 2000 символов.")
+        return
+
+    has_media = bool(
+        message.photo or message.video or message.animation or message.document
+        or message.voice or message.audio or message.video_note or message.sticker
+    )
+    if not body and not has_media:
+        await ctx.reply("Пришли текст, фото, видео, голосовое или файл.")
         return
 
     admins = await db.all_admin_ids(ctx.cfg.admin_ids)
@@ -221,8 +226,8 @@ async def feedback_text(
     card = (
         "💬 <b>Обратная связь</b>\n\n"
         f"От: <b>{texts.esc(ctx.nick)}</b>\n"
-        f"ID: <code>{ctx.user_id}</code>\n\n"
-        f"{texts.esc(body)}"
+        f"ID: <code>{ctx.user_id}</code>"
+        + (f"\n\n{texts.esc(body)}" if body else "")
     )
     for admin_id in admins:
         result = await send_to(
@@ -233,6 +238,11 @@ async def feedback_text(
             ctx.pack,
         )
         delivered += int(result is DeliveryResult.DELIVERED)
+        if has_media:
+            try:
+                await message.send_copy(chat_id=admin_id, reply_markup=None)
+            except TelegramAPIError:
+                pass
 
     await state.clear()
     if delivered:
@@ -290,7 +300,7 @@ async def feedback_admin_reply(
         target_id,
         "💬 <b>Ответ на обратную связь</b>\n\n"
         f"{texts.esc(body)}",
-        K.menu_keyboard(),
+        K.menu_keyboard(ctx.mm.status(target_id)),
         ctx.pack,
     )
     await state.clear()
