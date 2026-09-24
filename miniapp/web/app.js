@@ -54,7 +54,12 @@ if (typeof window === 'undefined') {
   function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('show'),2400)}
   async function request(path, options={}){
     const headers={'Content-Type':'application/json',...(options.headers||{})}; if(tg?.initData)headers['X-Telegram-Init-Data']=tg.initData;
-    let res; try{res=await fetch(apiBase+path,{cache:'no-store',...options,headers})}catch(_){throw new Error('Нет соединения с сервером')}
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),5000);
+    let res;
+    try{res=await fetch(apiBase+path,{cache:'no-store',...options,headers,signal:controller.signal})}
+    catch(e){if(e?.name==='AbortError')throw new Error('Сервер не ответил за 5 секунд');throw new Error('Нет соединения с сервером')}
+    finally{clearTimeout(timeout)}
     let data={}; try{data=await res.json()}catch(_){} if(!res.ok)throw new Error(data.message||`Ошибка ${res.status}`); return data;
   }
   async function safe(path,options,fallback=null){try{return await request(path,options)}catch(e){if(tg?.initData)toast(e.message);return fallback}}
@@ -120,7 +125,7 @@ if (typeof window === 'undefined') {
   }
   function renderEvents(filter='all'){const list=$('#eventList');const items=state.events.filter(x=>filter==='all'||x.type===filter);list.innerHTML=items.length?items.map(x=>`<article class="event surface"><span>${svg(x.icon||'bell')}</span><div><strong>${esc(x.title)}</strong><p>${esc(x.text)}</p><small>${esc(x.time||'')}</small></div></article>`).join(''):'<div class="empty">Здесь пока тихо.</div>';const unread=state.events.some(x=>x.unread);$$('[data-event-dot]').forEach(el=>el.hidden=!unread)}
   async function load(){if(!tg?.initData)demo();else{const seq=++statusRequestSeq;const data=await safe(`/api/miniapp/me?_=${Date.now()}`,{},null);if(data){state.user={...state.user,...data.user};state.stats={...state.stats,...data.stats};state.referral=data.referral||state.referral;state.referral_url=data.referral_url||'';state.bot_url=data.bot_url||'';state.events=data.notifications||[];applyStatusSnapshot(data,seq);return}}render()}
-  function go(page){state.page=page;$('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===page));$('#bottomNav button').forEach(b=>b.classList.toggle('active',b.dataset.nav===page));window.scrollTo({top:0,behavior:'auto'});haptic();if(page==='search')syncStatus(true);try{if(tgAtLeast('6.1'))page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}}
+  function go(page){state.page=page;$$('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===page));$$('#bottomNav button').forEach(b=>b.classList.toggle('active',b.dataset.nav===page));window.scrollTo({top:0,behavior:'auto'});haptic();if(page==='search')syncStatus(true);try{if(tgAtLeast('6.1'))page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}}
   function openModal(kind,title,eyebrow='АНОН МГН'){$('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML='<div class="loading"><i class="spinner"></i>Загрузка…</div>';$('#modal').hidden=false;document.body.style.overflow='hidden';state.modal=kind;try{if(tgAtLeast('6.1'))tg.BackButton.show()}catch(_){};haptic();renderModal(kind)}
   function closeModal(){$('#modal').hidden=true;document.body.style.overflow='';state.modal=null;try{if(tgAtLeast('6.1'))state.page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}}
   function panel(title,text){return `<section class="panel"><h3>${title}</h3><p>${text}</p></section>`}
@@ -173,8 +178,26 @@ if (typeof window === 'undefined') {
   }
   async function inviteBattle(total){const r=await safe('/api/miniapp/games/battle/invite',{method:'POST',body:JSON.stringify({total})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify()}}
   async function inviteNumbers(range_max){const r=await safe('/api/miniapp/games/numbers/invite',{method:'POST',body:JSON.stringify({range_max})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify()}}
-  function bind(){document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить ник','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','help':'Помощь и правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game)openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':'Числа','ИГРА ВДВОЁМ')});$('[data-close-modal]').forEach(b=>b.onclick=closeModal);$('#searchToggle').onclick=toggleSearch;$('[data-setting] button').forEach(b=>b.onclick=()=>updateSetting(b.parentElement.dataset.setting,b.dataset.value));$('#eventFilter button').forEach(b=>b.onclick=()=>{$('#eventFilter button').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderEvents(b.dataset.filter)});window.addEventListener('online',()=>{$('#offline').hidden=true;if(tg?.initData){load();syncStatus(true)}});window.addEventListener('offline',()=>{if(tg?.initData)$('#offline').hidden=false});window.addEventListener('focus',()=>syncStatus(true));window.addEventListener('pageshow',()=>syncStatus(true));document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncStatus(true)});try{if(tgAtLeast('6.1'))tg.BackButton.onClick(()=>state.modal?closeModal():state.page!=='home'?go('home'):tg.close())}catch(_){}}
-  async function boot(){icons();try{tg?.ready();tg?.expand();if(tgAtLeast('6.1')){tg.setHeaderColor?.('#050506');tg.setBackgroundColor?.('#050506')}if(tgAtLeast('7.7'))tg.disableVerticalSwipes?.()}catch(_){}bind();await load();await syncStatus(true);startStatusSync();$('#app').classList.add('ready');setTimeout(()=>$('#boot').classList.add('hide'),180)}
+  function bind(){document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить ник','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','help':'Помощь и правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game)openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':'Числа','ИГРА ВДВОЁМ')});$$('[data-close-modal]').forEach(b=>b.onclick=closeModal);$('#searchToggle').onclick=toggleSearch;$$('[data-setting] button').forEach(b=>b.onclick=()=>updateSetting(b.parentElement.dataset.setting,b.dataset.value));$$('#eventFilter button').forEach(b=>b.onclick=()=>{$$('#eventFilter button').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderEvents(b.dataset.filter)});window.addEventListener('online',()=>{$('#offline').hidden=true;if(tg?.initData){load();syncStatus(true)}});window.addEventListener('offline',()=>{if(tg?.initData)$('#offline').hidden=false});window.addEventListener('focus',()=>syncStatus(true));window.addEventListener('pageshow',()=>syncStatus(true));document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncStatus(true)});try{if(tgAtLeast('6.1'))tg.BackButton.onClick(()=>state.modal?closeModal():state.page!=='home'?go('home'):tg.close())}catch(_){}}
+  async function boot(){
+    const bootEl=$('#boot'),appEl=$('#app');
+    const watchdog=setTimeout(()=>{bootEl?.classList.add('hide');appEl?.classList.add('ready')},6500);
+    try{
+      icons();
+      try{tg?.ready();tg?.expand();if(tgAtLeast('6.1')){tg.setHeaderColor?.('#050506');tg.setBackgroundColor?.('#050506')}if(tgAtLeast('7.7'))tg.disableVerticalSwipes?.()}catch(_){}
+      bind();
+      await load();
+      await syncStatus(true);
+      startStatusSync();
+    }catch(e){
+      console.error('Mini App boot failed',e);
+      if(tg?.initData)toast(e?.message||'Ошибка запуска Mini App');
+    }finally{
+      clearTimeout(watchdog);
+      appEl?.classList.add('ready');
+      setTimeout(()=>bootEl?.classList.add('hide'),180);
+    }
+  }
   boot();
 })();
 
