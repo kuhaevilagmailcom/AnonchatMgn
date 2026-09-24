@@ -44,6 +44,7 @@ from .matching import Matchmaker
 from .pack import EmojiPack
 from .engagement import collect_progress_notifications, format_quests
 from . import relay_state
+from . import word_game as WG
 from .runtime_state import online_count as presence_online_count
 
 ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "menu"
@@ -836,6 +837,7 @@ async def break_pair(
         return
     if db is not None:
         await db.close_battles_for_users(user_id, partner)
+    WG.clear_pair(user_id, partner)
     relay_state.clear_pair(user_id, partner)
     await send_to(bot, partner, note, kb, pack)
     await send_to(bot, user_id, note, kb, pack)
@@ -846,20 +848,25 @@ async def _send_progress_notices(ctx: Ctx, user_id: int) -> None:
         await send_to(ctx.bot, user_id, notice, pack=ctx.pack)
 
 
-def _dialog_summary_text(summary: dict) -> str:
+def _dialog_summary_text(summary: dict, user_id: int, earned_xp: int) -> str:
     started = float(summary.get("started_at", time.time()))
     seconds = max(0, int(time.time() - started))
-    mins = max(1, seconds // 60) if seconds else 0
+    if seconds < 60:
+        duration = "меньше минуты"
+    else:
+        duration = f"{max(1, seconds // 60)} мин"
     counts = summary.get("counts", {}) or {}
-    total_messages = sum(int(v) for v in counts.values())
+    sent = int(counts.get(int(user_id), 0))
     game = summary.get("game_stats", {}) or {}
-    lines = ["💬 <b>Диалог завершён</b>"]
-    if mins:
-        lines.append(f"Время: <b>{mins} мин</b>")
-    lines.append(f"Сообщений: <b>{total_messages}</b>")
+    lines = [
+        "💬 <b>Итог разговора</b>",
+        f"Диалог длился: <b>{duration}</b>",
+        f"Отправлено сообщений: <b>{sent}</b>",
+        f"Получено: <b>+{max(0, int(earned_xp))} ⭐</b>",
+    ]
     if int(game.get("battle_games", 0)):
         lines.append(
-            f"Битва мнений: <b>{int(game.get('battle_matches', 0))}/{int(game.get('battle_questions', 0))}</b> совпадений"
+            f"Битва мнений: <b>{int(game.get('battle_matches', 0))}/{int(game.get('battle_questions', 0))}</b>"
         )
     if int(game.get("number_games", 0)):
         lines.append(f"Числа: <b>{int(game.get('number_exact', 0))}</b> точных совпадений")
@@ -872,6 +879,7 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
         await ctx.reply(texts.NO_DIALOG, markup=menu_keyboard())
         return
     await ctx.db.close_battles_for_users(ctx.user_id, partner)
+    WG.clear_pair(ctx.user_id, partner)
     relay_state.clear_pair(ctx.user_id, partner)
 
     counts: dict[int, int] = summary.get("counts", {}) or {}
@@ -886,7 +894,7 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
         count_dialog=live, commit=False,
     )
     cap = ctx.cfg.xp_message_cap
-    my_xp = 0
+    earned_xp: dict[int, int] = {}
     for uid, sent in ((ctx.user_id, mine), (partner, theirs)):
         gain = (
             min(sent, cap) * ctx.cfg.xp_per_message
@@ -903,20 +911,20 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
         if live:
             await ctx.db.record_dialog_engagement(uid, commit=False)
             await ctx.db.update_streak(uid, commit=False)
-        if uid == ctx.user_id:
-            my_xp = gain
+        earned_xp[uid] = gain
     await ctx.db.db.commit()
 
     ctx.mm.remember_rating([ctx.user_id, partner], match_id)
-    summary_text = _dialog_summary_text(summary)
+    my_summary = _dialog_summary_text(summary, ctx.user_id, earned_xp.get(ctx.user_id, 0))
+    partner_summary = _dialog_summary_text(summary, partner, earned_xp.get(partner, 0))
 
     await send_to(
         ctx.bot, partner,
-        f"{notify_partner}\n\n{summary_text}",
+        f"{notify_partner}\n\n{partner_summary}",
         menu_keyboard(), ctx.pack,
     )
     await ctx.reply(
-        f"{note}{texts.XP_EARNED.format(xp=my_xp)}\n\n{summary_text}",
+        f"{note}\n\n{my_summary}",
         markup=rating_keyboard(),
     )
     await send_to(ctx.bot, partner, texts.RATING_ASK, rating_keyboard(), ctx.pack)
@@ -1035,6 +1043,8 @@ async def apply_rating(ctx: Ctx, positive: bool) -> None:
 async def forget_everything(ctx: Ctx) -> None:
     partner = ctx.mm.partner(ctx.user_id)
     await ctx.db.close_battles_for_users(ctx.user_id, partner or 0)
+    if partner is not None:
+        WG.clear_pair(ctx.user_id, partner)
     ctx.mm.forget(ctx.user_id)
     relay_state.clear_user(ctx.user_id)
     await ctx.db.forget_user(ctx.user_id)
