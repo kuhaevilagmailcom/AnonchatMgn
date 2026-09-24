@@ -19,6 +19,11 @@ from .number_game import (
     number_reward,
 )
 from .permissions import ALL_ADMIN_PERMISSIONS, serialize_permissions
+from .word_game import (
+    WORD_DAILY_REWARD_LIMIT,
+    WORD_PAIR_DAILY_REWARD_LIMIT,
+    WORD_REWARD,
+)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -147,6 +152,14 @@ CREATE TABLE IF NOT EXISTS number_daily_rewards (
     PRIMARY KEY (user_id, day_start)
 );
 
+CREATE TABLE IF NOT EXISTS word_game_rewards (
+    user_id    INTEGER NOT NULL,
+    partner_id INTEGER NOT NULL,
+    day_start  INTEGER NOT NULL,
+    stars      INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, partner_id, day_start)
+);
+
 CREATE TABLE IF NOT EXISTS daily_activity (
     user_id          INTEGER NOT NULL,
     day_start        INTEGER NOT NULL,
@@ -222,6 +235,7 @@ CREATE INDEX IF NOT EXISTS idx_battle_users_a ON battle_games(user_a, status, up
 CREATE INDEX IF NOT EXISTS idx_battle_users_b ON battle_games(user_b, status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_battle_status_updated ON battle_games(status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_number_daily_day ON number_daily_rewards(day_start);
+CREATE INDEX IF NOT EXISTS idx_word_game_rewards_day ON word_game_rewards(day_start, user_id);
 CREATE INDEX IF NOT EXISTS idx_activity_day ON daily_activity(day_start, xp_earned DESC);
 CREATE INDEX IF NOT EXISTS idx_activity_user_day ON daily_activity(user_id, day_start DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_battle_live_pair
@@ -288,6 +302,7 @@ class Database:
         self._matchmaker_revision = -1
         self._referral_lock = asyncio.Lock()
         self._number_reward_lock = asyncio.Lock()
+        self._word_reward_lock = asyncio.Lock()
         self._engagement_lock = asyncio.Lock()
         self._nickname_lock = asyncio.Lock()
         self._admin_permissions_cache: dict[int, tuple[float, frozenset[str]]] = {}
@@ -395,6 +410,10 @@ class Database:
         await self.db.execute(
             "DELETE FROM number_daily_rewards WHERE day_start < ?",
             (number_reward_day_start() - 7 * 86_400,),
+        )
+        await self.db.execute(
+            "DELETE FROM word_game_rewards WHERE day_start < ?",
+            (referral_day_start() - 7 * 86_400,),
         )
         # Для топов недели/месяца и личной активности достаточно последних 40 суток.
         await self.db.execute(
@@ -1070,6 +1089,49 @@ class Database:
             )
             await self.db.commit()
             return cur.rowcount
+
+    async def award_word_guess(
+        self, user_id: int, partner_id: int, requested: int = WORD_REWARD
+    ) -> int:
+        """+3 ⭐ за угадывание с маленькими дневными лимитами против накрутки."""
+        user_id = int(user_id)
+        partner_id = int(partner_id)
+        requested = max(0, int(requested))
+        if not user_id or not partner_id or user_id == partner_id or requested <= 0:
+            return 0
+
+        day = referral_day_start()
+        async with self._word_reward_lock:
+            pair_row = await self._fetchone(
+                """SELECT stars FROM word_game_rewards
+                   WHERE user_id=? AND partner_id=? AND day_start=?""",
+                (user_id, partner_id, day),
+            )
+            pair_total = int(pair_row["stars"] or 0) if pair_row else 0
+            global_row = await self._fetchone(
+                """SELECT COALESCE(SUM(stars), 0) AS stars
+                   FROM word_game_rewards WHERE user_id=? AND day_start=?""",
+                (user_id, day),
+            )
+            global_total = int(global_row["stars"] or 0) if global_row else 0
+            awarded = min(
+                requested,
+                max(0, WORD_PAIR_DAILY_REWARD_LIMIT - pair_total),
+                max(0, WORD_DAILY_REWARD_LIMIT - global_total),
+            )
+            if awarded <= 0:
+                return 0
+
+            await self.db.execute(
+                """INSERT INTO word_game_rewards(user_id, partner_id, day_start, stars)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(user_id, partner_id, day_start)
+                   DO UPDATE SET stars=stars+excluded.stars""",
+                (user_id, partner_id, day, awarded),
+            )
+            await self.award_xp(user_id, awarded, commit=False)
+            await self.db.commit()
+            return awarded
 
     async def nickname_taken(self, nickname: str, except_user_id: int = 0) -> int | None:
         """Ник должен быть уникальным — иначе топ превращается в «Аноним, Аноним, Аноним».
@@ -2259,6 +2321,10 @@ class Database:
         )
         await self.db.execute(
             "DELETE FROM number_game_pairs WHERE user_low = ? OR user_high = ?",
+            (user_id, user_id),
+        )
+        await self.db.execute(
+            "DELETE FROM word_game_rewards WHERE user_id = ? OR partner_id = ?",
             (user_id, user_id),
         )
         await self.db.execute(
