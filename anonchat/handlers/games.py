@@ -720,3 +720,124 @@ async def cb_again(event: CallbackQuery, ctx: Ctx) -> None:
         return
     await ctx.ack()
     await ctx.reply("⚔️ <b>Сколько вопросов сыграть?</b>", K.battle_length_keyboard())
+
+
+
+@router.callback_query(F.data == K.CB_WORDS)
+async def cb_words(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    partner = ctx.mm.partner(ctx.user_id)
+    if partner is None:
+        await ctx.ack("Сначала найди собеседника", alert=True)
+        return
+
+    if await db.game_for_pair(ctx.user_id, partner) is not None:
+        await ctx.ack("Сначала заверши текущую игру", alert=True)
+        return
+
+    game = WG.get_for_pair(ctx.user_id, partner)
+    if game is not None:
+        if game.status == "invited":
+            if game.inviter_id == ctx.user_id:
+                await ctx.ack("Предложение уже отправлено", alert=True)
+            else:
+                await ctx.ack()
+                await ctx.reply(
+                    "🗣 Собеседник предлагает сыграть в «Объясни слово».",
+                    K.word_invite_keyboard(game.id),
+                )
+            return
+        if game.status == "active":
+            await ctx.ack("Игра уже идёт")
+            await ctx.reply(WG.role_text(game, ctx.user_id), K.chat_keyboard())
+            return
+        if game.status == "round_done":
+            await ctx.ack()
+            await ctx.reply(
+                WG.role_text(game, ctx.user_id),
+                K.word_next_keyboard(game.id, game.round_index),
+            )
+            return
+        WG.remove(game.id)
+
+    game, created = WG.create_invite(ctx.user_id, partner)
+    if not created:
+        await ctx.ack("У вас уже есть активная игра", alert=True)
+        return
+
+    result = await send_to(
+        ctx.bot,
+        partner,
+        "🗣 <b>Собеседник предлагает сыграть в «Объясни слово»</b>\n\n"
+        f"Раундов: <b>{WG.WORD_ROUNDS}</b>. Один объясняет слово, второй угадывает. "
+        f"За правильное угадывание — до <b>{WG.WORD_REWARD} ⭐</b>.",
+        K.word_invite_keyboard(game.id),
+        ctx.pack,
+    )
+    if result is DeliveryResult.UNAVAILABLE:
+        WG.remove(game.id)
+        await ctx.reply("Не получилось отправить предложение.")
+        return
+    await ctx.ack()
+    await ctx.reply("🗣 Предложение отправлено.")
+
+
+@router.callback_query(F.data.startswith("game:word:yes:"))
+async def cb_word_accept(event: CallbackQuery, ctx: Ctx) -> None:
+    try:
+        game_id = int((event.data or "").rsplit(":", 1)[1])
+    except (TypeError, ValueError):
+        await ctx.ack("Игра не найдена", alert=True)
+        return
+    game = WG.get_by_id(game_id)
+    partner = ctx.mm.partner(ctx.user_id)
+    if game is None or partner is None or partner not in {game.user_a, game.user_b}:
+        await ctx.ack("Диалог уже завершён", alert=True)
+        return
+    game = WG.accept(game_id, ctx.user_id)
+    if game is None:
+        await ctx.ack("На это предложение уже ответили", alert=True)
+        return
+    await ctx.ack("Игра началась")
+    await _send_word_round(ctx, game)
+
+
+@router.callback_query(F.data.startswith("game:word:no:"))
+async def cb_word_decline(event: CallbackQuery, ctx: Ctx) -> None:
+    try:
+        game_id = int((event.data or "").rsplit(":", 1)[1])
+    except (TypeError, ValueError):
+        await ctx.ack("Игра не найдена", alert=True)
+        return
+    game = WG.decline(game_id, ctx.user_id)
+    if game is None:
+        await ctx.ack("Предложение уже закрыто", alert=True)
+        return
+    await ctx.ack("Не сейчас")
+    await send_to(
+        ctx.bot,
+        game.inviter_id,
+        "Собеседник пока не хочет играть в «Объясни слово».",
+        K.chat_keyboard(),
+        ctx.pack,
+    )
+
+
+@router.callback_query(F.data.startswith("game:word:next:"))
+async def cb_word_next(event: CallbackQuery, ctx: Ctx) -> None:
+    try:
+        _, _, _, raw_game, raw_round = (event.data or "").split(":")
+        game_id, round_index = int(raw_game), int(raw_round)
+    except (TypeError, ValueError):
+        await ctx.ack("Раунд уже закрыт", alert=True)
+        return
+    current = WG.get_by_id(game_id)
+    partner = ctx.mm.partner(ctx.user_id)
+    if current is None or partner is None or partner not in {current.user_a, current.user_b}:
+        await ctx.ack("Диалог уже завершён", alert=True)
+        return
+    game = WG.advance(game_id, ctx.user_id, round_index)
+    if game is None:
+        await ctx.ack("Собеседник уже перешёл дальше", alert=True)
+        return
+    await ctx.ack()
+    await _send_word_round(ctx, game)
