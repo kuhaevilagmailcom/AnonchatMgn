@@ -46,7 +46,7 @@ def test_config_defaults(monkeypatch=None) -> None:
         assert cfg.subscription_channel == "@anonmgn"
         assert cfg.subscription_reward == 100
         assert cfg.miniapp_enabled is True
-        assert cfg.miniapp_url == "https://elite-crmp.ru/web/index.html"
+        assert cfg.miniapp_url == "https://bot-1789383103-4489-furadev.bothost.tech"
 
         # id администраторов не зашиваются в публичный код
         os.environ["ADMIN_IDS"] = ""
