@@ -179,6 +179,18 @@ class MiniAppServer:
             "quest_target": 20,
         }
 
+    def _status_payload(self, user_id: int) -> dict:
+        status = self.mm.status(user_id)
+        return {
+            "status": status,
+            "position": self.mm.position(user_id) if status == "queued" else None,
+            "stats": {
+                "online": presence_online_count(),
+                "chatting": self.mm.online_pairs() * 2,
+                "searching": self.mm.queue_size(),
+            },
+        }
+
     async def _username(self) -> str:
         if not self._bot_username:
             me = await self.bot.get_me()
@@ -201,6 +213,10 @@ class MiniAppServer:
                 "notifications": await self._notifications(uid),
             }
         )
+
+    async def status(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        return web.json_response(self._status_payload(uid))
 
     async def settings(self, request: web.Request) -> web.Response:
         uid, user, _ = await self._auth(request)
@@ -275,7 +291,9 @@ class MiniAppServer:
         if int(row["mute_until"] or 0) > int(time.time()):
             raise _json_error(403, "Поиск временно недоступен")
         if self.mm.status(uid) == "paired":
-            return web.json_response({"status": "paired", "stats": await self._stats(uid, row)})
+            payload = self._status_payload(uid)
+            payload["stats"] = {**await self._stats(uid, row), **payload["stats"]}
+            return web.json_response(payload)
         excluded = await self.db.excluded_partners(uid)
         outcome, payload = self.mm.connect(
             uid,
@@ -302,13 +320,9 @@ class MiniAppServer:
                     excluded=excluded,
                 )[1]
         self.db.schedule_matchmaker_save(self.mm)
-        return web.json_response(
-            {
-                "status": outcome,
-                "position": payload if outcome == "queued" else None,
-                "stats": await self._stats(uid, row),
-            }
-        )
+        current = self._status_payload(uid)
+        current["stats"] = {**await self._stats(uid, row), **current["stats"]}
+        return web.json_response(current)
 
     async def search_stop(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
@@ -318,7 +332,7 @@ class MiniAppServer:
         if status == "queued":
             self.mm.forget(uid)
             self.db.schedule_matchmaker_save(self.mm)
-        return web.json_response({"status": "free"})
+        return web.json_response(self._status_payload(uid))
 
     async def online(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
@@ -337,6 +351,7 @@ class MiniAppServer:
                 "free": max(0, current - chatting - searching),
                 "peak": peak,
                 "status": self.mm.status(uid),
+                "position": self.mm.position(uid) if self.mm.status(uid) == "queued" else None,
             }
         )
 
@@ -565,6 +580,10 @@ class MiniAppServer:
             except web.HTTPException as exc:
                 response = exc
         response.headers["X-Content-Type-Options"] = "nosniff"
+        if request.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         response.headers["Content-Security-Policy"] = (
@@ -590,6 +609,7 @@ class MiniAppServer:
         app = web.Application(client_max_size=64 * 1024, middlewares=[self.security_headers])
         app.router.add_get("/api/miniapp/health", self.health)
         app.router.add_get("/api/miniapp/me", self.me)
+        app.router.add_get("/api/miniapp/status", self.status)
         app.router.add_post("/api/miniapp/settings", self.settings)
         app.router.add_post("/api/miniapp/settings/reset", self.settings_reset)
         app.router.add_post("/api/miniapp/profile/nick", self.nick)
