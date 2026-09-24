@@ -25,6 +25,7 @@ from ..number_game import (
     NUMBER_ROUNDS,
     number_reward,
 )
+from .. import word_game as WG
 
 router = Router(name="games")
 
@@ -253,6 +254,17 @@ async def _send_round_result(ctx: Ctx, row: Any) -> None:
         markup = K.battle_next_keyboard(int(row["id"]), index)
     await send_to(ctx.bot, user_a, body_a, markup, ctx.pack)
     await send_to(ctx.bot, user_b, body_b, markup, ctx.pack)
+
+
+async def _send_word_round(ctx: Ctx, game: WG.WordGame) -> None:
+    for user_id in (game.user_a, game.user_b):
+        await send_to(
+            ctx.bot,
+            user_id,
+            WG.role_text(game, user_id),
+            K.chat_keyboard(),
+            ctx.pack,
+        )
 
 
 async def _open_games(ctx: Ctx) -> None:
