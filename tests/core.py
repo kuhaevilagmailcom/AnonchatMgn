@@ -45,6 +45,8 @@ def test_config_defaults(monkeypatch=None) -> None:
         assert cfg.recent_partner_cooldown_minutes == 30
         assert cfg.subscription_channel == "@anonmgn"
         assert cfg.subscription_reward == 100
+        assert cfg.miniapp_enabled is True
+        assert cfg.miniapp_url == "https://elite-crmp.ru/web/index.html"
 
         # id администраторов не зашиваются в публичный код
         os.environ["ADMIN_IDS"] = ""
@@ -1297,6 +1299,91 @@ def test_word_game_word_pool() -> None:
     assert len(WORDS) >= 500
     assert len(WORDS) == len(set(WORDS))
     assert {"магнитка", "могну", "магнитогорск", "черемша"} <= set(WORDS)
+
+
+def test_miniapp_init_data_signature() -> None:
+    import hashlib
+    import hmac
+    import json
+    import time
+    from urllib.parse import urlencode
+
+    from aiohttp.web_exceptions import HTTPUnauthorized
+
+    from anonchat.miniapp_api import validate_init_data
+
+    token = "123456:TEST_TOKEN"
+    params = {
+        "auth_date": str(int(time.time())),
+        "query_id": "test-query",
+        "user": json.dumps(
+            {"id": 42, "first_name": "Тест", "username": "tester"},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ),
+    }
+    data_check = "\n".join(f"{key}={value}" for key, value in sorted(params.items()))
+    secret = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
+    params["hash"] = hmac.new(secret, data_check.encode(), hashlib.sha256).hexdigest()
+    signed = urlencode(params)
+
+    assert validate_init_data(signed, token)["id"] == 42
+    try:
+        validate_init_data(signed, "wrong-token")
+    except HTTPUnauthorized:
+        pass
+    else:
+        raise AssertionError("initData с чужой подписью должен отклоняться")
+
+
+def test_miniapp_health_static_and_origin_guard() -> None:
+    from types import SimpleNamespace
+
+    from aiohttp.test_utils import TestClient, TestServer
+
+    from anonchat.miniapp_api import MiniAppServer
+
+    async def scenario() -> None:
+        web_dir = Path(__file__).resolve().parents[1] / "miniapp" / "web"
+        miniapp = MiniAppServer(
+            None,
+            SimpleNamespace(miniapp_url="https://elite-crmp.ru/web/index.html"),
+            None,
+            None,
+            None,
+            web_dir=web_dir,
+        )
+        client = TestClient(TestServer(miniapp.create_app()))
+        await client.start_server()
+        try:
+            health = await client.get("/api/miniapp/health")
+            assert health.status == 200
+            assert (await health.json())["service"] == "anon-mgn-miniapp"
+
+            own_origin = str(client.make_url("/")).rstrip("/")
+            same_origin = await client.get(
+                "/api/miniapp/health", headers={"Origin": own_origin}
+            )
+            assert same_origin.status == 200
+            assert same_origin.headers["Access-Control-Allow-Origin"] == own_origin
+
+            configured_origin = await client.get(
+                "/api/miniapp/health", headers={"Origin": "https://elite-crmp.ru"}
+            )
+            assert configured_origin.status == 200
+            assert configured_origin.headers["Access-Control-Allow-Origin"] == "https://elite-crmp.ru"
+
+            foreign = await client.get(
+                "/api/miniapp/health", headers={"Origin": "https://evil.example"}
+            )
+            assert foreign.status == 403
+
+            index = await client.get("/")
+            assert index.status == 200 and "АНОН МГН" in await index.text()
+        finally:
+            await client.close()
+
+    asyncio.run(scenario())
 
 
 def run_all() -> int:  # python -m tests.core
