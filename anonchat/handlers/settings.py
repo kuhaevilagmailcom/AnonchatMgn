@@ -13,7 +13,8 @@ from .. import keyboards as K
 from .. import nick as nicklib
 from .. import texts
 from ..actions import (
-    Ctx, announce_pairs, forget_everything, set_nick, show_menu, show_profile, show_online
+    Ctx, DeliveryResult, announce_pairs, forget_everything, send_to,
+    set_nick, show_menu, show_profile, show_online,
 )
 from ..db import Database
 from ..matching import Matchmaker
@@ -34,6 +35,11 @@ DISTRICTS = {
 
 class ProfileStates(StatesGroup):
     nick = State()
+
+
+class FeedbackStates(StatesGroup):
+    user_message = State()
+    admin_reply = State()
 
 
 SUBSCRIPTION_REWARD_KEY = "channel_subscription_v1"
@@ -182,6 +188,116 @@ async def cb_online(event: CallbackQuery, ctx: Ctx) -> None:
     if await ctx.dialog_locked():
         return
     await show_online(ctx)
+
+
+# ---------------------------------------------------------------------------------- обратная связь
+@router.callback_query(F.data == K.CB_FEEDBACK)
+async def cb_feedback(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
+    await ctx.ack()
+    if await ctx.dialog_locked():
+        return
+    await state.set_state(FeedbackStates.user_message)
+    await ctx.edit(
+        "💬 <b>Обратная связь</b>\n\n"
+        "Напиши одним сообщением, что хочешь передать команде проекта.",
+        K.back_menu_keyboard(),
+    )
+
+
+@router.message(FeedbackStates.user_message, F.text, ~F.text.startswith("/"))
+async def feedback_text(
+    message: Message, ctx: Ctx, state: FSMContext, db: Database
+) -> None:
+    body = (message.text or "").strip()
+    if not body:
+        await ctx.reply("Сообщение пустое. Напиши текст.")
+        return
+    if len(body) > 2000:
+        await ctx.reply("Слишком длинно. Максимум 2000 символов.")
+        return
+
+    admins = await db.all_admin_ids(ctx.cfg.admin_ids)
+    delivered = 0
+    card = (
+        "💬 <b>Обратная связь</b>\n\n"
+        f"От: <b>{texts.esc(ctx.nick)}</b>\n"
+        f"ID: <code>{ctx.user_id}</code>\n\n"
+        f"{texts.esc(body)}"
+    )
+    for admin_id in admins:
+        result = await send_to(
+            ctx.bot,
+            admin_id,
+            card,
+            K.feedback_admin_keyboard(ctx.user_id),
+            ctx.pack,
+        )
+        delivered += int(result is DeliveryResult.DELIVERED)
+
+    await state.clear()
+    if delivered:
+        await ctx.reply(
+            "✅ Спасибо. Сообщение отправлено команде проекта.",
+            K.menu_keyboard(ctx.mm.status(ctx.user_id)),
+        )
+    else:
+        await ctx.reply(
+            "Не получилось отправить сообщение. Попробуй позже.",
+            K.menu_keyboard(ctx.mm.status(ctx.user_id)),
+        )
+
+
+@router.callback_query(F.data.startswith("feedback:reply:"))
+async def cb_feedback_reply(
+    event: CallbackQuery, ctx: Ctx, state: FSMContext
+) -> None:
+    if not ctx.is_admin:
+        await ctx.ack("Не для тебя", alert=True)
+        return
+    try:
+        target_id = int((event.data or "").rsplit(":", 1)[1])
+    except (TypeError, ValueError):
+        await ctx.ack("Пользователь не найден", alert=True)
+        return
+    await state.set_state(FeedbackStates.admin_reply)
+    await state.update_data(feedback_reply_to=target_id)
+    await ctx.ack()
+    await ctx.reply(
+        f"💬 Напиши ответ пользователю <code>{target_id}</code> одним сообщением."
+    )
+
+
+@router.message(FeedbackStates.admin_reply, F.text, ~F.text.startswith("/"))
+async def feedback_admin_reply(
+    message: Message, ctx: Ctx, state: FSMContext
+) -> None:
+    if not ctx.is_admin:
+        await state.clear()
+        return
+    data = await state.get_data()
+    target_id = int(data.get("feedback_reply_to") or 0)
+    body = (message.text or "").strip()
+    if not target_id or not body:
+        await state.clear()
+        await ctx.reply("Не получилось отправить ответ.")
+        return
+    if len(body) > 2000:
+        await ctx.reply("Слишком длинно. Максимум 2000 символов.")
+        return
+
+    result = await send_to(
+        ctx.bot,
+        target_id,
+        "💬 <b>Ответ на обратную связь</b>\n\n"
+        f"{texts.esc(body)}",
+        K.menu_keyboard(),
+        ctx.pack,
+    )
+    await state.clear()
+    if result is DeliveryResult.DELIVERED:
+        await ctx.reply("✅ Ответ отправлен.")
+    else:
+        await ctx.reply("Не удалось доставить ответ пользователю.")
 
 
 # ---------------------------------------------------------------------------------- ник
