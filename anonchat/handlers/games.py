@@ -297,6 +297,9 @@ async def cb_numbers(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     if partner is None:
         await ctx.ack("Сначала найди собеседника", alert=True)
         return
+    if WG.active_for_pair(ctx.user_id, partner):
+        await ctx.ack("Сначала заверши игру «Объясни слово»", alert=True)
+        return
 
     existing = await db.game_for_pair(ctx.user_id, partner)
     if existing is not None:
@@ -353,6 +356,9 @@ async def cb_number_range(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     partner = ctx.mm.partner(ctx.user_id)
     if partner is None:
         await ctx.ack("Сначала найди собеседника", alert=True)
+        return
+    if WG.active_for_pair(ctx.user_id, partner):
+        await ctx.ack("Сначала заверши игру «Объясни слово»", alert=True)
         return
 
     reward_available = await db.number_pair_reward_available(ctx.user_id, partner)
@@ -553,6 +559,9 @@ async def cb_battle(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     if partner is None:
         await ctx.ack("Сначала найди собеседника", alert=True)
         return
+    if WG.active_for_pair(ctx.user_id, partner):
+        await ctx.ack("Сначала заверши игру «Объясни слово»", alert=True)
+        return
     existing = await db.game_for_pair(ctx.user_id, partner)
     if existing is not None:
         if _game_type(existing) != "battle":
@@ -601,6 +610,9 @@ async def cb_battle_length(event: CallbackQuery, ctx: Ctx, db: Database) -> None
     partner = ctx.mm.partner(ctx.user_id)
     if partner is None:
         await ctx.ack("Сначала найди собеседника", alert=True)
+        return
+    if WG.active_for_pair(ctx.user_id, partner):
+        await ctx.ack("Сначала заверши игру «Объясни слово»", alert=True)
         return
     game, created = await db.create_battle_invite(ctx.user_id, partner, total)
     if not created:
