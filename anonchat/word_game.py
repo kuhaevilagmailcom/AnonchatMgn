@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 WORD_ROUNDS = 5
 WORD_REWARD = 3
 WORD_PAIR_DAILY_REWARD_LIMIT = 6
-WORD_DAILY_REWARD_LIMIT = 9
+WORD_DAILY_REWARD_LIMIT = 300
 
 WORDS: tuple[str, ...] = (
     "самокат", "наушники", "рюкзак", "мороженое", "зонт", "автобус",
