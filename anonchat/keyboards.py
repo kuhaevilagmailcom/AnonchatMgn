@@ -33,6 +33,7 @@ CB_NICK = "cfg:nick:ask"
 CB_GAMES = "game:menu"
 CB_BATTLE = "game:battle"
 CB_NUMBERS = "game:numbers"
+CB_WORDS = "game:words"
 CB_FEEDBACK = "cfg:feedback"
 CB_ACTIVITY = "profile:activity"
 CB_STREAK = "profile:streak"
@@ -271,8 +272,48 @@ def games_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "Битва мнений", callback_data=CB_BATTLE, icon="bonus", style="primary")
     _button(b, "Числа", callback_data=CB_NUMBERS, icon="stars", style="success")
+    _button(b, "Объясни слово", callback_data=CB_WORDS, icon="ticket", style="primary")
     _button(b, "Вернуться в чат", callback_data="game:return", icon="home")
-    b.adjust(1, 1, 1)
+    b.adjust(1, 1, 1, 1)
+    return b.as_markup()
+
+
+def word_invite_keyboard(game_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Играть", callback_data=f"game:word:yes:{game_id}", icon="check", style="success")
+    _button(b, "Не сейчас", callback_data=f"game:word:no:{game_id}", icon="delete")
+    b.adjust(2)
+    return b.as_markup()
+
+
+def word_next_keyboard(game_id: int, round_index: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(
+        b, "Следующее слово",
+        callback_data=f"game:word:next:{game_id}:{round_index}",
+        icon="next", style="primary",
+    )
+    _button(b, "Вернуться в чат", callback_data="game:return", icon="home")
+    b.adjust(1, 1)
+    return b.as_markup()
+
+
+def word_end_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Сыграть ещё", callback_data=CB_WORDS, icon="refresh", style="success")
+    _button(b, "Вернуться в чат", callback_data="game:return", icon="home")
+    b.adjust(1, 1)
+    return b.as_markup()
+
+
+def feedback_admin_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(
+        b, "Ответить",
+        callback_data=f"feedback:reply:{int(user_id)}",
+        icon="edit", style="primary",
+    )
+    b.adjust(1)
     return b.as_markup()
 
 
