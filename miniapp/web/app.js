@@ -1,3 +1,30 @@
+if (typeof window === 'undefined') {
+  // Emergency Bothost fallback: some deployments incorrectly use this browser bundle
+  // as the Node entrypoint. In that case, hand control to the real Python bot.
+  const { spawn } = require('node:child_process');
+  const path = require('node:path');
+
+  const mainPath = path.resolve(__dirname, '../../main.py');
+  const child = spawn(process.env.PYTHON_BIN || 'python', [mainPath], {
+    cwd: path.dirname(mainPath),
+    env: process.env,
+    stdio: 'inherit',
+  });
+
+  const forward = signal => {
+    if (!child.killed) child.kill(signal);
+  };
+  process.on('SIGTERM', () => forward('SIGTERM'));
+  process.on('SIGINT', () => forward('SIGINT'));
+
+  child.on('error', error => {
+    console.error('Failed to start Python bot:', error);
+    process.exit(1);
+  });
+  child.on('exit', code => {
+    process.exit(code ?? 1);
+  });
+} else {
 (() => {
   'use strict';
   const $ = (s, r = document) => r.querySelector(s);
@@ -69,3 +96,5 @@
   async function boot(){icons();try{tg?.ready();tg?.expand();if(tgAtLeast('6.1')){tg.setHeaderColor?.('#050506');tg.setBackgroundColor?.('#050506')}if(tgAtLeast('7.7'))tg.disableVerticalSwipes?.()}catch(_){}bind();await load();$('#app').classList.add('ready');setTimeout(()=>$('#boot').classList.add('hide'),180)}
   boot();
 })();
+
+}
