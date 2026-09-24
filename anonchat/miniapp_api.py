@@ -648,7 +648,7 @@ class MiniAppServer:
         self.runner = web.AppRunner(self.create_app(), access_log=None)
         await self.runner.setup()
         host = os.getenv("MINIAPP_HOST", "0.0.0.0")
-        port = int(os.getenv("PORT", os.getenv("MINIAPP_PORT", "8080")))
+        port = int(os.getenv("PORT", os.getenv("MINIAPP_PORT", "3000")))
         self.site = web.TCPSite(self.runner, host=host, port=port)
         await self.site.start()
 
