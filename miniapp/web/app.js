@@ -42,6 +42,10 @@ if (typeof window === 'undefined') {
     'pencil':'<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>','thumbs-up':'<path d="M7 10v12H3V10h4ZM7 20h10.5a2 2 0 0 0 2-1.6l1.4-7A2 2 0 0 0 19 9h-5l1-4a2 2 0 0 0-2-2l-6 7"/>','chart':'<path d="M3 3v18h18M7 16v2M12 12v6M17 7v11"/>','trophy':'<path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0ZM7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3"/>','link':'<path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/>','sliders':'<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>','mail':'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>','circle-help':'<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2-3 4M12 18h.01"/>','wifi-off':'<path d="m1 1 22 22M8.5 8.5A9 9 0 0 1 21 9M3 9a14 14 0 0 1 2.5-1.7M5 13a10 10 0 0 1 7-2.6M19 13a10 10 0 0 0-2.1-1.4M8.5 16.5a5 5 0 0 1 7 0M12 20h.01"/>','copy':'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>','gift':'<rect x="3" y="8" width="18" height="13" rx="2"/><path d="M12 8v13M3 12h18M7.5 8C5 8 4 6.8 4 5.5S5 3 6.5 3C9 3 12 8 12 8M16.5 8C19 8 20 6.8 20 5.5S19 3 17.5 3C15 3 12 8 12 8"/>'
   };
   const state = {page:'home', modal:null, status:'free', position:null, user:{nick:'Аноним',rank:'Новичок',stars:0,age:0,district:'',gender:'',looking_for:'',photo_url:''},stats:{online:0,chatting:0,searching:0,dialogs:0,messages:0,ratings:0,games:0,battle_games:0,number_games:0,streak:0,best_streak:0,quest_current:0,quest_target:20},referral:{invited:0,earned:0},referral_url:'',bot_url:'',events:[],subscription:null};
+  let statusRequestSeq = 0;
+  let statusAppliedSeq = 0;
+  let statusTimer = null;
+  let searchBusy = false;
   const svg = n => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[n] || paths['circle-help']}</svg>`;
   function icons(root=document){$$('[data-icon]',root).forEach(el=>{el.innerHTML=svg(el.dataset.icon)})}
   function esc(v=''){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -50,17 +54,73 @@ if (typeof window === 'undefined') {
   function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('show'),2400)}
   async function request(path, options={}){
     const headers={'Content-Type':'application/json',...(options.headers||{})}; if(tg?.initData)headers['X-Telegram-Init-Data']=tg.initData;
-    let res; try{res=await fetch(apiBase+path,{...options,headers})}catch(_){throw new Error('Нет соединения с сервером')}
+    let res; try{res=await fetch(apiBase+path,{cache:'no-store',...options,headers})}catch(_){throw new Error('Нет соединения с сервером')}
     let data={}; try{data=await res.json()}catch(_){} if(!res.ok)throw new Error(data.message||`Ошибка ${res.status}`); return data;
   }
   async function safe(path,options,fallback=null){try{return await request(path,options)}catch(e){if(tg?.initData)toast(e.message);return fallback}}
+  function normalizeStatus(value){return value==='paired'?'paired':value==='queued'?'queued':'free'}
+  function applyStatusSnapshot(data, seq=0){
+    if(!data)return false;
+    if(seq && seq<statusAppliedSeq)return false;
+    if(seq)statusAppliedSeq=seq;
+    state.status=normalizeStatus(data.status);
+    state.position=state.status==='queued'?(data.position||null):null;
+    if(data.stats)state.stats={...state.stats,...data.stats};
+    render();
+    return true;
+  }
+  async function syncStatus(silent=true){
+    if(!tg?.initData)return false;
+    const seq=++statusRequestSeq;
+    try{
+      const data=await request(`/api/miniapp/status?_=${Date.now()}`);
+      return applyStatusSnapshot(data,seq);
+    }catch(e){
+      if(!silent)toast(e.message);
+      return false;
+    }
+  }
+  function startStatusSync(){
+    if(statusTimer||!tg?.initData)return;
+    statusTimer=setInterval(()=>{if(!document.hidden)syncStatus(true)},2000);
+  }
   function demo(){Object.assign(state.user,{nick:'Аноним-4821',rank:'Завсегдатай',stars:1250,age:17,district:'Правый берег',gender:'m',looking_for:'f'});Object.assign(state.stats,{online:34,chatting:22,searching:12,dialogs:682,messages:8884,ratings:128,games:43,battle_games:31,number_games:12,streak:7,best_streak:23,quest_current:14});state.referral={invited:8,earned:400};state.referral_url='https://t.me/AnonChatMgn_Bot?start=ref_demo';state.bot_url='https://t.me/AnonChatMgn_Bot';state.subscription={claimed:false,amount:100,url:'https://t.me/anonmgn'};state.events=[{id:'demo1',type:'personal',icon:'message-circle',title:'Диалог активен',text:'Собеседник найден. Возвращайся в чат.',time:'сейчас',unread:true},{id:'demo2',type:'games',icon:'gamepad-2',title:'Новая игра',text:'Можно пригласить собеседника в Битву мнений или Числа.',time:'сегодня',unread:false}]}
   function setAll(key,value){$$(`[data-${key}]`).forEach(el=>el.textContent=value)}
   function render(){setAll('nick',state.user.nick);setAll('rank',state.user.rank);setAll('stars',state.user.stars);setAll('online',state.stats.online);setAll('chatting',state.stats.chatting);setAll('searching',state.stats.searching);setAll('dialogs',state.stats.dialogs);setAll('messages',state.stats.messages);setAll('ratings',state.stats.ratings);setAll('games',state.stats.games);setAll('battle-games',state.stats.battle_games);setAll('number-games',state.stats.number_games);setAll('streak',state.stats.streak);setAll('invited',state.referral.invited);setAll('ref-earned',state.referral.earned);setAll('quest-progress-text',`${state.stats.quest_current}/${state.stats.quest_target}`);$$('[data-quest-progress]').forEach(el=>el.style.width=`${Math.min(100,state.stats.quest_current/Math.max(1,state.stats.quest_target)*100)}%`);const initial=(state.user.nick||'А').replace(/^./u,m=>m.toUpperCase()).slice(0,1);$$('[data-avatar-fallback]').forEach(el=>el.textContent=initial);$$('[data-avatar]').forEach(el=>{if(state.user.photo_url){el.src=state.user.photo_url;el.hidden=false}else{el.removeAttribute('src');el.hidden=true}});$$('[data-flame]').forEach((el,i)=>el.classList.toggle('on',i<Math.min(7,state.stats.streak)));$$('[data-setting]').forEach(group=>$$('button',group).forEach(b=>b.classList.toggle('active',String(b.dataset.value)===String(state.user[group.dataset.setting]||''))));renderSearch();renderEvents();}
-  function renderSearch(){const card=$('.search-card'),title=$('#searchTitle'),text=$('#searchText'),button=$('#searchToggle');card.classList.toggle('searching',state.status==='queued');if(state.status==='paired'){title.textContent='Собеседник найден';text.textContent='Диалог уже открыт в боте.';button.innerHTML=`Вернуться в бот ${svg('arrow-right')}`;button.dataset.action='bot'}else if(state.status==='queued'){title.textContent='Идёт поиск';text.textContent=state.position?`Твоя позиция в очереди: ${state.position}`:'Можно закрыть приложение — очередь сохранится.';button.textContent='Остановить поиск';button.dataset.action='stop'}else{title.textContent='Готовы к поиску';text.textContent='Настрой предпочтения и начни.';button.innerHTML=`Начать поиск ${svg('arrow-right')}`;button.dataset.action='start'}}
+  function renderSearch(){
+    const card=$('.search-card'),title=$('#searchTitle'),text=$('#searchText'),button=$('#searchToggle');
+    const heroTitle=$('.hero h1'),heroText=$('.hero p'),heroButton=$('.hero .primary');
+    card.classList.toggle('searching',state.status==='queued');
+    button.disabled=searchBusy;
+    if(state.status==='paired'){
+      title.textContent='Чат активен';
+      text.textContent='Ты уже общаешься. Новый поиск недоступен.';
+      button.innerHTML=`Чат активен ${svg('arrow-right')}`;
+      button.dataset.action='bot';
+      if(heroTitle)heroTitle.textContent='Чат активен';
+      if(heroText)heroText.textContent='Собеседник найден. Продолжай общение в боте.';
+      if(heroButton)heroButton.innerHTML=`Чат активен ${svg('arrow-right')}`;
+    }else if(state.status==='queued'){
+      title.textContent='Идёт поиск';
+      text.textContent=state.position?`Твоя позиция в очереди: ${state.position}`:'Ищем собеседника. Можно закрыть Mini App.';
+      button.textContent='Остановить поиск';
+      button.dataset.action='stop';
+      if(heroTitle)heroTitle.textContent='Идёт поиск';
+      if(heroText)heroText.textContent='Поиск продолжается в фоне.';
+      if(heroButton)heroButton.textContent='Остановить поиск';
+    }else{
+      title.textContent='Найти собеседника';
+      text.textContent='Настрой предпочтения и начни поиск.';
+      button.innerHTML=`Найти собеседника ${svg('arrow-right')}`;
+      button.dataset.action='start';
+      if(heroTitle)heroTitle.textContent='Найти собеседника';
+      if(heroText)heroText.textContent='Подберём человека для разговора.';
+      if(heroButton)heroButton.innerHTML=`Найти собеседника ${svg('arrow-right')}`;
+    }
+  }
   function renderEvents(filter='all'){const list=$('#eventList');const items=state.events.filter(x=>filter==='all'||x.type===filter);list.innerHTML=items.length?items.map(x=>`<article class="event surface"><span>${svg(x.icon||'bell')}</span><div><strong>${esc(x.title)}</strong><p>${esc(x.text)}</p><small>${esc(x.time||'')}</small></div></article>`).join(''):'<div class="empty">Здесь пока тихо.</div>';const unread=state.events.some(x=>x.unread);$$('[data-event-dot]').forEach(el=>el.hidden=!unread)}
-  async function load(){if(!tg?.initData)demo();else{const data=await safe('/api/miniapp/me',{},null);if(data){state.user={...state.user,...data.user};state.stats={...state.stats,...data.stats};state.status=data.status||'free';state.position=data.position||null;state.referral=data.referral||state.referral;state.referral_url=data.referral_url||'';state.bot_url=data.bot_url||'';state.events=data.notifications||[]}}render()}
-  function go(page){state.page=page;$$('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===page));$$('#bottomNav button').forEach(b=>b.classList.toggle('active',b.dataset.nav===page));window.scrollTo({top:0,behavior:'auto'});haptic();try{if(tgAtLeast('6.1'))page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}}
+  async function load(){if(!tg?.initData)demo();else{const seq=++statusRequestSeq;const data=await safe(`/api/miniapp/me?_=${Date.now()}`,{},null);if(data){state.user={...state.user,...data.user};state.stats={...state.stats,...data.stats};state.referral=data.referral||state.referral;state.referral_url=data.referral_url||'';state.bot_url=data.bot_url||'';state.events=data.notifications||[];applyStatusSnapshot(data,seq);return}}render()}
+  function go(page){state.page=page;$('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===page));$('#bottomNav button').forEach(b=>b.classList.toggle('active',b.dataset.nav===page));window.scrollTo({top:0,behavior:'auto'});haptic();if(page==='search')syncStatus(true);try{if(tgAtLeast('6.1'))page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}}
   function openModal(kind,title,eyebrow='АНОН МГН'){$('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML='<div class="loading"><i class="spinner"></i>Загрузка…</div>';$('#modal').hidden=false;document.body.style.overflow='hidden';state.modal=kind;try{if(tgAtLeast('6.1'))tg.BackButton.show()}catch(_){};haptic();renderModal(kind)}
   function closeModal(){$('#modal').hidden=true;document.body.style.overflow='';state.modal=null;try{if(tgAtLeast('6.1'))state.page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}}
   function panel(title,text){return `<section class="panel"><h3>${title}</h3><p>${text}</p></section>`}
@@ -89,11 +149,32 @@ if (typeof window === 'undefined') {
   async function copyReferral(){try{await navigator.clipboard.writeText(state.referral_url);toast('Ссылка скопирована')}catch(_){$('#refLink').select();document.execCommand('copy');toast('Ссылка скопирована')}haptic()}
   async function sendFeedback(){const text=$('#feedback').value.trim();if(!text)return toast('Сначала напиши сообщение');const r=await safe('/api/miniapp/feedback',{method:'POST',body:JSON.stringify({text})},null);if(r||!tg?.initData){closeModal();toast('Сообщение отправлено');notify()}}
   async function updateSetting(key,value){const prev=state.user[key];state.user[key]=value;render();const payload={age:state.user.age||0,district:state.user.district||'',gender:state.user.gender||'',looking_for:state.user.looking_for||'',same_district:0};const r=await safe('/api/miniapp/settings',{method:'POST',body:JSON.stringify(payload)},null);if(!r&&tg?.initData){state.user[key]=prev;render()}else if(r?.user){state.user={...state.user,...r.user};render()}}
-  async function toggleSearch(){const action=$('#searchToggle').dataset.action;if(action==='bot'){try{tg?.close()}catch(_){};return}const path=action==='stop'?'/api/miniapp/search/stop':'/api/miniapp/search/start';const r=await safe(path,{method:'POST',body:'{}'},null);if(r||!tg?.initData){state.status=r?.status||(action==='stop'?'free':'queued');state.position=r?.position||null;if(r?.stats)state.stats={...state.stats,...r.stats};render();notify();toast(state.status==='paired'?'Собеседник найден':state.status==='queued'?'Поиск запущен':'Поиск остановлен')}}
+  async function toggleSearch(){
+    if(searchBusy)return;
+    searchBusy=true;renderSearch();
+    try{
+      await syncStatus(true);
+      const action=$('#searchToggle').dataset.action;
+      if(action==='bot'){try{tg?.close()}catch(_){};return}
+      const path=action==='stop'?'/api/miniapp/search/stop':'/api/miniapp/search/start';
+      const seq=++statusRequestSeq;
+      const data=await request(path,{method:'POST',body:'{}'});
+      applyStatusSnapshot(data,seq);
+      await syncStatus(true);
+      notify();
+      toast(state.status==='paired'?'Чат активен':state.status==='queued'?'Поиск запущен':'Поиск остановлен');
+    }catch(e){
+      toast(e.message);
+      await syncStatus(true);
+    }finally{
+      searchBusy=false;
+      renderSearch();
+    }
+  }
   async function inviteBattle(total){const r=await safe('/api/miniapp/games/battle/invite',{method:'POST',body:JSON.stringify({total})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify()}}
   async function inviteNumbers(range_max){const r=await safe('/api/miniapp/games/numbers/invite',{method:'POST',body:JSON.stringify({range_max})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify()}}
-  function bind(){document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить ник','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','help':'Помощь и правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game)openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':'Числа','ИГРА ВДВОЁМ')});$$('[data-close-modal]').forEach(b=>b.onclick=closeModal);$('#searchToggle').onclick=toggleSearch;$$('[data-setting] button').forEach(b=>b.onclick=()=>updateSetting(b.parentElement.dataset.setting,b.dataset.value));$$('#eventFilter button').forEach(b=>b.onclick=()=>{$$('#eventFilter button').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderEvents(b.dataset.filter)});window.addEventListener('online',()=>{$('#offline').hidden=true;if(tg?.initData)load()});window.addEventListener('offline',()=>{if(tg?.initData)$('#offline').hidden=false});try{if(tgAtLeast('6.1'))tg.BackButton.onClick(()=>state.modal?closeModal():state.page!=='home'?go('home'):tg.close())}catch(_){}}
-  async function boot(){icons();try{tg?.ready();tg?.expand();if(tgAtLeast('6.1')){tg.setHeaderColor?.('#050506');tg.setBackgroundColor?.('#050506')}if(tgAtLeast('7.7'))tg.disableVerticalSwipes?.()}catch(_){}bind();await load();$('#app').classList.add('ready');setTimeout(()=>$('#boot').classList.add('hide'),180)}
+  function bind(){document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить ник','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','help':'Помощь и правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game)openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':'Числа','ИГРА ВДВОЁМ')});$('[data-close-modal]').forEach(b=>b.onclick=closeModal);$('#searchToggle').onclick=toggleSearch;$('[data-setting] button').forEach(b=>b.onclick=()=>updateSetting(b.parentElement.dataset.setting,b.dataset.value));$('#eventFilter button').forEach(b=>b.onclick=()=>{$('#eventFilter button').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderEvents(b.dataset.filter)});window.addEventListener('online',()=>{$('#offline').hidden=true;if(tg?.initData){load();syncStatus(true)}});window.addEventListener('offline',()=>{if(tg?.initData)$('#offline').hidden=false});window.addEventListener('focus',()=>syncStatus(true));window.addEventListener('pageshow',()=>syncStatus(true));document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncStatus(true)});try{if(tgAtLeast('6.1'))tg.BackButton.onClick(()=>state.modal?closeModal():state.page!=='home'?go('home'):tg.close())}catch(_){}}
+  async function boot(){icons();try{tg?.ready();tg?.expand();if(tgAtLeast('6.1')){tg.setHeaderColor?.('#050506');tg.setBackgroundColor?.('#050506')}if(tgAtLeast('7.7'))tg.disableVerticalSwipes?.()}catch(_){}bind();await load();await syncStatus(true);startStatusSync();$('#app').classList.add('ready');setTimeout(()=>$('#boot').classList.add('hide'),180)}
   boot();
 })();
 
