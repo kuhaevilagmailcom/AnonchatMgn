@@ -129,7 +129,7 @@ class MiniAppServer:
                 f"{parsed_miniapp_url.scheme}://{parsed_miniapp_url.netloc}"
             )
 
-    async def _auth(self, request: web.Request) -> tuple[int, dict, object]:
+    def _telegram_user(self, request: web.Request) -> tuple[int, dict]:
         raw = request.headers.get("X-Telegram-Init-Data", "")
         user = validate_init_data(
             raw,
@@ -138,6 +138,10 @@ class MiniAppServer:
         )
         user_id = int(user["id"])
         presence_touch(user_id)
+        return user_id, user
+
+    async def _auth(self, request: web.Request) -> tuple[int, dict, object]:
+        user_id, user = self._telegram_user(request)
         row = await self.db.ensure_user(
             user_id, user.get("username"), user.get("first_name") or "Пользователь"
         )
@@ -215,7 +219,7 @@ class MiniAppServer:
         )
 
     async def status(self, request: web.Request) -> web.Response:
-        uid, _, _ = await self._auth(request)
+        uid, _ = self._telegram_user(request)
         return web.json_response(self._status_payload(uid))
 
     async def settings(self, request: web.Request) -> web.Response:
