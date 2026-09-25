@@ -553,6 +553,46 @@ if (typeof window === 'undefined') {
     }catch(e){buttons.forEach(b=>b.disabled=false);toast(e.message)}
   }
 
+  function openPhotoViewer(url){
+    const viewer=$('#photoViewer'),img=$('#photoViewerImage');if(!viewer||!img)return;
+    img.src=url;viewer.hidden=false;document.body.classList.add('viewer-open');haptic();
+  }
+  function closePhotoViewer(){
+    const viewer=$('#photoViewer'),img=$('#photoViewerImage');if(!viewer||!img)return;
+    viewer.hidden=true;img.src='';document.body.classList.remove('viewer-open');
+  }
+  function replyPreviewForEvent(event){
+    if(event.kind==='photo')return event.text||'Фото';
+    if(event.kind==='voice')return 'Голосовое';
+    if(event.kind==='sticker')return event.text||'Стикер';
+    return event.text||'Сообщение';
+  }
+  function clearReply(){
+    chat.reply=null;
+    const box=$('#replyPreview');if(box)box.hidden=true;
+    const text=$('#replyText');if(text)text.textContent='';
+  }
+  function setReply(event){
+    if(!event||['system','game_invite','game_status','game_round'].includes(event.kind))return;
+    const preview=String(replyPreviewForEvent(event)||'Сообщение').replace(/\s+/g,' ').trim().slice(0,160);
+    chat.reply={event_id:Number(event.id)||0,text:preview};
+    const box=$('#replyPreview'),text=$('#replyText');
+    if(text)text.textContent=preview;
+    if(box)box.hidden=false;
+    $('#chatInput')?.focus();
+    haptic('light');
+  }
+  function bindReplyGesture(row,event){
+    let startX=0,startY=0;
+    row.addEventListener('touchstart',e=>{const t=e.touches?.[0];if(t){startX=t.clientX;startY=t.clientY}},{passive:true});
+    row.addEventListener('touchend',e=>{
+      const t=e.changedTouches?.[0];if(!t)return;
+      const dx=t.clientX-startX,dy=Math.abs(t.clientY-startY);
+      if(dx>54&&dy<40)setReply(event);
+    },{passive:true});
+    row.ondblclick=()=>setReply(event);
+  }
+
   async function attachMediaToEvent(node,event){
     if(!event.media_url)return;
     const url=apiBase+event.media_url;
@@ -562,6 +602,7 @@ if (typeof window === 'undefined') {
       img.alt='';
       img.src=url;
       img.onload=scrollChatBottom;
+      img.onclick=()=>openPhotoViewer(url);
       img.onerror=()=>{img.remove();const e=document.createElement('span');e.className='media-error';e.textContent='Фото не загрузилось';node.prepend(e)};
       node.prepend(img);
     }else if(event.kind==='voice'){
@@ -593,6 +634,10 @@ if (typeof window === 'undefined') {
     }
     const row=document.createElement('div');row.className=`chat-message ${event.mine?'mine':'theirs'}`;
     const bubble=document.createElement('div');bubble.className='chat-bubble';
+    const reply=event.data?.reply;
+    if(reply?.text){
+      const quote=document.createElement('div');quote.className='reply-quote';quote.textContent=reply.text;bubble.appendChild(quote);
+    }
     if(event.text){
       const p=document.createElement('p');p.textContent=event.text;bubble.appendChild(p);
     }
@@ -600,6 +645,7 @@ if (typeof window === 'undefined') {
     const dt=new Date((event.created_at||Math.floor(Date.now()/1000))*1000);
     time.textContent=dt.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
     bubble.appendChild(time);row.appendChild(bubble);list.appendChild(row);
+    bindReplyGesture(row,event);
     attachMediaToEvent(bubble,event);scrollChatBottom();
   }
   function gameAction(payload){
@@ -741,8 +787,8 @@ if (typeof window === 'undefined') {
     const text=input.value.trim();if(!text)return;
     const button=$('#chatSend');if(button)button.disabled=true;
     try{
-      await request('/api/miniapp/chat/text',{method:'POST',body:JSON.stringify({text})});
-      input.value='';input.style.height='auto';await syncChat(false);haptic();
+      await request('/api/miniapp/chat/text',{method:'POST',body:JSON.stringify({text,reply:chat.reply})});
+      input.value='';input.style.height='auto';clearReply();await syncChat(false);haptic();
     }catch(e){toast(e.message)}
     finally{if(button)button.disabled=false}
   }
@@ -901,6 +947,7 @@ if (typeof window === 'undefined') {
     $$$('#topPeriods button').forEach(b=>b.onclick=()=>{haptic();loadTopPage(b.dataset.topPeriod)});
     const composer=$('#chatComposer');if(composer)composer.onsubmit=e=>{e.preventDefault();sendChatText()};
     const input=$('#chatInput');if(input){input.addEventListener('input',()=>{input.style.height='auto';input.style.height=`${Math.min(100,input.scrollHeight)}px`});input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!/iPhone|iPad|Android/i.test(navigator.userAgent)){e.preventDefault();sendChatText()}})}
+    $('#replyCancel')&&($('#replyCancel').onclick=clearReply);
     $('#photoButton')&&($('#photoButton').onclick=()=>$('#photoInput')?.click());
     $('#photoInput')&&($('#photoInput').onchange=e=>sendChatPhoto(e.target.files?.[0]));
     $('#stickerButton')&&($('#stickerButton').onclick=loadStickers);
