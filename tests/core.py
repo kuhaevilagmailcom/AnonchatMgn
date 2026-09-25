@@ -864,16 +864,15 @@ def test_keyboard_styles_and_icons() -> None:
         "1–10 · 25 ⭐", "1–100 · 50 ⭐", "1–1000 · 100 ⭐", "Назад",
     ]
     assert texts_of(K.battle_length_keyboard()) == ["5 вопросов", "10 вопросов", "Назад"]
-    # панель модератора: 9 разделов, счётчик жалоб в подписи
+    # панель модератора: счётчик жалоб в подписи; скрытого monitor больше нет
     panel = texts_of(K.admin_panel_keyboard(2, {"reports", "mute"}))
     assert panel == ["Жалобы · 2", "Мут по id", "Мут-лист", "В меню"], panel
     owner_panel = texts_of(K.admin_panel_keyboard(0, {"stats"}, True))
     assert all(item in owner_panel for item in (
-        "Администраторы", "Скачать базу", "Игры пользователей", "Чаты: ВЫКЛ",
+        "Администраторы", "Скачать базу", "Игры пользователей",
     ))
-    assert "Игры пользователей" in texts_of(K.admin_panel_keyboard(0, {"monitor"}))
     assert "Игры пользователей" not in texts_of(K.admin_panel_keyboard(0, {"reports"}))
-    assert "Чаты: ВКЛ" in texts_of(K.admin_panel_keyboard(0, {"stats"}, True, True))
+    assert all("Чаты:" not in item for item in owner_panel)
     # кнопка входа в панель появляется только у админа
     assert texts_of(K.menu_keyboard("free", admin=True))[-1] == "Панель модератора"
     assert "Поддержать проект" not in texts_of(K.menu_keyboard("free"))
