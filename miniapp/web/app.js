@@ -325,9 +325,107 @@ if (typeof window === 'undefined') {
   function openModal(kind,title,eyebrow='АНОН МГН'){$('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML='<div class="loading"><i class="spinner"></i>Загрузка…</div>';$('#modal').hidden=false;document.body.style.overflow='hidden';state.modal=kind;try{if(tgAtLeast('6.1'))tg.BackButton.show()}catch(_){};haptic();renderModal(kind)}
   function closeModal(){$('#modal').hidden=true;document.body.style.overflow='';state.modal=null;try{if(tgAtLeast('6.1'))state.page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}}
   function panel(title,text){return `<section class="panel"><h3>${title}</h3><p>${text}</p></section>`}
+  async function loadHomeQuest(){
+    const data=await safe('/api/miniapp/quests',{},null);const first=data?.items?.[0];if(!first)return;
+    state.stats.quest_current=Number(first.current||0);state.stats.quest_target=Number(first.target||1);
+    const label=$('[data-quest-label]');if(label)label.textContent=`${first.title} · ${first.reward||0} ★`;
+    setAll('quest-progress-text',first.claimed?'Готово':`${first.current}/${first.target}`);
+    $('[data-quest-progress]').forEach(el=>el.style.width=`${Math.min(100,first.current/Math.max(1,first.target)*100)}%`);
+  }
+  function renderHomePoll(poll){
+    const root=$('#homePoll');if(!root)return;
+    if(!poll){root.hidden=true;root.innerHTML='';return}
+    root.hidden=false;
+    const voted=poll.selected===0||poll.selected===1;
+    root.innerHTML=`<header><span><small>ОПРОС ДНЯ</small><strong>Что выбрал город</strong></span><b>${poll.total||0} голосов</b></header>
+      <h3>${esc(poll.question)}</h3>
+      <div class="poll-options">
+        ${poll.options.map((label,i)=>`<button type="button" data-poll-choice="${i}" class="${poll.selected===i?'selected':''}">
+          <span><strong>${esc(label)}</strong>${voted?`<small>${poll.percentages?.[i]||0}%</small>`:''}</span>
+          ${voted?`<i style="width:${poll.percentages?.[i]||0}%"></i>`:''}
+        </button>`).join('')}
+      </div>`;
+    $('[data-poll-choice]',root).forEach(btn=>btn.onclick=async()=>{
+      const choice=+btn.dataset.pollChoice;
+      const data=await safe('/api/miniapp/poll/vote',{method:'POST',body:JSON.stringify({poll_id:poll.id,choice})},null);
+      if(data?.poll){renderHomePoll(data.poll);haptic();notify()}
+    });
+  }
+  async function loadHomePoll(){
+    if(!tg?.initData)return;
+    const data=await safe('/api/miniapp/poll',{},null);
+    if(data)renderHomePoll(data.poll||null);
+  }
+  function formatDuration(seconds){
+    seconds=Math.max(0,Number(seconds||0));
+    if(seconds<60)return 'меньше минуты';
+    const mins=Math.floor(seconds/60);return mins<60?`${mins} мин`:`${Math.floor(mins/60)} ч ${mins%60} мин`;
+  }
+  function resultGames(games=[]){
+    if(!games?.length)return '';
+    return `<div class="result-games">${games.map(g=>{
+      if(g.type==='battle')return `<span>⚔️ Битва мнений <b>${g.matches||0}/${g.total||0}</b></span>`;
+      if(g.type==='numbers')return `<span>🔢 Числа <b>${g.exact||0} точных</b></span>`;
+      return `<span>🗣 Объясни слово <b>${g.games||1}</b></span>`;
+    }).join('')}</div>`;
+  }
+  function showDialogResult(result){
+    if(!result||!result.match_id)return;
+    resultShownFor=Number(result.match_id);
+    openModal('dialog-result','Итог разговора','ДИАЛОГ ЗАВЕРШЁН');
+    const body=$('#modalBody');
+    body.innerHTML=`<section class="dialog-result-card">
+      <div class="result-duration"><small>Диалог длился</small><strong>${formatDuration(result.duration)}</strong></div>
+      <div class="result-grid">
+        <div><small>Отправлено</small><strong>${result.sent||0}</strong></div>
+        <div><small>Получено</small><strong>${result.received||0}</strong></div>
+        <div class="stars"><small>Заработано</small><strong>+${result.earned||0} ★</strong></div>
+      </div>
+      ${resultGames(result.games)}
+    </section>
+    ${result.rated?'<div class="rated-done">✓ Оценка уже учтена</div>':`<section class="rate-block"><small>Как прошёл разговор?</small><div><button data-rate="1">👍 Норм</button><button data-rate="0">👎 Не зашло</button></div></section>`}
+    <div class="modal-actions one"><button class="action accent" id="resultNext">Найти собеседника</button></div>`;
+    $('[data-rate]',body).forEach(btn=>btn.onclick=()=>rateDialog(btn.dataset.rate==='1',body));
+    $('#resultNext').onclick=async()=>{closeModal();if(state.status==='free'){go('search')}else go(state.status==='paired'?'chat':'search')};
+  }
+  async function loadDialogResult(autoShow=false){
+    if(!tg?.initData)return null;
+    const data=await safe('/api/miniapp/chat/result',{},null),result=data?.result||null;
+    if(autoShow&&result&&!result.rated&&Number(result.match_id)!==resultShownFor)showDialogResult(result);
+    return result;
+  }
+  async function rateDialog(positive,body){
+    $('[data-rate]',body).forEach(b=>b.disabled=true);
+    const data=await safe('/api/miniapp/chat/rate',{method:'POST',body:JSON.stringify({positive})},null);
+    if(!data){$('[data-rate]',body).forEach(b=>b.disabled=false);return}
+    const block=$('.rate-block',body);if(block)block.outerHTML='<div class="rated-done">✓ Спасибо, оценка учтена</div>';
+    toast(positive?'Оценка отправлена':'Записал');notify();
+    await loadNotifications(false);
+  }
+  function openReport(){
+    if(state.status!=='paired')return toast('Сейчас нет активного собеседника');
+    openModal('report','Пожаловаться','БЕЗОПАСНОСТЬ');
+  }
+  async function submitReport(){
+    const reason=$('[name="reportReason"]:checked')?.value||'';
+    const comment=$('#reportComment')?.value.trim()||'';
+    if(!reason)return toast('Выбери причину');
+    const data=await safe('/api/miniapp/chat/report',{method:'POST',body:JSON.stringify({reason,comment})},null);
+    if(data){closeModal();toast('Жалоба отправлена');notify();await loadNotifications(false);await syncStatus(true)}
+  }
   async function renderModal(kind){const body=$('#modalBody');
+    if(kind==='dialog-result'){const data=await safe('/api/miniapp/chat/result',{},null);if(data?.result)showDialogResult(data.result);else body.innerHTML='<div class="empty">Итог уже недоступен.</div>';return}
+    if(kind==='report'){
+      const reasons=[['spam','Спам / реклама'],['insult','Оскорбления'],['sexual','Неподходящий контент'],['threat','Угрозы'],['personal','Личные данные'],['other','Другое']];
+      body.innerHTML=`${panel('Что случилось?','Жалоба сохранит только небольшой контекст последних сообщений этого диалога для модерации.')}<div class="report-reasons">${reasons.map(([v,t])=>`<label><input type="radio" name="reportReason" value="${v}"><span>${t}</span></label>`).join('')}</div><div class="form-field"><label>Комментарий · необязательно</label><textarea id="reportComment" maxlength="500" placeholder="Коротко опиши проблему"></textarea></div><div class="modal-actions one"><button class="action danger" id="sendReport">Отправить жалобу</button></div>`;
+      $('#sendReport').onclick=submitReport;return;
+    }
+    if(kind==='achievements'){
+      const data=await safe('/api/miniapp/achievements',{},null);const items=data?.items||[];
+      body.innerHTML=`<div class="achievement-head"><strong>${data?.unlocked||0}/${data?.total||items.length}</strong><span>получено</span></div><div class="achievement-grid">${items.map(a=>`<article class="${a.unlocked?'unlocked':'locked'}"><span>${a.unlocked?'🏆':'🔒'}</span><strong>${esc(a.title)}</strong><small>${a.unlocked?'Выполнено':`${a.current}/${a.target}`} · ${a.reward} ★</small></article>`).join('')}</div>`;return;
+    }
     if(kind==='edit-profile'){body.innerHTML=`${panel('Ник в приложении','Используй любое имя, которое тебе нравится.')}<div class="form-field"><label>Новый ник · 2–24 символа</label><input id="nick" maxlength="24" value="${esc(state.user.nick.replace(/^@/,''))}" placeholder="Аноним"></div><div class="modal-actions"><button class="action" data-close-modal>Отмена</button><button class="action accent" id="saveNick">Сохранить</button></div>`;$('#saveNick').onclick=saveNick;bindClose(body);return}
-    if(kind==='quests'){const d=await safe('/api/miniapp/quests',{},null);const items=d?.items||[{title:'Отправь 20 сообщений',current:state.stats.quest_current,target:20},{title:'Проведи 3 диалога',current:0,target:3},{title:'Сыграй 1 игру',current:0,target:1}];body.innerHTML=items.map(q=>`<article class="quest"><div><strong>${esc(q.title)}</strong><b>${q.done?'Готово':`${q.current}/${q.target}`}</b></div><p>${q.done?'Цель выполнена':'Продолжай — прогресс сохранится автоматически.'}</p><i class="progress"><i style="width:${Math.min(100,q.current/Math.max(1,q.target)*100)}%"></i></i></article>`).join('');return}
+    if(kind==='quests'){const d=await safe('/api/miniapp/quests',{},null);const items=d?.items||[];body.innerHTML=items.length?items.map(q=>`<article class="quest ${q.claimed?'claimed':''}"><div><strong>${esc(q.title)}</strong><b>${q.claimed?'Получено':`${q.current}/${q.target}`}</b></div><p>${q.claimed?`+${q.reward} ★ уже начислено`:q.done?'Награда начислится автоматически':`Награда: ${q.reward} ★`}</p><i class="progress"><i style="width:${Math.min(100,q.current/Math.max(1,q.target)*100)}%"></i></i></article>`).join(''):'<div class="empty">Сегодня заданий нет.</div>';return}
     if(kind==='streak'){const d=await safe('/api/miniapp/streak',{},null);if(d){state.stats.streak=d.current;state.stats.best_streak=d.best;render()}body.innerHTML=`${panel('Текущая серия',`<b>${state.stats.streak} дней</b> подряд. Серия не ограничена семью днями.`)}<div class="flame-grid">${Array.from({length:7},(_,i)=>`<i class="${i<Math.min(7,state.stats.streak)?'on':''}"></i>`).join('')}</div>${panel('Личный рекорд',`${state.stats.best_streak} дней. Активным считается день, когда ты общался в боте.`)}`;return}
     if(kind==='activity'){const d=await safe('/api/miniapp/activity',{},null)||{today:{},week:{},month:{},all:{dialogs:state.stats.dialogs,messages:state.stats.messages,games:state.stats.games,good_ratings:state.stats.ratings}};body.innerHTML=['today','week','month','all'].map((k,i)=>`<section class="panel"><h3>${['Сегодня','7 дней','30 дней','Всё время'][i]}</h3><div class="kv-grid"><div class="kv"><small>Диалоги</small><strong>${d[k]?.dialogs||0}</strong></div><div class="kv"><small>Сообщения</small><strong>${d[k]?.messages||0}</strong></div><div class="kv"><small>Игры</small><strong>${d[k]?.games||0}</strong></div><div class="kv"><small>Хорошие оценки</small><strong>${d[k]?.good_ratings||0}</strong></div></div></section>`).join('');return}
     if(kind==='top'){const d=await safe('/api/miniapp/top',{},null);const items=d?.items||(!tg?.initData?[{place:1,nick:'Аноним-4821',rank:'Завсегдатай',stars:1380},{place:2,nick:'northwind',rank:'Свой человек',stars:1240},{place:3,nick:'Аноним-1520',rank:'Собеседник',stars:1110}]:[]);body.innerHTML=items.length?`<div class="top-list">${items.map(x=>`<div class="top-item"><i>${x.place}</i><span><strong>${esc(x.nick)}</strong><small>${esc(x.rank||'')}</small></span><b>${x.stars||0} ★</b></div>`).join('')}</div>`:'<div class="empty">В топе пока никого.</div>';return}
