@@ -4,12 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-title" content="АНОН МГН">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="color-scheme" content="dark">
   <meta name="api-base" content="">
   <title>АНОН МГН</title>
   <link rel="icon" href="./assets/anon-mgn-logo.png">
   <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./styles.css?v=16">
+  <link rel="stylesheet" href="./styles.css?v=17">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -22,6 +25,7 @@
         <button class="profile-card surface" data-nav="profile"><span class="avatar"><img data-avatar alt=""><b data-avatar-fallback>А</b><i></i></span><span class="profile-copy"><small>С возвращением</small><strong data-nick>Аноним</strong><span><b data-stars>0</b> <i class="star">★</i></span></span><span data-icon="chevron-right"></span></button>
         <section class="hero surface"><span class="hero-icon" data-icon="messages-circle"></span><h1>Найти собеседника</h1><p>Подберём человека для разговора.</p><button class="primary" data-nav="search">Найти собеседника <span data-icon="arrow-right"></span></button></section>
         <section class="metrics" aria-label="Онлайн статистика"><article class="surface"><span class="dot green"></span><small>Онлайн</small><strong data-online>0</strong></article><article class="surface"><span class="dot pink"></span><small>Общаются</small><strong data-chatting>0</strong></article><article class="surface"><span class="dot violet"></span><small>Ищут</small><strong data-searching>0</strong></article></section>
+        <section class="city-poll surface" id="homePoll" hidden></section>
         <button class="row surface" data-open="quests"><span class="row-icon pink" data-icon="target"></span><span><strong>Цели дня</strong><small data-quest-label>Отправь 20 сообщений</small><i class="progress"><i data-quest-progress></i></i></span><b data-quest-progress-text>0/20</b><i data-icon="chevron-right"></i></button>
         <button class="row surface" data-nav="games"><span class="row-icon violet" data-icon="gamepad-2"></span><span><strong>Игры вдвоём</strong><small>Битва мнений и Числа</small></span><i data-icon="chevron-right"></i></button>
       </section>
@@ -33,7 +37,7 @@
       <section class="page chat-page" data-page="chat">
         <header class="chat-top">
           <button class="chat-back" type="button" data-nav="home" aria-label="Назад"><span data-icon="chevron-left"></span></button>
-          <span class="chat-peer"><span class="chat-peer-avatar"><img src="./assets/anon-mgn-logo.png" alt="АНОН МГН"></span><span><strong>Собеседник</strong><small id="chatDuration">чат активен</small></span></span>
+          <span class="chat-peer" id="chatPeer" role="button" tabindex="0" aria-label="Действия с собеседником"><span class="chat-peer-avatar"><img src="./assets/anon-mgn-logo.png" alt="АНОН МГН"></span><span><strong>Собеседник</strong><small id="chatDuration">чат активен</small></span></span>
           <span class="chat-top-actions">
             <button type="button" id="chatGames" class="chat-action" aria-label="Игры" title="Игры"><span data-icon="gamepad-2"></span></button>
             <button type="button" id="chatNext" class="chat-action" aria-label="Следующий собеседник" title="Следующий"><span data-icon="skip-forward"></span></button>
@@ -49,6 +53,7 @@
             <div class="sticker-grid" id="stickerGrid"></div>
           </div>
         </div>
+        <div class="reply-preview" id="replyPreview" hidden><span><small>Ответ</small><strong id="replyText"></strong></span><button type="button" id="replyCancel" aria-label="Отменить ответ"><span data-icon="x"></span></button></div>
         <form class="chat-composer" id="chatComposer">
           <button type="button" class="composer-btn" id="photoButton" aria-label="Фото"><span data-icon="paperclip"></span></button>
           <input type="file" id="photoInput" accept="image/jpeg,image/png,image/webp" hidden>
@@ -68,6 +73,7 @@
       </section>
       <section class="page top-page" data-page="top">
         <header class="page-title"><small>Самые активные</small><h1>Топ участников</h1><p>Рейтинг по заработанным ⭐.</p></header>
+        <div class="top-me surface" id="topMe" hidden></div>
         <div class="top-periods" id="topPeriods">
           <button class="active" data-top-period="week">Неделя</button>
           <button data-top-period="month">Месяц</button>
@@ -75,19 +81,21 @@
         </div>
         <div class="top-page-list" id="topPageList"><div class="loading"><i class="spinner"></i>Загрузка…</div></div>
       </section>
-      <section class="page" data-page="events"><header class="page-title"><small>Всё важное</small><h1>События</h1><p>Текущий поиск, активный диалог и игровые приглашения.</p></header><div class="filter" id="eventFilter"><button class="active" data-filter="all">Все</button><button data-filter="personal">Личные</button><button data-filter="games">Игры</button></div><div class="event-list" id="eventList"></div></section>
+      <section class="page" data-page="events"><header class="page-title"><small>Всё важное</small><h1>События</h1><p>Текущий поиск, активный диалог и игровые приглашения.</p></header><div class="filter" id="eventFilter"><button class="active" data-filter="all">Все</button><button data-filter="personal">Личные</button><button data-filter="games">Игры</button><button data-filter="rewards">Награды</button></div><div class="event-list" id="eventList"></div></section>
       <section class="page" data-page="profile">
         <header class="page-title"><small>Личный кабинет</small><h1>Профиль</h1></header>
         <section class="profile-hero surface"><span class="avatar big"><img data-avatar alt=""><b data-avatar-fallback>А</b><i></i></span><span><strong data-nick>Аноним</strong><small><b data-stars>0</b> <i class="star">★</i></small></span><button class="soft" data-open="edit-profile"><span data-icon="pencil"></span> Изменить</button></section>
         <section class="profile-stats"><article class="surface"><span data-icon="message-circle"></span><strong data-dialogs>0</strong><small>Диалоги</small></article><article class="surface"><span data-icon="messages-square"></span><strong data-messages>0</strong><small>Сообщения</small></article><article class="surface"><span data-icon="thumbs-up"></span><strong data-ratings>0</strong><small>Хорошие</small></article><article class="surface"><span data-icon="gamepad-2"></span><strong data-games>0</strong><small>Игры</small></article></section>
         <button class="streak-card surface" data-open="streak"><span><small>Серия активности</small><strong><b data-streak>0</b> дней</strong></span><span class="flames" aria-label="Активность за 7 дней"><i data-flame></i><i data-flame></i><i data-flame></i><i data-flame></i><i data-flame></i><i data-flame></i><i data-flame></i></span><i data-icon="chevron-right"></i></button>
-        <section class="menu surface"><button data-open="activity"><span data-icon="chart"></span><span><strong>Моя активность</strong><small>Сегодня, неделя, месяц</small></span><i data-icon="chevron-right"></i></button><button data-nav="top"><span data-icon="crown"></span><span><strong>Топ участников</strong><small>Неделя, месяц и всё время</small></span><i data-icon="chevron-right"></i></button><button data-open="referral"><span data-icon="link"></span><span><strong>Приглашения</strong><small><b data-invited>0</b> друзей · <b data-ref-earned>0</b> ★ получено</small></span><i data-icon="chevron-right"></i></button><button data-open="settings"><span data-icon="sliders"></span><span><strong>Настройки</strong><small>Профиль, поиск и награды</small></span><i data-icon="chevron-right"></i></button><button data-open="feedback"><span data-icon="mail"></span><span><strong>Обратная связь</strong><small>Написать администраторам</small></span><i data-icon="chevron-right"></i></button><button data-open="help"><span data-icon="circle-help"></span><span><strong>Помощь и правила</strong><small>Коротко о работе бота</small></span><i data-icon="chevron-right"></i></button></section>
+        <section class="menu surface"><button data-open="activity"><span data-icon="chart"></span><span><strong>Моя активность</strong><small>Сегодня, неделя, месяц</small></span><i data-icon="chevron-right"></i></button><button data-open="achievements"><span data-icon="trophy"></span><span><strong>Достижения</strong><small>Коллекция выполненных целей</small></span><i data-icon="chevron-right"></i></button><button data-nav="top"><span data-icon="crown"></span><span><strong>Топ участников</strong><small>Неделя, месяц и всё время</small></span><i data-icon="chevron-right"></i></button><button data-open="referral"><span data-icon="link"></span><span><strong>Приглашения</strong><small><b data-invited>0</b> друзей · <b data-ref-earned>0</b> ★ получено</small></span><i data-icon="chevron-right"></i></button><button data-open="settings"><span data-icon="sliders"></span><span><strong>Настройки</strong><small>Профиль, поиск и награды</small></span><i data-icon="chevron-right"></i></button><button data-open="feedback"><span data-icon="mail"></span><span><strong>Обратная связь</strong><small>Написать администраторам</small></span><i data-icon="chevron-right"></i></button><button data-open="help"><span data-icon="circle-help"></span><span><strong>Помощь и правила</strong><small>Коротко о работе бота</small></span><i data-icon="chevron-right"></i></button></section>
       </section>
     </main>
     <nav class="bottom-nav" id="bottomNav"><button class="active" data-nav="home"><span data-icon="house"></span><small>Главная</small></button><button id="searchNav" data-nav="search"><span data-icon="message-circle"></span><small>Чат</small></button><button data-nav="top"><span data-icon="crown"></span><small>Топ</small></button><button data-nav="events"><span data-icon="bell"></span><i data-event-dot hidden></i><small>События</small></button><button data-nav="profile"><span data-icon="user-round"></span><small>Профиль</small></button></nav>
   </div>
   <div class="modal" id="modal" hidden><button class="modal-backdrop" data-close-modal aria-label="Закрыть"></button><section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><i class="handle"></i><header><span><small id="modalEyebrow"></small><strong id="modalTitle"></strong></span><button class="icon-btn" data-close-modal aria-label="Закрыть"><span data-icon="x"></span></button></header><div class="modal-body" id="modalBody"></div></section></div>
+  <div class="photo-viewer" id="photoViewer" hidden><button type="button" id="photoViewerClose" aria-label="Закрыть"><span data-icon="x"></span></button><img id="photoViewerImage" alt=""></div>
   <div class="toast" id="toast" role="status"></div>
-  <script src="./app.js?v=21"></script>
+  <script src="./realtime.js?v=1"></script>
+  <script src="./app.js?v=22"></script>
 </body>
 </html>
