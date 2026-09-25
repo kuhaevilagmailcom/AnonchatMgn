@@ -32,6 +32,36 @@ _DB: Any = None
 _PERSIST_QUEUE: deque[dict[str, Any]] = deque()
 _PERSIST_TASK: asyncio.Task | None = None
 _LOADED_PAIRS: set[tuple[int, int]] = set()
+_SUBSCRIBERS: dict[int, set[asyncio.Queue]] = defaultdict(set)
+
+
+def subscribe(user_id: int) -> asyncio.Queue:
+    queue: asyncio.Queue = asyncio.Queue(maxsize=32)
+    _SUBSCRIBERS[int(user_id)].add(queue)
+    return queue
+
+
+def unsubscribe(user_id: int, queue: asyncio.Queue) -> None:
+    uid = int(user_id)
+    group = _SUBSCRIBERS.get(uid)
+    if not group:
+        return
+    group.discard(queue)
+    if not group:
+        _SUBSCRIBERS.pop(uid, None)
+
+
+def signal(user_ids, event_type: str = "chat_changed", **payload: Any) -> None:
+    event = {"type": str(event_type), **payload}
+    for uid in set(map(int, user_ids)):
+        for queue in tuple(_SUBSCRIBERS.get(uid, ())):
+            try:
+                if queue.full():
+                    queue.get_nowait()
+                queue.put_nowait(dict(event))
+            except (asyncio.QueueEmpty, asyncio.QueueFull):
+                pass
+
 
 
 def _pair_key(user_a: int, user_b: int) -> tuple[int, int]:
@@ -184,7 +214,7 @@ def publish(
     telegram_message_id: int | None = None,
     data: dict[str, Any] | None = None,
 ) -> int:
-    return _append_for_pair(
+    seq = _append_for_pair(
         _next_seq(),
         sender_id,
         partner_id,
@@ -194,6 +224,8 @@ def publish(
         telegram_message_id=int(telegram_message_id or 0),
         data=data,
     )
+    signal({sender_id, partner_id}, "chat_changed", latest=seq)
+    return seq
 
 
 def game_invite(
@@ -256,6 +288,7 @@ def _shared_event(
                 "created_at": created_at,
             }
         )
+    signal(users, "chat_changed", latest=seq)
     return seq
 
 
@@ -298,6 +331,7 @@ def private(
             "data": dict(data or {}),
         }
     )
+    signal({user_id}, "chat_changed", latest=seq)
     return seq
 
 
@@ -374,6 +408,7 @@ def clear_pair(user_a: int, user_b: int) -> None:
         if ref.users & users:
             _MEDIA.pop(token, None)
     _queue_op({"op": "clear", "user_a": int(user_a), "user_b": int(user_b)})
+    signal(users, "status_changed", status="free")
 
 
 def clear_user(user_id: int) -> None:
@@ -386,6 +421,7 @@ def clear_user(user_id: int) -> None:
         if uid in ref.users:
             _MEDIA.pop(token, None)
     _queue_op({"op": "clear_user", "user_id": uid})
+    signal({uid}, "status_changed", status="free")
 
 
 def size() -> int:
