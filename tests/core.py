@@ -1365,6 +1365,62 @@ def test_miniapp_status_payload_is_authoritative() -> None:
     assert paired_b["status"] == "paired" and paired_b["position"] is None
 
 
+def test_live_chat_ram_mirroring_and_media_scope() -> None:
+    from anonchat import live_chat
+
+    a, b, stranger = 910001, 910002, 910003
+    live_chat.clear_pair(a, b)
+    live_chat.clear_user(stranger)
+    seq = live_chat.publish(
+        a,
+        b,
+        "photo",
+        text="привет",
+        file_id="telegram-file-id",
+        telegram_message_id=77,
+    )
+    mine = live_chat.events(a)
+    theirs = live_chat.events(b)
+    assert mine and theirs
+    assert mine[-1]["id"] == seq and theirs[-1]["id"] == seq
+    assert mine[-1]["mine"] is True
+    assert theirs[-1]["mine"] is False
+    token = mine[-1]["media_token"]
+    assert token
+    assert live_chat.media_ref(token, a) is not None
+    assert live_chat.media_ref(token, b) is not None
+    assert live_chat.media_ref(token, stranger) is None
+    live_chat.clear_pair(a, b)
+    assert live_chat.events(a) == []
+    assert live_chat.events(b) == []
+
+
+def test_miniapp_live_chat_frontend_contract() -> None:
+    root = Path(__file__).resolve().parents[1] / "miniapp" / "web"
+    html = (root / "index.html").read_text(encoding="utf-8")
+    js = (root / "app.js").read_text(encoding="utf-8")
+    css = (root / "styles.css").read_text(encoding="utf-8")
+    for marker in (
+        'data-page="chat"',
+        'id="chatComposer"',
+        'id="photoInput"',
+        'id="micButton"',
+        'id="stickerTray"',
+    ):
+        assert marker in html
+    for marker in (
+        "/api/miniapp/chat/state",
+        "/api/miniapp/chat/text",
+        "/api/miniapp/chat/photo",
+        "/api/miniapp/chat/voice",
+        "/api/miniapp/chat/stickers",
+        "MediaRecorder",
+    ):
+        assert marker in js
+    assert ".chat-page.active" in css
+    assert ".chat-composer" in css
+
+
 def test_miniapp_frontend_boot_guards() -> None:
     import re
 
