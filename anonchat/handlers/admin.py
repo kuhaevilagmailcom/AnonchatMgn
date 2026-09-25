@@ -33,7 +33,6 @@ from ..matching import Matchmaker
 from ..permissions import ALL_ADMIN_PERMISSIONS, PERMISSION_LABELS, parse_permissions
 from ..diagnostics import METRICS
 from .. import relay_state
-from ..monitoring import invalidate_monitor_cache, pending_count
 from .reports import format_report_card
 
 router = Router(name="admin")
@@ -439,7 +438,6 @@ async def panel_screen(ctx: Ctx, db: Database, mm: Matchmaker, edit: bool = True
     )
     kb = K.admin_panel_keyboard(
         int(s["open_reports"]), ctx.admin_permissions, owner=ctx.is_owner,
-        monitor_enabled=await db.get_kv(f"chat_monitor:{ctx.user_id}") == "1",
         xp_multiplier=multiplier,
         poll_active=active_poll is not None,
     )
@@ -748,8 +746,6 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         K.CB_PANEL_UNBAN: "ban",
         K.CB_PANEL_BAN_LIST: "ban",
         K.CB_PANEL_POINTS: "points",
-        K.CB_PANEL_MONITOR: "monitor",
-        K.CB_PANEL_GAMES: "monitor",
     }.get(data)
     if required and not ctx.can(required):
         await ctx.ack("У тебя нет этого права", alert=True)
@@ -811,14 +807,6 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
     if data == K.CB_PANEL_GAMES:
         await ctx.ack()
         await game_watch_screen(ctx, db)
-        return
-    if data == K.CB_PANEL_MONITOR:
-        key = f"chat_monitor:{ctx.user_id}"
-        enabled = await db.get_kv(key) != "1"
-        await db.set_kv(key, "1" if enabled else "0")
-        invalidate_monitor_cache()
-        await ctx.ack(f"Слежение за чатами {'включено' if enabled else 'выключено'}")
-        await panel_screen(ctx, db, mm)
         return
     if data == K.CB_PANEL_BACKUP:
         await ctx.ack("Готовлю базу…")
@@ -1047,8 +1035,8 @@ async def cb_restricted_list(event: CallbackQuery, ctx: Ctx, db: Database) -> No
 
 @router.callback_query(F.data.startswith("adm:games:"))
 async def cb_game_watch(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
-    if not _is_admin(ctx) or not ctx.can("monitor"):
-        await ctx.ack("У тебя нет этого права", alert=True)
+    if not ctx.is_owner:
+        await ctx.ack("Только для владельца", alert=True)
         return
     view = (event.data or "").rsplit(":", 1)[-1]
     if view != "active":
