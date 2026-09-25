@@ -24,13 +24,22 @@ from . import relay_state
 from . import live_chat
 from . import word_game as WG
 from . import nick as nicklib
-from .actions import DeliveryResult, _dialog_summary_text, announce_pairs, send_to
+from .actions import DeliveryResult, _dialog_summary_text, announce_pairs, break_pair, send_to
 from .levels import rank_for
 from .battle_questions import get_question, questions
 from .engagement import collect_progress_notifications
 from .number_game import NUMBER_DAILY_REWARD_LIMIT, NUMBER_NEAR_DIFFS, NUMBER_REWARDS, NUMBER_ROUNDS
 from .runtime_state import online_count as presence_online_count
 from .runtime_state import touch as presence_touch
+from .miniapp_features import (
+    REPORT_REASONS,
+    achievement_items,
+    dialog_result_payload,
+    event_payload,
+    period_deadline,
+    poll_payload,
+    quest_items,
+)
 
 
 SUBSCRIPTION_REWARD_KEY = "channel_subscription_v1"
@@ -158,6 +167,32 @@ class MiniAppServer:
             user_id, user.get("username"), user.get("first_name") or "Пользователь"
         )
         return user_id, user, row
+
+    async def _push_event(
+        self,
+        user_id: int,
+        event_type: str,
+        title: str,
+        text: str = "",
+        *,
+        icon: str = "bell",
+        action: str = "",
+    ) -> int:
+        event_id = await self.db.add_miniapp_event(
+            user_id, event_type, title, text, icon=icon, action=action
+        )
+        live_chat.signal({user_id}, "events_changed", event_id=event_id)
+        return event_id
+
+    def _auth_init_data(self, raw: str) -> tuple[int, dict]:
+        user = validate_init_data(
+            raw,
+            self.cfg.bot_token,
+            int(os.getenv("MINIAPP_INITDATA_MAX_AGE", "3600")),
+        )
+        user_id = int(user["id"])
+        presence_touch(user_id)
+        return user_id, user
 
     def _profile_json(self, row, user: dict) -> dict:
         rank = rank_for(int(row["messages"] or 0))
