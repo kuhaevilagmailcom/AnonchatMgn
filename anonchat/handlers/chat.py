@@ -15,7 +15,6 @@ from ..actions import (
 )
 from ..config import Config
 from ..matching import Matchmaker
-from ..monitoring import enqueue_chat_monitor
 from ..diagnostics import METRICS
 from ..engagement import collect_progress_notifications
 from .. import relay_state
@@ -109,7 +108,8 @@ async def relay_to_partner(
     if copied is not None:
         relay_state.remember(ctx.user_id, message.message_id, partner, copied.message_id)
 
-    # Зеркалим поддерживаемые сообщения в Mini App. Только RAM, без SQLite.
+    # Зеркалим поддерживаемые сообщения в Mini App. Активная лента временно
+    # сохраняется для восстановления после redeploy и очищается после stop/next.
     live_kind = ""
     live_file_id = ""
     live_text = body
@@ -209,8 +209,7 @@ async def relay_to_partner(
 
     if message.text:
         mm.record_text(ctx.user_id, message.text)
-    await enqueue_chat_monitor(message, ctx, partner)
-    # молча: человек знает, что написал в анонимный чат, подтверждений не просил
+    # Основной диалог не копируется администраторам; модерация работает через жалобы.
 
 
 @router.edited_message(F.chat.type == "private")
