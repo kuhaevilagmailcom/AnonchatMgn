@@ -29,6 +29,7 @@ from anonchat.pack import EmojiPack
 from anonchat.diagnostics import METRICS
 from anonchat.runtime_state import online_count as presence_online_count
 from anonchat import live_chat
+from anonchat import word_game as WG
 
 log = logging.getLogger("anonchat")
 
@@ -138,6 +139,8 @@ async def main() -> None:  # pragma: no cover
     bot, dp, database, mm, pack = build(cfg)
     await database.start()
     live_chat.bind_database(database)
+    WG.bind_database(database)
+    await WG.restore(database)
     saved_matchmaker = await database.load_matchmaker()
     if saved_matchmaker:
         mm.restore(saved_matchmaker)
@@ -199,6 +202,7 @@ async def main() -> None:  # pragma: no cover
         if miniapp_server is not None:
             await miniapp_server.stop()
         await live_chat.flush()
+        await WG.flush()
         await database.flush_matchmaker(mm)
         await dp.storage.close()
         await bot.session.close()
