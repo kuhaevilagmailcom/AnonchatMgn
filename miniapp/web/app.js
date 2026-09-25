@@ -193,7 +193,7 @@ if (typeof window === 'undefined') {
           <button data-chat-game="battle"><span>⚔️</span><div><strong>Битва мнений</strong><small>5 или 10 вопросов</small></div></button>
           <button data-chat-game="numbers"><span>🔢</span><div><strong>Числа</strong><small>Угадайте одинаковое число</small></div></button>
         </div>`;
-      $('[data-chat-game]',body).forEach(b=>b.onclick=()=>{
+      $$('[data-chat-game]',body).forEach(b=>b.onclick=()=>{
         const game=b.dataset.chatGame;
         if(game==='words')inviteWords();
         else if(game==='battle'){closeModal();openModal('battle','Битва мнений','ИГРА ВДВОЁМ')}
