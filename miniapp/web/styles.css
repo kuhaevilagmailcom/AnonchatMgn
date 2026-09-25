@@ -194,3 +194,63 @@
   .chat-top-actions button{padding:0 6px;font-size:9px}
   .emoji-grid{grid-template-columns:repeat(7,1fr)}
 }
+
+
+/* voice player + in-chat game invites */
+.voice-player{
+  width:245px;max-width:100%;min-height:48px;display:grid;
+  grid-template-columns:42px minmax(0,1fr);gap:8px;align-items:center
+}
+.voice-play{
+  width:40px;height:40px;border-radius:50%;border:0;background:rgba(255,255,255,.16);
+  color:#fff;display:grid;place-items:center;font-size:14px;padding:0
+}
+.chat-message.theirs .voice-play{background:#302a2f}
+.voice-play:active{transform:scale(.94)}
+.voice-middle{min-width:0;display:grid;gap:3px}
+.voice-wave{
+  position:relative;width:100%;height:24px;border:0;background:transparent;padding:0;overflow:hidden;
+  cursor:pointer
+}
+.voice-bars{
+  position:absolute;inset:0;display:flex;align-items:center;gap:2px;opacity:.45
+}
+.voice-bars i{
+  flex:1;min-width:2px;height:var(--h);max-height:20px;border-radius:2px;background:currentColor
+}
+.voice-progress{
+  position:absolute;left:0;top:0;bottom:0;width:0;pointer-events:none;overflow:hidden;
+  background:linear-gradient(90deg,rgba(255,255,255,.42),rgba(255,255,255,.42));
+  mix-blend-mode:screen;border-radius:4px
+}
+.voice-meta{display:flex;justify-content:space-between;color:rgba(255,255,255,.62);font-size:9px;line-height:1}
+.chat-message.theirs .voice-meta{color:#938b91}
+.voice-player.error .voice-play{display:none}
+.game-invite{
+  align-self:flex-start;width:min(88%,330px);margin:6px 0;padding:12px;border-radius:16px;
+  background:#171317;border:1px solid #2a2228;display:grid;grid-template-columns:42px minmax(0,1fr);gap:10px;
+  box-shadow:0 10px 24px rgba(0,0,0,.16)
+}
+.game-invite.mine{align-self:flex-end;background:#24151f;border-color:#3c2434}
+.game-invite-icon{
+  width:42px;height:42px;border-radius:12px;background:#281d25;display:grid;place-items:center;font-size:22px
+}
+.game-invite-copy{min-width:0;display:grid;gap:3px}
+.game-invite-copy strong{font-size:14px}
+.game-invite-copy small{color:#9c9399;font-size:10px}
+.game-invite-status{color:#cf9fbd;font-size:10px;margin-top:2px}
+.game-invite-status.accepted{color:#78dca9}
+.game-invite-status.declined{color:#a79fa4}
+.game-invite-actions{
+  grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:3px
+}
+.game-invite-actions button{
+  min-height:38px;border-radius:11px;background:#211c20;color:#c2bac0;font-size:11px;font-weight:750
+}
+.game-invite-actions button.accept{background:#d96bb7;color:#fff}
+.game-invite-actions button:disabled{opacity:.45}
+.game-round-card{
+  align-self:center;width:min(90%,340px);padding:11px 13px;margin:5px auto;border-radius:13px;
+  background:#131013;border:1px solid #292229;color:#d7d1d5;font-size:12px;line-height:1.45;
+  white-space:pre-wrap
+}
