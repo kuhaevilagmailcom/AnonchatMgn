@@ -34,7 +34,7 @@ if (typeof window === 'undefined') {
   const apiBase = (window.ANON_MGN_API_BASE || $('meta[name="api-base"]')?.content || '').replace(/\/$/, '');
   // Game icon metaphors follow the 24x24 / 2px Tabler Icons system.
   const paths = {
-    'settings':'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.04 1.56V20h-3v-.08a1.7 1.7 0 0 0-1.05-1.56 1.7 1.7 0 0 0-1.88.34l-.05.06-2.13-2.12.06-.06A1.7 1.7 0 0 0 7 14.7a1.7 1.7 0 0 0-1.56-1.04H5v-3h.44A1.7 1.7 0 0 0 7 9.61a1.7 1.7 0 0 0-.35-1.88l-.06-.06 2.13-2.12.05.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.7 4.4V4h3v.4a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06a1.7 1.7 0 0 0-.34 1.88 1.7 1.7 0 0 0 1.56 1.04H21v3h-.04A1.7 1.7 0 0 0 19.4 15Z"/>',
+    'settings':'<path d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.2a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.5a2 2 0 0 1-1 1.7l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.2a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.2a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.7v-.5a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.2a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
     'chevron-right':'<path d="m9 18 6-6-6-6"/>','chevron-left':'<path d="m15 18-6-6 6-6"/>','arrow-right':'<path d="M5 12h14M13 6l6 6-6 6"/>','x':'<path d="m6 6 12 12M18 6 6 18"/>',
     'paperclip':'<path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 1 1-2.8-2.8l8.5-8.5"/>',
     'smile':'<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/>',
@@ -51,6 +51,7 @@ if (typeof window === 'undefined') {
   let statusTimer = null;
   let searchBusy = false;
   const chat = {latest:0,startedAt:0,sent:0,received:0,timer:null,seen:new Set(),stickersLoaded:false,recording:false,recorder:null,stream:null,chunks:[],recordTimer:null,mediaCache:new Map()};
+  const CHAT_EMOJIS = ['😀','😃','😄','😁','😂','🤣','🥹','😊','🙂','😉','😍','😘','😎','🤨','😐','😴','😭','😡','🤬','🥰','🤍','❤️','🩷','🔥','⭐','✨','💀','🤝','👍','👎','🙏','💬','👀','🤡','😈','💯','🎉','🥳','😏','🙃','😌','🤔','😳','🫠','😅','🤝','💋','🫶'];
   const svg = n => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[n] || paths['circle-help']}</svg>`;
   function icons(root=document){$$('[data-icon]',root).forEach(el=>{el.innerHTML=svg(el.dataset.icon)})}
   function esc(v=''){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -185,6 +186,21 @@ if (typeof window === 'undefined') {
     if(kind==='settings'){await settings(body);return}
     if(kind==='feedback'){body.innerHTML=`${panel('Напиши команде','Сообщение уйдёт всем администраторам бота.')}<div class="form-field"><label>Сообщение · до 1000 символов</label><textarea id="feedback" maxlength="1000" placeholder="Что случилось или что можно улучшить?"></textarea></div><div class="modal-actions one"><button class="action accent" id="sendFeedback">Отправить</button></div>`;$('#sendFeedback').onclick=sendFeedback;return}
     if(kind==='help'){body.innerHTML=panel('Поиск','Банк и пол — предпочтения. Если точного совпадения нет, бот всё равно постарается быстро найти собеседника.')+panel('Диалог','/next — следующий собеседник, /stop — закончить, /game — открыть игры. Личные контакты и ссылки отправлять можно.')+panel('Приватность','Обычные пользователи не видят Telegram ID и username. Для нарушений используй кнопку жалобы в чате.');return}
+    if(kind==='chat-games'){
+      body.innerHTML=`
+        <div class="chat-game-picker">
+          <button data-chat-game="words"><span>🗣</span><div><strong>Объясни слово</strong><small>Один объясняет, второй угадывает</small></div></button>
+          <button data-chat-game="battle"><span>⚔️</span><div><strong>Битва мнений</strong><small>5 или 10 вопросов</small></div></button>
+          <button data-chat-game="numbers"><span>🔢</span><div><strong>Числа</strong><small>Угадайте одинаковое число</small></div></button>
+        </div>`;
+      $('[data-chat-game]',body).forEach(b=>b.onclick=()=>{
+        const game=b.dataset.chatGame;
+        if(game==='words')inviteWords();
+        else if(game==='battle'){closeModal();openModal('battle','Битва мнений','ИГРА ВДВОЁМ')}
+        else{closeModal();openModal('numbers','Числа','ИГРА ВДВОЁМ')}
+      });
+      return;
+    }
     if(kind==='battle'){body.innerHTML=`${panel('Битва мнений','Оба отвечают отдельно. Идеальное совпадение 5/5 или 10/10 принесёт каждому 25 ★.')}<div class="modal-actions"><button class="action" data-battle="5">5 вопросов</button><button class="action accent" data-battle="10">10 вопросов</button></div>`;$$('[data-battle]',body).forEach(b=>b.onclick=()=>inviteBattle(+b.dataset.battle));return}
     if(kind==='numbers'){body.innerHTML=`${panel('Числа · 3 раунда','Точное совпадение даёт полную награду, близкое — половину. Для пары награда доступна один раз.')}<div class="modal-actions one"><button class="action" data-range="10">1–10 · до 25 ★</button><button class="action" data-range="100">1–100 · до 50 ★</button><button class="action accent" data-range="1000">1–1000 · до 100 ★</button></div>`;$$('[data-range]',body).forEach(b=>b.onclick=()=>inviteNumbers(+b.dataset.range));return}
   }
@@ -218,16 +234,32 @@ if (typeof window === 'undefined') {
   }
   async function attachMediaToEvent(node,event){
     if(!event.media_url)return;
-    try{
-      const url=await mediaBlobUrl(event.media_url);
-      if(event.kind==='photo'){
-        const img=document.createElement('img');img.className='chat-photo';img.alt='Фото';img.src=url;img.onload=scrollChatBottom;node.prepend(img);
-      }else if(event.kind==='voice'){
-        const audio=document.createElement('audio');audio.className='chat-voice';audio.controls=true;audio.preload='metadata';audio.src=url;node.prepend(audio);
-      }else if(event.kind==='sticker'){
-        const img=document.createElement('img');img.className='chat-sticker';img.alt=event.text||'Стикер';img.src=url;img.onload=scrollChatBottom;node.prepend(img);
-      }
-    }catch(_){}
+    const url=apiBase+event.media_url;
+    if(event.kind==='photo'){
+      const img=document.createElement('img');
+      img.className='chat-photo';
+      img.alt='';
+      img.src=url;
+      img.onload=scrollChatBottom;
+      img.onerror=()=>{img.remove();const e=document.createElement('span');e.className='media-error';e.textContent='Фото не загрузилось';node.prepend(e)};
+      node.prepend(img);
+    }else if(event.kind==='voice'){
+      const audio=document.createElement('audio');
+      audio.className='chat-voice';
+      audio.controls=true;
+      audio.preload='metadata';
+      audio.src=url;
+      audio.onerror=()=>{audio.replaceWith(Object.assign(document.createElement('span'),{className:'media-error',textContent:'Голосовое недоступно'}))};
+      node.prepend(audio);
+    }else if(event.kind==='sticker'){
+      const img=document.createElement('img');
+      img.className='chat-sticker';
+      img.alt=event.text||'';
+      img.src=url;
+      img.onload=scrollChatBottom;
+      img.onerror=()=>img.remove();
+      node.prepend(img);
+    }
   }
   function appendChatEvent(event){
     if(!event||chat.seen.has(event.id))return;
@@ -326,16 +358,38 @@ if (typeof window === 'undefined') {
     }catch(_){toast('Не удалось получить доступ к микрофону')}
   }
   async function loadStickers(){
-    const tray=$('#stickerTray'),grid=$('#stickerGrid');if(!tray||!grid)return;
-    tray.hidden=!tray.hidden;if(tray.hidden||chat.stickersLoaded)return;
-    grid.innerHTML='<div class="sticker-loading">Загрузка…</div>';
+    const tray=$('#stickerTray'),grid=$('#stickerGrid'),emojiGrid=$('#emojiGrid'),section=$('#stickerSection');
+    if(!tray||!grid||!emojiGrid)return;
+    tray.hidden=!tray.hidden;
+    if(tray.hidden)return;
+
+    if(!emojiGrid.childElementCount){
+      CHAT_EMOJIS.forEach(emoji=>{
+        const b=document.createElement('button');
+        b.type='button';b.className='emoji-item';b.textContent=emoji;
+        b.onclick=()=>{
+          const input=$('#chatInput');if(!input)return;
+          const start=input.selectionStart??input.value.length,end=input.selectionEnd??start;
+          input.setRangeText(emoji,start,end,'end');input.focus();haptic();
+        };
+        emojiGrid.appendChild(b);
+      });
+    }
+
+    if(chat.stickersLoaded)return;
+    grid.innerHTML='<div class="sticker-loading">Загрузка стикеров…</div>';
     const data=await safe('/api/miniapp/chat/stickers',{},null);
     grid.innerHTML='';
-    if(!data?.items?.length){grid.innerHTML='<div class="sticker-loading">Стикеры пока недоступны</div>';return}
+    const items=data?.items||[];
+    if(!items.length){
+      if(section)section.hidden=true;
+      return;
+    }
+    if(section)section.hidden=false;
     chat.stickersLoaded=true;
-    data.items.forEach(item=>{
+    items.forEach(item=>{
       const b=document.createElement('button');b.type='button';b.className='sticker-item';b.title=item.emoji||'Стикер';
-      const img=document.createElement('img');img.alt=item.emoji||'Стикер';b.appendChild(img);grid.appendChild(b);
+      const img=document.createElement('img');img.alt=item.emoji||'';b.appendChild(img);grid.appendChild(b);
       mediaBlobUrl(item.url).then(url=>img.src=url).catch(()=>{b.textContent=item.emoji||'🙂'});
       b.onclick=async()=>{
         tray.hidden=true;
@@ -344,6 +398,7 @@ if (typeof window === 'undefined') {
       };
     });
   }
+
   function confirmLongChat(action){
     if(!chat.startedAt||Date.now()/1000-chat.startedAt<300)return Promise.resolve(true);
     const message=`Диалог идёт уже ${Math.max(5,Math.floor((Date.now()/1000-chat.startedAt)/60))} мин. Точно ${action}?`;
@@ -391,6 +446,10 @@ if (typeof window === 'undefined') {
       renderSearch();
     }
   }
+  async function inviteWords(){
+    const r=await safe('/api/miniapp/games/words/invite',{method:'POST',body:'{}'},null);
+    if(r){closeModal();toast(r.message||'Приглашение отправлено');notify();syncChat(false)}
+  }
   async function inviteBattle(total){const r=await safe('/api/miniapp/games/battle/invite',{method:'POST',body:JSON.stringify({total})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify()}}
   async function inviteNumbers(range_max){const r=await safe('/api/miniapp/games/numbers/invite',{method:'POST',body:JSON.stringify({range_max})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify()}}
   function bind(){
@@ -405,6 +464,7 @@ if (typeof window === 'undefined') {
     $('#photoInput')&&($('#photoInput').onchange=e=>sendChatPhoto(e.target.files?.[0]));
     $('#stickerButton')&&($('#stickerButton').onclick=loadStickers);
     $('#micButton')&&($('#micButton').onclick=toggleVoiceRecording);
+    $('#chatGames')&&($('#chatGames').onclick=()=>openModal('chat-games','Игры','В АКТИВНОМ ЧАТЕ'));
     $('#chatStop')&&($('#chatStop').onclick=stopChat);
     $('#chatNext')&&($('#chatNext').onclick=nextChat);
     window.addEventListener('online',()=>{$('#offline').hidden=true;if(tg?.initData){load();syncStatus(true);if(state.status==='paired')syncChat(true)}});
