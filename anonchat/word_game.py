@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import random
 import re
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 WORD_ROUNDS = 5
 WORD_REWARD = 3
@@ -104,6 +107,124 @@ _games: dict[tuple[int, int], WordGame] = {}
 _by_id: dict[int, WordGame] = {}
 _next_id = 1
 
+_DB: Any = None
+_PERSIST_TASK: asyncio.Task | None = None
+_DIRTY = False
+_KV_KEY = "word_games_state_v1"
+
+
+def bind_database(db: Any) -> None:
+    global _DB
+    _DB = db
+
+
+def _snapshot() -> dict[str, Any]:
+    return {
+        "next_id": int(_next_id),
+        "games": [
+            {
+                "id": int(game.id),
+                "user_a": int(game.user_a),
+                "user_b": int(game.user_b),
+                "inviter_id": int(game.inviter_id),
+                "status": str(game.status),
+                "round_index": int(game.round_index),
+                "explainer_id": int(game.explainer_id),
+                "guesser_id": int(game.guesser_id),
+                "word": str(game.word),
+                "used_words": sorted(game.used_words),
+                "correct": {str(k): int(v) for k, v in game.correct.items()},
+                "created_at": float(game.created_at),
+                "updated_at": float(game.updated_at),
+            }
+            for game in _games.values()
+            if game.status in {"invited", "active", "round_done"}
+        ],
+    }
+
+
+async def restore(db: Any) -> int:
+    global _next_id
+    raw = await db.get_kv(_KV_KEY, "")
+    if not raw:
+        return 0
+    try:
+        payload = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return 0
+    _games.clear()
+    _by_id.clear()
+    restored = 0
+    max_id = 0
+    now_ts = time.time()
+    for item in payload.get("games", []):
+        try:
+            game = WordGame(
+                id=int(item["id"]),
+                user_a=int(item["user_a"]),
+                user_b=int(item["user_b"]),
+                inviter_id=int(item["inviter_id"]),
+                status=str(item.get("status", "invited")),
+                round_index=int(item.get("round_index", 0)),
+                explainer_id=int(item.get("explainer_id", 0)),
+                guesser_id=int(item.get("guesser_id", 0)),
+                word=str(item.get("word", "")),
+                used_words=set(map(str, item.get("used_words", []))),
+                correct={int(k): int(v) for k, v in dict(item.get("correct", {})).items()},
+                created_at=float(item.get("created_at", now_ts)),
+                updated_at=float(item.get("updated_at", now_ts)),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        if game.status not in {"invited", "active", "round_done"}:
+            continue
+        _games[_pair_key(game.user_a, game.user_b)] = game
+        _by_id[game.id] = game
+        max_id = max(max_id, game.id)
+        restored += 1
+    _next_id = max(int(payload.get("next_id", 1) or 1), max_id + 1)
+    return restored
+
+
+def _touch() -> None:
+    global _PERSIST_TASK, _DIRTY
+    if _DB is None:
+        return
+    _DIRTY = True
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    if _PERSIST_TASK is None or _PERSIST_TASK.done():
+        _PERSIST_TASK = loop.create_task(_persist_loop())
+
+
+async def _persist_loop() -> None:
+    global _PERSIST_TASK, _DIRTY
+    try:
+        while _DIRTY and _DB is not None:
+            _DIRTY = False
+            await asyncio.sleep(0.12)
+            await _DB.set_kv(
+                _KV_KEY,
+                json.dumps(_snapshot(), ensure_ascii=False, separators=(",", ":")),
+            )
+    finally:
+        _PERSIST_TASK = None
+
+
+async def flush() -> None:
+    global _DIRTY
+    task = _PERSIST_TASK
+    if task is not None and not task.done():
+        await task
+    if _DIRTY and _DB is not None:
+        _DIRTY = False
+        await _DB.set_kv(
+            _KV_KEY,
+            json.dumps(_snapshot(), ensure_ascii=False, separators=(",", ":")),
+        )
+
 
 def _pair_key(user_a: int, user_b: int) -> tuple[int, int]:
     a, b = sorted((int(user_a), int(user_b)))
@@ -146,6 +267,7 @@ def create_invite(inviter_id: int, partner_id: int) -> tuple[WordGame, bool]:
     _next_id += 1
     _games[key] = game
     _by_id[game.id] = game
+    _touch()
     return game, True
 
 
@@ -167,6 +289,7 @@ def _start_round(game: WordGame) -> WordGame:
     game.word = _choose_word(game)
     game.status = "active"
     game.updated_at = time.time()
+    _touch()
     return game
 
 
@@ -219,6 +342,7 @@ def resolve_guess(user_id: int, partner_id: int, text: str) -> GuessResult | Non
     finished = game.round_index >= WORD_ROUNDS - 1
     game.status = "finished" if finished else "round_done"
     game.updated_at = time.time()
+    _touch()
     return GuessResult(
         game_id=game.id,
         round_index=game.round_index,
@@ -243,6 +367,8 @@ def advance(game_id: int, user_id: int, round_index: int) -> WordGame | None:
     game.round_index += 1
     if game.round_index >= WORD_ROUNDS:
         game.status = "finished"
+        game.updated_at = time.time()
+        _touch()
         return game
     return _start_round(game)
 
@@ -252,6 +378,7 @@ def remove(game_id: int) -> WordGame | None:
     if game is None:
         return None
     _games.pop(_pair_key(game.user_a, game.user_b), None)
+    _touch()
     return game
 
 
