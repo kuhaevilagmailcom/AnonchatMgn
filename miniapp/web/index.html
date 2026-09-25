@@ -9,7 +9,7 @@
   <title>АНОН МГН</title>
   <link rel="icon" href="./assets/anon-mgn-logo.png">
   <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./styles.css?v=12">
+  <link rel="stylesheet" href="./styles.css?v=13">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -33,12 +33,17 @@
       <section class="page chat-page" data-page="chat">
         <header class="chat-top">
           <button class="chat-back" type="button" data-nav="home" aria-label="Назад"><span data-icon="chevron-left"></span></button>
-          <span class="chat-peer"><i></i><span><strong>Собеседник</strong><small id="chatDuration">чат активен</small></span></span>
-          <span class="chat-top-actions"><button type="button" id="chatNext">Следующий</button><button type="button" id="chatStop">Стоп</button></span>
+          <span class="chat-peer"><span class="chat-peer-avatar"><img src="./assets/anon-mgn-logo.png" alt="АНОН МГН"></span><span><strong>Собеседник</strong><small id="chatDuration">чат активен</small></span></span>
+          <span class="chat-top-actions"><button type="button" id="chatGames">Игры</button><button type="button" id="chatNext">Следующий</button><button type="button" id="chatStop">Стоп</button></span>
         </header>
         <div class="chat-counter"><span><b id="chatSent">0</b> отправлено</span><i></i><span><b id="chatReceived">0</b> получено</span></div>
         <div class="chat-messages" id="chatMessages"><div class="chat-empty" id="chatEmpty">Напиши что-нибудь 👋</div></div>
-        <div class="sticker-tray" id="stickerTray" hidden><div class="sticker-grid" id="stickerGrid"></div></div>
+        <div class="sticker-tray" id="stickerTray" hidden>
+          <div class="emoji-grid" id="emojiGrid"></div>
+          <div class="sticker-section" id="stickerSection">
+            <div class="sticker-grid" id="stickerGrid"></div>
+          </div>
+        </div>
         <form class="chat-composer" id="chatComposer">
           <button type="button" class="composer-btn" id="photoButton" aria-label="Фото"><span data-icon="paperclip"></span></button>
           <input type="file" id="photoInput" accept="image/jpeg,image/png,image/webp" hidden>
@@ -67,6 +72,6 @@
   </div>
   <div class="modal" id="modal" hidden><button class="modal-backdrop" data-close-modal aria-label="Закрыть"></button><section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><i class="handle"></i><header><span><small id="modalEyebrow"></small><strong id="modalTitle"></strong></span><button class="icon-btn" data-close-modal aria-label="Закрыть"><span data-icon="x"></span></button></header><div class="modal-body" id="modalBody"></div></section></div>
   <div class="toast" id="toast" role="status"></div>
-  <script src="./app.js?v=16"></script>
+  <script src="./app.js?v=17"></script>
 </body>
 </html>
