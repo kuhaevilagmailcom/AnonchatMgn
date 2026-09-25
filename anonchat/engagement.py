@@ -83,6 +83,14 @@ async def collect_progress_notifications(db, user_id: int) -> list[str]:
             continue
         if await db.unlock_achievement(user_id, key, reward):
             notices.append(f"🏆 <b>Достижение выполнено</b>\n{title}\n+<b>{reward} ⭐</b>")
+            await db.add_miniapp_event(
+                user_id,
+                "achievement",
+                "Достижение выполнено",
+                f"{title} · +{reward} ⭐",
+                icon="trophy",
+                action="profile:achievements",
+            )
 
     today = referral_day_start()
     activity = await db.activity_totals(user_id, 1)
@@ -91,6 +99,14 @@ async def collect_progress_notifications(db, user_id: int) -> list[str]:
             continue
         if await db.claim_daily_quest(user_id, today, quest.key, quest.reward):
             notices.append(f"✅ <b>Квест выполнен</b>\n{quest.title}\n+<b>{quest.reward} ⭐</b>")
+            await db.add_miniapp_event(
+                user_id,
+                "quest",
+                "Квест выполнен",
+                f"{quest.title} · +{quest.reward} ⭐",
+                icon="target",
+                action="profile:quests",
+            )
     return notices
 
 async def format_quests(db, user_id: int) -> str:
