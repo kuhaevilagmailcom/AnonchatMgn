@@ -935,6 +935,56 @@ class MiniAppServer:
         await self.db.db.commit()
 
         self.mm.remember_rating([uid, partner], match_id)
+        duration_seconds = max(0, int(time.time()) - started)
+        game_stats = summary.get("game_stats", {}) or {}
+        games_summary = []
+        if int(game_stats.get("battle_games", 0)):
+            games_summary.append({
+                "type": "battle",
+                "games": int(game_stats.get("battle_games", 0)),
+                "matches": int(game_stats.get("battle_matches", 0)),
+                "total": int(game_stats.get("battle_questions", 0)),
+            })
+        if int(game_stats.get("number_games", 0)):
+            games_summary.append({
+                "type": "numbers",
+                "games": int(game_stats.get("number_games", 0)),
+                "exact": int(game_stats.get("number_exact", 0)),
+            })
+        other_games = max(
+            0,
+            int(game_stats.get("games", 0))
+            - int(game_stats.get("battle_games", 0))
+            - int(game_stats.get("number_games", 0)),
+        )
+        if other_games:
+            games_summary.append({"type": "words", "games": other_games})
+        await self.db.save_dialog_result(
+            uid, match_id, partner,
+            started_at=started, duration=duration_seconds,
+            sent=mine, received=theirs, earned=int(earned_xp.get(uid, 0)),
+            games=games_summary,
+        )
+        await self.db.save_dialog_result(
+            partner, match_id, uid,
+            started_at=started, duration=duration_seconds,
+            sent=theirs, received=mine, earned=int(earned_xp.get(partner, 0)),
+            games=games_summary,
+        )
+        duration_label = (
+            f"{max(1, duration_seconds // 60)} мин"
+            if duration_seconds >= 60 else "меньше минуты"
+        )
+        await self._push_event(
+            uid, "dialog", "Диалог завершён",
+            f"{duration_label} · {mine} сообщений · +{int(earned_xp.get(uid, 0))} ⭐",
+            icon="message-circle", action="dialog:result",
+        )
+        await self._push_event(
+            partner, "dialog", "Диалог завершён",
+            f"{duration_label} · {theirs} сообщений · +{int(earned_xp.get(partner, 0))} ⭐",
+            icon="message-circle", action="dialog:result",
+        )
         my_summary = _dialog_summary_text(
             summary, uid, earned_xp.get(uid, 0)
         )
@@ -1005,6 +1055,8 @@ class MiniAppServer:
             "earned": int(earned_xp.get(uid, 0)),
             "started_at": started,
         }
+        result["result"] = dialog_result_payload(await self.db.dialog_result(uid))
+        live_chat.signal({uid, partner}, "status_changed", status="free")
         return result
 
     async def chat_stop(self, request: web.Request) -> web.Response:
@@ -1049,6 +1101,108 @@ class MiniAppServer:
             )
         self.db.schedule_matchmaker_save(self.mm)
         return web.json_response(self._status_payload(uid))
+
+    async def chat_result(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        return web.json_response(
+            {"result": dialog_result_payload(await self.db.dialog_result(uid))}
+        )
+
+    async def chat_rate(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        data = await request.json()
+        value = 1 if bool(data.get("positive")) else 0
+        result_row = await self.db.dialog_result(uid)
+        if result_row is None:
+            raise _json_error(404, "Итог диалога уже недоступен")
+        if bool(int(result_row["rated"] or 0)):
+            raise _json_error(409, "Оценка уже учтена")
+        partner = await self.db.rate_dialog(int(result_row["match_id"]), uid, value)
+        if partner is None:
+            await self.db.mark_dialog_result_rated(uid)
+            raise _json_error(409, "Оценка уже учтена")
+        await self.db.activity_add(uid, ratings_given=1)
+        reward = 0
+        if value:
+            reward = max(0, int(self.cfg.xp_good_rating))
+            if reward:
+                await self.db.award_xp(partner, reward)
+            await self.db.activity_add(partner, good_ratings=1)
+            await self._push_event(
+                partner, "rating", "Хорошая оценка",
+                f"Собеседник поставил 👍 · +{reward} ⭐",
+                icon="thumbs-up", action="profile",
+            )
+        await self.db.mark_dialog_result_rated(uid)
+        self.mm.pop_rating(uid)
+        for notice in await collect_progress_notifications(self.db, uid):
+            await send_to(self.bot, uid, notice, pack=self.pack)
+        if value:
+            for notice in await collect_progress_notifications(self.db, partner):
+                await send_to(self.bot, partner, notice, pack=self.pack)
+        live_chat.signal({uid}, "result_changed", rated=True)
+        return web.json_response({"ok": True, "positive": bool(value), "reward": reward})
+
+    async def chat_report(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        partner = self.mm.partner(uid)
+        if partner is None:
+            raise _json_error(409, "Жалобу можно отправить только во время диалога")
+        data = await request.json()
+        reason = str(data.get("reason", "") or "")
+        if reason not in REPORT_REASONS:
+            raise _json_error(400, "Выбери причину жалобы")
+        comment = str(data.get("comment", "") or "").strip()[:500]
+        dialog = self.mm.dialog_stats(uid)
+        history = dialog.get("history", []) or []
+        context = "\n".join(
+            f"— {'жалующийся' if int(author) == uid else 'собеседник'}: {text}"
+            for author, text in history[-6:]
+        )
+        report_id, day_count = await self.db.add_report(
+            uid,
+            partner,
+            reason,
+            comment,
+            dialog_key=str(dialog.get("dialog_key", "")),
+            context=context,
+        )
+        if report_id is None:
+            raise _json_error(409, "На этот диалог жалоба уже отправлена")
+        admin_ids = await self.db.admin_ids_with_permission("reports", self.cfg.admin_ids)
+        body = (
+            f"🚨 <b>Новая жалоба #{report_id}</b>\n\n"
+            f"Причина: <b>{html.escape(REPORT_REASONS[reason])}</b>\n"
+            f"Комментарий: {html.escape(comment) if comment else '—'}\n\n"
+            f"На пользователя: <code>{partner}</code>\n"
+            f"От пользователя: <code>{uid}</code>"
+        )
+        for admin_id in admin_ids:
+            try:
+                permissions = await self.db.get_admin_permissions(admin_id, self.cfg.admin_ids)
+                await self.bot.send_message(
+                    admin_id,
+                    body,
+                    reply_markup=K.admin_report_keyboard(report_id, permissions),
+                )
+            except TelegramAPIError:
+                pass
+        auto_muted = False
+        if self.cfg.auto_mute_reports > 0 and day_count >= self.cfg.auto_mute_reports:
+            await self.db.set_mute(partner, self.cfg.auto_mute_minutes)
+            await break_pair(
+                self.bot, self.cfg, self.mm, partner,
+                texts.MOD_CLOSED_DIALOG, self.pack, self.db
+            )
+            auto_muted = True
+        await self._push_event(
+            uid, "report", "Жалоба отправлена",
+            f"#{report_id} · {REPORT_REASONS[reason]}",
+            icon="shield-check", action="events",
+        )
+        return web.json_response(
+            {"ok": True, "report_id": report_id, "auto_muted": auto_muted}
+        )
 
     async def settings(self, request: web.Request) -> web.Response:
         uid, user, _ = await self._auth(request)
@@ -1214,13 +1368,16 @@ class MiniAppServer:
 
     async def quests(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
-        today = await self.db.activity_totals(uid, 1)
-        specs = (("Отправь 20 сообщений", "messages", 20), ("Проведи 3 диалога", "dialogs", 3), ("Сыграй 1 игру", "games", 1))
-        items = []
-        for title, key, target in specs:
-            current = min(target, int(today[key]))
-            items.append({"title": title, "current": current, "target": target, "done": current >= target})
-        return web.json_response({"items": items})
+        return web.json_response({"items": await quest_items(self.db, uid)})
+
+    async def achievements(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        items = await achievement_items(self.db, uid)
+        return web.json_response({
+            "items": items,
+            "unlocked": sum(1 for item in items if item["unlocked"]),
+            "total": len(items),
+        })
 
     async def top(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
@@ -1248,24 +1405,65 @@ class MiniAppServer:
                     for place, row in enumerate(rows, 1)
                 ],
                 "me": uid,
+                "my": await self.db.top_position_period(uid, days),
+                "ends_at": period_deadline(period),
             }
         )
 
     async def _notifications(self, uid: int) -> list[dict]:
+        rows = await self.db.miniapp_events(uid, limit=60)
+        items = [event_payload(row) for row in rows]
         status = self.mm.status(uid)
         if status == "paired":
-            return [{"id": "dialog-active", "type": "personal", "icon": "message-circle", "title": "Диалог активен", "text": "Собеседник найден. Возвращайся в чат.", "time": "сейчас", "unread": True}]
-        if status == "queued":
-            return [{"id": "search-active", "type": "system", "icon": "search", "title": "Поиск идёт", "text": "Можно закрыть Mini App — очередь сохранится.", "time": "сейчас", "unread": True}]
-        return []
+            items.insert(0, {
+                "id": "dialog-active", "type": "personal", "icon": "message-circle",
+                "title": "Диалог активен", "text": "Собеседник найден. Открыть чат.",
+                "action": "chat", "created_at": int(time.time()), "unread": False,
+            })
+        elif status == "queued":
+            items.insert(0, {
+                "id": "search-active", "type": "system", "icon": "search",
+                "title": "Поиск идёт", "text": "Очередь работает даже когда Mini App закрыта.",
+                "action": "search", "created_at": int(time.time()), "unread": False,
+            })
+        return items
 
     async def notifications(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
-        return web.json_response({"items": await self._notifications(uid)})
+        items = await self._notifications(uid)
+        return web.json_response({
+            "items": items,
+            "unread": sum(1 for item in items if item.get("unread")),
+        })
 
     async def notification_read(self, request: web.Request) -> web.Response:
-        await self._auth(request)
-        return web.json_response({"ok": True})
+        uid, _, _ = await self._auth(request)
+        raw = request.match_info["notification_id"]
+        if raw == "all":
+            changed = await self.db.read_all_miniapp_events(uid)
+        elif raw.isdigit():
+            changed = int(await self.db.read_miniapp_event(uid, int(raw)))
+        else:
+            changed = 0
+        live_chat.signal({uid}, "events_changed")
+        return web.json_response({"ok": True, "changed": changed})
+
+    async def poll(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        return web.json_response({"poll": await poll_payload(self.db, uid)})
+
+    async def poll_vote(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        data = await request.json()
+        try:
+            poll_id = int(data.get("poll_id", 0) or 0)
+            choice = int(data.get("choice", -1))
+        except (TypeError, ValueError) as exc:
+            raise _json_error(400, "Некорректный вариант") from exc
+        if choice not in {0, 1} or not await self.db.vote_poll(poll_id, uid, choice):
+            raise _json_error(409, "Опрос уже закрыт")
+        live_chat.signal({uid}, "poll_changed", poll_id=poll_id)
+        return web.json_response({"ok": True, "poll": await poll_payload(self.db, uid)})
 
     async def feedback(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
