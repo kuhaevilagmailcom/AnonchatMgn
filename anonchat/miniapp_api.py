@@ -325,7 +325,7 @@ class MiniAppServer:
             "range_max": int(row["range_max"] or 0),
             "reward_enabled": bool(int(row["reward_awarded"] or 0)),
             "reward_total": int(
-                row["reward_total_a"] if user_a == int(uid) else row["reward_total_b"]
+                (row["reward_total_a"] if user_a == int(uid) else row["reward_total_b"])
                 or 0
             ),
             "answered": mine is not None,
