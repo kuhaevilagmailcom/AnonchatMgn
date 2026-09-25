@@ -704,9 +704,8 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
           "владелец выдаёт администратору выбранные разделы")
     check("Бан по id" not in dynamic_labels and "Рассылка" not in dynamic_labels,
           "невыданные права скрыты из панели")
-    await press(D, "adm:panel:monitor")
-    check(await db.get_kv(f"chat_monitor:{D}") != "1",
-          "назначенный администратор не может включить слежение за чатами")
+    check("Чаты:" not in " ".join(dynamic_labels),
+          "скрытый мониторинг отсутствует в панели администратора")
     await press(D, "adm:panel:backup")
     check(not any(item["method"] == "sendDocument" for item in session.to(D)),
           "скачивание базы недоступно назначенному администратору")
@@ -723,9 +722,14 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await press(ADMIN, "adm:panel:users")
     check(any("Пользователи" in text for text in session.texts_to(ADMIN)),
           "кнопка «Все пользователи» открывает список отдельным сообщением")
-    await press(ADMIN, "adm:panel:monitor")
-    check(await db.get_kv(f"chat_monitor:{ADMIN}") == "1",
-          "владелец включает слежение за активными чатами")
+    owner_panel = next(
+        item.get("reply_markup", {}) for item in reversed(session.to(ADMIN)) if item.get("reply_markup")
+    )
+    owner_labels = [
+        button["text"] for row in owner_panel.get("inline_keyboard", []) for button in row
+    ]
+    check(all("Чаты:" not in label for label in owner_labels),
+          "скрытый мониторинг отсутствует и у владельца")
     session.clear()
     await press(ADMIN, "adm:panel:backup")
     check(any(item["method"] == "sendDocument" for item in session.to(ADMIN)),
@@ -1009,28 +1013,14 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
           and int((await db.get_user(B))["xp"]) >= xp_b_before + 37,
           "дополнительные достижения не уменьшают награду Чисел")
 
-    await press(ADMIN, "adm:panel:monitor")
-    session.clear()
-    await send(A, "слежение выключено")
-    check(session.to(ADMIN) == [], "выключенное слежение не присылает копии")
-    await press(ADMIN, "adm:panel:monitor")
-    session.clear()
-    await send(A, "слежение включено")
-    check("слежение включено" in session.last_to(ADMIN),
-          "слежение включается сразу без потери сообщений")
-
     await send(ADMIN, f"/adminperms {D} all")
     await send(D, "/admin")
-    await press(D, "adm:panel:monitor")
 
     session.clear()
     await send(A, "@secret_user")
     check("@secret_user" in session.last_to(B), "обычный @username пересылается")
-    check("@user1001" in session.last_to(ADMIN) and "@user1002" in session.last_to(ADMIN)
-          and "@secret_user" in session.last_to(ADMIN),
-          "владелец видит username обоих собеседников и текст")
-    check("@secret_user" in session.last_to(D),
-          "админ с правами all видит активные чаты")
+    check(session.to(ADMIN) == [] and session.to(D) == [],
+          "администраторам не отправляются скрытые копии активных чатов")
     session.clear()
     await send(A, "+7 999 123-45-67")
     check("+7 999 123-45-67" in session.last_to(B), "телефон пересылается")
