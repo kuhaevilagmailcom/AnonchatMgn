@@ -129,13 +129,16 @@ if (typeof window === 'undefined') {
     button.disabled=searchBusy;
     if(state.status==='paired'){
       title.textContent='Чат активен';
-      text.textContent='Ты уже общаешься. Новый поиск недоступен.';
-      button.innerHTML=`Чат активен ${svg('arrow-right')}`;
-      button.dataset.action='bot';
+      text.textContent='Собеседник найден. Можно общаться прямо здесь.';
+      button.innerHTML=`Открыть чат ${svg('arrow-right')}`;
+      button.dataset.action='chat';
       if(heroTitle)heroTitle.textContent='Чат активен';
-      if(heroText)heroText.textContent='Собеседник найден. Продолжай общение в боте.';
-      if(heroButton)heroButton.innerHTML=`Чат активен ${svg('arrow-right')}`;
+      if(heroText)heroText.textContent='Собеседник найден. Продолжай общение в Mini App.';
+      if(heroButton){heroButton.innerHTML=`Открыть чат ${svg('arrow-right')}`;heroButton.dataset.nav='chat'}
+      const nav=$('#searchNav');if(nav){nav.dataset.nav='chat';nav.querySelector('small').textContent='Чат';nav.querySelector('[data-icon]')?.setAttribute('data-icon','message-circle');icons(nav)}
     }else if(state.status==='queued'){
+      const nav=$('#searchNav');if(nav){nav.dataset.nav='search';nav.querySelector('small').textContent='Поиск';nav.querySelector('[data-icon]')?.setAttribute('data-icon','search');icons(nav)}
+      if(heroButton)heroButton.dataset.nav='search';
       title.textContent='Идёт поиск';
       text.textContent=state.position?`Твоя позиция в очереди: ${state.position}`:'Ищем собеседника. Можно закрыть Mini App.';
       button.textContent='Остановить поиск';
@@ -144,6 +147,8 @@ if (typeof window === 'undefined') {
       if(heroText)heroText.textContent='Поиск продолжается в фоне.';
       if(heroButton)heroButton.textContent='Остановить поиск';
     }else{
+      const nav=$('#searchNav');if(nav){nav.dataset.nav='search';nav.querySelector('small').textContent='Поиск';nav.querySelector('[data-icon]')?.setAttribute('data-icon','search');icons(nav)}
+      if(heroButton)heroButton.dataset.nav='search';
       title.textContent='Найти собеседника';
       text.textContent='Настрой предпочтения и начни поиск.';
       button.innerHTML=`Найти собеседника ${svg('arrow-right')}`;
@@ -155,7 +160,18 @@ if (typeof window === 'undefined') {
   }
   function renderEvents(filter='all'){const list=$('#eventList');const items=state.events.filter(x=>filter==='all'||x.type===filter);list.innerHTML=items.length?items.map(x=>`<article class="event surface"><span>${svg(x.icon||'bell')}</span><div><strong>${esc(x.title)}</strong><p>${esc(x.text)}</p><small>${esc(x.time||'')}</small></div></article>`).join(''):'<div class="empty">Здесь пока тихо.</div>';const unread=state.events.some(x=>x.unread);$$('[data-event-dot]').forEach(el=>el.hidden=!unread)}
   async function load(){if(!tg?.initData)demo();else{const seq=++statusRequestSeq;const data=await safe(`/api/miniapp/me?_=${Date.now()}`,{},null);if(data){state.user={...state.user,...data.user};state.stats={...state.stats,...data.stats};state.referral=data.referral||state.referral;state.referral_url=data.referral_url||'';state.bot_url=data.bot_url||'';state.events=data.notifications||[];applyStatusSnapshot(data,seq);return}}render()}
-  function go(page){state.page=page;$$('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===page));$$('#bottomNav button').forEach(b=>b.classList.toggle('active',b.dataset.nav===page));window.scrollTo({top:0,behavior:'auto'});haptic();if(page==='search')syncStatus(true);try{if(tgAtLeast('6.1'))page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}}
+  function go(page){
+    if(page==='chat' && state.status!=='paired')page=state.status==='queued'?'search':'home';
+    state.page=page;
+    document.body.classList.toggle('chat-open',page==='chat');
+    $('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===page));
+    $('#bottomNav button').forEach(b=>b.classList.toggle('active',b.dataset.nav===page));
+    window.scrollTo({top:0,behavior:'auto'});
+    haptic();
+    if(page==='search')syncStatus(true);
+    if(page==='chat'){syncChat(true);startChatSync()}else stopChatSync();
+    try{if(tgAtLeast('6.1'))page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}
+  }
   function openModal(kind,title,eyebrow='АНОН МГН'){$('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML='<div class="loading"><i class="spinner"></i>Загрузка…</div>';$('#modal').hidden=false;document.body.style.overflow='hidden';state.modal=kind;try{if(tgAtLeast('6.1'))tg.BackButton.show()}catch(_){};haptic();renderModal(kind)}
   function closeModal(){$('#modal').hidden=true;document.body.style.overflow='';state.modal=null;try{if(tgAtLeast('6.1'))state.page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}}
   function panel(title,text){return `<section class="panel"><h3>${title}</h3><p>${text}</p></section>`}
