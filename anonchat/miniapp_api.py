@@ -548,14 +548,27 @@ class MiniAppServer:
         text = str(data.get("text", "") or "").strip()
         if not text:
             raise _json_error(400, "Напиши сообщение")
+        reply_raw = data.get("reply") if isinstance(data, dict) else None
+        reply_preview = ""
+        reply_event_id = 0
+        if isinstance(reply_raw, dict):
+            try:
+                reply_event_id = int(reply_raw.get("event_id", 0) or 0)
+            except (TypeError, ValueError):
+                reply_event_id = 0
+            reply_preview = str(reply_raw.get("text", "") or "").strip()[:160]
         if len(text) > int(self.cfg.max_message_len):
             raise _json_error(400, f"Максимум {self.cfg.max_message_len} символов")
         partner = self.mm.partner(uid)
         if partner is not None and WG.explainer_used_secret(uid, partner, text):
             raise _json_error(400, "Не пиши само слово. Объясни его другими словами")
         partner, sent_count = await self._chat_guard(uid)
+        telegram_text = text
+        if reply_preview:
+            compact = " ".join(reply_preview.split())
+            telegram_text = f"↩ {compact[:120]}\n{text}"
         try:
-            sent = await self.bot.send_message(partner, text, parse_mode=None)
+            sent = await self.bot.send_message(partner, telegram_text, parse_mode=None)
         except TelegramForbiddenError as exc:
             await self._chat_delivery_failed(uid, partner, True)
             raise _json_error(409, "Собеседник больше недоступен") from exc
@@ -564,7 +577,16 @@ class MiniAppServer:
             raise _json_error(503, "Не удалось доставить сообщение") from exc
         await self._mirror_to_sender(uid, partner, sent.message_id)
         live_chat.publish(
-            uid, partner, "text", text=text, telegram_message_id=sent.message_id
+            uid,
+            partner,
+            "text",
+            text=text,
+            telegram_message_id=sent.message_id,
+            data=(
+                {"reply": {"event_id": reply_event_id, "text": reply_preview}}
+                if reply_preview
+                else {}
+            ),
         )
         await self._after_chat_message(
             uid, partner, sent_count, text=text
