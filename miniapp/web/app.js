@@ -50,7 +50,7 @@ if (typeof window === 'undefined') {
   let statusAppliedSeq = 0;
   let statusTimer = null;
   let searchBusy = false;
-  const chat = {latest:0,startedAt:0,sent:0,received:0,timer:null,seen:new Set(),stickersLoaded:false,recording:false,recorder:null,stream:null,chunks:[],recordTimer:null,mediaCache:new Map()};
+  const chat = {latest:0,startedAt:0,sent:0,received:0,timer:null,seen:new Set(),stickersLoaded:false,recording:false,recorder:null,stream:null,chunks:[],recordTimer:null,mediaCache:new Map(),game:null,gameHoldUntil:0};
   const CHAT_EMOJIS = ['😀','😃','😄','😁','😂','🤣','🥹','😊','🙂','😉','😍','😘','😎','🤨','😐','😴','😭','😡','🤬','🥰','🤍','❤️','🩷','🔥','⭐','✨','💀','🤝','👍','👎','🙏','💬','👀','🤡','😈','💯','🎉','🥳','😏','🙃','😌','🤔','😳','🫠','😅','🤝','💋','🫶'];
   const svg = n => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[n] || paths['circle-help']}</svg>`;
   function icons(root=document){$$('[data-icon]',root).forEach(el=>{el.innerHTML=svg(el.dataset.icon)})}
@@ -355,6 +355,112 @@ if (typeof window === 'undefined') {
     bubble.appendChild(time);row.appendChild(bubble);list.appendChild(row);
     attachMediaToEvent(bubble,event);scrollChatBottom();
   }
+  function gameAction(payload){
+    return request('/api/miniapp/games/action',{method:'POST',body:JSON.stringify(payload)});
+  }
+  function renderActiveGame(game){
+    const root=$('#activeGame');if(!root)return;
+    if(!game){
+      if(chat.gameHoldUntil>Date.now())return;
+      chat.game=null;root.hidden=true;root.innerHTML='';return;
+    }
+    chat.game=game;
+    if(game.finished)chat.gameHoldUntil=Date.now()+6000;
+    root.hidden=false;
+    const top=`<header><span><small>${game.type==='battle'?'БИТВА МНЕНИЙ':game.type==='numbers'?'ЧИСЛА':'ОБЪЯСНИ СЛОВО'}</small><strong>Раунд ${game.round||1}/${game.total||1}</strong></span><button type="button" data-game-collapse>×</button></header>`;
+
+    if(game.status==='invited'){
+      root.innerHTML=top+`<div class="active-game-body"><p>${game.inviter?'Ждём ответ собеседника…':'Собеседник предлагает сыграть. Ответь на карточке приглашения выше.'}</p></div>`;
+      root.querySelector('[data-game-collapse]').onclick=()=>{root.hidden=true};
+      return;
+    }
+
+    if(game.type==='battle'){
+      const opts=game.options||[];
+      let body=`<div class="active-game-body"><h3>${esc(game.question||'Вопрос')}</h3>`;
+      if(game.status==='active'){
+        if(game.answered){
+          body+=`<div class="game-wait">✓ Ответ принят · ждём собеседника</div>`;
+        }else{
+          body+=`<div class="battle-options">
+            <button type="button" data-battle-choice="0">${esc(opts[0]||'Вариант 1')}</button>
+            <button type="button" data-battle-choice="1">${esc(opts[1]||'Вариант 2')}</button>
+          </div>`;
+        }
+      }else if(game.status==='round_done'||game.finished){
+        const mine=game.my_answer,other=game.partner_answer;
+        body+=`<div class="game-result ${game.matched?'match':'miss'}">
+          <strong>${game.matched?'🤝 Совпало':'💥 Разошлись'}</strong>
+          <span>Ты: <b>${mine==null?'—':esc(opts[mine]||String(mine))}</b></span>
+          <span>Собеседник: <b>${other==null?'—':esc(opts[other]||String(other))}</b></span>
+          <small>Совпадений: ${game.matches||0}/${game.total||0}</small>
+        </div>`;
+        if(game.can_next)body+=`<button class="game-next" type="button" data-game-next>Следующий вопрос</button>`;
+        if(game.finished)body+=`<div class="game-finished">🏁 Игра окончена</div>`;
+      }
+      body+='</div>';root.innerHTML=top+body;
+      $('[data-battle-choice]',root).forEach(b=>b.onclick=async()=>{
+        $('[data-battle-choice]',root).forEach(x=>x.disabled=true);
+        try{
+          const r=await gameAction({game_type:'battle',game_id:game.id,action:'answer',choice:+b.dataset.battleChoice});
+          if(r?.game)renderActiveGame(r.game);await syncChat(false);haptic();
+        }catch(e){toast(e.message);renderActiveGame(game)}
+      });
+    }else if(game.type==='numbers'){
+      let body=`<div class="active-game-body"><h3>Выбери число от 1 до ${game.range_max||10}</h3>`;
+      if(game.status==='active'){
+        if(game.answered){
+          body+=`<div class="game-wait">✓ Число принято · ждём собеседника</div>`;
+        }else{
+          body+=`<form class="number-game-form" id="numberGameForm">
+            <input id="numberGameValue" type="number" inputmode="numeric" min="1" max="${game.range_max||10}" placeholder="1–${game.range_max||10}">
+            <button type="submit">Выбрать</button>
+          </form>`;
+        }
+      }else if(game.status==='round_done'||game.finished){
+        body+=`<div class="game-result ${game.matched?'match':'miss'}">
+          <strong>${game.matched?'🎯 Точное совпадение':'🔢 Результат'}</strong>
+          <span>Ты: <b>${game.my_answer??'—'}</b></span>
+          <span>Собеседник: <b>${game.partner_answer??'—'}</b></span>
+          <small>Разница: ${game.difference??0} · точных: ${game.matches||0}/${game.total||3}</small>
+        </div>`;
+        if(game.can_next)body+=`<button class="game-next" type="button" data-game-next>Следующий раунд</button>`;
+        if(game.finished)body+=`<div class="game-finished">🏁 Игра окончена · получено ${game.reward_total||0} ★</div>`;
+      }
+      body+='</div>';root.innerHTML=top+body;
+      const form=$('#numberGameForm',root);if(form)form.onsubmit=async e=>{
+        e.preventDefault();const input=$('#numberGameValue',root),value=+(input?.value||0);
+        if(value<1||value>(game.range_max||10))return toast(`Число от 1 до ${game.range_max||10}`);
+        form.querySelector('button').disabled=true;
+        try{
+          const r=await gameAction({game_type:'numbers',game_id:game.id,action:'answer',value});
+          if(r?.game)renderActiveGame(r.game);await syncChat(false);haptic();
+        }catch(err){toast(err.message);form.querySelector('button').disabled=false}
+      };
+    }else if(game.type==='words'){
+      let body=`<div class="active-game-body words-game">`;
+      if(game.status==='active'){
+        body+=game.role==='explainer'
+          ?`<small>ТВОЁ СЛОВО</small><div class="secret-word">${esc(game.word||'')}</div><p>Объясни его сообщениями, но не называй само слово.</p>`
+          :`<small>ТЫ УГАДЫВАЕШЬ</small><h3>Слушай объяснение собеседника</h3><p>Пиши догадки прямо в обычное поле сообщения ниже.</p>`;
+      }else if(game.status==='round_done'){
+        body+=`<div class="game-result match"><strong>🎯 Слово угадано</strong><small>Угадано слов: ${game.correct||0}</small></div><button class="game-next" type="button" data-game-next>Следующее слово</button>`;
+      }else if(game.finished){
+        body+=`<div class="game-finished">🏁 Игра окончена · угадано ${game.correct||0}/${game.total||5}</div>`;
+      }
+      body+='</div>';root.innerHTML=top+body;
+    }
+
+    const next=$('[data-game-next]',root);if(next)next.onclick=async()=>{
+      next.disabled=true;
+      try{
+        const r=await gameAction({game_type:game.type,game_id:game.id,action:'next'});
+        if(r?.game)renderActiveGame(r.game);await syncChat(false);notify();
+      }catch(e){toast(e.message);next.disabled=false}
+    };
+    const close=$('[data-game-collapse]',root);if(close)close.onclick=()=>{root.hidden=true};
+  }
+
   async function syncChat(force=false){
     if(!tg?.initData||state.status!=='paired')return false;
     try{
@@ -370,6 +476,7 @@ if (typeof window === 'undefined') {
       $('#chatReceived')&&($('#chatReceived').textContent=String(chat.received));
       (data.events||[]).forEach(appendChatEvent);
       chat.latest=Math.max(chat.latest,Number(data.latest||0),...(data.events||[]).map(x=>Number(x.id||0)));
+      renderActiveGame(data.game||null);
       formatChatDuration();
       return true;
     }catch(e){
@@ -532,10 +639,10 @@ if (typeof window === 'undefined') {
     const r=await safe('/api/miniapp/games/words/invite',{method:'POST',body:'{}'},null);
     if(r){closeModal();toast(r.message||'Приглашение отправлено');notify();syncChat(false)}
   }
-  async function inviteBattle(total){const r=await safe('/api/miniapp/games/battle/invite',{method:'POST',body:JSON.stringify({total})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify()}}
-  async function inviteNumbers(range_max){const r=await safe('/api/miniapp/games/numbers/invite',{method:'POST',body:JSON.stringify({range_max})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify()}}
+  async function inviteBattle(total){const r=await safe('/api/miniapp/games/battle/invite',{method:'POST',body:JSON.stringify({total})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify();syncChat(false)}}
+  async function inviteNumbers(range_max){const r=await safe('/api/miniapp/games/numbers/invite',{method:'POST',body:JSON.stringify({range_max})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify();syncChat(false)}}
   function bind(){
-    document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить ник','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','help':'Помощь и правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game)openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':'Числа','ИГРА ВДВОЁМ')});
+    document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить ник','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','help':'Помощь и правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game){if(game.dataset.game==='words')inviteWords();else openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':'Числа','ИГРА ВДВОЁМ')}});
     $$('[data-close-modal]').forEach(b=>b.onclick=closeModal);
     $('#searchToggle').onclick=toggleSearch;
     $$('[data-setting] button').forEach(b=>b.onclick=()=>updateSetting(b.parentElement.dataset.setting,b.dataset.value));
