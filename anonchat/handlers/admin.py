@@ -121,7 +121,6 @@ async def diagnostics_text(db: Database, mm: Matchmaker) -> str:
         f"Последняя очистка: <b>{last_cleanup}</b>\n"
         f"Последнее сохранение очереди: <b>{last_save}</b>\n"
         f"Reply-map в памяти: <b>{relay_state.size()}</b>\n"
-        f"Monitor queue: <b>{pending_count()}</b>\n"
         f"Matchmaker dirty: <b>{'да' if db._matchmaker_dirty else 'нет'}</b>"
     )
 
