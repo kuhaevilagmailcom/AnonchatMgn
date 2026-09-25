@@ -530,7 +530,6 @@ CB_PANEL_BAN_LIST = "adm:panel:ban_list"
 CB_PANEL_USERS = "adm:panel:users"
 CB_PANEL_POINTS = "adm:panel:points"
 CB_PANEL_ADMINS = "adm:panel:admins"
-CB_PANEL_MONITOR = "adm:panel:monitor"
 CB_PANEL_GAMES = "adm:panel:games"
 CB_PANEL_BACKUP = "adm:panel:backup"
 CB_PANEL_DIAGNOSTICS = "adm:panel:diagnostics"
@@ -543,7 +542,6 @@ def admin_panel_keyboard(
     open_reports: int = 0,
     permissions: frozenset[str] | set[str] | None = None,
     owner: bool = False,
-    monitor_enabled: bool = False,
     xp_multiplier: int = 1,
     poll_active: bool = False,
 ) -> InlineKeyboardMarkup:
@@ -590,15 +588,8 @@ def admin_panel_keyboard(
         )
         _button(b, "Администраторы", callback_data=CB_PANEL_ADMINS, icon="bonus", style="primary")
         _button(b, "Скачать базу", callback_data=CB_PANEL_BACKUP, icon="link", style="primary")
-    if owner or "monitor" in permissions:
+    if owner:
         _button(b, "Игры пользователей", callback_data=CB_PANEL_GAMES, icon="bonus", style="primary")
-        _button(
-            b,
-            f"Чаты: {'ВКЛ' if monitor_enabled else 'ВЫКЛ'}",
-            callback_data=CB_PANEL_MONITOR,
-            icon="view",
-            style="success" if monitor_enabled else "",
-        )
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
     b.adjust(2)
     return b.as_markup()
