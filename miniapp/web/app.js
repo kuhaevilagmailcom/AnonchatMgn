@@ -175,7 +175,7 @@ if (typeof window === 'undefined') {
   }
   function demo(){Object.assign(state.user,{nick:'Аноним-4821',rank:'Завсегдатай',stars:1250,age:17,district:'Правый берег',gender:'m',looking_for:'f'});Object.assign(state.stats,{online:34,chatting:22,searching:12,dialogs:682,messages:8884,ratings:128,games:43,battle_games:31,number_games:12,streak:7,best_streak:23,quest_current:14});state.referral={invited:8,earned:400};state.referral_url='https://t.me/AnonChatMgn_Bot?start=ref_demo';state.bot_url='https://t.me/AnonChatMgn_Bot';state.subscription={claimed:false,amount:100,url:'https://t.me/anonmgn'};state.events=[{id:'demo1',type:'personal',icon:'message-circle',title:'Диалог активен',text:'Собеседник найден. Возвращайся в чат.',time:'сейчас',unread:true},{id:'demo2',type:'games',icon:'gamepad-2',title:'Новая игра',text:'Можно пригласить собеседника в Битву мнений или Числа.',time:'сегодня',unread:false}]}
   function setAll(key,value){$$(`[data-${key}]`).forEach(el=>el.textContent=value)}
-  function render(){setAll('nick',state.user.nick);setAll('rank',state.user.rank);setAll('stars',state.user.stars);setAll('online',state.stats.online);setAll('chatting',state.stats.chatting);setAll('searching',state.stats.searching);setAll('dialogs',state.stats.dialogs);setAll('messages',state.stats.messages);setAll('ratings',state.stats.ratings);setAll('games',state.stats.games);setAll('battle-games',state.stats.battle_games);setAll('number-games',state.stats.number_games);setAll('streak',state.stats.streak);setAll('invited',state.referral.invited);setAll('ref-earned',state.referral.earned);setAll('quest-progress-text',`${state.stats.quest_current}/${state.stats.quest_target}`);$$('[data-quest-progress]').forEach(el=>el.style.width=`${Math.min(100,state.stats.quest_current/Math.max(1,state.stats.quest_target)*100)}%`);const initial=(state.user.nick||'А').replace(/^./u,m=>m.toUpperCase()).slice(0,1);$$('[data-avatar-fallback]').forEach(el=>el.textContent=initial);$$('[data-avatar]').forEach(el=>{if(state.user.photo_url){el.src=state.user.photo_url;el.hidden=false}else{el.removeAttribute('src');el.hidden=true}});$$('[data-flame]').forEach((el,i)=>el.classList.toggle('on',i<Math.min(7,state.stats.streak)));$$('[data-setting]').forEach(group=>$$('button',group).forEach(b=>b.classList.toggle('active',String(b.dataset.value)===String(state.user[group.dataset.setting]||''))));renderSearch();renderEvents();}
+  function render(){setAll('nick',state.user.nick);setAll('rank',state.user.rank);setAll('stars',state.user.stars);setAll('online',state.stats.online);setAll('chatting',state.stats.chatting);setAll('searching',state.stats.searching);setAll('dialogs',state.stats.dialogs);setAll('messages',state.stats.messages);setAll('ratings',state.stats.ratings);setAll('games',state.stats.games);setAll('battle-games',state.stats.battle_games);setAll('number-games',state.stats.number_games);setAll('streak',state.stats.streak);setAll('invited',state.referral.invited);setAll('ref-earned',state.referral.earned);setAll('quest-progress-text',`${state.stats.quest_current}/${state.stats.quest_target}`);$$$('[data-quest-progress]').forEach(el=>el.style.width=`${Math.min(100,state.stats.quest_current/Math.max(1,state.stats.quest_target)*100)}%`);const initial=(state.user.nick||'А').replace(/^./u,m=>m.toUpperCase()).slice(0,1);$$('[data-avatar-fallback]').forEach(el=>el.textContent=initial);$$('[data-avatar]').forEach(el=>{if(state.user.photo_url){el.src=state.user.photo_url;el.hidden=false}else{el.removeAttribute('src');el.hidden=true}});$$('[data-flame]').forEach((el,i)=>el.classList.toggle('on',i<Math.min(7,state.stats.streak)));$$('[data-setting]').forEach(group=>$$('button',group).forEach(b=>b.classList.toggle('active',String(b.dataset.value)===String(state.user[group.dataset.setting]||''))));renderSearch();renderEvents();}
   function renderSearch(){
     const card=$('.search-card'),title=$('#searchTitle'),text=$('#searchText'),button=$('#searchToggle');
     const heroTitle=$('.hero h1'),heroText=$('.hero p'),heroButton=$('.hero .primary');
@@ -231,8 +231,8 @@ if (typeof window === 'undefined') {
     const list=$('#eventList');if(!list)return;
     const items=state.events.filter(x=>eventMatchesFilter(x,filter));
     list.innerHTML=items.length?items.map(x=>`<button class="event ${x.unread?'unread':''}" data-event-id="${x.id}" data-event-action="${esc(x.action||'')}"><span>${svg(x.icon||'bell')}</span><div><strong>${esc(x.title)}</strong><p>${esc(x.text)}</p><small>${eventTime(x.created_at)}</small></div>${x.action?svg('chevron-right'):''}</button>`).join(''):'<div class="empty">Здесь пока тихо.</div>';
-    const unread=state.events.some(x=>x.unread);$('[data-event-dot]').forEach(el=>el.hidden=!unread);
-    $('[data-event-id]',list).forEach(el=>el.onclick=()=>openEvent(el.dataset.eventId,el.dataset.eventAction));
+    const unread=state.events.some(x=>x.unread);$$('[data-event-dot]').forEach(el=>el.hidden=!unread);
+    $$('[data-event-id]',list).forEach(el=>el.onclick=()=>openEvent(el.dataset.eventId,el.dataset.eventAction));
   }
   async function loadNotifications(markRead=false){
     const data=await safe('/api/miniapp/notifications',{},null);
@@ -280,7 +280,7 @@ if (typeof window === 'undefined') {
   }
   async function loadTopPage(period=topPeriod){
     topPeriod=['week','month','all'].includes(period)?period:'week';
-    $('#topPeriods button').forEach(b=>b.classList.toggle('active',b.dataset.topPeriod===topPeriod));
+    $$('#topPeriods button').forEach(b=>b.classList.toggle('active',b.dataset.topPeriod===topPeriod));
     const root=$('#topPageList');if(root)root.innerHTML='<div class="loading"><i class="spinner"></i>Загрузка…</div>';
     const seq=++topRequestSeq;
     const data=await safe(`/api/miniapp/top?period=${topPeriod}&_=${Date.now()}`,{},null);
@@ -330,7 +330,7 @@ if (typeof window === 'undefined') {
     state.stats.quest_current=Number(first.current||0);state.stats.quest_target=Number(first.target||1);
     const label=$('[data-quest-label]');if(label)label.textContent=`${first.title} · ${first.reward||0} ★`;
     setAll('quest-progress-text',first.claimed?'Готово':`${first.current}/${first.target}`);
-    $('[data-quest-progress]').forEach(el=>el.style.width=`${Math.min(100,first.current/Math.max(1,first.target)*100)}%`);
+    $$('[data-quest-progress]').forEach(el=>el.style.width=`${Math.min(100,first.current/Math.max(1,first.target)*100)}%`);
   }
   function renderHomePoll(poll){
     const root=$('#homePoll');if(!root)return;
@@ -345,7 +345,7 @@ if (typeof window === 'undefined') {
           ${voted?`<i style="width:${poll.percentages?.[i]||0}%"></i>`:''}
         </button>`).join('')}
       </div>`;
-    $('[data-poll-choice]',root).forEach(btn=>btn.onclick=async()=>{
+    $$('[data-poll-choice]',root).forEach(btn=>btn.onclick=async()=>{
       const choice=+btn.dataset.pollChoice;
       const data=await safe('/api/miniapp/poll/vote',{method:'POST',body:JSON.stringify({poll_id:poll.id,choice})},null);
       if(data?.poll){renderHomePoll(data.poll);haptic();notify()}
@@ -385,7 +385,7 @@ if (typeof window === 'undefined') {
     </section>
     ${result.rated?'<div class="rated-done">✓ Оценка уже учтена</div>':`<section class="rate-block"><small>Как прошёл разговор?</small><div><button data-rate="1">👍 Норм</button><button data-rate="0">👎 Не зашло</button></div></section>`}
     <div class="modal-actions one"><button class="action accent" id="resultNext">Найти собеседника</button></div>`;
-    $('[data-rate]',body).forEach(btn=>btn.onclick=()=>rateDialog(btn.dataset.rate==='1',body));
+    $$('[data-rate]',body).forEach(btn=>btn.onclick=()=>rateDialog(btn.dataset.rate==='1',body));
     $('#resultNext').onclick=async()=>{closeModal();if(state.status==='free'){go('search')}else go(state.status==='paired'?'chat':'search')};
   }
   async function loadDialogResult(autoShow=false){
@@ -395,9 +395,9 @@ if (typeof window === 'undefined') {
     return result;
   }
   async function rateDialog(positive,body){
-    $('[data-rate]',body).forEach(b=>b.disabled=true);
+    $$('[data-rate]',body).forEach(b=>b.disabled=true);
     const data=await safe('/api/miniapp/chat/rate',{method:'POST',body:JSON.stringify({positive})},null);
-    if(!data){$('[data-rate]',body).forEach(b=>b.disabled=false);return}
+    if(!data){$$('[data-rate]',body).forEach(b=>b.disabled=false);return}
     const block=$('.rate-block',body);if(block)block.outerHTML='<div class="rated-done">✓ Спасибо, оценка учтена</div>';
     toast(positive?'Оценка отправлена':'Записал');notify();
     await loadNotifications(false);
@@ -898,7 +898,7 @@ if (typeof window === 'undefined') {
     $('#searchToggle').onclick=toggleSearch;
     $$('[data-setting] button').forEach(b=>b.onclick=()=>updateSetting(b.parentElement.dataset.setting,b.dataset.value));
     $$('#eventFilter button').forEach(b=>b.onclick=()=>{$$('#eventFilter button').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderEvents(b.dataset.filter)});
-    $$('#topPeriods button').forEach(b=>b.onclick=()=>{haptic();loadTopPage(b.dataset.topPeriod)});
+    $$$('#topPeriods button').forEach(b=>b.onclick=()=>{haptic();loadTopPage(b.dataset.topPeriod)});
     const composer=$('#chatComposer');if(composer)composer.onsubmit=e=>{e.preventDefault();sendChatText()};
     const input=$('#chatInput');if(input){input.addEventListener('input',()=>{input.style.height='auto';input.style.height=`${Math.min(100,input.scrollHeight)}px`});input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!/iPhone|iPad|Android/i.test(navigator.userAgent)){e.preventDefault();sendChatText()}})}
     $('#photoButton')&&($('#photoButton').onclick=()=>$('#photoInput')?.click());
