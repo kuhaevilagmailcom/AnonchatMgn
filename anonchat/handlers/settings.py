@@ -12,6 +12,7 @@ from aiogram.types import CallbackQuery, Message
 from .. import keyboards as K
 from .. import nick as nicklib
 from .. import texts
+from .. import live_chat
 from ..actions import (
     Ctx, DeliveryResult, announce_pairs, forget_everything, send_to,
     set_nick, show_menu, show_profile, show_online,
@@ -305,6 +306,11 @@ async def feedback_admin_reply(
     )
     await state.clear()
     if result is DeliveryResult.DELIVERED:
+        event_id = await ctx.db.add_miniapp_event(
+            target_id, "feedback", "Ответ команды", body[:500],
+            icon="mail", action="events",
+        )
+        live_chat.signal({target_id}, "events_changed", event_id=event_id)
         await ctx.reply("✅ Ответ отправлен.")
     else:
         await ctx.reply("Не удалось доставить ответ пользователю.")
