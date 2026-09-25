@@ -399,8 +399,8 @@ if (typeof window === 'undefined') {
         if(game.finished)body+=`<div class="game-finished">🏁 Игра окончена</div>`;
       }
       body+='</div>';root.innerHTML=top+body;
-      $('[data-battle-choice]',root).forEach(b=>b.onclick=async()=>{
-        $('[data-battle-choice]',root).forEach(x=>x.disabled=true);
+      $$('[data-battle-choice]',root).forEach(b=>b.onclick=async()=>{
+        $$('[data-battle-choice]',root).forEach(x=>x.disabled=true);
         try{
           const r=await gameAction({game_type:'battle',game_id:game.id,action:'answer',choice:+b.dataset.battleChoice});
           if(r?.game)renderActiveGame(r.game);await syncChat(false);haptic();
