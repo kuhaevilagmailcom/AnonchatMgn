@@ -372,7 +372,7 @@ if (typeof window === 'undefined') {
   function showDialogResult(result){
     if(!result||!result.match_id)return;
     resultShownFor=Number(result.match_id);
-    openModal('dialog-result','Итог разговора','ДИАЛОГ ЗАВЕРШЁН');
+    if(state.modal!=='dialog-result'){openModal('dialog-result','Итог разговора','ДИАЛОГ ЗАВЕРШЁН');return}
     const body=$('#modalBody');
     body.innerHTML=`<section class="dialog-result-card">
       <div class="result-duration"><small>Диалог длился</small><strong>${formatDuration(result.duration)}</strong></div>
@@ -733,7 +733,7 @@ if (typeof window === 'undefined') {
   }
   function startChatSync(){
     if(chat.timer||!tg?.initData)return;
-    chat.timer=setInterval(()=>{if(!document.hidden&&state.status==='paired'){syncChat(false);formatChatDuration()}},1000);
+    chat.timer=setInterval(()=>{if(!document.hidden&&state.status==='paired'){formatChatDuration();if(!realtimeConnected)syncChat(false)}},8000);
   }
   function stopChatSync(){if(chat.timer){clearInterval(chat.timer);chat.timer=null}}
   async function sendChatText(){
@@ -845,7 +845,9 @@ if (typeof window === 'undefined') {
     if(!(await confirmLongChat('завершить чат')))return;
     try{
       const data=await request('/api/miniapp/chat/stop',{method:'POST',body:'{}'});
-      clearChatView();applyStatusSnapshot(data);go('home');toast('Диалог завершён');notify();
+      clearChatView();applyStatusSnapshot(data);go('home');notify();
+      if(data.result)showDialogResult(data.result);else toast('Диалог завершён');
+      await loadNotifications(false);
     }catch(e){toast(e.message)}
   }
   async function nextChat(){
@@ -855,8 +857,10 @@ if (typeof window === 'undefined') {
       const data=await request('/api/miniapp/chat/next',{method:'POST',body:'{}'});
       applyStatusSnapshot(data);
       if(state.status==='paired')go('chat');else go('search');
-      toast(state.status==='paired'?'Новый собеседник найден':'Ищем нового собеседника');
       notify();
+      if(data.result)showDialogResult(data.result);
+      else toast(state.status==='paired'?'Новый собеседник найден':'Ищем нового собеседника');
+      await loadNotifications(false);
     }catch(e){toast(e.message)}
   }
 
@@ -903,8 +907,11 @@ if (typeof window === 'undefined') {
     $('#micButton')&&($('#micButton').onclick=toggleVoiceRecording);
     $('#voiceInput')&&($('#voiceInput').onchange=e=>{const file=e.target.files?.[0];if(file)sendVoiceBlob(file);e.target.value=''});
     $('#chatGames')&&($('#chatGames').onclick=()=>openModal('chat-games','Игры','В АКТИВНОМ ЧАТЕ'));
+    $('#chatPeer')&&($('#chatPeer').onclick=openReport);
     $('#chatStop')&&($('#chatStop').onclick=stopChat);
     $('#chatNext')&&($('#chatNext').onclick=nextChat);
+    $('#photoViewerClose')&&($('#photoViewerClose').onclick=closePhotoViewer);
+    $('#photoViewer')&&($('#photoViewer').onclick=e=>{if(e.target.id==='photoViewer')closePhotoViewer()});
     window.addEventListener('online',()=>{$('#offline').hidden=true;if(tg?.initData){load();syncStatus(true);if(state.status==='paired')syncChat(true)}});
     window.addEventListener('offline',()=>{if(tg?.initData)$('#offline').hidden=false});
     window.addEventListener('focus',()=>{syncStatus(true);if(state.status==='paired')syncChat(true)});
@@ -921,8 +928,10 @@ if (typeof window === 'undefined') {
       bind();
       await load();
       await syncStatus(true);
+      startRealtime();
       startStatusSync();
       if(state.status==='paired')go('chat');
+      else await loadDialogResult(true);
     }catch(e){
       console.error('Mini App boot failed',e);
       if(tg?.initData)toast(e?.message||'Ошибка запуска Mini App');
