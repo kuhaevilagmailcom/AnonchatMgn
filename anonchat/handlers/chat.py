@@ -126,6 +126,18 @@ async def relay_to_partner(
         live_file_id = message.sticker.file_id
         live_text = message.sticker.emoji or ""
     if live_kind:
+        reply_data = {}
+        if message.reply_to_message is not None:
+            preview = (
+                message.reply_to_message.text
+                or message.reply_to_message.caption
+                or ("Фото" if message.reply_to_message.photo else "")
+                or ("Голосовое" if message.reply_to_message.voice else "")
+                or ("Стикер" if message.reply_to_message.sticker else "")
+            )
+            preview = " ".join(str(preview or "").split())[:160]
+            if preview:
+                reply_data = {"reply": {"event_id": 0, "text": preview}}
         live_chat.publish(
             ctx.user_id,
             partner,
@@ -133,6 +145,7 @@ async def relay_to_partner(
             text=live_text,
             file_id=live_file_id,
             telegram_message_id=(copied.message_id if copied is not None else 0),
+            data=reply_data,
         )
 
     if message.text:
