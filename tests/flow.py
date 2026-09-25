@@ -1041,8 +1041,8 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     session.clear()
     await payload(A, contact={"phone_number": "+79991234567", "first_name": "X"})
     check(bool(session.to(B)), "контакт Telegram пересылается")
-    check(any(item["method"] == "sendContact" for item in session.to(ADMIN)),
-          "владелец получает копию медиа и контактов из чата")
+    check(session.to(ADMIN) == [] and session.to(D) == [],
+          "контакты из чата не копируются администраторам")
 
     session.clear()
     await payload(A, location={"latitude": 53.4, "longitude": 58.9})
