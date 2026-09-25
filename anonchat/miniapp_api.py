@@ -230,11 +230,25 @@ class MiniAppServer:
         uid, _ = self._telegram_user(request)
         return web.json_response(self._status_payload(uid))
 
-    def _chat_event_json(self, item: dict) -> dict:
+    def _media_signature(self, user_id: int, token: str, expires: int) -> str:
+        payload = f"{int(user_id)}:{str(token)}:{int(expires)}".encode()
+        return hmac.new(
+            self.cfg.bot_token.encode(), payload, hashlib.sha256
+        ).hexdigest()[:32]
+
+    def _signed_media_url(self, user_id: int, token: str) -> str:
+        expires = int(time.time()) + 10 * 60
+        signature = self._media_signature(user_id, token, expires)
+        return (
+            f"/api/miniapp/chat/media/{token}"
+            f"?uid={int(user_id)}&exp={expires}&sig={signature}"
+        )
+
+    def _chat_event_json(self, item: dict, user_id: int) -> dict:
         event = dict(item)
         token = str(event.pop("media_token", "") or "")
         if token:
-            event["media_url"] = f"/api/miniapp/chat/media/{token}"
+            event["media_url"] = self._signed_media_url(user_id, token)
         return event
 
     async def chat_state(self, request: web.Request) -> web.Response:
@@ -251,7 +265,7 @@ class MiniAppServer:
         sent = int(counts.get(uid, 0))
         started_at = int(float(stats.get("started_at", 0) or 0))
         events = [
-            self._chat_event_json(item)
+            self._chat_event_json(item, uid)
             for item in live_chat.events(uid, after=after, limit=100)
         ]
         return web.json_response(
@@ -586,8 +600,22 @@ class MiniAppServer:
         return target.getvalue()
 
     async def chat_media(self, request: web.Request) -> web.Response:
-        uid, _ = self._telegram_user(request)
-        ref = live_chat.media_ref(request.match_info["token"], uid)
+        token = request.match_info["token"]
+        try:
+            uid = int(request.query.get("uid", "0") or 0)
+            expires = int(request.query.get("exp", "0") or 0)
+        except ValueError as exc:
+            raise _json_error(403, "Ссылка на медиа недействительна") from exc
+        signature = str(request.query.get("sig", "") or "")
+        expected = self._media_signature(uid, token, expires)
+        if (
+            uid <= 0
+            or expires < int(time.time())
+            or not signature
+            or not hmac.compare_digest(signature, expected)
+        ):
+            raise _json_error(403, "Ссылка на медиа устарела")
+        ref = live_chat.media_ref(token, uid)
         if ref is None:
             raise _json_error(404, "Медиа устарело")
         try:
