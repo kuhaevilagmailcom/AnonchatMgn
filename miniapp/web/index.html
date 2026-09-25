@@ -9,7 +9,7 @@
   <title>АНОН МГН</title>
   <link rel="icon" href="./assets/anon-mgn-logo.png">
   <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./styles.css?v=15">
+  <link rel="stylesheet" href="./styles.css?v=16">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -34,7 +34,11 @@
         <header class="chat-top">
           <button class="chat-back" type="button" data-nav="home" aria-label="Назад"><span data-icon="chevron-left"></span></button>
           <span class="chat-peer"><span class="chat-peer-avatar"><img src="./assets/anon-mgn-logo.png" alt="АНОН МГН"></span><span><strong>Собеседник</strong><small id="chatDuration">чат активен</small></span></span>
-          <span class="chat-top-actions"><button type="button" id="chatGames">Игры</button><button type="button" id="chatNext">Следующий</button><button type="button" id="chatStop">Стоп</button></span>
+          <span class="chat-top-actions">
+            <button type="button" id="chatGames" class="chat-action" aria-label="Игры" title="Игры"><span data-icon="gamepad-2"></span></button>
+            <button type="button" id="chatNext" class="chat-action" aria-label="Следующий собеседник" title="Следующий"><span data-icon="skip-forward"></span></button>
+            <button type="button" id="chatStop" class="chat-action danger" aria-label="Завершить чат" title="Завершить"><span data-icon="square"></span></button>
+          </span>
         </header>
         <div class="chat-counter"><span><b id="chatSent">0</b> отправлено</span><i></i><span><b id="chatReceived">0</b> получено</span></div>
         <div class="chat-messages" id="chatMessages"><div class="chat-empty" id="chatEmpty">Напиши что-нибудь 👋</div></div>
@@ -62,6 +66,15 @@
         <button class="game-card surface" data-game="words"><span class="game-art words">🗣</span><span><small>5 слов</small><strong>Объясни слово</strong><p>Один объясняет слово, второй угадывает прямо в чате.</p><b>Играть <i data-icon="arrow-right"></i></b></span></button>
         <section class="game-stats surface"><div><small>Всего игр</small><strong data-games>0</strong></div><i></i><div><small>Мнения</small><strong data-battle-games>0</strong></div><i></i><div><small>Числа</small><strong data-number-games>0</strong></div></section>
       </section>
+      <section class="page top-page" data-page="top">
+        <header class="page-title"><small>Самые активные</small><h1>Топ участников</h1><p>Рейтинг по заработанным ⭐.</p></header>
+        <div class="top-periods" id="topPeriods">
+          <button class="active" data-top-period="week">Неделя</button>
+          <button data-top-period="month">Месяц</button>
+          <button data-top-period="all">Всё время</button>
+        </div>
+        <div class="top-page-list" id="topPageList"><div class="loading"><i class="spinner"></i>Загрузка…</div></div>
+      </section>
       <section class="page" data-page="events"><header class="page-title"><small>Всё важное</small><h1>События</h1><p>Текущий поиск, активный диалог и игровые приглашения.</p></header><div class="filter" id="eventFilter"><button class="active" data-filter="all">Все</button><button data-filter="personal">Личные</button><button data-filter="games">Игры</button></div><div class="event-list" id="eventList"></div></section>
       <section class="page" data-page="profile">
         <header class="page-title"><small>Личный кабинет</small><h1>Профиль</h1></header>
@@ -71,10 +84,10 @@
         <section class="menu surface"><button data-open="activity"><span data-icon="chart"></span><span><strong>Моя активность</strong><small>Сегодня, неделя, месяц</small></span><i data-icon="chevron-right"></i></button><button data-open="top"><span data-icon="trophy"></span><span><strong>Топ участников</strong><small>10 лучших по звёздам</small></span><i data-icon="chevron-right"></i></button><button data-open="referral"><span data-icon="link"></span><span><strong>Приглашения</strong><small><b data-invited>0</b> друзей · <b data-ref-earned>0</b> ★ получено</small></span><i data-icon="chevron-right"></i></button><button data-open="settings"><span data-icon="sliders"></span><span><strong>Настройки</strong><small>Профиль, поиск и награды</small></span><i data-icon="chevron-right"></i></button><button data-open="feedback"><span data-icon="mail"></span><span><strong>Обратная связь</strong><small>Написать администраторам</small></span><i data-icon="chevron-right"></i></button><button data-open="help"><span data-icon="circle-help"></span><span><strong>Помощь и правила</strong><small>Коротко о работе бота</small></span><i data-icon="chevron-right"></i></button></section>
       </section>
     </main>
-    <nav class="bottom-nav" id="bottomNav"><button class="active" data-nav="home"><span data-icon="house"></span><small>Главная</small></button><button id="searchNav" data-nav="search"><span data-icon="search"></span><small>Поиск</small></button><button data-nav="games"><span data-icon="gamepad-2"></span><small>Игры</small></button><button data-nav="events"><span data-icon="bell"></span><i data-event-dot hidden></i><small>События</small></button><button data-nav="profile"><span data-icon="user-round"></span><small>Профиль</small></button></nav>
+    <nav class="bottom-nav" id="bottomNav"><button class="active" data-nav="home"><span data-icon="house"></span><small>Главная</small></button><button id="searchNav" data-nav="search"><span data-icon="message-circle"></span><small>Чат</small></button><button data-nav="top"><span data-icon="crown"></span><small>Топ</small></button><button data-nav="events"><span data-icon="bell"></span><i data-event-dot hidden></i><small>События</small></button><button data-nav="profile"><span data-icon="user-round"></span><small>Профиль</small></button></nav>
   </div>
   <div class="modal" id="modal" hidden><button class="modal-backdrop" data-close-modal aria-label="Закрыть"></button><section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><i class="handle"></i><header><span><small id="modalEyebrow"></small><strong id="modalTitle"></strong></span><button class="icon-btn" data-close-modal aria-label="Закрыть"><span data-icon="x"></span></button></header><div class="modal-body" id="modalBody"></div></section></div>
   <div class="toast" id="toast" role="status"></div>
-  <script src="./app.js?v=20"></script>
+  <script src="./app.js?v=21"></script>
 </body>
 </html>
