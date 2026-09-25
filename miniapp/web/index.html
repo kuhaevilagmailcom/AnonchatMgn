@@ -50,6 +50,7 @@
           <button type="button" class="composer-btn" id="stickerButton" aria-label="Стикеры"><span data-icon="smile"></span></button>
           <textarea id="chatInput" rows="1" maxlength="3000" placeholder="Сообщение"></textarea>
           <button type="button" class="composer-btn mic" id="micButton" aria-label="Голосовое"><span data-icon="mic"></span></button>
+          <input type="file" id="voiceInput" accept="audio/*" capture="microphone" hidden>
           <button type="submit" class="send-btn" id="chatSend" aria-label="Отправить"><span data-icon="send"></span></button>
         </form>
       </section>
@@ -72,6 +73,6 @@
   </div>
   <div class="modal" id="modal" hidden><button class="modal-backdrop" data-close-modal aria-label="Закрыть"></button><section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><i class="handle"></i><header><span><small id="modalEyebrow"></small><strong id="modalTitle"></strong></span><button class="icon-btn" data-close-modal aria-label="Закрыть"><span data-icon="x"></span></button></header><div class="modal-body" id="modalBody"></div></section></div>
   <div class="toast" id="toast" role="status"></div>
-  <script src="./app.js?v=17"></script>
+  <script src="./app.js?v=18"></script>
 </body>
 </html>
