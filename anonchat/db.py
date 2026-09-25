@@ -160,6 +160,22 @@ CREATE TABLE IF NOT EXISTS word_game_rewards (
     PRIMARY KEY (user_id, partner_id, day_start)
 );
 
+CREATE TABLE IF NOT EXISTS active_chat_events (
+    id                  INTEGER PRIMARY KEY,
+    user_low            INTEGER NOT NULL,
+    user_high           INTEGER NOT NULL,
+    sender_id           INTEGER NOT NULL DEFAULT 0,
+    kind                TEXT    NOT NULL,
+    text                TEXT    NOT NULL DEFAULT '',
+    file_id             TEXT    NOT NULL DEFAULT '',
+    telegram_message_id INTEGER NOT NULL DEFAULT 0,
+    data                TEXT    NOT NULL DEFAULT '{}',
+    created_at          INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_active_chat_pair
+    ON active_chat_events(user_low, user_high, id);
+
 CREATE TABLE IF NOT EXISTS daily_activity (
     user_id          INTEGER NOT NULL,
     day_start        INTEGER NOT NULL,
@@ -415,6 +431,12 @@ class Database:
             "DELETE FROM word_game_rewards WHERE day_start < ?",
             (referral_day_start() - 7 * 86_400,),
         )
+        # Активная лента нужна только для незавершённого диалога; очень старые
+        # остатки после аварийных завершений не держим.
+        await self.db.execute(
+            "DELETE FROM active_chat_events WHERE created_at < ?",
+            (now() - 2 * 86_400,),
+        )
         # Для топов недели/месяца и личной активности достаточно последних 40 суток.
         await self.db.execute(
             "DELETE FROM daily_activity WHERE day_start < ?",
@@ -491,6 +513,82 @@ class Database:
     async def _fetchall(self, sql: str, params: Sequence[Any] = ()) -> list[aiosqlite.Row]:
         async with self.db.execute(sql, params) as cur:
             return list(await cur.fetchall())
+
+    # ------------------------------------------------------ active Mini App chat
+    async def apply_active_chat_ops(self, ops: Sequence[dict[str, Any]]) -> None:
+        """Пакетно сохраняет только текущую активную ленту Mini App.
+
+        Эти записи не являются архивом: clear удаляет всю пару при stop/next.
+        """
+        if not ops:
+            return
+        for op in ops:
+            kind = str(op.get("op", ""))
+            if kind == "append":
+                user_a = int(op["user_a"])
+                user_b = int(op["user_b"])
+                low, high = sorted((user_a, user_b))
+                await self.db.execute(
+                    """INSERT OR REPLACE INTO active_chat_events(
+                           id, user_low, user_high, sender_id, kind, text, file_id,
+                           telegram_message_id, data, created_at
+                       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        int(op["id"]),
+                        low,
+                        high,
+                        int(op.get("sender_id", 0) or 0),
+                        str(op.get("kind", "system") or "system"),
+                        str(op.get("text", "") or "")[:3000],
+                        str(op.get("file_id", "") or ""),
+                        int(op.get("telegram_message_id", 0) or 0),
+                        json.dumps(op.get("data") or {}, ensure_ascii=False, separators=(",", ":")),
+                        int(op.get("created_at", now()) or now()),
+                    ),
+                )
+                # Активному диалогу достаточно последних 160 событий.
+                await self.db.execute(
+                    """DELETE FROM active_chat_events
+                       WHERE user_low=? AND user_high=?
+                         AND id NOT IN (
+                             SELECT id FROM active_chat_events
+                              WHERE user_low=? AND user_high=?
+                              ORDER BY id DESC LIMIT 160
+                         )""",
+                    (low, high, low, high),
+                )
+            elif kind == "clear":
+                low, high = sorted((int(op["user_a"]), int(op["user_b"])))
+                await self.db.execute(
+                    "DELETE FROM active_chat_events WHERE user_low=? AND user_high=?",
+                    (low, high),
+                )
+            elif kind == "clear_user":
+                uid = int(op["user_id"])
+                await self.db.execute(
+                    "DELETE FROM active_chat_events WHERE user_low=? OR user_high=?",
+                    (uid, uid),
+                )
+        await self.db.commit()
+
+    async def active_chat_events(
+        self, user_a: int, user_b: int, *, after: int = 0, limit: int = 160
+    ) -> list[aiosqlite.Row]:
+        low, high = sorted((int(user_a), int(user_b)))
+        return await self._fetchall(
+            """SELECT * FROM active_chat_events
+               WHERE user_low=? AND user_high=? AND id>?
+               ORDER BY id ASC LIMIT ?""",
+            (low, high, max(0, int(after)), max(1, min(int(limit), 160))),
+        )
+
+    async def clear_active_chat(self, user_a: int, user_b: int) -> None:
+        low, high = sorted((int(user_a), int(user_b)))
+        await self.db.execute(
+            "DELETE FROM active_chat_events WHERE user_low=? AND user_high=?",
+            (low, high),
+        )
+        await self.db.commit()
 
     # ------------------------------------------------------------------ users
     async def ensure_user(
@@ -2329,6 +2427,10 @@ class Database:
         )
         await self.db.execute(
             "DELETE FROM battle_games WHERE user_a = ? OR user_b = ?",
+            (user_id, user_id),
+        )
+        await self.db.execute(
+            "DELETE FROM active_chat_events WHERE user_low = ? OR user_high = ?",
             (user_id, user_id),
         )
         await self.db.execute("DELETE FROM daily_activity WHERE user_id=?", (user_id,))
