@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import io
 import html
 import hmac
 import json
@@ -12,12 +14,18 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
 from aiohttp import web
-from aiogram.exceptions import TelegramAPIError
+from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError
+from aiogram.types import BufferedInputFile
 
 from . import keyboards as K
+from . import texts
+from . import relay_state
+from . import live_chat
+from . import word_game as WG
 from . import nick as nicklib
-from .actions import DeliveryResult, announce_pairs, send_to
+from .actions import DeliveryResult, _dialog_summary_text, announce_pairs, send_to
 from .levels import rank_for
+from .engagement import collect_progress_notifications
 from .number_game import NUMBER_DAILY_REWARD_LIMIT, NUMBER_NEAR_DIFFS, NUMBER_REWARDS, NUMBER_ROUNDS
 from .runtime_state import online_count as presence_online_count
 from .runtime_state import touch as presence_touch
@@ -220,6 +228,562 @@ class MiniAppServer:
 
     async def status(self, request: web.Request) -> web.Response:
         uid, _ = self._telegram_user(request)
+        return web.json_response(self._status_payload(uid))
+
+    def _chat_event_json(self, item: dict) -> dict:
+        event = dict(item)
+        token = str(event.pop("media_token", "") or "")
+        if token:
+            event["media_url"] = f"/api/miniapp/chat/media/{token}"
+        return event
+
+    async def chat_state(self, request: web.Request) -> web.Response:
+        uid, _ = self._telegram_user(request)
+        try:
+            after = int(request.query.get("after", "0") or 0)
+        except ValueError:
+            after = 0
+        status = self.mm.status(uid)
+        stats = self.mm.dialog_stats(uid) if status == "paired" else {}
+        counts = stats.get("counts", {}) or {}
+        partner = self.mm.partner(uid)
+        received = int(counts.get(partner, 0)) if partner is not None else 0
+        sent = int(counts.get(uid, 0))
+        started_at = int(float(stats.get("started_at", 0) or 0))
+        events = [
+            self._chat_event_json(item)
+            for item in live_chat.events(uid, after=after, limit=100)
+        ]
+        return web.json_response(
+            {
+                "status": status,
+                "started_at": started_at,
+                "sent": sent,
+                "received": received,
+                "events": events,
+                "latest": live_chat.latest_seq(uid),
+            }
+        )
+
+    async def _chat_guard(self, uid: int) -> tuple[int, int]:
+        reason = await self.db.is_restricted(uid)
+        if reason == "banned":
+            raise _json_error(403, "Чат недоступен")
+        if reason == "muted":
+            raise _json_error(403, "Ты временно не можешь отправлять сообщения")
+        result = self.mm.count_message(uid)
+        if result is None:
+            raise _json_error(409, "Активного диалога нет")
+        partner, sent = result
+        return int(partner), int(sent)
+
+    async def _chat_delivery_failed(self, uid: int, partner: int, unavailable: bool) -> None:
+        self.mm.uncount_message(uid)
+        if unavailable:
+            await self.db.close_battles_for_users(uid, partner)
+            self.mm.forget(uid)
+            WG.clear_pair(uid, partner)
+            relay_state.clear_pair(uid, partner)
+            live_chat.clear_pair(uid, partner)
+        self.db.schedule_matchmaker_save(self.mm)
+
+    async def _after_chat_message(
+        self, uid: int, partner: int, sent_count: int, *, text: str = ""
+    ) -> None:
+        multiplier = await self.db.xp_multiplier()
+        if multiplier > 1 and sent_count <= max(0, int(self.cfg.xp_message_cap)):
+            self.mm.add_bonus_xp(
+                uid,
+                (multiplier - 1) * max(0, int(self.cfg.xp_per_message)),
+            )
+        if text:
+            self.mm.record_text(uid, text)
+            guessed = WG.resolve_guess(uid, partner, text)
+            if guessed is not None:
+                awarded = await self.db.award_word_guess(
+                    guessed.guesser_id, guessed.explainer_id
+                )
+                game = WG.get_by_id(guessed.game_id)
+                reward_line = (
+                    f"+<b>{awarded} ⭐</b>."
+                    if awarded > 0
+                    else "Сегодня награда за эту игру уже исчерпана."
+                )
+                end_line = (
+                    f"\n\n🏁 <b>Игра окончена</b> · {guessed.total_rounds} слов."
+                    if guessed.finished
+                    else ""
+                )
+                markup = (
+                    K.word_end_keyboard()
+                    if guessed.finished
+                    else K.word_next_keyboard(guessed.game_id, guessed.round_index)
+                )
+                await send_to(
+                    self.bot,
+                    guessed.guesser_id,
+                    f"🎯 <b>Угадал!</b>\nСлово: <b>{texts.esc(guessed.word)}</b>\n"
+                    f"{reward_line}{end_line}",
+                    markup,
+                    self.pack,
+                )
+                await send_to(
+                    self.bot,
+                    guessed.explainer_id,
+                    f"🎯 <b>Слово угадано!</b>\n"
+                    f"Слово: <b>{texts.esc(guessed.word)}</b>{end_line}",
+                    markup,
+                    self.pack,
+                )
+                live_chat.system(
+                    {guessed.guesser_id, guessed.explainer_id},
+                    f"🎯 Слово «{guessed.word}» угадано",
+                )
+                if guessed.finished and game is not None:
+                    self.mm.record_game(
+                        game.user_a,
+                        "words",
+                        guessed.correct_total,
+                        guessed.total_rounds,
+                    )
+                    for player_id in (game.user_a, game.user_b):
+                        await self.db.record_game_engagement(
+                            player_id,
+                            "words",
+                            matches=guessed.correct_total,
+                            total=guessed.total_rounds,
+                        )
+                        for notice in await collect_progress_notifications(
+                            self.db, player_id
+                        ):
+                            await send_to(
+                                self.bot, player_id, notice, pack=self.pack
+                            )
+                    WG.remove(guessed.game_id)
+        self.db.schedule_matchmaker_save(self.mm)
+
+    async def chat_send_text(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        data = await request.json()
+        text = str(data.get("text", "") or "").strip()
+        if not text:
+            raise _json_error(400, "Напиши сообщение")
+        if len(text) > int(self.cfg.max_message_len):
+            raise _json_error(400, f"Максимум {self.cfg.max_message_len} символов")
+        partner = self.mm.partner(uid)
+        if partner is not None and WG.explainer_used_secret(uid, partner, text):
+            raise _json_error(400, "Не пиши само слово. Объясни его другими словами")
+        partner, sent_count = await self._chat_guard(uid)
+        try:
+            sent = await self.bot.send_message(partner, text, parse_mode=None)
+        except TelegramForbiddenError as exc:
+            await self._chat_delivery_failed(uid, partner, True)
+            raise _json_error(409, "Собеседник больше недоступен") from exc
+        except TelegramAPIError as exc:
+            await self._chat_delivery_failed(uid, partner, False)
+            raise _json_error(503, "Не удалось доставить сообщение") from exc
+        live_chat.publish(
+            uid, partner, "text", text=text, telegram_message_id=sent.message_id
+        )
+        await self._after_chat_message(
+            uid, partner, sent_count, text=text
+        )
+        return web.json_response({"ok": True, "latest": live_chat.latest_seq(uid)})
+
+    async def _read_upload(
+        self, request: web.Request, *, limit: int
+    ) -> tuple[bytes, str, str, str]:
+        reader = await request.multipart()
+        payload = b""
+        filename = ""
+        content_type = ""
+        caption = ""
+        while True:
+            field = await reader.next()
+            if field is None:
+                break
+            if field.name == "file":
+                filename = str(field.filename or "upload.bin")
+                content_type = str(field.headers.get("Content-Type", "") or "")
+                chunks = bytearray()
+                while True:
+                    chunk = await field.read_chunk(size=64 * 1024)
+                    if not chunk:
+                        break
+                    chunks.extend(chunk)
+                    if len(chunks) > limit:
+                        raise _json_error(413, "Файл слишком большой")
+                payload = bytes(chunks)
+            elif field.name == "caption":
+                caption = (await field.text()).strip()[: int(self.cfg.max_message_len)]
+        if not payload:
+            raise _json_error(400, "Файл не выбран")
+        return payload, filename, content_type, caption
+
+    async def chat_send_photo(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        payload, filename, content_type, caption = await self._read_upload(
+            request, limit=8 * 1024 * 1024
+        )
+        if content_type and not content_type.startswith("image/"):
+            raise _json_error(400, "Можно отправить только изображение")
+        partner, sent_count = await self._chat_guard(uid)
+        try:
+            sent = await self.bot.send_photo(
+                partner,
+                BufferedInputFile(payload, filename=filename or "photo.jpg"),
+                caption=caption or None,
+                parse_mode=None,
+            )
+        except TelegramForbiddenError as exc:
+            await self._chat_delivery_failed(uid, partner, True)
+            raise _json_error(409, "Собеседник больше недоступен") from exc
+        except TelegramAPIError as exc:
+            await self._chat_delivery_failed(uid, partner, False)
+            raise _json_error(503, "Не удалось отправить фото") from exc
+        file_id = sent.photo[-1].file_id if sent.photo else ""
+        live_chat.publish(
+            uid,
+            partner,
+            "photo",
+            text=caption,
+            file_id=file_id,
+            telegram_message_id=sent.message_id,
+        )
+        await self._after_chat_message(uid, partner, sent_count)
+        return web.json_response({"ok": True, "latest": live_chat.latest_seq(uid)})
+
+    async def _voice_payload(
+        self, payload: bytes, content_type: str, filename: str
+    ) -> tuple[bytes, str]:
+        lower = (filename or "").lower()
+        if (
+            "ogg" in content_type
+            or "mpeg" in content_type
+            or "mp3" in content_type
+            or "mp4" in content_type
+            or lower.endswith((".ogg", ".mp3", ".m4a"))
+        ):
+            return payload, filename or "voice.ogg"
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                "pipe:0",
+                "-vn",
+                "-c:a",
+                "libopus",
+                "-b:a",
+                "48k",
+                "-f",
+                "ogg",
+                "pipe:1",
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            out, _err = await asyncio.wait_for(proc.communicate(payload), timeout=20)
+        except (FileNotFoundError, TimeoutError, asyncio.TimeoutError) as exc:
+            raise _json_error(503, "Не удалось обработать голосовое") from exc
+        if proc.returncode != 0 or not out:
+            raise _json_error(400, "Формат голосового не поддерживается")
+        return out, "voice.ogg"
+
+    async def chat_send_voice(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        payload, filename, content_type, _caption = await self._read_upload(
+            request, limit=12 * 1024 * 1024
+        )
+        payload, filename = await self._voice_payload(
+            payload, content_type, filename
+        )
+        partner, sent_count = await self._chat_guard(uid)
+        try:
+            sent = await self.bot.send_voice(
+                partner,
+                BufferedInputFile(payload, filename=filename),
+            )
+        except TelegramForbiddenError as exc:
+            await self._chat_delivery_failed(uid, partner, True)
+            raise _json_error(409, "Собеседник больше недоступен") from exc
+        except TelegramAPIError as exc:
+            await self._chat_delivery_failed(uid, partner, False)
+            raise _json_error(503, "Не удалось отправить голосовое") from exc
+        file_id = sent.voice.file_id if sent.voice else ""
+        live_chat.publish(
+            uid,
+            partner,
+            "voice",
+            file_id=file_id,
+            telegram_message_id=sent.message_id,
+        )
+        await self._after_chat_message(uid, partner, sent_count)
+        return web.json_response({"ok": True, "latest": live_chat.latest_seq(uid)})
+
+    async def chat_stickers(self, request: web.Request) -> web.Response:
+        self._telegram_user(request)
+        pack_name = os.getenv("MINIAPP_STICKER_SET", "NewsEmoji").strip()
+        if not pack_name:
+            return web.json_response({"items": []})
+        try:
+            sticker_set = await self.bot.get_sticker_set(pack_name)
+        except TelegramAPIError:
+            return web.json_response({"items": []})
+        items = []
+        for sticker in sticker_set.stickers:
+            if bool(sticker.is_animated) or bool(sticker.is_video):
+                continue
+            sid = hashlib.sha256(sticker.file_id.encode()).hexdigest()[:16]
+            live_chat.register_sticker(sid, sticker.file_id)
+            items.append(
+                {
+                    "id": sid,
+                    "emoji": sticker.emoji or "",
+                    "url": f"/api/miniapp/chat/sticker-media/{sid}",
+                }
+            )
+            if len(items) >= 32:
+                break
+        return web.json_response({"items": items})
+
+    async def chat_send_sticker(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        data = await request.json()
+        sticker_id = str(data.get("id", "") or "")
+        file_id = live_chat.sticker_file_id(sticker_id)
+        if not file_id:
+            raise _json_error(400, "Стикер не найден")
+        partner, sent_count = await self._chat_guard(uid)
+        try:
+            sent = await self.bot.send_sticker(partner, file_id)
+        except TelegramForbiddenError as exc:
+            await self._chat_delivery_failed(uid, partner, True)
+            raise _json_error(409, "Собеседник больше недоступен") from exc
+        except TelegramAPIError as exc:
+            await self._chat_delivery_failed(uid, partner, False)
+            raise _json_error(503, "Не удалось отправить стикер") from exc
+        sent_file_id = sent.sticker.file_id if sent.sticker else file_id
+        live_chat.publish(
+            uid,
+            partner,
+            "sticker",
+            text=(sent.sticker.emoji if sent.sticker else "") or "",
+            file_id=sent_file_id,
+            telegram_message_id=sent.message_id,
+        )
+        await self._after_chat_message(uid, partner, sent_count)
+        return web.json_response({"ok": True, "latest": live_chat.latest_seq(uid)})
+
+    async def _download_telegram_file(self, file_id: str) -> bytes:
+        tg_file = await self.bot.get_file(file_id)
+        if not tg_file.file_path:
+            raise _json_error(404, "Файл недоступен")
+        target = io.BytesIO()
+        await self.bot.download_file(tg_file.file_path, destination=target)
+        return target.getvalue()
+
+    async def chat_media(self, request: web.Request) -> web.Response:
+        uid, _ = self._telegram_user(request)
+        ref = live_chat.media_ref(request.match_info["token"], uid)
+        if ref is None:
+            raise _json_error(404, "Медиа устарело")
+        try:
+            payload = await self._download_telegram_file(ref.file_id)
+        except TelegramAPIError as exc:
+            raise _json_error(404, "Медиа недоступно") from exc
+        content_type = {
+            "photo": "image/jpeg",
+            "voice": "audio/ogg",
+            "sticker": "image/webp",
+        }.get(ref.kind, "application/octet-stream")
+        return web.Response(
+            body=payload,
+            content_type=content_type,
+            headers={"Cache-Control": "private, max-age=300"},
+        )
+
+    async def chat_sticker_media(self, request: web.Request) -> web.Response:
+        self._telegram_user(request)
+        file_id = live_chat.sticker_file_id(request.match_info["sticker_id"])
+        if not file_id:
+            raise _json_error(404, "Стикер не найден")
+        try:
+            payload = await self._download_telegram_file(file_id)
+        except TelegramAPIError as exc:
+            raise _json_error(404, "Стикер недоступен") from exc
+        return web.Response(
+            body=payload,
+            content_type="image/webp",
+            headers={"Cache-Control": "private, max-age=900"},
+        )
+
+    async def _end_chat(self, uid: int, *, next_chat: bool = False) -> dict:
+        partner, summary = self.mm.release(uid)
+        if partner is None:
+            return self._status_payload(uid)
+        await self.db.close_battles_for_users(uid, partner)
+        WG.clear_pair(uid, partner)
+        relay_state.clear_pair(uid, partner)
+        live_chat.clear_pair(uid, partner)
+
+        counts = summary.get("counts", {}) or {}
+        bonus_xp = summary.get("bonus_xp", {}) or {}
+        mine = int(counts.get(uid, 0))
+        theirs = int(counts.get(partner, 0))
+        started = int(summary.get("started_at", time.time()))
+        live = mine > 0 and theirs > 0 and (mine + theirs) >= 6
+        match_id = await self.db.log_dialog(
+            uid,
+            partner,
+            mine,
+            theirs,
+            started,
+            uid,
+            count_dialog=live,
+            commit=False,
+        )
+        earned_xp: dict[int, int] = {}
+        for player_id, sent_count in ((uid, mine), (partner, theirs)):
+            gain = (
+                min(sent_count, self.cfg.xp_message_cap) * self.cfg.xp_per_message
+                + int(bonus_xp.get(player_id, 0))
+                + (self.cfg.xp_per_dialog if live else 0)
+            )
+            if gain:
+                await self.db.award_xp(player_id, gain, commit=False)
+            if sent_count:
+                await self.db.bump(
+                    player_id, "messages", sent_count, commit=False
+                )
+            await self.db.activity_add(
+                player_id,
+                messages=sent_count,
+                dialogs=1 if live else 0,
+                commit=False,
+            )
+            if live:
+                await self.db.record_dialog_engagement(
+                    player_id, commit=False
+                )
+                await self.db.update_streak(player_id, commit=False)
+            earned_xp[player_id] = gain
+        await self.db.db.commit()
+
+        self.mm.remember_rating([uid, partner], match_id)
+        my_summary = _dialog_summary_text(
+            summary, uid, earned_xp.get(uid, 0)
+        )
+        partner_summary = _dialog_summary_text(
+            summary, partner, earned_xp.get(partner, 0)
+        )
+        await send_to(
+            self.bot,
+            partner,
+            f"{texts.PARTNER_LEFT}\n\n{partner_summary}",
+            K.menu_keyboard(),
+            self.pack,
+        )
+        await send_to(
+            self.bot,
+            uid,
+            f"{texts.DIALOG_STOPPED}\n\n{my_summary}",
+            K.rating_keyboard(),
+            self.pack,
+        )
+        await send_to(
+            self.bot,
+            partner,
+            texts.RATING_ASK,
+            K.rating_keyboard(),
+            self.pack,
+        )
+        for player_id in (uid, partner):
+            for notice in await collect_progress_notifications(
+                self.db, player_id
+            ):
+                await send_to(self.bot, player_id, notice, pack=self.pack)
+
+        if next_chat:
+            row = await self.db.get_user(uid)
+            if row is not None:
+                excluded = await self.db.excluded_partners(
+                    uid,
+                    recent_seconds=max(
+                        0, int(self.cfg.recent_partner_cooldown_minutes)
+                    )
+                    * 60,
+                )
+                outcome, payload = self.mm.connect(
+                    uid,
+                    district=str(row["district"] or ""),
+                    same_district=False,
+                    gender=str(row["gender"] or ""),
+                    looking_for=str(row["looking_for"] or ""),
+                    excluded=excluded,
+                )
+                if outcome == "paired":
+                    await announce_pairs(
+                        self.bot,
+                        self.cfg,
+                        self.mm,
+                        [(uid, int(payload))],
+                        self.pack,
+                        self.db,
+                    )
+        self.db.schedule_matchmaker_save(self.mm)
+        result = self._status_payload(uid)
+        result["summary"] = {
+            "sent": mine,
+            "received": theirs,
+            "earned": int(earned_xp.get(uid, 0)),
+            "started_at": started,
+        }
+        return result
+
+    async def chat_stop(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        if self.mm.status(uid) == "queued":
+            self.mm.forget(uid)
+            self.db.schedule_matchmaker_save(self.mm)
+            return web.json_response(self._status_payload(uid))
+        if self.mm.status(uid) != "paired":
+            return web.json_response(self._status_payload(uid))
+        return web.json_response(await self._end_chat(uid, next_chat=False))
+
+    async def chat_next(self, request: web.Request) -> web.Response:
+        uid, _, row = await self._auth(request)
+        if self.mm.status(uid) == "paired":
+            return web.json_response(await self._end_chat(uid, next_chat=True))
+        if self.mm.status(uid) == "queued":
+            return web.json_response(self._status_payload(uid))
+        excluded = await self.db.excluded_partners(
+            uid,
+            recent_seconds=max(
+                0, int(self.cfg.recent_partner_cooldown_minutes)
+            )
+            * 60,
+        )
+        outcome, payload = self.mm.connect(
+            uid,
+            district=str(row["district"] or ""),
+            same_district=False,
+            gender=str(row["gender"] or ""),
+            looking_for=str(row["looking_for"] or ""),
+            excluded=excluded,
+        )
+        if outcome == "paired":
+            await announce_pairs(
+                self.bot,
+                self.cfg,
+                self.mm,
+                [(uid, int(payload))],
+                self.pack,
+                self.db,
+            )
+        self.db.schedule_matchmaker_save(self.mm)
         return web.json_response(self._status_payload(uid))
 
     async def settings(self, request: web.Request) -> web.Response:
@@ -610,10 +1174,20 @@ class MiniAppServer:
             not self.web_dir.is_dir() or not (self.web_dir / "index.html").is_file()
         ):
             raise RuntimeError(f"MINIAPP_WEB_DIR не найден: {self.web_dir}")
-        app = web.Application(client_max_size=64 * 1024, middlewares=[self.security_headers])
+        app = web.Application(client_max_size=12 * 1024 * 1024, middlewares=[self.security_headers])
         app.router.add_get("/api/miniapp/health", self.health)
         app.router.add_get("/api/miniapp/me", self.me)
         app.router.add_get("/api/miniapp/status", self.status)
+        app.router.add_get("/api/miniapp/chat/state", self.chat_state)
+        app.router.add_post("/api/miniapp/chat/text", self.chat_send_text)
+        app.router.add_post("/api/miniapp/chat/photo", self.chat_send_photo)
+        app.router.add_post("/api/miniapp/chat/voice", self.chat_send_voice)
+        app.router.add_get("/api/miniapp/chat/stickers", self.chat_stickers)
+        app.router.add_post("/api/miniapp/chat/sticker", self.chat_send_sticker)
+        app.router.add_get("/api/miniapp/chat/media/{token}", self.chat_media)
+        app.router.add_get("/api/miniapp/chat/sticker-media/{sticker_id}", self.chat_sticker_media)
+        app.router.add_post("/api/miniapp/chat/stop", self.chat_stop)
+        app.router.add_post("/api/miniapp/chat/next", self.chat_next)
         app.router.add_post("/api/miniapp/settings", self.settings)
         app.router.add_post("/api/miniapp/settings/reset", self.settings_reset)
         app.router.add_post("/api/miniapp/profile/nick", self.nick)
