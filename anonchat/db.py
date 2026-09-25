@@ -176,6 +176,37 @@ CREATE TABLE IF NOT EXISTS active_chat_events (
 CREATE INDEX IF NOT EXISTS idx_active_chat_pair
     ON active_chat_events(user_low, user_high, id);
 
+CREATE TABLE IF NOT EXISTS miniapp_events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL,
+    type       TEXT    NOT NULL DEFAULT 'system',
+    icon       TEXT    NOT NULL DEFAULT 'bell',
+    title      TEXT    NOT NULL,
+    text       TEXT    NOT NULL DEFAULT '',
+    action     TEXT    NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    read_at    INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS miniapp_dialog_results (
+    user_id    INTEGER PRIMARY KEY,
+    match_id   INTEGER NOT NULL,
+    partner_id INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    started_at INTEGER NOT NULL,
+    duration   INTEGER NOT NULL DEFAULT 0,
+    sent       INTEGER NOT NULL DEFAULT 0,
+    received   INTEGER NOT NULL DEFAULT 0,
+    earned     INTEGER NOT NULL DEFAULT 0,
+    games      TEXT    NOT NULL DEFAULT '[]',
+    rated      INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_miniapp_events_user
+    ON miniapp_events(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_miniapp_events_unread
+    ON miniapp_events(user_id, read_at, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS daily_activity (
     user_id          INTEGER NOT NULL,
     day_start        INTEGER NOT NULL,
@@ -1740,6 +1771,129 @@ class Database:
         await self.db.commit()
         return int(cur.rowcount or 0)
 
+    # --------------------------------------------------------- Mini App events/results
+    async def add_miniapp_event(
+        self,
+        user_id: int,
+        event_type: str,
+        title: str,
+        text: str = "",
+        *,
+        icon: str = "bell",
+        action: str = "",
+        commit: bool = True,
+    ) -> int:
+        cur = await self.db.execute(
+            """INSERT INTO miniapp_events(user_id,type,icon,title,text,action,created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                int(user_id),
+                str(event_type or "system")[:32],
+                str(icon or "bell")[:32],
+                str(title or "")[:120],
+                str(text or "")[:500],
+                str(action or "")[:120],
+                now(),
+            ),
+        )
+        # Keep the center compact; old events have no product value.
+        await self.db.execute(
+            """DELETE FROM miniapp_events
+               WHERE user_id=? AND id NOT IN (
+                   SELECT id FROM miniapp_events WHERE user_id=?
+                   ORDER BY created_at DESC, id DESC LIMIT 120
+               )""",
+            (int(user_id), int(user_id)),
+        )
+        if commit:
+            await self.db.commit()
+        return int(cur.lastrowid)
+
+    async def miniapp_events(
+        self, user_id: int, *, limit: int = 60
+    ) -> list[aiosqlite.Row]:
+        return await self._fetchall(
+            """SELECT * FROM miniapp_events WHERE user_id=?
+               ORDER BY created_at DESC, id DESC LIMIT ?""",
+            (int(user_id), max(1, min(int(limit), 120))),
+        )
+
+    async def read_miniapp_event(self, user_id: int, event_id: int) -> bool:
+        cur = await self.db.execute(
+            """UPDATE miniapp_events SET read_at=COALESCE(read_at,?)
+               WHERE id=? AND user_id=?""",
+            (now(), int(event_id), int(user_id)),
+        )
+        await self.db.commit()
+        return bool(cur.rowcount)
+
+    async def read_all_miniapp_events(self, user_id: int) -> int:
+        cur = await self.db.execute(
+            "UPDATE miniapp_events SET read_at=? WHERE user_id=? AND read_at IS NULL",
+            (now(), int(user_id)),
+        )
+        await self.db.commit()
+        return int(cur.rowcount or 0)
+
+    async def save_dialog_result(
+        self,
+        user_id: int,
+        match_id: int,
+        partner_id: int,
+        *,
+        started_at: int,
+        duration: int,
+        sent: int,
+        received: int,
+        earned: int,
+        games: list[dict[str, Any]] | None = None,
+    ) -> None:
+        await self.db.execute(
+            """INSERT INTO miniapp_dialog_results(
+                   user_id,match_id,partner_id,created_at,started_at,duration,
+                   sent,received,earned,games,rated
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+               ON CONFLICT(user_id) DO UPDATE SET
+                   match_id=excluded.match_id,
+                   partner_id=excluded.partner_id,
+                   created_at=excluded.created_at,
+                   started_at=excluded.started_at,
+                   duration=excluded.duration,
+                   sent=excluded.sent,
+                   received=excluded.received,
+                   earned=excluded.earned,
+                   games=excluded.games,
+                   rated=0""",
+            (
+                int(user_id), int(match_id), int(partner_id), now(),
+                int(started_at), max(0, int(duration)), max(0, int(sent)),
+                max(0, int(received)), max(0, int(earned)),
+                json.dumps(games or [], ensure_ascii=False, separators=(",", ":")),
+            ),
+        )
+        await self.db.commit()
+
+    async def dialog_result(self, user_id: int) -> aiosqlite.Row | None:
+        row = await self._fetchone(
+            "SELECT * FROM miniapp_dialog_results WHERE user_id=?",
+            (int(user_id),),
+        )
+        if row is not None and int(row["created_at"] or 0) < now() - 86_400:
+            await self.db.execute(
+                "DELETE FROM miniapp_dialog_results WHERE user_id=?",
+                (int(user_id),),
+            )
+            await self.db.commit()
+            return None
+        return row
+
+    async def mark_dialog_result_rated(self, user_id: int) -> None:
+        await self.db.execute(
+            "UPDATE miniapp_dialog_results SET rated=1 WHERE user_id=?",
+            (int(user_id),),
+        )
+        await self.db.commit()
+
     # ------------------------------------------------------------------ dialogs
     async def log_dialog(
         self, user_a: int, user_b: int, msg_a: int, msg_b: int, started_at: int,
@@ -1877,6 +2031,56 @@ class Database:
                 k: v for k, v in self._top_cache.items() if now_mono - v[0] < 60
             }
         return rows
+
+    async def top_position_period(self, user_id: int, days: int) -> dict[str, int]:
+        days = int(days)
+        if days <= 0:
+            me = await self.get_user(int(user_id))
+            if me is None:
+                return {"place": 0, "stars": 0, "to_top10": 0}
+            stars = int(me["xp"] or 0)
+            above = await self._fetchone(
+                """SELECT COUNT(*) AS c FROM users
+                   WHERE banned=0 AND (
+                     xp>? OR (xp=? AND dialogs>?) OR
+                     (xp=? AND dialogs=? AND messages>?)
+                   )""",
+                (
+                    stars, stars, int(me["dialogs"] or 0),
+                    stars, int(me["dialogs"] or 0), int(me["messages"] or 0),
+                ),
+            )
+            top10 = await self.top(10)
+        else:
+            start = referral_day_start() - (max(1, days) - 1) * 86_400
+            mine = await self._fetchone(
+                """SELECT COALESCE(SUM(xp_earned),0) xp,
+                          COALESCE(SUM(dialogs),0) dialogs,
+                          COALESCE(SUM(messages),0) messages
+                   FROM daily_activity WHERE user_id=? AND day_start>=?""",
+                (int(user_id), start),
+            )
+            stars = int(mine["xp"] or 0) if mine else 0
+            dialogs = int(mine["dialogs"] or 0) if mine else 0
+            messages = int(mine["messages"] or 0) if mine else 0
+            above = await self._fetchone(
+                """SELECT COUNT(*) AS c FROM (
+                     SELECT user_id,SUM(xp_earned) xp,SUM(dialogs) dialogs,SUM(messages) messages
+                     FROM daily_activity WHERE day_start>=?
+                     GROUP BY user_id
+                     HAVING xp>? OR (xp=? AND dialogs>?) OR
+                            (xp=? AND dialogs=? AND messages>?)
+                   )""",
+                (start, stars, stars, dialogs, stars, dialogs, messages),
+            )
+            top10 = await self.top_period(days, 10)
+        place = int(above["c"] or 0) + 1 if above else 1
+        threshold = int(top10[-1]["xp"] or 0) if len(top10) >= 10 else 0
+        return {
+            "place": place,
+            "stars": stars,
+            "to_top10": max(0, threshold - stars + (1 if place > 10 and threshold >= stars else 0)),
+        }
 
     async def update_streak(
         self, user_id: int, timestamp: int | None = None, *, commit: bool = True
@@ -2432,6 +2636,14 @@ class Database:
         await self.db.execute(
             "DELETE FROM active_chat_events WHERE user_low = ? OR user_high = ?",
             (user_id, user_id),
+        )
+        await self.db.execute(
+            "DELETE FROM miniapp_events WHERE user_id = ?",
+            (user_id,),
+        )
+        await self.db.execute(
+            "DELETE FROM miniapp_dialog_results WHERE user_id = ?",
+            (user_id,),
         )
         await self.db.execute("DELETE FROM daily_activity WHERE user_id=?", (user_id,))
         await self.db.execute("DELETE FROM user_engagement WHERE user_id=?", (user_id,))
