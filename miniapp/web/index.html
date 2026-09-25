@@ -9,7 +9,7 @@
   <title>АНОН МГН</title>
   <link rel="icon" href="./assets/anon-mgn-logo.png">
   <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./styles.css?v=14">
+  <link rel="stylesheet" href="./styles.css?v=15">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -38,6 +38,7 @@
         </header>
         <div class="chat-counter"><span><b id="chatSent">0</b> отправлено</span><i></i><span><b id="chatReceived">0</b> получено</span></div>
         <div class="chat-messages" id="chatMessages"><div class="chat-empty" id="chatEmpty">Напиши что-нибудь 👋</div></div>
+        <section class="active-game" id="activeGame" hidden></section>
         <div class="sticker-tray" id="stickerTray" hidden>
           <div class="emoji-grid" id="emojiGrid"></div>
           <div class="sticker-section" id="stickerSection">
@@ -58,6 +59,7 @@
         <header class="page-title"><small>В активном диалоге</small><h1>Игры вдвоём</h1><p>Приглашение придёт текущему собеседнику в чат бота.</p></header>
         <button class="game-card surface" data-game="battle"><span class="game-art battle" data-icon="swords"></span><span><small>5 или 10 вопросов</small><strong>Битва мнений</strong><p>Сравните выборы и узнайте, насколько вы похожи.</p><b>Играть <i data-icon="arrow-right"></i></b></span></button>
         <button class="game-card surface" data-game="numbers"><span class="game-art numbers" data-icon="hash"></span><span><small>3 раунда</small><strong>Числа</strong><p>Выберите числа независимо. Чем ближе — тем больше награда.</p><b>Играть <i data-icon="arrow-right"></i></b></span></button>
+        <button class="game-card surface" data-game="words"><span class="game-art words">🗣</span><span><small>5 слов</small><strong>Объясни слово</strong><p>Один объясняет слово, второй угадывает прямо в чате.</p><b>Играть <i data-icon="arrow-right"></i></b></span></button>
         <section class="game-stats surface"><div><small>Всего игр</small><strong data-games>0</strong></div><i></i><div><small>Мнения</small><strong data-battle-games>0</strong></div><i></i><div><small>Числа</small><strong data-number-games>0</strong></div></section>
       </section>
       <section class="page" data-page="events"><header class="page-title"><small>Всё важное</small><h1>События</h1><p>Текущий поиск, активный диалог и игровые приглашения.</p></header><div class="filter" id="eventFilter"><button class="active" data-filter="all">Все</button><button data-filter="personal">Личные</button><button data-filter="games">Игры</button></div><div class="event-list" id="eventList"></div></section>
@@ -73,6 +75,6 @@
   </div>
   <div class="modal" id="modal" hidden><button class="modal-backdrop" data-close-modal aria-label="Закрыть"></button><section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><i class="handle"></i><header><span><small id="modalEyebrow"></small><strong id="modalTitle"></strong></span><button class="icon-btn" data-close-modal aria-label="Закрыть"><span data-icon="x"></span></button></header><div class="modal-body" id="modalBody"></div></section></div>
   <div class="toast" id="toast" role="status"></div>
-  <script src="./app.js?v=19"></script>
+  <script src="./app.js?v=20"></script>
 </body>
 </html>
