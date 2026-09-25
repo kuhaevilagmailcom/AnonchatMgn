@@ -2134,6 +2134,13 @@ class MiniAppServer:
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
+        elif request.path == "/" or request.path.endswith((".html", ".js", ".css")):
+            # Telegram WebView aggressively caches Mini App bundles. Revalidate
+            # executable/UI files so a fixed deployment cannot keep running an
+            # older broken app.js under the same Mini App URL.
+            response.headers["Cache-Control"] = "no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()"
         response.headers["Content-Security-Policy"] = (
