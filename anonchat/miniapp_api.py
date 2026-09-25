@@ -679,17 +679,19 @@ class MiniAppServer:
         partner_summary = _dialog_summary_text(
             summary, partner, earned_xp.get(partner, 0)
         )
+        partner_note = texts.PARTNER_SKIPPED if next_chat else texts.PARTNER_LEFT
+        my_note = "Пропустил." if next_chat else texts.DIALOG_STOPPED
         await send_to(
             self.bot,
             partner,
-            f"{texts.PARTNER_LEFT}\n\n{partner_summary}",
+            f"{partner_note}\n\n{partner_summary}",
             K.menu_keyboard(),
             self.pack,
         )
         await send_to(
             self.bot,
             uid,
-            f"{texts.DIALOG_STOPPED}\n\n{my_summary}",
+            f"{my_note}\n\n{my_summary}",
             K.rating_keyboard(),
             self.pack,
         )
