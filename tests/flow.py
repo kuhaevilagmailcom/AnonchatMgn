@@ -1129,8 +1129,9 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await press(E, "act:connect")
     session.clear()
     await send(E, "сообщение админу в диалоге")
-    check("Собеседник:" in session.last_to(D),
-          "админ видит данные даже в своём активном чате")
+    check("сообщение админу в диалоге" in session.last_to(D)
+          and "Собеседник:" not in session.last_to(D),
+          "админ в своём анонимном диалоге не получает служебные данные собеседника")
     session.fail_once["sendMessage"] = "temp"
     await send(D, "временная ошибка")
     check(mm.partner(D) == E, "временная ошибка Telegram не разрывает пару")
