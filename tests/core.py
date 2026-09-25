@@ -1531,6 +1531,12 @@ def test_miniapp_live_chat_frontend_contract() -> None:
         'id="micButton"',
         'id="stickerTray"',
         'id="activeGame"',
+        'data-page="top"',
+        'id="topPeriods"',
+        'id="topPageList"',
+        'id="chatGames"',
+        'id="chatNext"',
+        'id="chatStop"',
     ):
         assert marker in html
     for marker in (
@@ -1540,7 +1546,9 @@ def test_miniapp_live_chat_frontend_contract() -> None:
         "/api/miniapp/chat/voice",
         "/api/miniapp/chat/stickers",
         "/api/miniapp/games/action",
+        "/api/miniapp/top?period=",
         "renderActiveGame",
+        "loadTopPage",
         "MediaRecorder",
     ):
         assert marker in js
@@ -1549,6 +1557,9 @@ def test_miniapp_live_chat_frontend_contract() -> None:
     assert ".active-game" in css
     assert ".battle-options" in css
     assert ".number-game-form" in css
+    assert ".top-periods" in css
+    assert ".top-page-item" in css
+    assert ".chat-action" in css
 
 
 def test_miniapp_frontend_boot_guards() -> None:
