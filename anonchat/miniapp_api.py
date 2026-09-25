@@ -282,9 +282,11 @@ class MiniAppServer:
         except ValueError:
             after = 0
         status = self.mm.status(uid)
+        partner = self.mm.partner(uid)
+        if status == "paired" and partner is not None:
+            await live_chat.ensure_loaded(self.db, uid, partner)
         stats = self.mm.dialog_stats(uid) if status == "paired" else {}
         counts = stats.get("counts", {}) or {}
-        partner = self.mm.partner(uid)
         received = int(counts.get(partner, 0)) if partner is not None else 0
         sent = int(counts.get(uid, 0))
         started_at = int(float(stats.get("started_at", 0) or 0))
