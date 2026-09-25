@@ -796,6 +796,13 @@ async def announce_pair(ctx: Ctx, user_id: int, partner_id: int) -> bool:
         await send_to(ctx.bot, partner_id, texts.PARTNER_LEFT, menu_keyboard(), ctx.pack)
         return False
     live_chat.system({user_id, partner_id}, "Собеседник найден")
+    for uid in (user_id, partner_id):
+        event_id = await ctx.db.add_miniapp_event(
+            uid, "dialog", "Собеседник найден",
+            "Диалог уже открыт — можно общаться в Mini App.",
+            icon="message-circle", action="chat",
+        )
+        live_chat.signal({uid}, "events_changed", event_id=event_id)
     return True
 
 
@@ -826,6 +833,14 @@ async def announce_pairs(
             await send_to(bot, b, texts.PARTNER_LEFT, kb, pack)
             continue
         live_chat.system({a, b}, "Собеседник найден")
+        if db is not None:
+            for uid in (a, b):
+                event_id = await db.add_miniapp_event(
+                    uid, "dialog", "Собеседник найден",
+                    "Диалог уже открыт — можно общаться в Mini App.",
+                    icon="message-circle", action="chat",
+                )
+                live_chat.signal({uid}, "events_changed", event_id=event_id)
         made += 1
     return made
 
