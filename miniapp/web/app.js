@@ -68,15 +68,40 @@ if (typeof window === 'undefined') {
     let data={}; try{data=await res.json()}catch(_){} if(!res.ok)throw new Error(data.message||`Ошибка ${res.status}`); return data;
   }
   async function safe(path,options,fallback=null){try{return await request(path,options)}catch(e){if(tg?.initData)toast(e.message);return fallback}}
+  async function upload(path, formData){
+    const headers={}; if(tg?.initData)headers['X-Telegram-Init-Data']=tg.initData;
+    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
+    let res;
+    try{res=await fetch(apiBase+path,{method:'POST',body:formData,headers,cache:'no-store',signal:controller.signal})}
+    catch(e){if(e?.name==='AbortError')throw new Error('Загрузка заняла слишком долго');throw new Error('Нет соединения с сервером')}
+    finally{clearTimeout(timeout)}
+    let data={};try{data=await res.json()}catch(_){}
+    if(!res.ok)throw new Error(data.message||`Ошибка ${res.status}`);
+    return data;
+  }
+  async function mediaBlobUrl(url){
+    if(!url)return '';
+    if(chat.mediaCache.has(url))return chat.mediaCache.get(url);
+    const headers={};if(tg?.initData)headers['X-Telegram-Init-Data']=tg.initData;
+    const res=await fetch(apiBase+url,{headers,cache:'no-store'});
+    if(!res.ok)throw new Error('Медиа недоступно');
+    const blob=await res.blob();
+    const objectUrl=URL.createObjectURL(blob);
+    chat.mediaCache.set(url,objectUrl);
+    return objectUrl;
+  }
   function normalizeStatus(value){return value==='paired'?'paired':value==='queued'?'queued':'free'}
   function applyStatusSnapshot(data, seq=0){
     if(!data)return false;
     if(seq && seq<statusAppliedSeq)return false;
     if(seq)statusAppliedSeq=seq;
+    const previous=state.status;
     state.status=normalizeStatus(data.status);
     state.position=state.status==='queued'?(data.position||null):null;
     if(data.stats)state.stats={...state.stats,...data.stats};
     render();
+    if(state.status==='paired' && previous!=='paired' && state.page==='search')go('chat');
+    if(state.status!=='paired' && state.page==='chat')go(state.status==='queued'?'search':'home');
     return true;
   }
   async function syncStatus(silent=true){
