@@ -122,6 +122,8 @@ class MiniAppServer:
         self.runner: web.AppRunner | None = None
         self.site: web.TCPSite | None = None
         self._bot_username = ""
+        self._brand_sticker_file_id = ""
+        self._brand_sticker_bytes: bytes | None = None
         self.serve_static = os.getenv("MINIAPP_SERVE_STATIC", "true").lower() in {
             "1", "true", "yes", "on"
         }
@@ -541,17 +543,65 @@ class MiniAppServer:
         await self._after_chat_message(uid, partner, sent_count)
         return web.json_response({"ok": True, "latest": live_chat.latest_seq(uid)})
 
+    async def _brand_sticker_payload(self) -> bytes:
+        if self._brand_sticker_bytes is not None:
+            return self._brand_sticker_bytes
+        source = self.web_dir / "assets" / "anon-mgn-logo.png"
+        if not source.is_file():
+            raise _json_error(503, "Фирменный стикер недоступен")
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(source),
+                "-vf",
+                "scale=512:512:force_original_aspect_ratio=decrease",
+                "-c:v",
+                "libwebp",
+                "-lossless",
+                "1",
+                "-compression_level",
+                "6",
+                "-q:v",
+                "82",
+                "-an",
+                "-f",
+                "webp",
+                "pipe:1",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            out, _err = await asyncio.wait_for(proc.communicate(), timeout=15)
+        except (FileNotFoundError, TimeoutError, asyncio.TimeoutError) as exc:
+            raise _json_error(503, "Не удалось подготовить стикер") from exc
+        if proc.returncode != 0 or not out:
+            raise _json_error(503, "Не удалось подготовить стикер")
+        self._brand_sticker_bytes = out
+        return out
+
     async def chat_stickers(self, request: web.Request) -> web.Response:
         self._telegram_user(request)
         pack_name = os.getenv("MINIAPP_STICKER_SET", "NewsEmoji").strip()
         if not pack_name:
             return web.json_response({"items": []})
-        try:
-            sticker_set = await self.bot.get_sticker_set(pack_name)
-        except TelegramAPIError:
-            return web.json_response({"items": []})
-        items = []
-        for sticker in sticker_set.stickers:
+        sticker_set = None
+        if pack_name:
+            try:
+                sticker_set = await self.bot.get_sticker_set(pack_name)
+            except TelegramAPIError:
+                sticker_set = None
+        items = [
+            {
+                "id": "brand-logo",
+                "emoji": "🩷",
+                "url": "/assets/anon-mgn-logo.png",
+                "builtin": True,
+            }
+        ]
+        for sticker in (sticker_set.stickers if sticker_set is not None else ()):
             if bool(sticker.is_animated) or bool(sticker.is_video):
                 continue
             sid = hashlib.sha256(sticker.file_id.encode()).hexdigest()[:16]
@@ -572,18 +622,32 @@ class MiniAppServer:
         data = await request.json()
         sticker_id = str(data.get("id", "") or "")
         file_id = live_chat.sticker_file_id(sticker_id)
-        if not file_id:
+        builtin_payload: bytes | None = None
+        if sticker_id == "brand-logo":
+            if self._brand_sticker_file_id:
+                file_id = self._brand_sticker_file_id
+            else:
+                builtin_payload = await self._brand_sticker_payload()
+        elif not file_id:
             raise _json_error(400, "Стикер не найден")
         partner, sent_count = await self._chat_guard(uid)
         try:
-            sent = await self.bot.send_sticker(partner, file_id)
+            sticker_source = (
+                BufferedInputFile(builtin_payload, filename="anon-mgn.webp")
+                if builtin_payload is not None
+                else file_id
+            )
+            sent = await self.bot.send_sticker(partner, sticker_source)
         except TelegramForbiddenError as exc:
             await self._chat_delivery_failed(uid, partner, True)
             raise _json_error(409, "Собеседник больше недоступен") from exc
         except TelegramAPIError as exc:
             await self._chat_delivery_failed(uid, partner, False)
             raise _json_error(503, "Не удалось отправить стикер") from exc
-        sent_file_id = sent.sticker.file_id if sent.sticker else file_id
+        sent_file_id = sent.sticker.file_id if sent.sticker else (file_id or "")
+        if sticker_id == "brand-logo" and sent_file_id:
+            self._brand_sticker_file_id = sent_file_id
+            live_chat.register_sticker("brand-logo", sent_file_id)
         live_chat.publish(
             uid,
             partner,
