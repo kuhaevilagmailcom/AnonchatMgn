@@ -340,7 +340,11 @@ if (typeof window === 'undefined') {
       try{chat.recorder?.stop()}catch(_){}
       return;
     }
-    if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined')return toast('Запись голоса не поддерживается');
+    if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined'){
+      toast('Открою системную запись');
+      $('#voiceInput')?.click();
+      return;
+    }
     try{
       chat.stream=await navigator.mediaDevices.getUserMedia({audio:true});
       const types=['audio/mp4','audio/ogg;codecs=opus','audio/webm;codecs=opus','audio/webm'];
@@ -355,7 +359,10 @@ if (typeof window === 'undefined') {
       };
       chat.recorder.start();chat.recording=true;btn.classList.add('recording');toast('Запись голосового… нажми ещё раз для отправки');haptic('medium');
       chat.recordTimer=setTimeout(()=>{if(chat.recording)toggleVoiceRecording()},60000);
-    }catch(_){toast('Не удалось получить доступ к микрофону')}
+    }catch(_){
+      toast('Открою системную запись');
+      $('#voiceInput')?.click();
+    }
   }
   async function loadStickers(){
     const tray=$('#stickerTray'),grid=$('#stickerGrid'),emojiGrid=$('#emojiGrid'),section=$('#stickerSection');
@@ -464,6 +471,7 @@ if (typeof window === 'undefined') {
     $('#photoInput')&&($('#photoInput').onchange=e=>sendChatPhoto(e.target.files?.[0]));
     $('#stickerButton')&&($('#stickerButton').onclick=loadStickers);
     $('#micButton')&&($('#micButton').onclick=toggleVoiceRecording);
+    $('#voiceInput')&&($('#voiceInput').onchange=e=>{const file=e.target.files?.[0];if(file)sendVoiceBlob(file);e.target.value=''});
     $('#chatGames')&&($('#chatGames').onclick=()=>openModal('chat-games','Игры','В АКТИВНОМ ЧАТЕ'));
     $('#chatStop')&&($('#chatStop').onclick=stopChat);
     $('#chatNext')&&($('#chatNext').onclick=nextChat);
