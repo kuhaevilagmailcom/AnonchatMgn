@@ -200,13 +200,182 @@ if (typeof window === 'undefined') {
   async function copyReferral(){try{await navigator.clipboard.writeText(state.referral_url);toast('Ссылка скопирована')}catch(_){$('#refLink').select();document.execCommand('copy');toast('Ссылка скопирована')}haptic()}
   async function sendFeedback(){const text=$('#feedback').value.trim();if(!text)return toast('Сначала напиши сообщение');const r=await safe('/api/miniapp/feedback',{method:'POST',body:JSON.stringify({text})},null);if(r||!tg?.initData){closeModal();toast('Сообщение отправлено');notify()}}
   async function updateSetting(key,value){const prev=state.user[key];state.user[key]=value;render();const payload={age:state.user.age||0,district:state.user.district||'',gender:state.user.gender||'',looking_for:state.user.looking_for||'',same_district:0};const r=await safe('/api/miniapp/settings',{method:'POST',body:JSON.stringify(payload)},null);if(!r&&tg?.initData){state.user[key]=prev;render()}else if(r?.user){state.user={...state.user,...r.user};render()}}
+  function clearChatView(){
+    chat.latest=0;chat.startedAt=0;chat.sent=0;chat.received=0;chat.seen.clear();
+    const list=$('#chatMessages');if(list)list.querySelectorAll('.chat-message,.chat-system').forEach(x=>x.remove());
+    const empty=$('#chatEmpty');if(empty)empty.hidden=false;
+    $('#chatSent')&&($('#chatSent').textContent='0');$('#chatReceived')&&($('#chatReceived').textContent='0');
+  }
+  function formatChatDuration(){
+    const el=$('#chatDuration');if(!el)return;
+    if(!chat.startedAt){el.textContent='чат активен';return}
+    const seconds=Math.max(0,Math.floor(Date.now()/1000-chat.startedAt));
+    if(seconds<60)el.textContent='меньше минуты';
+    else el.textContent=`${Math.max(1,Math.floor(seconds/60))} мин`;
+  }
+  function scrollChatBottom(){
+    const list=$('#chatMessages');if(list)requestAnimationFrame(()=>{list.scrollTop=list.scrollHeight});
+  }
+  async function attachMediaToEvent(node,event){
+    if(!event.media_url)return;
+    try{
+      const url=await mediaBlobUrl(event.media_url);
+      if(event.kind==='photo'){
+        const img=document.createElement('img');img.className='chat-photo';img.alt='Фото';img.src=url;img.onload=scrollChatBottom;node.prepend(img);
+      }else if(event.kind==='voice'){
+        const audio=document.createElement('audio');audio.className='chat-voice';audio.controls=true;audio.preload='metadata';audio.src=url;node.prepend(audio);
+      }else if(event.kind==='sticker'){
+        const img=document.createElement('img');img.className='chat-sticker';img.alt=event.text||'Стикер';img.src=url;img.onload=scrollChatBottom;node.prepend(img);
+      }
+    }catch(_){}
+  }
+  function appendChatEvent(event){
+    if(!event||chat.seen.has(event.id))return;
+    chat.seen.add(event.id);
+    const list=$('#chatMessages');if(!list)return;
+    const empty=$('#chatEmpty');if(empty)empty.hidden=true;
+    if(event.kind==='system'){
+      const el=document.createElement('div');el.className='chat-system';el.textContent=event.text||'';list.appendChild(el);scrollChatBottom();return;
+    }
+    const row=document.createElement('div');row.className=`chat-message ${event.mine?'mine':'theirs'}`;
+    const bubble=document.createElement('div');bubble.className='chat-bubble';
+    if(event.text){
+      const p=document.createElement('p');p.textContent=event.text;bubble.appendChild(p);
+    }
+    const time=document.createElement('small');
+    const dt=new Date((event.created_at||Math.floor(Date.now()/1000))*1000);
+    time.textContent=dt.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+    bubble.appendChild(time);row.appendChild(bubble);list.appendChild(row);
+    attachMediaToEvent(bubble,event);scrollChatBottom();
+  }
+  async function syncChat(force=false){
+    if(!tg?.initData||state.status!=='paired')return false;
+    try{
+      const data=await request(`/api/miniapp/chat/state?after=${force?chat.latest:chat.latest}&_=${Date.now()}`);
+      if(data.status!=='paired'){
+        applyStatusSnapshot(data);
+        return false;
+      }
+      if(data.started_at && chat.startedAt && Number(data.started_at)!==Number(chat.startedAt))clearChatView();
+      chat.startedAt=Number(data.started_at||chat.startedAt||0);
+      chat.sent=Number(data.sent||0);chat.received=Number(data.received||0);
+      $('#chatSent')&&($('#chatSent').textContent=String(chat.sent));
+      $('#chatReceived')&&($('#chatReceived').textContent=String(chat.received));
+      (data.events||[]).forEach(appendChatEvent);
+      chat.latest=Math.max(chat.latest,Number(data.latest||0),...(data.events||[]).map(x=>Number(x.id||0)));
+      formatChatDuration();
+      return true;
+    }catch(e){
+      if(force)toast(e.message);
+      return false;
+    }
+  }
+  function startChatSync(){
+    if(chat.timer||!tg?.initData)return;
+    chat.timer=setInterval(()=>{if(!document.hidden&&state.status==='paired'){syncChat(false);formatChatDuration()}},1000);
+  }
+  function stopChatSync(){if(chat.timer){clearInterval(chat.timer);chat.timer=null}}
+  async function sendChatText(){
+    const input=$('#chatInput');if(!input)return;
+    const text=input.value.trim();if(!text)return;
+    const button=$('#chatSend');if(button)button.disabled=true;
+    try{
+      await request('/api/miniapp/chat/text',{method:'POST',body:JSON.stringify({text})});
+      input.value='';input.style.height='auto';await syncChat(false);haptic();
+    }catch(e){toast(e.message)}
+    finally{if(button)button.disabled=false}
+  }
+  async function sendChatPhoto(file){
+    if(!file)return;
+    if(file.size>8*1024*1024)return toast('Фото максимум 8 МБ');
+    const form=new FormData();form.append('file',file,file.name||'photo.jpg');
+    try{await upload('/api/miniapp/chat/photo',form);await syncChat(false);notify()}
+    catch(e){toast(e.message)}
+    finally{const input=$('#photoInput');if(input)input.value=''}
+  }
+  async function sendVoiceBlob(blob){
+    if(!blob||!blob.size)return;
+    if(blob.size>12*1024*1024)return toast('Голосовое слишком большое');
+    const ext=blob.type.includes('mp4')?'m4a':blob.type.includes('ogg')?'ogg':'webm';
+    const form=new FormData();form.append('file',blob,`voice.${ext}`);
+    try{await upload('/api/miniapp/chat/voice',form);await syncChat(false);notify()}
+    catch(e){toast(e.message)}
+  }
+  async function toggleVoiceRecording(){
+    const btn=$('#micButton');if(!btn)return;
+    if(chat.recording){
+      chat.recording=false;btn.classList.remove('recording');clearTimeout(chat.recordTimer);chat.recordTimer=null;
+      try{chat.recorder?.stop()}catch(_){}
+      return;
+    }
+    if(!navigator.mediaDevices?.getUserMedia||typeof MediaRecorder==='undefined')return toast('Запись голоса не поддерживается');
+    try{
+      chat.stream=await navigator.mediaDevices.getUserMedia({audio:true});
+      const types=['audio/mp4','audio/ogg;codecs=opus','audio/webm;codecs=opus','audio/webm'];
+      const mime=types.find(x=>MediaRecorder.isTypeSupported?.(x))||'';
+      chat.chunks=[];
+      chat.recorder=new MediaRecorder(chat.stream,mime?{mimeType:mime}:undefined);
+      chat.recorder.ondataavailable=e=>{if(e.data?.size)chat.chunks.push(e.data)};
+      chat.recorder.onstop=()=>{
+        const blob=new Blob(chat.chunks,{type:chat.recorder?.mimeType||mime||'audio/webm'});
+        chat.stream?.getTracks().forEach(t=>t.stop());chat.stream=null;chat.recorder=null;chat.chunks=[];
+        sendVoiceBlob(blob);
+      };
+      chat.recorder.start();chat.recording=true;btn.classList.add('recording');toast('Запись голосового… нажми ещё раз для отправки');haptic('medium');
+      chat.recordTimer=setTimeout(()=>{if(chat.recording)toggleVoiceRecording()},60000);
+    }catch(_){toast('Не удалось получить доступ к микрофону')}
+  }
+  async function loadStickers(){
+    const tray=$('#stickerTray'),grid=$('#stickerGrid');if(!tray||!grid)return;
+    tray.hidden=!tray.hidden;if(tray.hidden||chat.stickersLoaded)return;
+    grid.innerHTML='<div class="sticker-loading">Загрузка…</div>';
+    const data=await safe('/api/miniapp/chat/stickers',{},null);
+    grid.innerHTML='';
+    if(!data?.items?.length){grid.innerHTML='<div class="sticker-loading">Стикеры пока недоступны</div>';return}
+    chat.stickersLoaded=true;
+    data.items.forEach(item=>{
+      const b=document.createElement('button');b.type='button';b.className='sticker-item';b.title=item.emoji||'Стикер';
+      const img=document.createElement('img');img.alt=item.emoji||'Стикер';b.appendChild(img);grid.appendChild(b);
+      mediaBlobUrl(item.url).then(url=>img.src=url).catch(()=>{b.textContent=item.emoji||'🙂'});
+      b.onclick=async()=>{
+        tray.hidden=true;
+        try{await request('/api/miniapp/chat/sticker',{method:'POST',body:JSON.stringify({id:item.id})});await syncChat(false);haptic()}
+        catch(e){toast(e.message)}
+      };
+    });
+  }
+  function confirmLongChat(action){
+    if(!chat.startedAt||Date.now()/1000-chat.startedAt<300)return Promise.resolve(true);
+    const message=`Диалог идёт уже ${Math.max(5,Math.floor((Date.now()/1000-chat.startedAt)/60))} мин. Точно ${action}?`;
+    if(tg?.showConfirm)return new Promise(resolve=>{try{tg.showConfirm(message,resolve)}catch(_){resolve(window.confirm(message))}});
+    return Promise.resolve(window.confirm(message));
+  }
+  async function stopChat(){
+    if(!(await confirmLongChat('завершить чат')))return;
+    try{
+      const data=await request('/api/miniapp/chat/stop',{method:'POST',body:'{}'});
+      clearChatView();applyStatusSnapshot(data);go('home');toast('Диалог завершён');notify();
+    }catch(e){toast(e.message)}
+  }
+  async function nextChat(){
+    if(!(await confirmLongChat('найти следующего')))return;
+    try{
+      clearChatView();
+      const data=await request('/api/miniapp/chat/next',{method:'POST',body:'{}'});
+      applyStatusSnapshot(data);
+      if(state.status==='paired')go('chat');else go('search');
+      toast(state.status==='paired'?'Новый собеседник найден':'Ищем нового собеседника');
+      notify();
+    }catch(e){toast(e.message)}
+  }
+
   async function toggleSearch(){
     if(searchBusy)return;
     searchBusy=true;renderSearch();
     try{
       await syncStatus(true);
       const action=$('#searchToggle').dataset.action;
-      if(action==='bot'){try{tg?.close()}catch(_){};return}
+      if(action==='chat'){go('chat');return}
       const path=action==='stop'?'/api/miniapp/search/stop':'/api/miniapp/search/start';
       const seq=++statusRequestSeq;
       const data=await request(path,{method:'POST',body:'{}'});
