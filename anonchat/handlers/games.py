@@ -26,6 +26,7 @@ from ..number_game import (
     number_reward,
 )
 from .. import word_game as WG
+from .. import live_chat
 
 router = Router(name="games")
 
@@ -258,12 +259,19 @@ async def _send_round_result(ctx: Ctx, row: Any) -> None:
 
 async def _send_word_round(ctx: Ctx, game: WG.WordGame) -> None:
     for user_id in (game.user_a, game.user_b):
+        role = WG.role_text(game, user_id)
         await send_to(
             ctx.bot,
             user_id,
-            WG.role_text(game, user_id),
+            role,
             K.chat_keyboard(),
             ctx.pack,
+        )
+        live_chat.private(
+            user_id,
+            role,
+            kind="game_round",
+            data={"game_type": "words", "game_id": int(game.id)},
         )
 
 
@@ -389,6 +397,14 @@ async def cb_number_range(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         await db.cancel_battle(int(game["id"]))
         await ctx.reply("Не получилось отправить предложение.")
         return
+    live_chat.game_invite(
+        ctx.user_id,
+        partner,
+        "numbers",
+        int(game["id"]),
+        "🔢 Числа",
+        f"Диапазон 1–{range_max} · {NUMBER_ROUNDS} раунда",
+    )
     await ctx.ack()
     await ctx.reply("🔢 Предложение отправлено.")
 
@@ -407,6 +423,9 @@ async def cb_number_accept(event: CallbackQuery, ctx: Ctx, db: Database) -> None
     if game is None:
         await ctx.ack("На это предложение уже ответили", alert=True)
         return
+    live_chat.game_status(
+        set(_players(game)), "numbers", game_id, "accepted", "Игра началась"
+    )
     await ctx.ack("Игра началась")
     await _send_number_round(ctx, game)
 
@@ -425,6 +444,9 @@ async def cb_number_decline(event: CallbackQuery, ctx: Ctx, db: Database) -> Non
     if declined is None:
         await ctx.ack("Предложение уже закрыто", alert=True)
         return
+    live_chat.game_status(
+        set(_players(declined)), "numbers", game_id, "declined", "Предложение отклонено"
+    )
     await ctx.ack("Не сейчас")
     await send_to(
         ctx.bot,
@@ -629,6 +651,14 @@ async def cb_battle_length(event: CallbackQuery, ctx: Ctx, db: Database) -> None
         await db.cancel_battle(int(game["id"]))
         await ctx.reply("Не получилось отправить предложение.")
         return
+    live_chat.game_invite(
+        ctx.user_id,
+        partner,
+        "battle",
+        int(game["id"]),
+        "⚔️ Битва мнений",
+        f"{total} вопросов",
+    )
     await ctx.reply("⚔️ Предложение отправлено.")
 
 
@@ -643,6 +673,9 @@ async def cb_accept(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     if game is None:
         await ctx.ack("На это предложение уже ответили", alert=True)
         return
+    live_chat.game_status(
+        set(_players(game)), "battle", game_id, "accepted", "Игра началась"
+    )
     await ctx.ack("Игра началась")
     await _send_question(ctx, game)
 
@@ -657,6 +690,9 @@ async def cb_decline(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     if declined is None:
         await ctx.ack("Предложение уже закрыто", alert=True)
         return
+    live_chat.game_status(
+        set(_players(declined)), "battle", game_id, "declined", "Предложение отклонено"
+    )
     await ctx.ack("Не сейчас")
     await send_to(ctx.bot, int(declined["inviter_id"]), "Собеседник пока не хочет играть.", K.chat_keyboard(), ctx.pack)
 
@@ -777,6 +813,14 @@ async def cb_words(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         WG.remove(game.id)
         await ctx.reply("Не получилось отправить предложение.")
         return
+    live_chat.game_invite(
+        ctx.user_id,
+        partner,
+        "words",
+        int(game.id),
+        "🗣 Объясни слово",
+        f"{WG.WORD_ROUNDS} слов · до {WG.WORD_REWARD} ⭐ за угадывание",
+    )
     await ctx.ack()
     await ctx.reply("🗣 Предложение отправлено.")
 
@@ -797,6 +841,9 @@ async def cb_word_accept(event: CallbackQuery, ctx: Ctx) -> None:
     if game is None:
         await ctx.ack("На это предложение уже ответили", alert=True)
         return
+    live_chat.game_status(
+        {game.user_a, game.user_b}, "words", game_id, "accepted", "Игра началась"
+    )
     await ctx.ack("Игра началась")
     await _send_word_round(ctx, game)
 
@@ -812,6 +859,9 @@ async def cb_word_decline(event: CallbackQuery, ctx: Ctx) -> None:
     if game is None:
         await ctx.ack("Предложение уже закрыто", alert=True)
         return
+    live_chat.game_status(
+        {game.user_a, game.user_b}, "words", game_id, "declined", "Предложение отклонено"
+    )
     await ctx.ack("Не сейчас")
     await send_to(
         ctx.bot,
