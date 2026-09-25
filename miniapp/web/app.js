@@ -218,7 +218,7 @@ if (typeof window === 'undefined') {
   async function updateSetting(key,value){const prev=state.user[key];state.user[key]=value;render();const payload={age:state.user.age||0,district:state.user.district||'',gender:state.user.gender||'',looking_for:state.user.looking_for||'',same_district:0};const r=await safe('/api/miniapp/settings',{method:'POST',body:JSON.stringify(payload)},null);if(!r&&tg?.initData){state.user[key]=prev;render()}else if(r?.user){state.user={...state.user,...r.user};render()}}
   function clearChatView(){
     chat.latest=0;chat.startedAt=0;chat.sent=0;chat.received=0;chat.seen.clear();
-    const list=$('#chatMessages');if(list)list.querySelectorAll('.chat-message,.chat-system').forEach(x=>x.remove());
+    const list=$('#chatMessages');if(list)list.querySelectorAll('.chat-message,.chat-system,.game-invite,.game-round-card').forEach(x=>x.remove());
     const empty=$('#chatEmpty');if(empty)empty.hidden=false;
     $('#chatSent')&&($('#chatSent').textContent='0');$('#chatReceived')&&($('#chatReceived').textContent='0');
   }
@@ -232,6 +232,80 @@ if (typeof window === 'undefined') {
   function scrollChatBottom(){
     const list=$('#chatMessages');if(list)requestAnimationFrame(()=>{list.scrollTop=list.scrollHeight});
   }
+  function audioTime(value){
+    const total=Math.max(0,Math.floor(Number(value)||0));
+    return `${Math.floor(total/60)}:${String(total%60).padStart(2,'0')}`;
+  }
+  function buildVoicePlayer(url){
+    const wrap=document.createElement('div');wrap.className='voice-player';
+    const play=document.createElement('button');play.type='button';play.className='voice-play';play.textContent='▶';
+    const middle=document.createElement('div');middle.className='voice-middle';
+    const wave=document.createElement('button');wave.type='button';wave.className='voice-wave';wave.setAttribute('aria-label','Перемотать');
+    const bars=document.createElement('span');bars.className='voice-bars';
+    for(let i=0;i<28;i++){const b=document.createElement('i');b.style.setProperty('--h',`${7+((i*17)%15)}px`);bars.appendChild(b)}
+    const progress=document.createElement('span');progress.className='voice-progress';wave.append(bars,progress);
+    const meta=document.createElement('div');meta.className='voice-meta';
+    const current=document.createElement('span');current.textContent='0:00';
+    const duration=document.createElement('span');duration.textContent='0:00';
+    meta.append(current,duration);middle.append(wave,meta);
+    const audio=document.createElement('audio');audio.preload='metadata';audio.src=url;audio.hidden=true;
+    const setProgress=()=>{const d=audio.duration||0,p=d?Math.min(100,audio.currentTime/d*100):0;progress.style.width=`${p}%`;current.textContent=audioTime(audio.currentTime);duration.textContent=audioTime(d)};
+    audio.addEventListener('loadedmetadata',setProgress);
+    audio.addEventListener('durationchange',setProgress);
+    audio.addEventListener('timeupdate',setProgress);
+    audio.addEventListener('ended',()=>{play.textContent='▶';setProgress()});
+    audio.addEventListener('pause',()=>{if(!audio.ended)play.textContent='▶'});
+    audio.addEventListener('play',()=>{play.textContent='❚❚'});
+    audio.addEventListener('error',()=>{wrap.classList.add('error');middle.innerHTML='<span class="media-error">Голосовое недоступно</span>'});
+    play.onclick=()=>{if(audio.paused)audio.play().catch(()=>toast('Не удалось воспроизвести голосовое'));else audio.pause()};
+    wave.onclick=e=>{const r=wave.getBoundingClientRect();if(audio.duration)audio.currentTime=Math.max(0,Math.min(audio.duration,(e.clientX-r.left)/r.width*audio.duration))};
+    wrap.append(play,middle,audio);
+    return wrap;
+  }
+  function gameKey(data={}){return `${data.game_type||''}:${data.game_id||0}`}
+  function renderGameInvite(event,list){
+    const data=event.data||{},key=gameKey(data);
+    const card=document.createElement('div');card.className=`game-invite ${event.mine?'mine':''}`;card.dataset.gameKey=key;
+    const icon=document.createElement('div');icon.className='game-invite-icon';icon.textContent=(event.text||'🎮').split(' ')[0]||'🎮';
+    const copy=document.createElement('div');copy.className='game-invite-copy';
+    const title=document.createElement('strong');title.textContent=(event.text||'Игра').replace(/^[^\p{L}\p{N}]+/u,'').trim()||'Игра';
+    const sub=document.createElement('small');sub.textContent=data.subtitle||'Игра с собеседником';
+    const status=document.createElement('span');status.className='game-invite-status';status.textContent=event.mine?'Приглашение отправлено':'Собеседник предлагает сыграть';
+    copy.append(title,sub,status);card.append(icon,copy);
+    if(!event.mine){
+      const actions=document.createElement('div');actions.className='game-invite-actions';
+      const no=document.createElement('button');no.type='button';no.textContent='Не сейчас';
+      const yes=document.createElement('button');yes.type='button';yes.className='accept';yes.textContent='Принять';
+      no.onclick=()=>respondGameInvite(card,data,false);
+      yes.onclick=()=>respondGameInvite(card,data,true);
+      actions.append(no,yes);card.append(actions);
+    }
+    list.appendChild(card);scrollChatBottom();
+  }
+  function applyGameStatus(event,list){
+    const data=event.data||{},key=gameKey(data),card=list.querySelector(`[data-game-key="${CSS.escape(key)}"]`);
+    if(card){
+      card.querySelector('.game-invite-actions')?.remove();
+      const status=card.querySelector('.game-invite-status');
+      if(status){status.textContent=event.text||data.status||'Обновлено';status.classList.add(data.status||'done')}
+    }else{
+      const el=document.createElement('div');el.className='chat-system';el.textContent=event.text||'Статус игры обновлён';list.appendChild(el);
+    }
+    scrollChatBottom();
+  }
+  async function respondGameInvite(card,data,accept){
+    const buttons=card.querySelectorAll('button');buttons.forEach(b=>b.disabled=true);
+    try{
+      const result=await request('/api/miniapp/games/respond',{method:'POST',body:JSON.stringify({
+        game_type:data.game_type,game_id:data.game_id,accept:Boolean(accept)
+      })});
+      card.querySelector('.game-invite-actions')?.remove();
+      const status=card.querySelector('.game-invite-status');
+      if(status){status.textContent=accept?'Принято · игра началась':'Предложение отклонено';status.classList.add(accept?'accepted':'declined')}
+      toast(accept?'Игра началась':'Предложение отклонено');notify(accept?'success':'warning');await syncChat(false);
+    }catch(e){buttons.forEach(b=>b.disabled=false);toast(e.message)}
+  }
+
   async function attachMediaToEvent(node,event){
     if(!event.media_url)return;
     const url=apiBase+event.media_url;
@@ -244,13 +318,7 @@ if (typeof window === 'undefined') {
       img.onerror=()=>{img.remove();const e=document.createElement('span');e.className='media-error';e.textContent='Фото не загрузилось';node.prepend(e)};
       node.prepend(img);
     }else if(event.kind==='voice'){
-      const audio=document.createElement('audio');
-      audio.className='chat-voice';
-      audio.controls=true;
-      audio.preload='metadata';
-      audio.src=url;
-      audio.onerror=()=>{audio.replaceWith(Object.assign(document.createElement('span'),{className:'media-error',textContent:'Голосовое недоступно'}))};
-      node.prepend(audio);
+      node.prepend(buildVoicePlayer(url));
     }else if(event.kind==='sticker'){
       const img=document.createElement('img');
       img.className='chat-sticker';
@@ -266,6 +334,13 @@ if (typeof window === 'undefined') {
     chat.seen.add(event.id);
     const list=$('#chatMessages');if(!list)return;
     const empty=$('#chatEmpty');if(empty)empty.hidden=true;
+    if(event.kind==='game_invite'){renderGameInvite(event,list);return}
+    if(event.kind==='game_status'){applyGameStatus(event,list);return}
+    if(event.kind==='game_round'){
+      const el=document.createElement('div');el.className='game-round-card';
+      el.textContent=(event.text||'').replace(/<[^>]*>/g,'');
+      list.appendChild(el);scrollChatBottom();return;
+    }
     if(event.kind==='system'){
       const el=document.createElement('div');el.className='chat-system';el.textContent=event.text||'';list.appendChild(el);scrollChatBottom();return;
     }
