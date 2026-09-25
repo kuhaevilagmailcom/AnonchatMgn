@@ -143,3 +143,54 @@
   .chat-composer{grid-template-columns:35px 35px minmax(0,1fr) 35px 38px;padding-left:5px;padding-right:5px}
   .composer-btn{width:35px}.send-btn{width:38px}
 }
+
+
+/* chat polish v2 */
+.chat-peer-avatar{
+  width:40px;height:40px;flex:0 0 40px;border-radius:50%;
+  display:grid;place-items:center;background:#0b090b;border:1px solid #2a2529;overflow:hidden
+}
+.chat-peer-avatar img{width:88%;height:88%;object-fit:contain}
+.chat-top-actions{gap:2px}
+.chat-top-actions button{
+  min-height:34px;padding:0 8px;border-radius:10px;background:#121012;color:#aaa2a8;
+  font-size:10px;font-weight:750;letter-spacing:-.1px
+}
+.chat-top-actions #chatGames{color:#fff;background:#21171f}
+.chat-top-actions #chatStop{color:#f28fc7;background:transparent}
+.media-error{
+  display:block;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.05);
+  color:#a9a2a7;font-size:11px
+}
+.emoji-grid{
+  display:grid;grid-template-columns:repeat(8,1fr);gap:2px;padding:2px 0 10px
+}
+.emoji-item{
+  aspect-ratio:1;border-radius:10px;background:transparent;font-size:23px;line-height:1;
+  display:grid;place-items:center;padding:0
+}
+.emoji-item:active{background:#1b171a;transform:scale(.94)}
+.sticker-section{padding-top:8px;border-top:1px solid #211d20}
+.chat-game-picker{display:grid;gap:8px}
+.chat-game-picker button{
+  width:100%;min-height:72px;padding:12px;border-radius:14px;background:#151215;
+  display:grid;grid-template-columns:44px 1fr;gap:12px;align-items:center;text-align:left
+}
+.chat-game-picker button:active{background:#201a1e;transform:scale(.99)}
+.chat-game-picker button>span{
+  width:44px;height:44px;border-radius:12px;background:#241b22;display:grid;place-items:center;font-size:23px
+}
+.chat-game-picker button>div{display:grid;gap:4px}
+.chat-game-picker strong{font-size:15px}
+.chat-game-picker small{font-size:11px;color:var(--muted);line-height:1.35}
+.topbar .icon-btn[data-open="settings"]{
+  width:42px;height:42px;border:1px solid #211d20;background:#0d0b0d;color:#d5cfd3
+}
+.topbar .icon-btn[data-open="settings"]:active{background:#171317}
+.topbar .icon-btn[data-open="settings"] svg{width:20px;height:20px}
+@media (max-width:390px){
+  .chat-top{grid-template-columns:38px minmax(0,1fr) auto}
+  .chat-peer-avatar{width:36px;height:36px;flex-basis:36px}
+  .chat-top-actions button{padding:0 6px;font-size:9px}
+  .emoji-grid{grid-template-columns:repeat(7,1fr)}
+}
