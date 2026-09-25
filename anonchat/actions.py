@@ -44,6 +44,7 @@ from .matching import Matchmaker
 from .pack import EmojiPack
 from .engagement import collect_progress_notifications, format_quests
 from . import relay_state
+from . import live_chat
 from . import word_game as WG
 from .runtime_state import online_count as presence_online_count
 
@@ -794,6 +795,7 @@ async def announce_pair(ctx: Ctx, user_id: int, partner_id: int) -> bool:
         ctx.mm.forget(user_id)
         await send_to(ctx.bot, partner_id, texts.PARTNER_LEFT, menu_keyboard(), ctx.pack)
         return False
+    live_chat.system({user_id, partner_id}, "Собеседник найден")
     return True
 
 
@@ -823,6 +825,7 @@ async def announce_pairs(
             mm.forget(a)
             await send_to(bot, b, texts.PARTNER_LEFT, kb, pack)
             continue
+        live_chat.system({a, b}, "Собеседник найден")
         made += 1
     return made
 
@@ -839,6 +842,7 @@ async def break_pair(
         await db.close_battles_for_users(user_id, partner)
     WG.clear_pair(user_id, partner)
     relay_state.clear_pair(user_id, partner)
+    live_chat.clear_pair(user_id, partner)
     await send_to(bot, partner, note, kb, pack)
     await send_to(bot, user_id, note, kb, pack)
 
@@ -881,6 +885,7 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
     await ctx.db.close_battles_for_users(ctx.user_id, partner)
     WG.clear_pair(ctx.user_id, partner)
     relay_state.clear_pair(ctx.user_id, partner)
+    live_chat.clear_pair(ctx.user_id, partner)
 
     counts: dict[int, int] = summary.get("counts", {}) or {}
     bonus_xp: dict[int, int] = summary.get("bonus_xp", {}) or {}
@@ -1047,6 +1052,7 @@ async def forget_everything(ctx: Ctx) -> None:
         WG.clear_pair(ctx.user_id, partner)
     ctx.mm.forget(ctx.user_id)
     relay_state.clear_user(ctx.user_id)
+    live_chat.clear_user(ctx.user_id)
     await ctx.db.forget_user(ctx.user_id)
     await ctx.reply(
         texts.FORGET_DONE, markup=menu_keyboard()
