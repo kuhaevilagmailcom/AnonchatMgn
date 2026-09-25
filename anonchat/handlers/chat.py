@@ -19,6 +19,7 @@ from ..monitoring import enqueue_chat_monitor
 from ..diagnostics import METRICS
 from ..engagement import collect_progress_notifications
 from .. import relay_state
+from .. import live_chat
 from .. import word_game as WG
 
 router = Router(name="chat")
@@ -99,6 +100,7 @@ async def relay_to_partner(
         await ctx.db.close_battles_for_users(ctx.user_id, partner)
         mm.forget(ctx.user_id)
         relay_state.clear_pair(ctx.user_id, partner)
+        live_chat.clear_pair(ctx.user_id, partner)
         await ctx.reply(
             texts.PARTNER_UNREACHABLE,
             markup=K.menu_keyboard(),
@@ -106,6 +108,32 @@ async def relay_to_partner(
         return
     if copied is not None:
         relay_state.remember(ctx.user_id, message.message_id, partner, copied.message_id)
+
+    # Зеркалим поддерживаемые сообщения в Mini App. Только RAM, без SQLite.
+    live_kind = ""
+    live_file_id = ""
+    live_text = body
+    if message.text is not None:
+        live_kind = "text"
+    elif message.photo:
+        live_kind = "photo"
+        live_file_id = message.photo[-1].file_id
+    elif message.voice:
+        live_kind = "voice"
+        live_file_id = message.voice.file_id
+    elif message.sticker:
+        live_kind = "sticker"
+        live_file_id = message.sticker.file_id
+        live_text = message.sticker.emoji or ""
+    if live_kind:
+        live_chat.publish(
+            ctx.user_id,
+            partner,
+            live_kind,
+            text=live_text,
+            file_id=live_file_id,
+            telegram_message_id=(copied.message_id if copied is not None else 0),
+        )
 
     if message.text:
         guessed = WG.resolve_guess(ctx.user_id, partner, message.text)
