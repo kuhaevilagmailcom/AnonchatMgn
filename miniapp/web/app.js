@@ -40,6 +40,9 @@ if (typeof window === 'undefined') {
     'smile':'<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/>',
     'mic':'<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/>',
     'send':'<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+    'skip-forward':'<path d="m5 4 10 8-10 8Z"/><path d="M19 5v14"/>',
+    'square':'<rect x="5" y="5" width="14" height="14" rx="3"/>',
+    'crown':'<path d="m3 7 4.5 4L12 4l4.5 7L21 7l-2 11H5Z"/><path d="M5 18h14"/>',
     'messages-circle':'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/>','message-circle':'<path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/>','messages-square':'<path d="M14 17H5l-3 3V7a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v6a4 4 0 0 1-4 4Z"/><path d="M18 9h1a3 3 0 0 1 3 3v9l-3-2h-5"/>',
     'search':'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>','house':'<path d="m3 11 9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1Z"/>','gamepad-2':'<path d="M12 5h3.5a5 5 0 0 1 0 10H10l-4.015 4.227a2.3 2.3 0 0 1-3.923-2.035l1.634-8.173A5 5 0 0 1 8.6 5H12"/><path d="m14 15 4.07 4.284a2.3 2.3 0 0 0 3.925-2.023l-1.6-8.232M8 9v2M7 10h2M14 10h2"/>','bell':'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>','user-round':'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
     'target':'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>','shield-check':'<path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3Z"/><path d="m9 12 2 2 4-4"/>','swords':'<path d="M21 3v5l-11 9-4 4-3-3 4-4 9-11h5M5 13l6 6M14.32 17.32 18 21l3-3-3.365-3.365M10 5.5 8 3H3v5l3 2.5"/>','hash':'<path d="M5 9h14M4 15h14M10 3 8 21M16 3l-2 18"/>',
@@ -50,6 +53,8 @@ if (typeof window === 'undefined') {
   let statusAppliedSeq = 0;
   let statusTimer = null;
   let searchBusy = false;
+  let topPeriod = 'week';
+  let topRequestSeq = 0;
   const chat = {latest:0,startedAt:0,sent:0,received:0,timer:null,seen:new Set(),stickersLoaded:false,recording:false,recorder:null,stream:null,chunks:[],recordTimer:null,mediaCache:new Map(),game:null,gameHoldUntil:0};
   const CHAT_EMOJIS = ['😀','😃','😄','😁','😂','🤣','🥹','😊','🙂','😉','😍','😘','😎','🤨','😐','😴','😭','😡','🤬','🥰','🤍','❤️','🩷','🔥','⭐','✨','💀','🤝','👍','👎','🙏','💬','👀','🤡','😈','💯','🎉','🥳','😏','🙃','😌','🤔','😳','🫠','😅','🤝','💋','🫶'];
   const svg = n => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[n] || paths['circle-help']}</svg>`;
@@ -136,9 +141,9 @@ if (typeof window === 'undefined') {
       if(heroTitle)heroTitle.textContent='Чат активен';
       if(heroText)heroText.textContent='Собеседник найден. Продолжай общение в Mini App.';
       if(heroButton){heroButton.innerHTML=`Открыть чат ${svg('arrow-right')}`;heroButton.dataset.nav='chat'}
-      const nav=$('#searchNav');if(nav){nav.dataset.nav='chat';nav.querySelector('small').textContent='Чат';nav.querySelector('[data-icon]')?.setAttribute('data-icon','message-circle');icons(nav)}
+      const nav=$('#searchNav');if(nav)nav.dataset.nav='chat'
     }else if(state.status==='queued'){
-      const nav=$('#searchNav');if(nav){nav.dataset.nav='search';nav.querySelector('small').textContent='Поиск';nav.querySelector('[data-icon]')?.setAttribute('data-icon','search');icons(nav)}
+      const nav=$('#searchNav');if(nav)nav.dataset.nav='search'
       if(heroButton)heroButton.dataset.nav='search';
       title.textContent='Идёт поиск';
       text.textContent=state.position?`Твоя позиция в очереди: ${state.position}`:'Ищем собеседника. Можно закрыть Mini App.';
@@ -148,7 +153,7 @@ if (typeof window === 'undefined') {
       if(heroText)heroText.textContent='Поиск продолжается в фоне.';
       if(heroButton)heroButton.textContent='Остановить поиск';
     }else{
-      const nav=$('#searchNav');if(nav){nav.dataset.nav='search';nav.querySelector('small').textContent='Поиск';nav.querySelector('[data-icon]')?.setAttribute('data-icon','search');icons(nav)}
+      const nav=$('#searchNav');if(nav)nav.dataset.nav='search'
       if(heroButton)heroButton.dataset.nav='search';
       title.textContent='Найти собеседника';
       text.textContent='Настрой предпочтения и начни поиск.';
@@ -160,6 +165,38 @@ if (typeof window === 'undefined') {
     }
   }
   function renderEvents(filter='all'){const list=$('#eventList');const items=state.events.filter(x=>filter==='all'||x.type===filter);list.innerHTML=items.length?items.map(x=>`<article class="event surface"><span>${svg(x.icon||'bell')}</span><div><strong>${esc(x.title)}</strong><p>${esc(x.text)}</p><small>${esc(x.time||'')}</small></div></article>`).join(''):'<div class="empty">Здесь пока тихо.</div>';const unread=state.events.some(x=>x.unread);$$('[data-event-dot]').forEach(el=>el.hidden=!unread)}
+  function topFallback(period){
+    if(tg?.initData)return [];
+    const base=[
+      {place:1,nick:'Аноним-4821',rank:'Легенда',stars:period==='week'?620:period==='month'?2140:6840,me:true},
+      {place:2,nick:'northwind',rank:'Свой',stars:period==='week'?540:period==='month'?1960:5910},
+      {place:3,nick:'Аноним-1520',rank:'Общительный',stars:period==='week'?490:period==='month'?1720:4870},
+      {place:4,nick:'mgn_user',rank:'Знакомый',stars:period==='week'?410:period==='month'?1510:3990}
+    ];
+    return base;
+  }
+  function renderTopPage(items=[]){
+    const root=$('#topPageList');if(!root)return;
+    if(!items.length){root.innerHTML='<div class="empty top-empty">За этот период пока никто не набрал ⭐.</div>';return}
+    root.innerHTML=items.map(x=>{
+      const medal=x.place===1?'🥇':x.place===2?'🥈':x.place===3?'🥉':'';
+      return `<article class="top-page-item ${x.me?'me':''} ${x.place<=3?'podium':''}">
+        <span class="top-place">${medal||x.place}</span>
+        <span class="top-person"><strong>${esc(x.nick)}</strong><small>${esc(x.rank||'')}</small></span>
+        <span class="top-stars"><b>${Number(x.stars||0).toLocaleString('ru-RU')}</b><i>★</i></span>
+      </article>`;
+    }).join('');
+  }
+  async function loadTopPage(period=topPeriod){
+    topPeriod=['week','month','all'].includes(period)?period:'week';
+    $$('#topPeriods button').forEach(b=>b.classList.toggle('active',b.dataset.topPeriod===topPeriod));
+    const root=$('#topPageList');if(root)root.innerHTML='<div class="loading"><i class="spinner"></i>Загрузка…</div>';
+    const seq=++topRequestSeq;
+    const data=await safe(`/api/miniapp/top?period=${topPeriod}&_=${Date.now()}`,{},null);
+    if(seq!==topRequestSeq)return;
+    renderTopPage(data?.items||topFallback(topPeriod));
+  }
+
   async function load(){if(!tg?.initData)demo();else{const seq=++statusRequestSeq;const data=await safe(`/api/miniapp/me?_=${Date.now()}`,{},null);if(data){state.user={...state.user,...data.user};state.stats={...state.stats,...data.stats};state.referral=data.referral||state.referral;state.referral_url=data.referral_url||'';state.bot_url=data.bot_url||'';state.events=data.notifications||[];applyStatusSnapshot(data,seq);return}}render()}
   function go(page){
     if(page==='chat' && state.status!=='paired')page=state.status==='queued'?'search':'home';
@@ -170,6 +207,7 @@ if (typeof window === 'undefined') {
     window.scrollTo({top:0,behavior:'auto'});
     haptic();
     if(page==='search')syncStatus(true);
+    if(page==='top')loadTopPage(topPeriod);
     if(page==='chat'){syncChat(true);startChatSync()}else stopChatSync();
     try{if(tgAtLeast('6.1'))page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}
   }
@@ -647,6 +685,7 @@ if (typeof window === 'undefined') {
     $('#searchToggle').onclick=toggleSearch;
     $$('[data-setting] button').forEach(b=>b.onclick=()=>updateSetting(b.parentElement.dataset.setting,b.dataset.value));
     $$('#eventFilter button').forEach(b=>b.onclick=()=>{$$('#eventFilter button').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderEvents(b.dataset.filter)});
+    $$('#topPeriods button').forEach(b=>b.onclick=()=>{haptic();loadTopPage(b.dataset.topPeriod)});
     const composer=$('#chatComposer');if(composer)composer.onsubmit=e=>{e.preventDefault();sendChatText()};
     const input=$('#chatInput');if(input){input.addEventListener('input',()=>{input.style.height='auto';input.style.height=`${Math.min(100,input.scrollHeight)}px`});input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!/iPhone|iPad|Android/i.test(navigator.userAgent)){e.preventDefault();sendChatText()}})}
     $('#photoButton')&&($('#photoButton').onclick=()=>$('#photoInput')?.click());
