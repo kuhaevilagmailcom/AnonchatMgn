@@ -9,6 +9,7 @@ import html
 import hmac
 import json
 import os
+import random
 import time
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
@@ -25,6 +26,7 @@ from . import word_game as WG
 from . import nick as nicklib
 from .actions import DeliveryResult, _dialog_summary_text, announce_pairs, send_to
 from .levels import rank_for
+from .battle_questions import get_question, questions
 from .engagement import collect_progress_notifications
 from .number_game import NUMBER_DAILY_REWARD_LIMIT, NUMBER_NEAR_DIFFS, NUMBER_REWARDS, NUMBER_ROUNDS
 from .runtime_state import online_count as presence_online_count
@@ -253,6 +255,26 @@ class MiniAppServer:
             event["media_url"] = self._signed_media_url(user_id, token)
         return event
 
+    async def _mirror_to_sender(
+        self, sender_id: int, partner_id: int, message_id: int
+    ) -> None:
+        """Копирует сообщение, отправленное из Mini App, в Telegram-чат отправителя.
+
+        Telegram Bot API не может создать настоящий исходящий пузырь от имени пользователя,
+        поэтому используется точная копия бот-сообщения/медиа.
+        """
+        if not message_id:
+            return
+        try:
+            await self.bot.copy_message(
+                chat_id=int(sender_id),
+                from_chat_id=int(partner_id),
+                message_id=int(message_id),
+            )
+        except TelegramAPIError:
+            # Зеркало не должно ломать основную доставку собеседнику.
+            pass
+
     async def chat_state(self, request: web.Request) -> web.Response:
         uid, _ = self._telegram_user(request)
         try:
@@ -398,6 +420,7 @@ class MiniAppServer:
         except TelegramAPIError as exc:
             await self._chat_delivery_failed(uid, partner, False)
             raise _json_error(503, "Не удалось доставить сообщение") from exc
+        await self._mirror_to_sender(uid, partner, sent.message_id)
         live_chat.publish(
             uid, partner, "text", text=text, telegram_message_id=sent.message_id
         )
@@ -458,6 +481,7 @@ class MiniAppServer:
             await self._chat_delivery_failed(uid, partner, False)
             raise _json_error(503, "Не удалось отправить фото") from exc
         file_id = sent.photo[-1].file_id if sent.photo else ""
+        await self._mirror_to_sender(uid, partner, sent.message_id)
         live_chat.publish(
             uid,
             partner,
@@ -533,6 +557,7 @@ class MiniAppServer:
             await self._chat_delivery_failed(uid, partner, False)
             raise _json_error(503, "Не удалось отправить голосовое") from exc
         file_id = sent.voice.file_id if sent.voice else ""
+        await self._mirror_to_sender(uid, partner, sent.message_id)
         live_chat.publish(
             uid,
             partner,
@@ -643,6 +668,7 @@ class MiniAppServer:
             await self._chat_delivery_failed(uid, partner, False)
             raise _json_error(503, "Не удалось отправить стикер") from exc
         sent_file_id = sent.sticker.file_id if sent.sticker else (file_id or "")
+        await self._mirror_to_sender(uid, partner, sent.message_id)
         if sticker_id == "brand-logo" and sent_file_id:
             self._brand_sticker_file_id = sent_file_id
             live_chat.register_sticker("brand-logo", sent_file_id)
@@ -1135,7 +1161,14 @@ class MiniAppServer:
         if result is DeliveryResult.UNAVAILABLE:
             await self.db.cancel_battle(int(game["id"]))
             raise _json_error(503, "Не удалось доставить приглашение")
-        live_chat.system({uid, partner}, "⚔️ Приглашение в «Битву мнений» отправлено")
+        live_chat.game_invite(
+            uid,
+            partner,
+            "battle",
+            int(game["id"]),
+            "⚔️ Битва мнений",
+            f"{total} вопросов",
+        )
         return web.json_response({"ok": True, "message": "Приглашение отправлено"})
 
     async def game_numbers(self, request: web.Request) -> web.Response:
@@ -1209,7 +1242,14 @@ class MiniAppServer:
         if result is DeliveryResult.UNAVAILABLE:
             await self.db.cancel_battle(int(game["id"]))
             raise _json_error(503, "Не удалось доставить приглашение")
-        live_chat.system({uid, partner}, "🔢 Приглашение в игру «Числа» отправлено")
+        live_chat.game_invite(
+            uid,
+            partner,
+            "numbers",
+            int(game["id"]),
+            "🔢 Числа",
+            f"Диапазон 1–{range_max} · {NUMBER_ROUNDS} раунда",
+        )
         return web.json_response({"ok": True, "message": "Приглашение отправлено"})
 
     async def game_words(self, request: web.Request) -> web.Response:
@@ -1236,11 +1276,147 @@ class MiniAppServer:
         if result is DeliveryResult.UNAVAILABLE:
             WG.remove(game.id)
             raise _json_error(503, "Не удалось доставить приглашение")
-        live_chat.system(
-            {uid, partner},
-            "🗣 Предложение сыграть в «Объясни слово» отправлено",
+        live_chat.game_invite(
+            uid,
+            partner,
+            "words",
+            int(game.id),
+            "🗣 Объясни слово",
+            f"{WG.WORD_ROUNDS} слов · до {WG.WORD_REWARD} ⭐ за угадывание",
         )
         return web.json_response({"ok": True, "message": "Приглашение отправлено"})
+
+    async def game_respond(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        data = await request.json()
+        game_type = str(data.get("game_type", "") or "")
+        try:
+            game_id = int(data.get("game_id", 0) or 0)
+        except (TypeError, ValueError) as exc:
+            raise _json_error(400, "Игра не найдена") from exc
+        accept = bool(data.get("accept", False))
+        partner = self.mm.partner(uid)
+        if partner is None:
+            raise _json_error(409, "Диалог уже завершён")
+
+        if game_type == "words":
+            game = WG.get_by_id(game_id)
+            if game is None or {int(game.user_a), int(game.user_b)} != {uid, partner}:
+                raise _json_error(404, "Предложение уже закрыто")
+            if accept:
+                game = WG.accept(game_id, uid)
+                if game is None:
+                    raise _json_error(409, "На предложение уже ответили")
+                for player_id in (game.user_a, game.user_b):
+                    role = WG.role_text(game, player_id)
+                    await send_to(self.bot, player_id, role, K.chat_keyboard(), self.pack)
+                    live_chat.private(player_id, role, kind="game_round", data={
+                        "game_type": "words", "game_id": int(game.id)
+                    })
+                live_chat.game_status(
+                    {game.user_a, game.user_b}, "words", game_id, "accepted", "Игра началась"
+                )
+                return web.json_response({"ok": True, "status": "accepted"})
+            declined = WG.decline(game_id, uid)
+            if declined is None:
+                raise _json_error(409, "Предложение уже закрыто")
+            await send_to(
+                self.bot,
+                int(declined.inviter_id),
+                "Собеседник пока не хочет играть в «Объясни слово».",
+                K.chat_keyboard(),
+                self.pack,
+            )
+            live_chat.game_status(
+                {declined.user_a, declined.user_b},
+                "words",
+                game_id,
+                "declined",
+                "Предложение отклонено",
+            )
+            return web.json_response({"ok": True, "status": "declined"})
+
+        row = await self.db.get_battle(game_id)
+        if row is None:
+            raise _json_error(404, "Предложение уже закрыто")
+        user_a, user_b = int(row["user_a"]), int(row["user_b"])
+        if {user_a, user_b} != {uid, partner}:
+            raise _json_error(403, "Это предложение не для тебя")
+        actual_type = str(row["game_type"] or "battle")
+        if actual_type != game_type:
+            raise _json_error(400, "Тип игры не совпадает")
+
+        if game_type == "battle":
+            if accept:
+                total = int(row["total_questions"])
+                selected = random.sample(list(questions()), total)
+                game = await self.db.accept_battle(game_id, uid, selected)
+                if game is None:
+                    raise _json_error(409, "На предложение уже ответили")
+                ids = json.loads(str(game["question_ids"] or "[]"))
+                index = int(game["question_index"])
+                question = get_question(int(ids[index]))
+                body = f"⚔️ <b>{index + 1}/{int(game['total_questions'])}</b>\n\n{texts.esc(question.text)}"
+                markup = K.battle_answer_keyboard(
+                    game_id, index, question.first, question.second
+                )
+                for player_id in (user_a, user_b):
+                    await send_to(self.bot, player_id, body, markup, self.pack)
+                live_chat.game_status(
+                    {user_a, user_b}, "battle", game_id, "accepted", "Игра началась"
+                )
+                return web.json_response({"ok": True, "status": "accepted"})
+            declined = await self.db.decline_battle(game_id, uid)
+            if declined is None:
+                raise _json_error(409, "Предложение уже закрыто")
+            await send_to(
+                self.bot,
+                int(declined["inviter_id"]),
+                "Собеседник пока не хочет играть.",
+                K.chat_keyboard(),
+                self.pack,
+            )
+            live_chat.game_status(
+                {user_a, user_b}, "battle", game_id, "declined", "Предложение отклонено"
+            )
+            return web.json_response({"ok": True, "status": "declined"})
+
+        if game_type == "numbers":
+            if accept:
+                game = await self.db.accept_number(game_id, uid)
+                if game is None:
+                    raise _json_error(409, "На предложение уже ответили")
+                range_max = int(game["range_max"])
+                round_index = int(game["question_index"])
+                reward = NUMBER_REWARDS[range_max]
+                body = (
+                    f"🔢 <b>Числа · раунд {round_index + 1}/{NUMBER_ROUNDS}</b>\n\n"
+                    f"Выбери число от <b>1</b> до <b>{range_max}</b>.\n"
+                    f"Точное совпадение: до <b>{reward} ⭐</b>."
+                )
+                markup = K.number_input_keyboard(game_id, round_index)
+                for player_id in (user_a, user_b):
+                    await send_to(self.bot, player_id, body, markup, self.pack)
+                live_chat.game_status(
+                    {user_a, user_b}, "numbers", game_id, "accepted", "Игра началась"
+                )
+                return web.json_response({"ok": True, "status": "accepted"})
+            declined = await self.db.decline_number(game_id, uid)
+            if declined is None:
+                raise _json_error(409, "Предложение уже закрыто")
+            await send_to(
+                self.bot,
+                int(declined["inviter_id"]),
+                "Собеседник пока не хочет играть в Числа.",
+                K.chat_keyboard(),
+                self.pack,
+            )
+            live_chat.game_status(
+                {user_a, user_b}, "numbers", game_id, "declined", "Предложение отклонено"
+            )
+            return web.json_response({"ok": True, "status": "declined"})
+
+        raise _json_error(400, "Неизвестная игра")
 
     async def subscription(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
@@ -1367,6 +1543,7 @@ class MiniAppServer:
         app.router.add_post("/api/miniapp/games/battle/invite", self.game_battle)
         app.router.add_post("/api/miniapp/games/numbers/invite", self.game_numbers)
         app.router.add_post("/api/miniapp/games/words/invite", self.game_words)
+        app.router.add_post("/api/miniapp/games/respond", self.game_respond)
         app.router.add_get("/api/miniapp/subscription", self.subscription)
         app.router.add_post("/api/miniapp/subscription/claim", self.subscription_claim)
         app.router.add_route("OPTIONS", "/api/miniapp/{tail:.*}", self.health)
