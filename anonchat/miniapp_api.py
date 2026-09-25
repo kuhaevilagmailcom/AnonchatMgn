@@ -1189,16 +1189,26 @@ class MiniAppServer:
 
     async def top(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
-        rows = await self.db.top(10)
+        period = str(request.query.get("period", "week") or "week").lower()
+        days = {"week": 7, "month": 30, "all": 0}.get(period)
+        if days is None:
+            raise _json_error(400, "Период: week, month или all")
+        rows = await self.db.top_period(days, 10)
         return web.json_response(
             {
+                "period": period,
                 "items": [
                     {
                         "place": place,
                         "user_id": int(row["user_id"]),
-                        "nick": nicklib.display(row["nickname"], int(row["user_id"]), row["support_stars"]),
+                        "nick": nicklib.display(
+                            row["nickname"],
+                            int(row["user_id"]),
+                            row["support_stars"],
+                        ),
                         "stars": int(row["xp"] or 0),
                         "rank": rank_for(int(row["messages"] or 0)).title,
+                        "me": int(row["user_id"]) == uid,
                     }
                     for place, row in enumerate(rows, 1)
                 ],
