@@ -164,8 +164,8 @@ if (typeof window === 'undefined') {
     if(page==='chat' && state.status!=='paired')page=state.status==='queued'?'search':'home';
     state.page=page;
     document.body.classList.toggle('chat-open',page==='chat');
-    $('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===page));
-    $('#bottomNav button').forEach(b=>b.classList.toggle('active',b.dataset.nav===page));
+    $$('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===page));
+    $$('#bottomNav button').forEach(b=>b.classList.toggle('active',b.dataset.nav===page));
     window.scrollTo({top:0,behavior:'auto'});
     haptic();
     if(page==='search')syncStatus(true);
@@ -395,10 +395,10 @@ if (typeof window === 'undefined') {
   async function inviteNumbers(range_max){const r=await safe('/api/miniapp/games/numbers/invite',{method:'POST',body:JSON.stringify({range_max})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify()}}
   function bind(){
     document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить ник','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','help':'Помощь и правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game)openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':'Числа','ИГРА ВДВОЁМ')});
-    $('[data-close-modal]').forEach(b=>b.onclick=closeModal);
+    $$('[data-close-modal]').forEach(b=>b.onclick=closeModal);
     $('#searchToggle').onclick=toggleSearch;
-    $('[data-setting] button').forEach(b=>b.onclick=()=>updateSetting(b.parentElement.dataset.setting,b.dataset.value));
-    $('#eventFilter button').forEach(b=>b.onclick=()=>{$('#eventFilter button').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderEvents(b.dataset.filter)});
+    $$('[data-setting] button').forEach(b=>b.onclick=()=>updateSetting(b.parentElement.dataset.setting,b.dataset.value));
+    $$('#eventFilter button').forEach(b=>b.onclick=()=>{$$('#eventFilter button').forEach(x=>x.classList.remove('active'));b.classList.add('active');renderEvents(b.dataset.filter)});
     const composer=$('#chatComposer');if(composer)composer.onsubmit=e=>{e.preventDefault();sendChatText()};
     const input=$('#chatInput');if(input){input.addEventListener('input',()=>{input.style.height='auto';input.style.height=`${Math.min(100,input.scrollHeight)}px`});input.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey&&!/iPhone|iPad|Android/i.test(navigator.userAgent)){e.preventDefault();sendChatText()}})}
     $('#photoButton')&&($('#photoButton').onclick=()=>$('#photoInput')?.click());
