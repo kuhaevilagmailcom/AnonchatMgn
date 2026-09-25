@@ -470,15 +470,8 @@ class MiniAppServer:
     async def _voice_payload(
         self, payload: bytes, content_type: str, filename: str
     ) -> tuple[bytes, str]:
-        lower = (filename or "").lower()
-        if (
-            "ogg" in content_type
-            or "mpeg" in content_type
-            or "mp3" in content_type
-            or "mp4" in content_type
-            or lower.endswith((".ogg", ".mp3", ".m4a"))
-        ):
-            return payload, filename or "voice.ogg"
+        # MediaRecorder отдаёт разные контейнеры в iOS/Android/WebView.
+        # Для Telegram всегда нормализуем в OGG/Opus.
         try:
             proc = await asyncio.create_subprocess_exec(
                 "ffmpeg",
@@ -488,8 +481,14 @@ class MiniAppServer:
                 "-i",
                 "pipe:0",
                 "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "48000",
                 "-c:a",
                 "libopus",
+                "-application",
+                "voip",
                 "-b:a",
                 "48k",
                 "-f",
@@ -499,11 +498,16 @@ class MiniAppServer:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            out, _err = await asyncio.wait_for(proc.communicate(payload), timeout=20)
+            out, err = await asyncio.wait_for(proc.communicate(payload), timeout=25)
         except (FileNotFoundError, TimeoutError, asyncio.TimeoutError) as exc:
             raise _json_error(503, "Не удалось обработать голосовое") from exc
         if proc.returncode != 0 or not out:
-            raise _json_error(400, "Формат голосового не поддерживается")
+            detail = err.decode("utf-8", "ignore").strip()[-180:]
+            raise _json_error(
+                400,
+                "Не удалось обработать запись"
+                + (f": {detail}" if detail else ""),
+            )
         return out, "voice.ogg"
 
     async def chat_send_voice(self, request: web.Request) -> web.Response:
