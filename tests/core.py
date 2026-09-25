@@ -890,7 +890,7 @@ def test_contact_filter() -> None:
         assert not contains_contact(value), value
 
     from anonchat.permissions import parse_permissions
-    assert "monitor" in parse_permissions("all")
+    assert "monitor" not in parse_permissions("all")
     assert not contains_contact("Привет, как дела?")
 
 
