@@ -864,15 +864,17 @@ def test_keyboard_styles_and_icons() -> None:
         "1–10 · 25 ⭐", "1–100 · 50 ⭐", "1–1000 · 100 ⭐", "Назад",
     ]
     assert texts_of(K.battle_length_keyboard()) == ["5 вопросов", "10 вопросов", "Назад"]
-    # панель модератора: счётчик жалоб в подписи; скрытого monitor больше нет
+    # панель модератора: счётчик жалоб и отдельное право monitor
     panel = texts_of(K.admin_panel_keyboard(2, {"reports", "mute"}))
     assert panel == ["Жалобы · 2", "Мут по id", "Мут-лист", "В меню"], panel
     owner_panel = texts_of(K.admin_panel_keyboard(0, {"stats"}, True))
     assert all(item in owner_panel for item in (
-        "Администраторы", "Скачать базу", "Игры пользователей",
+        "Администраторы", "Скачать базу", "Игры пользователей", "Чаты: ВЫКЛ",
     ))
     assert "Игры пользователей" not in texts_of(K.admin_panel_keyboard(0, {"reports"}))
-    assert all("Чаты:" not in item for item in owner_panel)
+    assert "Чаты: ВЫКЛ" in texts_of(K.admin_panel_keyboard(0, {"monitor"}))
+    assert "Чаты: ВКЛ" in texts_of(K.admin_panel_keyboard(0, {"monitor"}, monitor_enabled=True))
+    assert all("Чаты:" not in item for item in texts_of(K.admin_panel_keyboard(0, {"reports"})))
     # кнопка входа в панель появляется только у админа
     assert texts_of(K.menu_keyboard("free", admin=True))[-1] == "Панель модератора"
     assert "Поддержать проект" not in texts_of(K.menu_keyboard("free"))
@@ -889,7 +891,7 @@ def test_contact_filter() -> None:
         assert not contains_contact(value), value
 
     from anonchat.permissions import parse_permissions
-    assert "monitor" not in parse_permissions("all")
+    assert "monitor" in parse_permissions("all")
     assert not contains_contact("Привет, как дела?")
 
 

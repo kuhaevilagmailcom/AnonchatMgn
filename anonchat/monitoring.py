@@ -58,6 +58,11 @@ async def _deliver(message, bot, pack, monitor_ids: tuple[int, ...], header: str
 async def enqueue_chat_monitor(message, ctx, partner_id: int) -> None:
     """Ставит monitor-copy в ограниченный фон, не тормозя основной диалог."""
     ids = await _monitor_ids(ctx.db, ctx.cfg.admin_ids)
+    ids = tuple(
+        admin_id
+        for admin_id in ids
+        if admin_id not in {int(ctx.user_id), int(partner_id)}
+    )
     if not ids or len(_PENDING) >= _MAX_PENDING:
         return
 

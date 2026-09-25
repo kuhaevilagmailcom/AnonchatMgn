@@ -33,6 +33,7 @@ from ..matching import Matchmaker
 from ..permissions import ALL_ADMIN_PERMISSIONS, PERMISSION_LABELS, parse_permissions
 from ..diagnostics import METRICS
 from .. import relay_state
+from ..monitoring import invalidate_monitor_cache, pending_count
 from .reports import format_report_card
 
 router = Router(name="admin")
@@ -121,6 +122,7 @@ async def diagnostics_text(db: Database, mm: Matchmaker) -> str:
         f"Последняя очистка: <b>{last_cleanup}</b>\n"
         f"Последнее сохранение очереди: <b>{last_save}</b>\n"
         f"Reply-map в памяти: <b>{relay_state.size()}</b>\n"
+        f"Monitor queue: <b>{pending_count()}</b>\n"
         f"Matchmaker dirty: <b>{'да' if db._matchmaker_dirty else 'нет'}</b>"
     )
 
@@ -437,6 +439,7 @@ async def panel_screen(ctx: Ctx, db: Database, mm: Matchmaker, edit: bool = True
     )
     kb = K.admin_panel_keyboard(
         int(s["open_reports"]), ctx.admin_permissions, owner=ctx.is_owner,
+        monitor_enabled=await db.get_kv(f"chat_monitor:{ctx.user_id}") == "1",
         xp_multiplier=multiplier,
         poll_active=active_poll is not None,
     )
@@ -745,6 +748,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         K.CB_PANEL_UNBAN: "ban",
         K.CB_PANEL_BAN_LIST: "ban",
         K.CB_PANEL_POINTS: "points",
+        K.CB_PANEL_MONITOR: "monitor",
     }.get(data)
     if required and not ctx.can(required):
         await ctx.ack("У тебя нет этого права", alert=True)
@@ -806,6 +810,14 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
     if data == K.CB_PANEL_GAMES:
         await ctx.ack()
         await game_watch_screen(ctx, db)
+        return
+    if data == K.CB_PANEL_MONITOR:
+        key = f"chat_monitor:{ctx.user_id}"
+        enabled = await db.get_kv(key) != "1"
+        await db.set_kv(key, "1" if enabled else "0")
+        invalidate_monitor_cache()
+        await ctx.ack(f"Слежение за чатами {'включено' if enabled else 'выключено'}")
+        await panel_screen(ctx, db, mm)
         return
     if data == K.CB_PANEL_BACKUP:
         await ctx.ack("Готовлю базу…")

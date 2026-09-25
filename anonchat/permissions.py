@@ -12,6 +12,7 @@ ALL_ADMIN_PERMISSIONS = frozenset(
         "mute",
         "ban",
         "points",
+        "monitor",
     }
 )
 
@@ -24,6 +25,7 @@ PERMISSION_LABELS = {
     "mute": "мут",
     "ban": "бан и разбан",
     "points": "выдача и снятие очков",
+    "monitor": "наблюдение за чатами",
 }
 
 

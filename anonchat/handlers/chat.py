@@ -15,6 +15,7 @@ from ..actions import (
 )
 from ..config import Config
 from ..matching import Matchmaker
+from ..monitoring import enqueue_chat_monitor
 from ..diagnostics import METRICS
 from ..engagement import collect_progress_notifications
 from .. import relay_state
@@ -209,7 +210,7 @@ async def relay_to_partner(
 
     if message.text:
         mm.record_text(ctx.user_id, message.text)
-    # Основной диалог не копируется администраторам; модерация работает через жалобы.
+    await enqueue_chat_monitor(message, ctx, partner)
 
 
 @router.edited_message(F.chat.type == "private")
