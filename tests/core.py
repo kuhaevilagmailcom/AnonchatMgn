@@ -1395,6 +1395,130 @@ def test_live_chat_ram_mirroring_and_media_scope() -> None:
     assert live_chat.events(b) == []
 
 
+def test_live_chat_persists_active_pair_across_restart() -> None:
+    async def scenario() -> None:
+        import importlib
+        from anonchat import live_chat as live
+
+        path = Path(tempfile.mkdtemp()) / "live-chat.db"
+        a, b = 920001, 920002
+        db = await Database(path).start()
+        live.bind_database(db)
+        live.clear_pair(a, b)
+        await live.flush()
+        seq = live.publish(
+            a,
+            b,
+            "photo",
+            text="после redeploy я на месте",
+            file_id="persistent-telegram-file-id",
+            telegram_message_id=123,
+        )
+        await live.flush()
+        rows = await db.active_chat_events(a, b)
+        assert len(rows) == 1 and int(rows[0]["id"]) == seq
+        await db.close()
+
+        live = importlib.reload(live)
+        db = await Database(path).start()
+        try:
+            live.bind_database(db)
+            await live.ensure_loaded(db, a, b)
+            mine = live.events(a)
+            theirs = live.events(b)
+            assert mine and theirs
+            assert mine[-1]["text"] == "после redeploy я на месте"
+            assert mine[-1]["mine"] is True and theirs[-1]["mine"] is False
+            ref = live.media_ref(mine[-1]["media_token"], a)
+            assert ref is not None and ref.file_id == "persistent-telegram-file-id"
+
+            live.clear_pair(a, b)
+            await live.flush()
+            assert await db.active_chat_events(a, b) == []
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
+def test_word_game_state_survives_redeploy() -> None:
+    async def scenario() -> None:
+        import importlib
+        from anonchat import word_game as wg
+
+        path = Path(tempfile.mkdtemp()) / "words.db"
+        db = await Database(path).start()
+        wg.bind_database(db)
+        wg.clear_pair(930001, 930002)
+        game, created = wg.create_invite(930001, 930002)
+        assert created
+        game = wg.accept(game.id, 930002)
+        assert game is not None and game.status == "active" and game.word
+        saved_word = game.word
+        saved_role = game.explainer_id
+        await wg.flush()
+        await db.close()
+
+        wg = importlib.reload(wg)
+        db = await Database(path).start()
+        try:
+            wg.bind_database(db)
+            assert await wg.restore(db) == 1
+            restored = wg.get_for_pair(930001, 930002)
+            assert restored is not None
+            assert restored.status == "active"
+            assert restored.word == saved_word
+            assert restored.explainer_id == saved_role
+            wg.clear_pair(930001, 930002)
+            await wg.flush()
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
+def test_miniapp_game_state_has_real_rounds() -> None:
+    async def scenario() -> None:
+        from types import SimpleNamespace
+
+        from anonchat.miniapp_api import MiniAppServer
+
+        path = Path(tempfile.mkdtemp()) / "miniapp-games.db"
+        db = await Database(path).start()
+        try:
+            game, created = await db.create_battle_invite(940001, 940002, 5)
+            assert created
+            game = await db.accept_battle(int(game["id"]), 940002, [1, 2, 3, 4, 5])
+            assert game is not None
+
+            server = MiniAppServer(
+                None,
+                SimpleNamespace(miniapp_url="", bot_token="test"),
+                db,
+                Matchmaker(),
+                None,
+                web_dir=Path(__file__).resolve().parents[1] / "miniapp" / "web",
+            )
+            state = await server._game_state_payload(940001, 940002)
+            assert state is not None and state["type"] == "battle"
+            assert state["status"] == "active"
+            assert state["question"] and len(state["options"]) == 2
+            assert state["round"] == 1 and state["total"] == 5
+
+            result, _ = await db.answer_battle(int(game["id"]), 940001, 0, 0)
+            assert result == "waiting"
+            result, _ = await db.answer_battle(int(game["id"]), 940002, 0, 1)
+            assert result == "resolved"
+            state = await server._game_state_payload(940001, 940002)
+            assert state is not None and state["status"] == "round_done"
+            assert state["can_next"] is True
+            assert state["matched"] is False
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
 def test_miniapp_live_chat_frontend_contract() -> None:
     root = Path(__file__).resolve().parents[1] / "miniapp" / "web"
     html = (root / "index.html").read_text(encoding="utf-8")
@@ -1406,6 +1530,7 @@ def test_miniapp_live_chat_frontend_contract() -> None:
         'id="photoInput"',
         'id="micButton"',
         'id="stickerTray"',
+        'id="activeGame"',
     ):
         assert marker in html
     for marker in (
@@ -1414,11 +1539,16 @@ def test_miniapp_live_chat_frontend_contract() -> None:
         "/api/miniapp/chat/photo",
         "/api/miniapp/chat/voice",
         "/api/miniapp/chat/stickers",
+        "/api/miniapp/games/action",
+        "renderActiveGame",
         "MediaRecorder",
     ):
         assert marker in js
     assert ".chat-page.active" in css
     assert ".chat-composer" in css
+    assert ".active-game" in css
+    assert ".battle-options" in css
+    assert ".number-game-form" in css
 
 
 def test_miniapp_frontend_boot_guards() -> None:
