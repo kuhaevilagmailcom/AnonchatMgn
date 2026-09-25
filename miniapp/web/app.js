@@ -55,7 +55,10 @@ if (typeof window === 'undefined') {
   let searchBusy = false;
   let topPeriod = 'week';
   let topRequestSeq = 0;
-  const chat = {latest:0,startedAt:0,sent:0,received:0,timer:null,seen:new Set(),stickersLoaded:false,recording:false,recorder:null,stream:null,chunks:[],recordTimer:null,mediaCache:new Map(),game:null,gameHoldUntil:0};
+  let realtime = null;
+  let realtimeConnected = false;
+  let resultShownFor = 0;
+  const chat = {latest:0,startedAt:0,sent:0,received:0,timer:null,seen:new Set(),stickersLoaded:false,recording:false,recorder:null,stream:null,chunks:[],recordTimer:null,mediaCache:new Map(),game:null,gameHoldUntil:0,reply:null};
   const CHAT_EMOJIS = ['😀','😃','😄','😁','😂','🤣','🥹','😊','🙂','😉','😍','😘','😎','🤨','😐','😴','😭','😡','🤬','🥰','🤍','❤️','🩷','🔥','⭐','✨','💀','🤝','👍','👎','🙏','💬','👀','🤡','😈','💯','🎉','🥳','😏','🙃','😌','🤔','😳','🫠','😅','🤝','💋','🫶'];
   const svg = n => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[n] || paths['circle-help']}</svg>`;
   function icons(root=document){$$('[data-icon]',root).forEach(el=>{el.innerHTML=svg(el.dataset.icon)})}
@@ -123,7 +126,52 @@ if (typeof window === 'undefined') {
   }
   function startStatusSync(){
     if(statusTimer||!tg?.initData)return;
-    statusTimer=setInterval(()=>{if(!document.hidden)syncStatus(true)},2000);
+    statusTimer=setInterval(()=>{if(!document.hidden&&!realtimeConnected)syncStatus(true)},15000);
+  }
+  async function handleRealtimeEvent(event={}){
+    const type=event.type||'';
+    if(type==='ready'){
+      realtimeConnected=true;
+      await syncStatus(true);
+      if(state.status==='paired')await syncChat(true);
+      return;
+    }
+    if(type==='chat_changed'){
+      if(state.status!=='paired')await syncStatus(true);
+      if(state.status==='paired')await syncChat(false);
+      return;
+    }
+    if(type==='status_changed'){
+      const wasPaired=state.status==='paired';
+      await syncStatus(true);
+      if(state.status==='paired')await syncChat(true);
+      else if(wasPaired)await loadDialogResult(true);
+      return;
+    }
+    if(type==='events_changed'){
+      await loadNotifications();
+      return;
+    }
+    if(type==='poll_changed'){
+      await loadHomePoll();
+      return;
+    }
+    if(type==='result_changed'){
+      await loadDialogResult(false);
+    }
+  }
+  function startRealtime(){
+    if(!tg?.initData||!window.AnonRealtime||realtime)return;
+    realtime=new window.AnonRealtime({
+      baseUrl:apiBase,
+      initData:tg.initData,
+      onState:connected=>{
+        realtimeConnected=Boolean(connected);
+        if(!connected&&!document.hidden){syncStatus(true);if(state.status==='paired')syncChat(false)}
+      },
+      onEvent:event=>{handleRealtimeEvent(event).catch(()=>{})}
+    });
+    realtime.start();
   }
   function demo(){Object.assign(state.user,{nick:'Аноним-4821',rank:'Завсегдатай',stars:1250,age:17,district:'Правый берег',gender:'m',looking_for:'f'});Object.assign(state.stats,{online:34,chatting:22,searching:12,dialogs:682,messages:8884,ratings:128,games:43,battle_games:31,number_games:12,streak:7,best_streak:23,quest_current:14});state.referral={invited:8,earned:400};state.referral_url='https://t.me/AnonChatMgn_Bot?start=ref_demo';state.bot_url='https://t.me/AnonChatMgn_Bot';state.subscription={claimed:false,amount:100,url:'https://t.me/anonmgn'};state.events=[{id:'demo1',type:'personal',icon:'message-circle',title:'Диалог активен',text:'Собеседник найден. Возвращайся в чат.',time:'сейчас',unread:true},{id:'demo2',type:'games',icon:'gamepad-2',title:'Новая игра',text:'Можно пригласить собеседника в Битву мнений или Числа.',time:'сегодня',unread:false}]}
   function setAll(key,value){$$(`[data-${key}]`).forEach(el=>el.textContent=value)}
@@ -164,7 +212,50 @@ if (typeof window === 'undefined') {
       if(heroButton)heroButton.innerHTML=`Найти собеседника ${svg('arrow-right')}`;
     }
   }
-  function renderEvents(filter='all'){const list=$('#eventList');const items=state.events.filter(x=>filter==='all'||x.type===filter);list.innerHTML=items.length?items.map(x=>`<article class="event surface"><span>${svg(x.icon||'bell')}</span><div><strong>${esc(x.title)}</strong><p>${esc(x.text)}</p><small>${esc(x.time||'')}</small></div></article>`).join(''):'<div class="empty">Здесь пока тихо.</div>';const unread=state.events.some(x=>x.unread);$$('[data-event-dot]').forEach(el=>el.hidden=!unread)}
+  function eventTime(ts){
+    const value=Number(ts||0)*1000;if(!value)return '';
+    const diff=Math.max(0,Date.now()-value);
+    if(diff<60000)return 'сейчас';
+    if(diff<3600000)return `${Math.max(1,Math.floor(diff/60000))} мин назад`;
+    if(diff<86400000)return `${Math.max(1,Math.floor(diff/3600000))} ч назад`;
+    return new Date(value).toLocaleDateString('ru-RU',{day:'2-digit',month:'short'});
+  }
+  function eventMatchesFilter(item,filter){
+    if(filter==='all')return true;
+    if(filter==='games')return item.type==='games';
+    if(filter==='rewards')return ['achievement','quest','rating'].includes(item.type);
+    if(filter==='personal')return !['games','achievement','quest','rating'].includes(item.type);
+    return item.type===filter;
+  }
+  function renderEvents(filter='all'){
+    const list=$('#eventList');if(!list)return;
+    const items=state.events.filter(x=>eventMatchesFilter(x,filter));
+    list.innerHTML=items.length?items.map(x=>`<button class="event ${x.unread?'unread':''}" data-event-id="${x.id}" data-event-action="${esc(x.action||'')}"><span>${svg(x.icon||'bell')}</span><div><strong>${esc(x.title)}</strong><p>${esc(x.text)}</p><small>${eventTime(x.created_at)}</small></div>${x.action?svg('chevron-right'):''}</button>`).join(''):'<div class="empty">Здесь пока тихо.</div>';
+    const unread=state.events.some(x=>x.unread);$('[data-event-dot]').forEach(el=>el.hidden=!unread);
+    $('[data-event-id]',list).forEach(el=>el.onclick=()=>openEvent(el.dataset.eventId,el.dataset.eventAction));
+  }
+  async function loadNotifications(markRead=false){
+    const data=await safe('/api/miniapp/notifications',{},null);
+    if(!data)return;
+    state.events=data.items||[];
+    renderEvents($('#eventFilter .active')?.dataset.filter||'all');
+    if(markRead&&data.unread){
+      await safe('/api/miniapp/notifications/all/read',{method:'POST',body:'{}'},null);
+      state.events=state.events.map(x=>({...x,unread:false}));
+      renderEvents($('#eventFilter .active')?.dataset.filter||'all');
+    }
+  }
+  async function openEvent(id,action){
+    if(/^\d+$/.test(String(id||'')))await safe(`/api/miniapp/notifications/${id}/read`,{method:'POST',body:'{}'},null);
+    if(action==='chat')go('chat');
+    else if(action==='search')go('search');
+    else if(action==='profile')go('profile');
+    else if(action==='profile:achievements')openModal('achievements','Достижения');
+    else if(action==='profile:quests')openModal('quests','Цели дня');
+    else if(action==='dialog:result')await loadDialogResult(true);
+    else if(action==='events')go('events');
+    await loadNotifications(false);
+  }
   function topFallback(period){
     if(tg?.initData)return [];
     const base=[
@@ -189,15 +280,33 @@ if (typeof window === 'undefined') {
   }
   async function loadTopPage(period=topPeriod){
     topPeriod=['week','month','all'].includes(period)?period:'week';
-    $$('#topPeriods button').forEach(b=>b.classList.toggle('active',b.dataset.topPeriod===topPeriod));
+    $('#topPeriods button').forEach(b=>b.classList.toggle('active',b.dataset.topPeriod===topPeriod));
     const root=$('#topPageList');if(root)root.innerHTML='<div class="loading"><i class="spinner"></i>Загрузка…</div>';
     const seq=++topRequestSeq;
     const data=await safe(`/api/miniapp/top?period=${topPeriod}&_=${Date.now()}`,{},null);
     if(seq!==topRequestSeq)return;
     renderTopPage(data?.items||topFallback(topPeriod));
+    const mine=$('#topMe');
+    if(mine&&data?.my){
+      const until=data.ends_at?new Date(data.ends_at*1000).toLocaleDateString('ru-RU',{day:'numeric',month:'long'}):'';
+      mine.hidden=false;
+      mine.innerHTML=`<span><small>ТВОЁ МЕСТО</small><strong>#${data.my.place||'—'}</strong></span><span><b>${Number(data.my.stars||0).toLocaleString('ru-RU')} ★</b><small>${data.my.place>10&&data.my.to_top10?`${data.my.to_top10} ★ до топ-10`:'Ты в топ-10'}${until?` · до ${until}`:''}</small></span>`;
+    }else if(mine)mine.hidden=true;
   }
 
-  async function load(){if(!tg?.initData)demo();else{const seq=++statusRequestSeq;const data=await safe(`/api/miniapp/me?_=${Date.now()}`,{},null);if(data){state.user={...state.user,...data.user};state.stats={...state.stats,...data.stats};state.referral=data.referral||state.referral;state.referral_url=data.referral_url||'';state.bot_url=data.bot_url||'';state.events=data.notifications||[];applyStatusSnapshot(data,seq);return}}render()}
+  async function load(){
+    if(!tg?.initData){demo();render();return}
+    const seq=++statusRequestSeq;
+    const data=await safe(`/api/miniapp/me?_=${Date.now()}`,{},null);
+    if(data){
+      state.user={...state.user,...data.user};state.stats={...state.stats,...data.stats};
+      state.referral=data.referral||state.referral;state.referral_url=data.referral_url||'';state.bot_url=data.bot_url||'';
+      state.events=data.notifications||[];applyStatusSnapshot(data,seq);
+      await Promise.all([loadHomePoll(),loadHomeQuest()]);
+      return;
+    }
+    render();
+  }
   function go(page){
     if(page==='chat' && state.status!=='paired')page=state.status==='queued'?'search':'home';
     state.page=page;
@@ -208,6 +317,8 @@ if (typeof window === 'undefined') {
     haptic();
     if(page==='search')syncStatus(true);
     if(page==='top')loadTopPage(topPeriod);
+    if(page==='events')loadNotifications(true);
+    if(page==='home'){loadHomePoll();loadHomeQuest()}
     if(page==='chat'){syncChat(true);startChatSync()}else stopChatSync();
     try{if(tgAtLeast('6.1'))page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}
   }
