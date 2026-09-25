@@ -1114,6 +1114,36 @@ class MiniAppServer:
             raise _json_error(503, "Не удалось доставить приглашение")
         return web.json_response({"ok": True, "message": "Приглашение отправлено"})
 
+    async def game_words(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        partner = self.mm.partner(uid)
+        if partner is None:
+            raise _json_error(409, "Сначала найди собеседника")
+        if WG.active_for_pair(uid, partner):
+            raise _json_error(409, "У вас уже есть активная игра «Объясни слово»")
+        if await self.db.game_for_pair(uid, partner) is not None:
+            raise _json_error(409, "Сначала заверши текущую игру")
+        game, created = WG.create_invite(uid, partner)
+        if not created:
+            raise _json_error(409, "Предложение уже создано")
+        result = await send_to(
+            self.bot,
+            partner,
+            "🗣 <b>Собеседник предлагает сыграть в «Объясни слово»</b>\n\n"
+            f"Раундов: <b>{WG.WORD_ROUNDS}</b>. Один объясняет слово, второй угадывает. "
+            f"За правильное угадывание — до <b>{WG.WORD_REWARD} ⭐</b>.",
+            K.word_invite_keyboard(game.id),
+            self.pack,
+        )
+        if result is DeliveryResult.UNAVAILABLE:
+            WG.remove(game.id)
+            raise _json_error(503, "Не удалось доставить приглашение")
+        live_chat.system(
+            {uid, partner},
+            "🗣 Предложение сыграть в «Объясни слово» отправлено",
+        )
+        return web.json_response({"ok": True, "message": "Приглашение отправлено"})
+
     async def subscription(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
         return web.json_response(
@@ -1238,6 +1268,7 @@ class MiniAppServer:
         app.router.add_post("/api/miniapp/feedback", self.feedback)
         app.router.add_post("/api/miniapp/games/battle/invite", self.game_battle)
         app.router.add_post("/api/miniapp/games/numbers/invite", self.game_numbers)
+        app.router.add_post("/api/miniapp/games/words/invite", self.game_words)
         app.router.add_get("/api/miniapp/subscription", self.subscription)
         app.router.add_post("/api/miniapp/subscription/claim", self.subscription_claim)
         app.router.add_route("OPTIONS", "/api/miniapp/{tail:.*}", self.health)
