@@ -405,6 +405,12 @@ async def cb_number_range(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         "🔢 Числа",
         f"Диапазон 1–{range_max} · {NUMBER_ROUNDS} раунда",
     )
+    event_id = await db.add_miniapp_event(
+        partner, "games", "Приглашение в «Числа»",
+        f"Диапазон 1–{range_max} · {NUMBER_ROUNDS} раунда",
+        icon="gamepad-2", action="chat",
+    )
+    live_chat.signal({partner}, "events_changed", event_id=event_id)
     await ctx.ack()
     await ctx.reply("🔢 Предложение отправлено.")
 
@@ -659,6 +665,12 @@ async def cb_battle_length(event: CallbackQuery, ctx: Ctx, db: Database) -> None
         "⚔️ Битва мнений",
         f"{total} вопросов",
     )
+    event_id = await db.add_miniapp_event(
+        partner, "games", "Приглашение в «Битву мнений»",
+        f"{total} вопросов",
+        icon="gamepad-2", action="chat",
+    )
+    live_chat.signal({partner}, "events_changed", event_id=event_id)
     await ctx.reply("⚔️ Предложение отправлено.")
 
 
@@ -821,6 +833,12 @@ async def cb_words(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         "🗣 Объясни слово",
         f"{WG.WORD_ROUNDS} слов · до {WG.WORD_REWARD} ⭐ за угадывание",
     )
+    event_id = await ctx.db.add_miniapp_event(
+        partner, "games", "Приглашение в «Объясни слово»",
+        f"{WG.WORD_ROUNDS} слов · до {WG.WORD_REWARD} ⭐",
+        icon="gamepad-2", action="chat",
+    )
+    live_chat.signal({partner}, "events_changed", event_id=event_id)
     await ctx.ack()
     await ctx.reply("🗣 Предложение отправлено.")
 
