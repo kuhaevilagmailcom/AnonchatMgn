@@ -275,6 +275,110 @@ class MiniAppServer:
             # Зеркало не должно ломать основную доставку собеседнику.
             pass
 
+    def _battle_state_from_row(self, uid: int, row) -> dict:
+        game_id = int(row["id"])
+        status = str(row["status"] or "")
+        user_a, user_b = int(row["user_a"]), int(row["user_b"])
+        payload = {
+            "type": "battle",
+            "id": game_id,
+            "status": status,
+            "inviter": int(row["inviter_id"]) == int(uid),
+            "round": int(row["question_index"] or 0) + 1,
+            "total": int(row["total_questions"] or 0),
+        }
+        if status in {"active", "round_done", "finished"}:
+            ids = json.loads(str(row["question_ids"] or "[]"))
+            index = int(row["question_index"] or 0)
+            if 0 <= index < len(ids):
+                question = get_question(int(ids[index]))
+                payload.update(
+                    {
+                        "question": question.text,
+                        "options": [question.first, question.second],
+                    }
+                )
+            mine = row["answer_a"] if user_a == int(uid) else row["answer_b"]
+            other = row["answer_b"] if user_a == int(uid) else row["answer_a"]
+            payload["answered"] = mine is not None
+            payload["my_answer"] = int(mine) if mine is not None else None
+            payload["partner_answer"] = int(other) if other is not None else None
+            payload["matches"] = int(row["matches"] or 0)
+            if mine is not None and other is not None:
+                payload["matched"] = int(mine) == int(other)
+            payload["can_next"] = status == "round_done"
+            payload["finished"] = status == "finished"
+        return payload
+
+    def _number_state_from_row(self, uid: int, row) -> dict:
+        status = str(row["status"] or "")
+        user_a = int(row["user_a"])
+        mine = row["answer_a"] if user_a == int(uid) else row["answer_b"]
+        other = row["answer_b"] if user_a == int(uid) else row["answer_a"]
+        payload = {
+            "type": "numbers",
+            "id": int(row["id"]),
+            "status": status,
+            "inviter": int(row["inviter_id"]) == int(uid),
+            "round": int(row["question_index"] or 0) + 1,
+            "total": int(row["total_questions"] or NUMBER_ROUNDS),
+            "range_max": int(row["range_max"] or 0),
+            "reward_enabled": bool(int(row["reward_awarded"] or 0)),
+            "reward_total": int(
+                row["reward_total_a"] if user_a == int(uid) else row["reward_total_b"]
+                or 0
+            ),
+            "answered": mine is not None,
+            "my_answer": int(mine) if mine is not None else None,
+            "partner_answer": int(other) if other is not None else None,
+            "matches": int(row["matches"] or 0),
+            "can_next": status == "round_done",
+            "finished": status == "finished",
+        }
+        if mine is not None and other is not None:
+            payload["difference"] = abs(int(mine) - int(other))
+            payload["matched"] = int(mine) == int(other)
+        return payload
+
+    def _word_state(self, uid: int, partner: int) -> dict | None:
+        game = WG.get_for_pair(uid, partner)
+        if game is None:
+            return None
+        payload = {
+            "type": "words",
+            "id": int(game.id),
+            "status": str(game.status),
+            "inviter": int(game.inviter_id) == int(uid),
+            "round": int(game.round_index) + 1,
+            "total": int(WG.WORD_ROUNDS),
+            "correct": int(sum(game.correct.values())),
+            "can_next": str(game.status) == "round_done",
+        }
+        if game.status in {"active", "round_done"}:
+            if int(game.explainer_id) == int(uid):
+                payload["role"] = "explainer"
+                payload["word"] = str(game.word)
+                payload["hint"] = "Объясни слово собеседнику, не называя его."
+            else:
+                payload["role"] = "guesser"
+                payload["word"] = ""
+                payload["hint"] = "Угадай слово по объяснению собеседника."
+        return payload
+
+    async def _game_state_payload(self, uid: int, partner: int | None) -> dict | None:
+        if partner is None:
+            return None
+        word = self._word_state(uid, partner)
+        if word is not None:
+            return word
+        row = await self.db.game_for_pair(uid, partner)
+        if row is None:
+            return None
+        game_type = str(row["game_type"] or "battle")
+        if game_type == "numbers":
+            return self._number_state_from_row(uid, row)
+        return self._battle_state_from_row(uid, row)
+
     async def chat_state(self, request: web.Request) -> web.Response:
         uid, _ = self._telegram_user(request)
         try:
@@ -302,6 +406,7 @@ class MiniAppServer:
                 "received": received,
                 "events": events,
                 "latest": live_chat.latest_seq(uid),
+                "game": await self._game_state_payload(uid, partner),
             }
         )
 
@@ -1386,6 +1491,244 @@ class MiniAppServer:
 
         raise _json_error(400, "Неизвестная игра")
 
+    async def game_action(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        partner = self.mm.partner(uid)
+        if partner is None:
+            raise _json_error(409, "Диалог уже завершён")
+        data = await request.json()
+        game_type = str(data.get("game_type", "") or "")
+        action = str(data.get("action", "") or "")
+        try:
+            game_id = int(data.get("game_id", 0) or 0)
+        except (TypeError, ValueError) as exc:
+            raise _json_error(400, "Игра не найдена") from exc
+
+        if game_type == "words":
+            game = WG.get_by_id(game_id)
+            if game is None or {game.user_a, game.user_b} != {uid, partner}:
+                raise _json_error(404, "Игра уже завершена")
+            if action != "next":
+                raise _json_error(400, "Неизвестное действие")
+            current_round = int(game.round_index)
+            game = WG.advance(game_id, uid, current_round)
+            if game is None:
+                raise _json_error(409, "Собеседник уже перешёл дальше")
+            for player_id in (game.user_a, game.user_b):
+                role = WG.role_text(game, player_id)
+                await send_to(self.bot, player_id, role, K.chat_keyboard(), self.pack)
+                live_chat.private(
+                    player_id,
+                    role,
+                    kind="game_round",
+                    data={"game_type": "words", "game_id": int(game.id)},
+                )
+            live_chat.game_status(
+                {game.user_a, game.user_b},
+                "words",
+                game_id,
+                "active",
+                f"Раунд {game.round_index + 1}/{WG.WORD_ROUNDS}",
+            )
+            return web.json_response(
+                {"ok": True, "game": self._word_state(uid, partner)}
+            )
+
+        row = await self.db.get_battle(game_id)
+        if row is None:
+            raise _json_error(404, "Игра уже завершена")
+        user_a, user_b = int(row["user_a"]), int(row["user_b"])
+        if {user_a, user_b} != {uid, partner}:
+            raise _json_error(403, "Это не ваша игра")
+        actual_type = str(row["game_type"] or "battle")
+        if actual_type != game_type:
+            raise _json_error(400, "Тип игры не совпадает")
+
+        if game_type == "battle":
+            if action == "answer":
+                try:
+                    choice = int(data.get("choice"))
+                except (TypeError, ValueError) as exc:
+                    raise _json_error(400, "Выбери вариант") from exc
+                if choice not in {0, 1}:
+                    raise _json_error(400, "Выбери один из двух вариантов")
+                index = int(row["question_index"])
+                result, game = await self.db.answer_battle(
+                    game_id, uid, index, choice
+                )
+                if result in {"already", "closed"}:
+                    raise _json_error(409, "Ты уже ответил или раунд закрыт")
+                if result == "missing" or game is None:
+                    raise _json_error(404, "Игра уже завершена")
+                if result == "waiting":
+                    return web.json_response(
+                        {"ok": True, "game": self._battle_state_from_row(uid, game)}
+                    )
+                ids = json.loads(str(game["question_ids"] or "[]"))
+                question = get_question(int(ids[index]))
+                a, b = int(game["answer_a"]), int(game["answer_b"])
+                matched = a == b
+                for player_id in (user_a, user_b):
+                    mine = a if player_id == user_a else b
+                    other = b if player_id == user_a else a
+                    body = (
+                        ("🤝 <b>Совпало!</b>\n" if matched else "💥 <b>Разошлись</b>\n")
+                        + f"Ты: <b>{texts.esc(question.option(mine))}</b>\n"
+                        + f"Собеседник: <b>{texts.esc(question.option(other))}</b>"
+                    )
+                    if str(game["status"]) == "finished":
+                        body += (
+                            f"\n\n⚔️ <b>Битва окончена</b>\n"
+                            f"Совпадений: <b>{int(game['matches'])}/{int(game['total_questions'])}</b>."
+                        )
+                        if int(game["matches"]) == int(game["total_questions"]):
+                            body += "\n🎁 Каждому начислено <b>25 ⭐</b>."
+                    await send_to(self.bot, player_id, body, K.chat_keyboard(), self.pack)
+                if str(game["status"]) == "finished":
+                    self.mm.record_game(
+                        user_a,
+                        "battle",
+                        int(game["matches"]),
+                        int(game["total_questions"]),
+                    )
+                    for player_id in (user_a, user_b):
+                        await self.db.record_game_engagement(
+                            player_id,
+                            "battle",
+                            matches=int(game["matches"]),
+                            total=int(game["total_questions"]),
+                        )
+                        for notice in await collect_progress_notifications(self.db, player_id):
+                            await send_to(self.bot, player_id, notice, pack=self.pack)
+                    live_chat.game_status(
+                        {user_a, user_b}, "battle", game_id, "finished", "Битва окончена"
+                    )
+                else:
+                    live_chat.game_status(
+                        {user_a, user_b}, "battle", game_id, "round_done",
+                        "Ответы получены · можно перейти дальше",
+                    )
+                return web.json_response(
+                    {"ok": True, "game": self._battle_state_from_row(uid, game)}
+                )
+
+            if action == "next":
+                index = int(row["question_index"])
+                game = await self.db.advance_battle(game_id, uid, index)
+                if game is None:
+                    raise _json_error(409, "Собеседник уже перешёл дальше")
+                ids = json.loads(str(game["question_ids"] or "[]"))
+                question = get_question(int(ids[int(game["question_index"])]))
+                body = (
+                    f"⚔️ <b>{int(game['question_index']) + 1}/{int(game['total_questions'])}</b>"
+                    f"\n\n{texts.esc(question.text)}"
+                )
+                markup = K.battle_answer_keyboard(
+                    game_id,
+                    int(game["question_index"]),
+                    question.first,
+                    question.second,
+                )
+                for player_id in (user_a, user_b):
+                    await send_to(self.bot, player_id, body, markup, self.pack)
+                live_chat.game_status(
+                    {user_a, user_b}, "battle", game_id, "active",
+                    f"Вопрос {int(game['question_index']) + 1}/{int(game['total_questions'])}",
+                )
+                return web.json_response(
+                    {"ok": True, "game": self._battle_state_from_row(uid, game)}
+                )
+            raise _json_error(400, "Неизвестное действие")
+
+        if game_type == "numbers":
+            if action == "answer":
+                try:
+                    value = int(data.get("value"))
+                except (TypeError, ValueError) as exc:
+                    raise _json_error(400, "Введи число") from exc
+                index = int(row["question_index"])
+                result, game, reward_a, reward_b = await self.db.answer_number(
+                    game_id, uid, index, value
+                )
+                if result == "invalid":
+                    raise _json_error(400, f"Число должно быть от 1 до {int(row['range_max'])}")
+                if result in {"already", "closed"}:
+                    raise _json_error(409, "Ты уже выбрал число или раунд закрыт")
+                if result == "missing" or game is None:
+                    raise _json_error(404, "Игра уже завершена")
+                if result == "waiting":
+                    return web.json_response(
+                        {"ok": True, "game": self._number_state_from_row(uid, game)}
+                    )
+                a, b = int(game["answer_a"]), int(game["answer_b"])
+                diff = abs(a - b)
+                for player_id in (user_a, user_b):
+                    mine = a if player_id == user_a else b
+                    other = b if player_id == user_a else a
+                    reward = reward_a if player_id == user_a else reward_b
+                    body = (
+                        f"🔢 <b>Результат</b>\n"
+                        f"Ты: <b>{mine}</b> · Собеседник: <b>{other}</b>\n"
+                        f"Разница: <b>{diff}</b>"
+                    )
+                    if reward > 0:
+                        body += f"\n+<b>{reward} ⭐</b>"
+                    if str(game["status"]) == "finished":
+                        body += (
+                            f"\n\n🏁 <b>Игра окончена</b> · "
+                            f"точных совпадений: <b>{int(game['matches'])}/{NUMBER_ROUNDS}</b>."
+                        )
+                    await send_to(self.bot, player_id, body, K.chat_keyboard(), self.pack)
+                if str(game["status"]) == "finished":
+                    self.mm.record_game(
+                        user_a, "numbers", int(game["matches"]), NUMBER_ROUNDS
+                    )
+                    for player_id in (user_a, user_b):
+                        await self.db.record_game_engagement(
+                            player_id,
+                            "numbers",
+                            matches=int(game["matches"]),
+                            total=NUMBER_ROUNDS,
+                            number_exact=int(game["matches"]),
+                            range_max=int(game["range_max"]),
+                        )
+                        for notice in await collect_progress_notifications(self.db, player_id):
+                            await send_to(self.bot, player_id, notice, pack=self.pack)
+                    live_chat.game_status(
+                        {user_a, user_b}, "numbers", game_id, "finished", "Игра окончена"
+                    )
+                else:
+                    live_chat.game_status(
+                        {user_a, user_b}, "numbers", game_id, "round_done",
+                        "Оба числа выбраны · можно дальше",
+                    )
+                return web.json_response(
+                    {"ok": True, "game": self._number_state_from_row(uid, game)}
+                )
+
+            if action == "next":
+                index = int(row["question_index"])
+                game = await self.db.advance_number(game_id, uid, index)
+                if game is None:
+                    raise _json_error(409, "Собеседник уже перешёл дальше")
+                body = (
+                    f"🔢 <b>Числа · раунд {int(game['question_index']) + 1}/{NUMBER_ROUNDS}</b>"
+                    f"\n\nВыбери число от <b>1</b> до <b>{int(game['range_max'])}</b>."
+                )
+                markup = K.number_input_keyboard(game_id, int(game["question_index"]))
+                for player_id in (user_a, user_b):
+                    await send_to(self.bot, player_id, body, markup, self.pack)
+                live_chat.game_status(
+                    {user_a, user_b}, "numbers", game_id, "active",
+                    f"Раунд {int(game['question_index']) + 1}/{NUMBER_ROUNDS}",
+                )
+                return web.json_response(
+                    {"ok": True, "game": self._number_state_from_row(uid, game)}
+                )
+            raise _json_error(400, "Неизвестное действие")
+
+        raise _json_error(400, "Неизвестная игра")
+
     async def subscription(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
         return web.json_response(
@@ -1459,7 +1802,7 @@ class MiniAppServer:
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
         response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self' https://telegram.org; "
             "style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; "
@@ -1512,6 +1855,7 @@ class MiniAppServer:
         app.router.add_post("/api/miniapp/games/numbers/invite", self.game_numbers)
         app.router.add_post("/api/miniapp/games/words/invite", self.game_words)
         app.router.add_post("/api/miniapp/games/respond", self.game_respond)
+        app.router.add_post("/api/miniapp/games/action", self.game_action)
         app.router.add_get("/api/miniapp/subscription", self.subscription)
         app.router.add_post("/api/miniapp/subscription/claim", self.subscription_claim)
         app.router.add_route("OPTIONS", "/api/miniapp/{tail:.*}", self.health)
