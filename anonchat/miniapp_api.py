@@ -2014,6 +2014,72 @@ class MiniAppServer:
         self.db.schedule_matchmaker_save(self.mm)
         return web.json_response({"ok": True})
 
+    async def websocket(self, request: web.Request) -> web.WebSocketResponse:
+        ws = web.WebSocketResponse(heartbeat=25, autoping=True, max_msg_size=128 * 1024)
+        await ws.prepare(request)
+        uid = 0
+        queue = None
+        pump_task: asyncio.Task | None = None
+        try:
+            try:
+                first = await asyncio.wait_for(ws.receive(), timeout=8)
+            except asyncio.TimeoutError:
+                await ws.close(code=4001, message=b"auth timeout")
+                return ws
+            if first.type != web.WSMsgType.TEXT:
+                await ws.close(code=4001, message=b"auth required")
+                return ws
+            try:
+                payload = json.loads(first.data)
+            except (TypeError, json.JSONDecodeError):
+                await ws.close(code=4001, message=b"bad auth")
+                return ws
+            if payload.get("type") != "auth":
+                await ws.close(code=4001, message=b"auth required")
+                return ws
+            try:
+                uid, user = self._auth_init_data(str(payload.get("initData", "") or ""))
+            except web.HTTPException:
+                await ws.close(code=4003, message=b"unauthorized")
+                return ws
+            await self.db.ensure_user(
+                uid, user.get("username"), user.get("first_name") or "Пользователь"
+            )
+            queue = live_chat.subscribe(uid)
+            await ws.send_json({
+                "type": "ready",
+                "status": self.mm.status(uid),
+                "latest": live_chat.latest_seq(uid),
+            })
+
+            async def pump() -> None:
+                while not ws.closed:
+                    event = await queue.get()
+                    await ws.send_json(event)
+
+            pump_task = asyncio.create_task(pump())
+            async for message in ws:
+                if message.type == web.WSMsgType.TEXT:
+                    try:
+                        data = json.loads(message.data)
+                    except (TypeError, json.JSONDecodeError):
+                        continue
+                    if data.get("type") == "ping":
+                        presence_touch(uid)
+                        await ws.send_json({"type": "pong", "ts": int(time.time())})
+                elif message.type in {web.WSMsgType.CLOSE, web.WSMsgType.CLOSED, web.WSMsgType.ERROR}:
+                    break
+        finally:
+            if pump_task is not None:
+                pump_task.cancel()
+                try:
+                    await pump_task
+                except (asyncio.CancelledError, ConnectionError):
+                    pass
+            if uid and queue is not None:
+                live_chat.unsubscribe(uid, queue)
+        return ws
+
     async def health(self, _request: web.Request) -> web.Response:
         return web.json_response({"ok": True, "service": "anon-mgn-miniapp"})
 
@@ -2039,6 +2105,8 @@ class MiniAppServer:
                 response = await handler(request)
             except web.HTTPException as exc:
                 response = exc
+        if isinstance(response, web.WebSocketResponse):
+            return response
         response.headers["X-Content-Type-Options"] = "nosniff"
         if request.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
@@ -2068,6 +2136,7 @@ class MiniAppServer:
             raise RuntimeError(f"MINIAPP_WEB_DIR не найден: {self.web_dir}")
         app = web.Application(client_max_size=12 * 1024 * 1024, middlewares=[self.security_headers])
         app.router.add_get("/api/miniapp/health", self.health)
+        app.router.add_get("/api/miniapp/ws", self.websocket)
         app.router.add_get("/api/miniapp/me", self.me)
         app.router.add_get("/api/miniapp/status", self.status)
         app.router.add_get("/api/miniapp/chat/state", self.chat_state)
@@ -2080,6 +2149,9 @@ class MiniAppServer:
         app.router.add_get("/api/miniapp/chat/sticker-media/{sticker_id}", self.chat_sticker_media)
         app.router.add_post("/api/miniapp/chat/stop", self.chat_stop)
         app.router.add_post("/api/miniapp/chat/next", self.chat_next)
+        app.router.add_get("/api/miniapp/chat/result", self.chat_result)
+        app.router.add_post("/api/miniapp/chat/rate", self.chat_rate)
+        app.router.add_post("/api/miniapp/chat/report", self.chat_report)
         app.router.add_post("/api/miniapp/settings", self.settings)
         app.router.add_post("/api/miniapp/settings/reset", self.settings_reset)
         app.router.add_post("/api/miniapp/profile/nick", self.nick)
@@ -2090,9 +2162,12 @@ class MiniAppServer:
         app.router.add_get("/api/miniapp/activity", self.activity)
         app.router.add_get("/api/miniapp/streak", self.streak)
         app.router.add_get("/api/miniapp/quests", self.quests)
+        app.router.add_get("/api/miniapp/achievements", self.achievements)
         app.router.add_get("/api/miniapp/top", self.top)
         app.router.add_get("/api/miniapp/notifications", self.notifications)
         app.router.add_post("/api/miniapp/notifications/{notification_id}/read", self.notification_read)
+        app.router.add_get("/api/miniapp/poll", self.poll)
+        app.router.add_post("/api/miniapp/poll/vote", self.poll_vote)
         app.router.add_post("/api/miniapp/feedback", self.feedback)
         app.router.add_post("/api/miniapp/games/battle/invite", self.game_battle)
         app.router.add_post("/api/miniapp/games/numbers/invite", self.game_numbers)
