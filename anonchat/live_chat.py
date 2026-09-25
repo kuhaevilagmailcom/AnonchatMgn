@@ -79,6 +79,7 @@ def publish(
     text: str = "",
     file_id: str = "",
     telegram_message_id: int | None = None,
+    data: dict[str, Any] | None = None,
 ) -> int:
     """Добавляет одно событие обоим участникам пары."""
     sender_id, partner_id = int(sender_id), int(partner_id)
@@ -96,9 +97,76 @@ def publish(
         "created_at": created_at,
         "media_token": token,
         "telegram_message_id": int(telegram_message_id or 0),
+        "data": dict(data or {}),
     }
     _EVENTS[sender_id].append({**base, "mine": True})
     _EVENTS[partner_id].append({**base, "mine": False})
+    return seq
+
+
+def game_invite(
+    inviter_id: int,
+    partner_id: int,
+    game_type: str,
+    game_id: int,
+    title: str,
+    subtitle: str = "",
+) -> int:
+    return publish(
+        inviter_id,
+        partner_id,
+        "game_invite",
+        text=title,
+        data={
+            "game_type": str(game_type),
+            "game_id": int(game_id),
+            "subtitle": str(subtitle or ""),
+        },
+    )
+
+
+def game_status(
+    user_ids: list[int] | tuple[int, ...] | set[int],
+    game_type: str,
+    game_id: int,
+    status: str,
+    text: str,
+) -> int:
+    seq = _next_seq()
+    created_at = int(time.time())
+    event = {
+        "id": seq,
+        "kind": "game_status",
+        "text": str(text or "")[:500],
+        "created_at": created_at,
+        "media_token": "",
+        "telegram_message_id": 0,
+        "mine": False,
+        "data": {
+            "game_type": str(game_type),
+            "game_id": int(game_id),
+            "status": str(status),
+        },
+    }
+    for uid in set(map(int, user_ids)):
+        _EVENTS[uid].append(dict(event))
+    return seq
+
+
+def private(user_id: int, text: str, *, kind: str = "system", data: dict[str, Any] | None = None) -> int:
+    seq = _next_seq()
+    _EVENTS[int(user_id)].append(
+        {
+            "id": seq,
+            "kind": str(kind),
+            "text": str(text or "")[:1000],
+            "created_at": int(time.time()),
+            "media_token": "",
+            "telegram_message_id": 0,
+            "mine": False,
+            "data": dict(data or {}),
+        }
+    )
     return seq
 
 
@@ -113,6 +181,7 @@ def system(user_ids: list[int] | tuple[int, ...] | set[int], text: str) -> int:
         "media_token": "",
         "telegram_message_id": 0,
         "mine": False,
+        "data": {},
     }
     for uid in set(map(int, user_ids)):
         _EVENTS[uid].append(dict(event))
