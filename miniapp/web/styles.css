@@ -644,3 +644,59 @@
   .result-grid .stars{grid-column:1/-1}
   .report-reasons{grid-template-columns:1fr}
 }
+
+
+/* Compact home layout for short Telegram WebViews.
+   Keeps the second action row above the fixed navigation on devices where
+   Telegram gives the Mini App roughly 600-700px of usable height. */
+@media (max-height:720px){
+  .topbar{
+    height:68px;
+    padding:calc(12px + env(safe-area-inset-top)) 20px 6px;
+  }
+  .logo{width:122px}
+  .pages{
+    padding:6px 20px calc(88px + env(safe-area-inset-bottom));
+  }
+  .page[data-page="home"] .profile-card{
+    padding:9px 0 14px;
+    gap:12px;
+  }
+  .page[data-page="home"] .avatar{
+    width:50px;
+    height:50px;
+  }
+  .page[data-page="home"] .avatar b{font-size:17px}
+  .page[data-page="home"] .profile-copy strong{font-size:18px}
+  .page[data-page="home"] .hero{margin-top:18px}
+  .page[data-page="home"] .primary{
+    min-height:54px;
+    font-size:16px;
+    border-radius:14px;
+  }
+  .page[data-page="home"] .metrics{
+    margin:14px 0 5px;
+    padding:12px 0;
+  }
+  .page[data-page="home"] .row{
+    min-height:70px;
+    padding:12px 2px;
+  }
+  .page[data-page="home"] .row-icon{
+    width:32px;
+    height:32px;
+  }
+  .page[data-page="home"] .row-icon svg{
+    width:23px;
+    height:23px;
+  }
+  .page[data-page="home"] .row strong{font-size:14px}
+  .page[data-page="home"] .row small{font-size:11px}
+  .bottom-nav{
+    height:calc(68px + env(safe-area-inset-bottom));
+    padding-top:6px;
+  }
+  .bottom-nav button{gap:3px;font-size:9px}
+  .bottom-nav svg{width:21px;height:21px}
+  .toast{bottom:calc(78px + env(safe-area-inset-bottom))}
+}
