@@ -585,8 +585,6 @@ class MiniAppServer:
     async def chat_stickers(self, request: web.Request) -> web.Response:
         self._telegram_user(request)
         pack_name = os.getenv("MINIAPP_STICKER_SET", "NewsEmoji").strip()
-        if not pack_name:
-            return web.json_response({"items": []})
         sticker_set = None
         if pack_name:
             try:
