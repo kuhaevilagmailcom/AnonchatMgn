@@ -40,7 +40,7 @@
 .chat-open .pages{padding:0!important}
 .chat-page.active{
   display:grid!important;
-  grid-template-rows:auto auto minmax(0,1fr) auto auto;
+  grid-template-rows:auto auto minmax(0,1fr) auto auto auto;
   height:100dvh;
   min-height:100dvh;
   background:#000;
@@ -253,4 +253,74 @@
   align-self:center;width:min(90%,340px);padding:11px 13px;margin:5px auto;border-radius:13px;
   background:#131013;border:1px solid #292229;color:#d7d1d5;font-size:12px;line-height:1.45;
   white-space:pre-wrap
+}
+
+
+/* active in-chat game */
+.active-game{
+  margin:0;padding:0 8px 8px;background:#080608;border-top:1px solid #171317
+}
+.active-game[hidden]{display:none!important}
+.active-game>header{
+  display:flex;align-items:center;justify-content:space-between;padding:8px 4px 7px
+}
+.active-game>header>span{display:grid;gap:2px}
+.active-game>header small{font-size:8px;letter-spacing:.8px;color:#cf72ab;font-weight:800}
+.active-game>header strong{font-size:12px;color:#f1edf0}
+.active-game>header button{
+  width:28px;height:28px;border-radius:50%;background:#181418;color:#8f878d;font-size:18px
+}
+.active-game-body{
+  border:1px solid #292128;border-radius:15px;background:#121012;padding:12px;
+  display:grid;gap:10px;box-shadow:0 8px 22px rgba(0,0,0,.16)
+}
+.active-game-body h3{margin:0;font-size:15px;line-height:1.35}
+.active-game-body p{margin:0;color:#9b9398;font-size:11px;line-height:1.45}
+.battle-options{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.battle-options button{
+  min-height:54px;border-radius:12px;background:#21191f;color:#fff;padding:9px 10px;
+  font-size:12px;font-weight:750;line-height:1.25
+}
+.battle-options button:active{transform:scale(.985);background:#32202c}
+.battle-options button:disabled{opacity:.45}
+.game-wait{
+  min-height:46px;border-radius:12px;background:#191519;color:#b8afb5;
+  display:grid;place-items:center;font-size:11px
+}
+.game-result{
+  display:grid;grid-template-columns:1fr 1fr;gap:7px;padding:10px;border-radius:12px;background:#171417
+}
+.game-result>strong{grid-column:1/-1;font-size:13px}
+.game-result>span{
+  min-width:0;padding:8px;border-radius:9px;background:#211c20;color:#aaa2a8;font-size:10px;
+  display:grid;gap:2px
+}
+.game-result>span b{color:#f7f3f5;font-size:11px;overflow-wrap:anywhere}
+.game-result>small{grid-column:1/-1;color:#81797f;font-size:9px}
+.game-result.match>strong{color:#82d9ad}
+.game-result.miss>strong{color:#e3a1c8}
+.game-next{
+  min-height:42px;border-radius:12px;background:#d96bb7;color:#fff;font-size:12px;font-weight:800
+}
+.game-finished{
+  padding:10px;border-radius:11px;text-align:center;background:#1c171b;color:#d5cbd1;font-size:11px
+}
+.number-game-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.number-game-form input{
+  min-width:0;height:44px;border:1px solid #332932;border-radius:12px;background:#0d0b0d;color:#fff;
+  padding:0 12px;font-size:16px;font-weight:750;outline:0
+}
+.number-game-form input:focus{border-color:#b75a98;box-shadow:0 0 0 3px rgba(217,107,183,.08)}
+.number-game-form button{
+  height:44px;padding:0 14px;border-radius:12px;background:#d96bb7;color:#fff;font-weight:800;font-size:11px
+}
+.words-game>small{font-size:8px;color:#cf72ab;font-weight:850;letter-spacing:.8px}
+.secret-word{
+  padding:13px 12px;border-radius:12px;background:linear-gradient(135deg,#291521,#1b1017);
+  color:#ffb7e0;font-size:23px;line-height:1;text-align:center;font-weight:900;letter-spacing:.3px
+}
+.game-art.words{font-size:25px}
+@media(max-width:370px){
+  .battle-options{grid-template-columns:1fr}
+  .active-game{padding-left:5px;padding-right:5px}
 }
