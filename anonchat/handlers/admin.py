@@ -449,7 +449,7 @@ async def do_ad_broadcast(
                 photo=photo_file_id,
                 caption=body,
                 caption_entities=caption_entities or None,
-                parse_mode=None if caption_entities else "HTML",
+                parse_mode=None,
                 reply_markup=K.broadcast_ad_keyboard(button_url),
             )
             sent += 1
@@ -1059,7 +1059,7 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
             photo=photo_file_id,
             caption=body,
             caption_entities=caption_entities or None,
-            parse_mode=None if caption_entities else "HTML",
+            parse_mode=None,
             reply_markup=K.broadcast_preview_keyboard(raw),
         )
         await ctx.reply(
