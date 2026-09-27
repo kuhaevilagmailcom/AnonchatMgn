@@ -71,6 +71,25 @@ async def clear_kb(event: CallbackQuery) -> None:
         pass
 
 
+async def notify_reporter_about_action(
+    ctx: Ctx,
+    report,
+    report_id: int,
+    action_text: str,
+) -> None:
+    """Сообщает автору жалобы, чем закончилась модерация."""
+    reporter_id = int(report["reporter_id"])
+    if reporter_id <= 0:
+        return
+    await send_to(
+        ctx.bot,
+        reporter_id,
+        f"🚩 <b>Жалоба #{report_id} рассмотрена</b>\n\n{action_text}",
+        K.menu_keyboard(ctx.mm.status(reporter_id)),
+        ctx.pack,
+    )
+
+
 # ---------------------------------------------------------------------------------- тексты экранов
 async def stats_text(db: Database, mm: Matchmaker, cfg: Config) -> str:
     s = await db.stats()
@@ -531,7 +550,16 @@ async def cmd_resolve(message: Message, ctx: Ctx, db: Database) -> None:
     if not args or not args[0].isdigit():
         await ctx.reply("Формат: <code>/resolve 12</code>")
         return
-    ok = await db.resolve_report(int(args[0]), ctx.user_id)
+    report_id = int(args[0])
+    report = await db.get_report(report_id)
+    ok = await db.resolve_report(report_id, ctx.user_id)
+    if ok and report is not None:
+        await notify_reporter_about_action(
+            ctx,
+            report,
+            report_id,
+            "✅ Администратор рассмотрел жалобу и закрыл её без наказания.",
+        )
     await ctx.reply("🚩 Жалоба закрыта." if ok else "Не нашёл открытую жалобу с таким номером.")
 
 
@@ -1123,7 +1151,14 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
     target = int(report["target_id"])
 
     if action == "done":
-        await db.resolve_report(int(raw_id), ctx.user_id)
+        resolved = await db.resolve_report(int(raw_id), ctx.user_id)
+        if resolved:
+            await notify_reporter_about_action(
+                ctx,
+                report,
+                int(raw_id),
+                "✅ Администратор рассмотрел жалобу и закрыл её без наказания.",
+            )
         await ctx.ack("Закрыто")
         await clear_kb(event)
         return
@@ -1139,14 +1174,28 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
 
     if action == "mute":
         await do_mute(ctx, db, mm, cfg, target, 60)
-        await db.resolve_report(int(raw_id), ctx.user_id)
+        resolved = await db.resolve_report(int(raw_id), ctx.user_id)
+        if resolved:
+            await notify_reporter_about_action(
+                ctx,
+                report,
+                int(raw_id),
+                "🔇 По жалобе приняты меры: пользователю выдан мут на 60 минут.",
+            )
         await ctx.ack("Мут на 60 мин")
         await clear_kb(event)
         return
 
     if action == "ban":
         await do_ban(ctx, db, mm, cfg, target, f"жалоба #{raw_id}: {report['reason']}")
-        await db.resolve_report(int(raw_id), ctx.user_id)
+        resolved = await db.resolve_report(int(raw_id), ctx.user_id)
+        if resolved:
+            await notify_reporter_about_action(
+                ctx,
+                report,
+                int(raw_id),
+                "⛔ По жалобе приняты меры: пользователь заблокирован.",
+            )
         await ctx.ack("Забанен")
         await clear_kb(event)
         return
