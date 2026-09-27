@@ -19,7 +19,7 @@ from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, FSInputFile, Message
+from aiogram.types import CallbackQuery, FSInputFile, Message, MessageEntity
 
 from .. import keyboards as K
 from .. import nick as nicklib
@@ -436,6 +436,7 @@ async def do_ad_broadcast(
     photo_file_id: str,
     body: str,
     button_url: str,
+    caption_entities: list[MessageEntity] | None = None,
 ) -> str:
     """Рекламная рассылка: фото + текст + URL-кнопка всем незаблокированным."""
     ids = await db.broadcast_ids()
@@ -446,7 +447,9 @@ async def do_ad_broadcast(
             await ctx.bot.send_photo(
                 chat_id=uid,
                 photo=photo_file_id,
-                caption=texts.esc(body),
+                caption=body,
+                caption_entities=caption_entities or None,
+                parse_mode=None if caption_entities else "HTML",
                 reply_markup=K.broadcast_ad_keyboard(button_url),
             )
             sent += 1
@@ -761,6 +764,11 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         photo_file_id = str(draft.get("bc_photo") or "")
         body = str(draft.get("bc_text") or "").strip()
         button_url = str(draft.get("bc_url") or "").strip()
+        caption_entities = [
+            MessageEntity.model_validate(item)
+            for item in (draft.get("bc_entities") or [])
+            if isinstance(item, dict)
+        ]
         if draft.get("adm") != "bc_ready" or not photo_file_id or not body or not button_url:
             await ctx.ack("Черновик рассылки устарел. Создай его заново.", alert=True)
             await state.clear()
@@ -774,7 +782,9 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
                 )
             except TelegramAPIError:
                 pass
-        result = await do_ad_broadcast(ctx, db, photo_file_id, body, button_url)
+        result = await do_ad_broadcast(
+            ctx, db, photo_file_id, body, button_url, caption_entities
+        )
         await state.clear()
         await ctx.reply(result)
         await panel_screen(ctx, db, mm, edit=False)
@@ -1000,16 +1010,27 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
         return
 
     if what == "bc_text":
-        if not raw:
+        body_text = message.text if message.text is not None else (message.caption or "")
+        if not body_text.strip():
             await ctx.reply("Текст не может быть пустым.")
             return
-        if len(raw) > 900:
+        if len(body_text) > 900:
             await ctx.reply("Текст слишком длинный. Максимум 900 символов.")
             return
-        await state.update_data(adm="bc_link", bc_text=raw)
+        source_entities = message.entities if message.text is not None else message.caption_entities
+        serialized_entities = [
+            entity.model_dump(mode="json", exclude_none=True)
+            for entity in (source_entities or [])
+        ]
+        await state.update_data(
+            adm="bc_link",
+            bc_text=body_text,
+            bc_entities=serialized_entities,
+        )
         await ctx.reply(
             "📣 <b>Рекламная рассылка · шаг 3/3</b>\n\n"
             "Отправь ссылку для кнопки <b>«Подключить VPN»</b>.\n"
+            "Премиум-эмодзи и форматирование из текста сохранены.\n"
             "Например: <code>https://t.me/...</code> или <code>https://mgnvpn.ru</code>",
             K.panel_cancel_keyboard(),
         )
@@ -1027,11 +1048,18 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
             await state.clear()
             await ctx.reply("Черновик потерялся. Открой «Рассылка» заново.")
             return
+        caption_entities = [
+            MessageEntity.model_validate(item)
+            for item in (draft.get("bc_entities") or [])
+            if isinstance(item, dict)
+        ]
         await state.update_data(adm="bc_ready", bc_url=raw)
         await ctx.bot.send_photo(
             chat_id=ctx.user_id,
             photo=photo_file_id,
-            caption=texts.esc(body),
+            caption=body,
+            caption_entities=caption_entities or None,
+            parse_mode=None if caption_entities else "HTML",
             reply_markup=K.broadcast_preview_keyboard(raw),
         )
         await ctx.reply(
