@@ -12,6 +12,7 @@ import json
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramAPIError
@@ -429,6 +430,32 @@ async def do_broadcast_message(ctx: Ctx, db: Database, message: Message) -> str:
     return texts.PANEL_BC_DONE.format(sent=sent, total=len(ids))
 
 
+async def do_ad_broadcast(
+    ctx: Ctx,
+    db: Database,
+    photo_file_id: str,
+    body: str,
+    button_url: str,
+) -> str:
+    """Рекламная рассылка: фото + текст + URL-кнопка всем незаблокированным."""
+    ids = await db.broadcast_ids()
+    await ctx.reply(texts.PANEL_BC_PROGRESS.format(total=len(ids)))
+    sent = 0
+    for uid in ids:
+        try:
+            await ctx.bot.send_photo(
+                chat_id=uid,
+                photo=photo_file_id,
+                caption=texts.esc(body),
+                reply_markup=K.broadcast_ad_keyboard(button_url),
+            )
+            sent += 1
+        except TelegramAPIError:
+            pass
+        await asyncio.sleep(0.05)
+    return texts.PANEL_BC_DONE.format(sent=sent, total=len(ids))
+
+
 def _id_args(raw: str) -> tuple[int | None, str]:
     """«123 причина» → (123, «причина»). None — не распарсилось."""
     parts = (raw or "").strip().split(maxsplit=1)
@@ -479,7 +506,6 @@ PANEL_PROMPTS = {
     K.CB_PANEL_BAN: ("ban", texts.PANEL_ASK_BAN),
     K.CB_PANEL_UNBAN: ("unban", texts.PANEL_ASK_UNBAN),
     K.CB_PANEL_MUTE: ("mute", texts.PANEL_ASK_MUTE),
-    K.CB_PANEL_BC: ("bc", texts.PANEL_ASK_BC),
     K.CB_PANEL_POINTS: (
         "points",
         "⭐ Пришли <code>id +50</code> для выдачи или <code>id -50</code> для снятия очков.",
@@ -722,6 +748,45 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         return
     data = event.data or ""
 
+    if data.startswith("adm:panel:broadcast") and not ctx.can("broadcast"):
+        await ctx.ack("У тебя нет права на рассылку", alert=True)
+        return
+
+    if data == K.CB_PANEL_BC_SEND:
+        draft = await state.get_data()
+        photo_file_id = str(draft.get("bc_photo") or "")
+        body = str(draft.get("bc_text") or "").strip()
+        button_url = str(draft.get("bc_url") or "").strip()
+        if draft.get("adm") != "bc_ready" or not photo_file_id or not body or not button_url:
+            await ctx.ack("Черновик рассылки устарел. Создай его заново.", alert=True)
+            await state.clear()
+            return
+        await state.update_data(adm="bc_sending")
+        await ctx.ack("Рассылка запущена")
+        if event.message is not None:
+            try:
+                await event.message.edit_reply_markup(
+                    reply_markup=K.broadcast_ad_keyboard(button_url)
+                )
+            except TelegramAPIError:
+                pass
+        result = await do_ad_broadcast(ctx, db, photo_file_id, body, button_url)
+        await state.clear()
+        await ctx.reply(result)
+        await panel_screen(ctx, db, mm, edit=False)
+        return
+
+    if data == K.CB_PANEL_BC:
+        await state.set_state(AdminStates.await_input)
+        await state.set_data({"adm": "bc_image"})
+        await ctx.edit(
+            "📣 <b>Рекламная рассылка · шаг 1/3</b>\n\n"
+            "Отправь <b>картинку</b> как фото. Она будет сверху в рекламном сообщении.",
+            K.panel_cancel_keyboard(),
+        )
+        await ctx.ack()
+        return
+
     if data.startswith("adm:panel:xp:"):
         if not ctx.is_owner:
             await ctx.ack("Только для владельца", alert=True)
@@ -908,6 +973,69 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
     data = await state.get_data()
     what = (data or {}).get("adm", "")
     raw = (message.text or message.caption or "").strip()
+
+    if what.startswith("bc_") and not ctx.can("broadcast"):
+        await state.clear()
+        await ctx.reply("У тебя нет права на рассылку.")
+        return
+
+    if what == "bc_image":
+        if not message.photo:
+            await ctx.reply(
+                "Нужна именно <b>картинка как фото</b>. Отправь её без файла/документа.",
+                K.panel_cancel_keyboard(),
+            )
+            return
+        photo_file_id = message.photo[-1].file_id
+        await state.update_data(adm="bc_text", bc_photo=photo_file_id)
+        await ctx.reply(
+            "📣 <b>Рекламная рассылка · шаг 2/3</b>\n\n"
+            "Теперь отправь <b>текст рекламы</b> одним сообщением. Максимум 900 символов.",
+            K.panel_cancel_keyboard(),
+        )
+        return
+
+    if what == "bc_text":
+        if not raw:
+            await ctx.reply("Текст не может быть пустым.")
+            return
+        if len(raw) > 900:
+            await ctx.reply("Текст слишком длинный. Максимум 900 символов.")
+            return
+        await state.update_data(adm="bc_link", bc_text=raw)
+        await ctx.reply(
+            "📣 <b>Рекламная рассылка · шаг 3/3</b>\n\n"
+            "Отправь ссылку для кнопки <b>«Подключить VPN»</b>.\n"
+            "Например: <code>https://t.me/...</code> или <code>https://mgnvpn.ru</code>",
+            K.panel_cancel_keyboard(),
+        )
+        return
+
+    if what == "bc_link":
+        parsed = urlparse(raw)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            await ctx.reply("Нужна полная ссылка, начинающаяся с <code>https://</code>.")
+            return
+        draft = await state.get_data()
+        photo_file_id = str(draft.get("bc_photo") or "")
+        body = str(draft.get("bc_text") or "").strip()
+        if not photo_file_id or not body:
+            await state.clear()
+            await ctx.reply("Черновик потерялся. Открой «Рассылка» заново.")
+            return
+        await state.update_data(adm="bc_ready", bc_url=raw)
+        await ctx.bot.send_photo(
+            chat_id=ctx.user_id,
+            photo=photo_file_id,
+            caption=texts.esc(body),
+            reply_markup=K.broadcast_preview_keyboard(raw),
+        )
+        await ctx.reply(
+            "👆 <b>Предпросмотр готов.</b> Проверь картинку, текст и ссылку. "
+            "Если всё верно — нажми «Отправить всем».",
+            K.panel_cancel_keyboard(),
+        )
+        return
 
     if what in {"poll_question", "poll_options"} and not ctx.is_owner:
         await state.clear()
