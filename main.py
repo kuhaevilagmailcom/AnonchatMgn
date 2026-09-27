@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import time
 import logging
+from datetime import datetime, timedelta, timezone
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -126,6 +127,25 @@ async def register_commands(bot: Bot, cfg: Config) -> None:
     await register_common(bot, cfg)
 
 
+async def notify_admins_restart(bot: Bot, cfg: Config, db: Database) -> None:
+    """Уведомляет всех администраторов о завершённом перезапуске бота."""
+    admin_ids = await db.all_admin_ids(cfg.admin_ids)
+    if not admin_ids:
+        return
+
+    started_at = datetime.now(timezone(timedelta(hours=5))).strftime("%d.%m.%Y · %H:%M:%S")
+    text = (
+        "🟢 <b>АНОН МГН снова онлайн</b>\n\n"
+        "Бот успешно запущен после перезапуска.\n"
+        f"🕒 Время запуска: <b>{started_at}</b> · МГН"
+    )
+    for admin_id in admin_ids:
+        try:
+            await bot.send_message(admin_id, text)
+        except TelegramAPIError as exc:
+            log.warning("Не удалось отправить уведомление о запуске админу %s: %s", admin_id, exc)
+
+
 async def main() -> None:  # pragma: no cover
     import sys
 
@@ -182,6 +202,7 @@ async def main() -> None:  # pragma: no cover
             log.info("FestiveFlags: загружено %s эмодзи для топа", top_flags_count)
         me = await bot.get_me()
         log.info("Анонимный чат %s запущен: @%s (id=%s)", cfg.city_short, me.username, me.id)
+        await notify_admins_restart(bot, cfg, database)
         if cfg.admin_ids:
             log.info("модераторы: %s · панель — командой /admin", cfg.admin_markup())
         else:
