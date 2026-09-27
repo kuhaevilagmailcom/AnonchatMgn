@@ -86,10 +86,20 @@ async def _deliver_feedback(ctx: Ctx, message: Message, body: str = "") -> int:
     for admin_id in await ctx.db.all_admin_ids(ctx.cfg.admin_ids):
         if body:
             result = await send_to(
-                ctx.bot, admin_id, f"{header}\n\n{texts.esc(body[:3500])}", None, ctx.pack
+                ctx.bot,
+                admin_id,
+                f"{header}\n\n{texts.esc(body[:3500])}",
+                K.feedback_admin_keyboard(ctx.user_id),
+                ctx.pack,
             )
         else:
-            result = await send_to(ctx.bot, admin_id, header, None, ctx.pack)
+            result = await send_to(
+                ctx.bot,
+                admin_id,
+                header,
+                K.feedback_admin_keyboard(ctx.user_id),
+                ctx.pack,
+            )
             if result is DeliveryResult.DELIVERED:
                 result = await send_copy_to(ctx.bot, message, admin_id)
         if result is DeliveryResult.DELIVERED:
