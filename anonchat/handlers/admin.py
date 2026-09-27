@@ -453,7 +453,11 @@ async def do_ad_broadcast(
         except TelegramAPIError:
             pass
         await asyncio.sleep(0.05)
-    return texts.PANEL_BC_DONE.format(sent=sent, total=len(ids))
+    failed = max(0, len(ids) - sent)
+    return (
+        f"✅ Рассылка завершена. Доставлено: <b>{sent}</b> из <b>{len(ids)}</b>. "
+        f"Не доставлено: <b>{failed}</b>."
+    )
 
 
 def _id_args(raw: str) -> tuple[int | None, str]:
