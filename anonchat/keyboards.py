@@ -522,6 +522,7 @@ CB_PANEL_REPORTS = "adm:panel:reports"
 CB_PANEL_QUEUE = "adm:panel:queue"
 CB_PANEL_FIND = "adm:panel:find"
 CB_PANEL_BC = "adm:panel:broadcast"
+CB_PANEL_BC_SEND = "adm:panel:broadcast:send"
 CB_PANEL_MUTE = "adm:panel:mute"
 CB_PANEL_MUTE_LIST = "adm:panel:mute_list"
 CB_PANEL_BAN = "adm:panel:ban"
@@ -671,6 +672,24 @@ def panel_cancel_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="check")
     b.adjust(1)
+    return b.as_markup()
+
+
+def broadcast_ad_keyboard(url: str) -> InlineKeyboardMarkup:
+    """Кнопка, которую увидят пользователи в рекламной рассылке."""
+    b = InlineKeyboardBuilder()
+    _button(b, "Подключить VPN", url=url, icon="link", style="primary")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def broadcast_preview_keyboard(url: str) -> InlineKeyboardMarkup:
+    """Предпросмотр рекламы + явное подтверждение массовой отправки."""
+    b = InlineKeyboardBuilder()
+    _button(b, "Подключить VPN", url=url, icon="link", style="primary")
+    _button(b, "Отправить всем", callback_data=CB_PANEL_BC_SEND, icon="check", style="success")
+    _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="delete", style="danger")
+    b.adjust(1, 2)
     return b.as_markup()
 
 
