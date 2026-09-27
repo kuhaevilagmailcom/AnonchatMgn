@@ -2321,6 +2321,15 @@ class Database:
         )
         return [int(r["user_id"]) for r in rows]
 
+
+    async def broadcast_ids(self, limit: int = 100000) -> list[int]:
+        """Все незаблокированные пользователи для админской массовой рассылки."""
+        rows = await self._fetchall(
+            "SELECT user_id FROM users WHERE banned = 0 ORDER BY last_seen DESC LIMIT ?",
+            (max(1, min(int(limit), 100000)),),
+        )
+        return [int(r["user_id"]) for r in rows]
+
     async def stats(self) -> dict[str, Any]:
         total = await self._fetchone("SELECT COUNT(*) AS c FROM users")
         week = await self._fetchone(
