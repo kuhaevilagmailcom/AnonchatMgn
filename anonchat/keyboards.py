@@ -568,7 +568,7 @@ def admin_panel_keyboard(
         _button(b, "Найти профиль", callback_data=CB_PANEL_FIND, icon="view")
         _button(b, "Все пользователи", callback_data=CB_PANEL_USERS, icon="profile")
     if "broadcast" in permissions:
-        _button(b, "Рассылка", callback_data=CB_PANEL_BC, icon="support")
+        _button(b, "Реклама MGN VPN", callback_data=CB_PANEL_BC, icon="support", style="primary")
     if "mute" in permissions:
         _button(b, "Мут по id", callback_data=CB_PANEL_MUTE, icon="settings", style="primary")
         _button(b, "Мут-лист", callback_data=CB_PANEL_MUTE_LIST, icon="warn")
