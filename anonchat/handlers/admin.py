@@ -790,6 +790,28 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         await panel_screen(ctx, db, mm, edit=False)
         return
 
+    if data == K.CB_PANEL_BC_CHANNEL:
+        draft = await state.get_data()
+        if (
+            draft.get("adm") != "bc_ready"
+            or not draft.get("bc_photo")
+            or not draft.get("bc_text")
+            or not draft.get("bc_url")
+        ):
+            await ctx.ack("Черновик рекламы устарел. Создай его заново.", alert=True)
+            await state.clear()
+            return
+        await state.update_data(adm="bc_channel")
+        await ctx.ack()
+        await ctx.reply(
+            "📢 <b>Куда выложить рекламу?</b>\n\n"
+            "Пришли <code>@username</code> публичного канала или его "
+            "<code>-100...</code> ID.\n\n"
+            "Бот должен быть администратором этого канала с правом публикации сообщений.",
+            K.panel_cancel_keyboard(),
+        )
+        return
+
     if data == K.CB_PANEL_BC:
         await state.set_state(AdminStates.await_input)
         await state.set_data({"adm": "bc_image"})
@@ -991,6 +1013,63 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
     if what.startswith("bc_") and not ctx.can("broadcast"):
         await state.clear()
         await ctx.reply("У тебя нет права на рассылку.")
+        return
+
+    if what == "bc_channel":
+        target = raw.strip()
+        if target.startswith("https://t.me/"):
+            slug = target.split("https://t.me/", 1)[1].strip("/").split("/", 1)[0]
+            if slug and not slug.startswith("+"):
+                target = f"@{slug}"
+        if not (
+            (target.startswith("@") and len(target) > 1)
+            or (target.startswith("-100") and target[1:].isdigit())
+        ):
+            await ctx.reply(
+                "Не понял канал. Пришли <code>@username</code> или числовой "
+                "<code>-100...</code> ID канала.",
+                K.panel_cancel_keyboard(),
+            )
+            return
+
+        draft = await state.get_data()
+        photo_file_id = str(draft.get("bc_photo") or "")
+        body = str(draft.get("bc_text") or "")
+        button_url = str(draft.get("bc_url") or "").strip()
+        caption_entities = [
+            MessageEntity.model_validate(item)
+            for item in (draft.get("bc_entities") or [])
+            if isinstance(item, dict)
+        ]
+        if not photo_file_id or not body.strip() or not button_url:
+            await state.clear()
+            await ctx.reply("Черновик рекламы потерялся. Создай его заново через /admin.")
+            return
+        chat_id: str | int = int(target) if target.startswith("-100") else target
+        try:
+            published = await ctx.bot.send_photo(
+                chat_id=chat_id,
+                photo=photo_file_id,
+                caption=body,
+                caption_entities=caption_entities or None,
+                parse_mode=None,
+                reply_markup=K.broadcast_ad_keyboard(button_url),
+            )
+        except TelegramAPIError as exc:
+            await ctx.reply(
+                "❌ Не удалось опубликовать пост. Проверь, что канал указан правильно "
+                "и бот добавлен туда администратором с правом публикации.\n\n"
+                f"<code>{texts.esc(str(exc))}</code>",
+                K.panel_cancel_keyboard(),
+            )
+            return
+
+        await state.clear()
+        await ctx.reply(
+            f"✅ Реклама опубликована в <b>{texts.esc(target)}</b>. "
+            f"ID сообщения: <code>{published.message_id}</code>."
+        )
+        await panel_screen(ctx, db, mm, edit=False)
         return
 
     if what == "bc_image":
