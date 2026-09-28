@@ -813,6 +813,18 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         )
         return
 
+    if data == K.CB_PANEL_BC_SIMPLE:
+        await state.set_state(AdminStates.await_input)
+        await state.set_data({"adm": "bc"})
+        await ctx.edit(
+            "📣 <b>Рассылка</b>\n\n"
+            "Отправь одно сообщение, которое нужно разослать активным пользователям. "
+            "Можно текст, фото, видео или другое поддерживаемое сообщение.",
+            K.panel_cancel_keyboard(),
+        )
+        await ctx.ack()
+        return
+
     if data == K.CB_PANEL_BC:
         await state.set_state(AdminStates.await_input)
         await state.set_data({"adm": "bc_image"})
@@ -872,6 +884,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         K.CB_PANEL_FIND: "users",
         K.CB_PANEL_USERS: "users",
         K.CB_PANEL_BC: "broadcast",
+        K.CB_PANEL_BC_SIMPLE: "broadcast",
         K.CB_PANEL_MUTE: "mute",
         K.CB_PANEL_MUTE_LIST: "mute",
         K.CB_PANEL_BAN: "ban",
