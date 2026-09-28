@@ -33,6 +33,7 @@ from ..actions import (
 from ..commands import ensure_for_admin
 from ..config import Config, decode_anon_question_token
 from ..db import Database, REFERRAL_DAILY_LIMIT
+from ..monitoring import enqueue_anonymous_monitor
 
 router = Router(name="menu")
 REFERRAL_XP = 50
@@ -217,6 +218,10 @@ async def send_anonymous_question(
         "💌 <b>Новый анонимный вопрос</b>",
         K.anonymous_reply_keyboard(sender_token),
     )
+    if delivered:
+        await enqueue_anonymous_monitor(
+            message, ctx, target_id, kind="question"
+        )
     await state.clear()
 
     if delivered:
@@ -285,6 +290,10 @@ async def send_anonymous_answer(
         "💌 <b>Ответ на анонимный вопрос</b>",
         K.anonymous_reply_keyboard(sender_token),
     )
+    if delivered:
+        await enqueue_anonymous_monitor(
+            message, ctx, target_id, kind="answer"
+        )
     await state.clear()
 
     if delivered:
