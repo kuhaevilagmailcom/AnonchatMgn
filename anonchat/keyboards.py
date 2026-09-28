@@ -44,6 +44,8 @@ CB_POLL = "poll:open"
 CB_SUBSCRIBE_REWARD = "profile:subscribe"
 CB_SUBSCRIBE_CHECK = "profile:subscribe:check"
 
+MINIAPP_PUBLIC_URL = "https://t.me/AnonChatMgn_Bot/anonmgn"
+
 
 #: Bot API принимает только эти три цвета кнопки («warning» отвергает — проверено живьём)
 STYLES = ("primary", "success", "danger")
@@ -95,6 +97,7 @@ def menu_keyboard(
         return b.as_markup()
     else:
         _button(b, "Найти собеседника", callback_data=CB_CONNECT, icon="view", style="success")
+        _button(b, "Открыть приложение", url=MINIAPP_PUBLIC_URL, icon="link", style="primary")
     _button(b, "Профиль", callback_data=CB_PROFILE, icon="profile")
     _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
     _button(b, "Топ", callback_data=CB_TOP, icon="stats")
@@ -102,7 +105,7 @@ def menu_keyboard(
         _button(b, "Опрос", callback_data=CB_POLL, icon="ticket", style="primary")
     _button(b, "Правила", callback_data=CB_RULES, icon="ticket")
     _button(b, "Помощь", callback_data=CB_HELP, icon="support")
-    rows = [1, 2, 2, 1] if not poll_active else [1, 2, 2, 2]
+    rows = [1, 1, 2, 2, 1] if not poll_active else [1, 1, 2, 2, 2]
     if admin:
         _button(b, "Панель модератора", callback_data=CB_ADMIN_PANEL, icon="bonus", style="primary")
         rows.append(1)
