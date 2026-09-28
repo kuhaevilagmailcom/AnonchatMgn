@@ -16,7 +16,7 @@ from urllib.parse import parse_qsl, urlsplit
 
 from aiohttp import web
 from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError
-from aiogram.types import BufferedInputFile
+from aiogram.types import BufferedInputFile, LabeledPrice
 
 from . import keyboards as K
 from . import texts
@@ -43,6 +43,8 @@ from .miniapp_features import (
 
 
 SUBSCRIPTION_REWARD_KEY = "channel_subscription_v1"
+SUPPORT_MIN_STARS = 1
+SUPPORT_MAX_STARS = 10_000
 
 
 def _subscription_chat_id(raw: str) -> int | str | None:
@@ -1508,6 +1510,40 @@ class MiniAppServer:
             raise _json_error(503, "Не получилось доставить сообщение")
         return web.json_response({"ok": True})
 
+    async def support_invoice(self, request: web.Request) -> web.Response:
+        """Создаёт Telegram Stars invoice link для оплаты прямо внутри Mini App."""
+        uid, _, _ = await self._auth(request)
+        data = await request.json()
+        try:
+            stars = int(data.get("stars", 0) or 0)
+        except (TypeError, ValueError) as exc:
+            raise _json_error(400, "Укажи количество звёзд") from exc
+        if not SUPPORT_MIN_STARS <= stars <= SUPPORT_MAX_STARS:
+            raise _json_error(
+                400,
+                f"Можно отправить от {SUPPORT_MIN_STARS} до {SUPPORT_MAX_STARS} ⭐",
+            )
+
+        payload = f"support:{uid}:{stars}:{secrets.token_hex(8)}"
+        try:
+            invoice_url = await self.bot.create_invoice_link(
+                title=texts.SUPPORT_INVOICE_TITLE,
+                description=texts.SUPPORT_INVOICE_DESCRIPTION,
+                payload=payload,
+                currency="XTR",
+                prices=[LabeledPrice(label="Поддержка проекта", amount=stars)],
+            )
+        except TelegramAPIError as exc:
+            raise _json_error(503, "Не удалось создать счёт Telegram Stars") from exc
+
+        return web.json_response(
+            {
+                "ok": True,
+                "invoice_url": invoice_url,
+                "stars": stars,
+            }
+        )
+
     async def game_battle(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
         partner = self.mm.partner(uid)
@@ -2198,6 +2234,7 @@ class MiniAppServer:
         app.router.add_get("/api/miniapp/poll", self.poll)
         app.router.add_post("/api/miniapp/poll/vote", self.poll_vote)
         app.router.add_post("/api/miniapp/feedback", self.feedback)
+        app.router.add_post("/api/miniapp/support/invoice", self.support_invoice)
         app.router.add_post("/api/miniapp/games/battle/invite", self.game_battle)
         app.router.add_post("/api/miniapp/games/numbers/invite", self.game_numbers)
         app.router.add_post("/api/miniapp/games/words/invite", self.game_words)
