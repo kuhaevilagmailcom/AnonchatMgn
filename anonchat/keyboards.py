@@ -539,6 +539,7 @@ CB_PANEL_REPORTS = "adm:panel:reports"
 CB_PANEL_QUEUE = "adm:panel:queue"
 CB_PANEL_FIND = "adm:panel:find"
 CB_PANEL_BC = "adm:panel:broadcast"
+CB_PANEL_BC_SIMPLE = "adm:panel:broadcast:simple"
 CB_PANEL_BC_SEND = "adm:panel:broadcast:send"
 CB_PANEL_BC_CHANNEL = "adm:panel:broadcast:channel"
 CB_PANEL_MUTE = "adm:panel:mute"
@@ -588,7 +589,8 @@ def admin_panel_keyboard(
         _button(b, "Найти профиль", callback_data=CB_PANEL_FIND, icon="view")
         _button(b, "Все пользователи", callback_data=CB_PANEL_USERS, icon="profile")
     if "broadcast" in permissions:
-        _button(b, "Реклама MGN VPN", callback_data=CB_PANEL_BC, icon="support", style="primary")
+        _button(b, "Рассылка", callback_data=CB_PANEL_BC_SIMPLE, icon="support", style="primary")
+        _button(b, "Реклама MGN VPN", callback_data=CB_PANEL_BC, icon="support")
     if "mute" in permissions:
         _button(b, "Мут по id", callback_data=CB_PANEL_MUTE, icon="settings", style="primary")
         _button(b, "Мут-лист", callback_data=CB_PANEL_MUTE_LIST, icon="warn")
