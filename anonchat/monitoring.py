@@ -10,15 +10,19 @@ from .actions import DeliveryResult, send_copy_to, send_to
 
 _CACHE_UNTIL = 0.0
 _CACHE_IDS: tuple[int, ...] = ()
+_ANON_CACHE_UNTIL = 0.0
+_ANON_CACHE_IDS: tuple[int, ...] = ()
 _PENDING: set[asyncio.Task] = set()
 _SEMAPHORE = asyncio.Semaphore(4)
 _MAX_PENDING = 100
 
 
 def invalidate_monitor_cache() -> None:
-    global _CACHE_UNTIL, _CACHE_IDS
+    global _CACHE_UNTIL, _CACHE_IDS, _ANON_CACHE_UNTIL, _ANON_CACHE_IDS
     _CACHE_UNTIL = 0.0
     _CACHE_IDS = ()
+    _ANON_CACHE_UNTIL = 0.0
+    _ANON_CACHE_IDS = ()
 
 
 async def _monitor_ids(db, owner_ids: tuple[int, ...]) -> tuple[int, ...]:
@@ -34,6 +38,20 @@ async def _monitor_ids(db, owner_ids: tuple[int, ...]) -> tuple[int, ...]:
     _CACHE_IDS = tuple(enabled)
     _CACHE_UNTIL = now_mono + 15
     return _CACHE_IDS
+
+async def _anonymous_monitor_ids(db, owner_ids: tuple[int, ...]) -> tuple[int, ...]:
+    global _ANON_CACHE_UNTIL, _ANON_CACHE_IDS
+    now_mono = time.monotonic()
+    if now_mono < _ANON_CACHE_UNTIL:
+        return _ANON_CACHE_IDS
+    candidates = await db.admin_ids_with_permission("monitor", owner_ids)
+    enabled: list[int] = []
+    for admin_id in candidates:
+        if await db.get_kv(f"anonq_monitor:{admin_id}") == "1":
+            enabled.append(int(admin_id))
+    _ANON_CACHE_IDS = tuple(enabled)
+    _ANON_CACHE_UNTIL = now_mono + 15
+    return _ANON_CACHE_IDS
 
 
 def _identity(row: Any, user_id: int) -> str:
@@ -82,3 +100,34 @@ async def enqueue_chat_monitor(message, ctx, partner_id: int) -> None:
 
 def pending_count() -> int:
     return len(_PENDING)
+
+
+async def enqueue_anonymous_monitor(
+    message,
+    ctx,
+    target_id: int,
+    *,
+    kind: str = "question",
+) -> None:
+    """Копирует анонимные вопросы/ответы только модераторам с включённым мониторингом."""
+    ids = await _anonymous_monitor_ids(ctx.db, ctx.cfg.admin_ids)
+    ids = tuple(
+        admin_id
+        for admin_id in ids
+        if admin_id not in {int(ctx.user_id), int(target_id)}
+    )
+    if not ids or len(_PENDING) >= _MAX_PENDING:
+        return
+
+    sender = ctx.me or await ctx.db.get_user(ctx.user_id)
+    recipient = await ctx.db.get_user(int(target_id))
+    title = "💌 <b>Анонимный вопрос</b>" if kind == "question" else "↩️ <b>Ответ на анонимный вопрос</b>"
+    header = (
+        f"{title}\n"
+        f"От: {_identity(sender, ctx.user_id)}\n"
+        f"Кому: {_identity(recipient, int(target_id))}"
+    )
+    task = asyncio.create_task(_deliver(message, ctx.bot, ctx.pack, ids, header))
+    _PENDING.add(task)
+    task.add_done_callback(_PENDING.discard)
+    await asyncio.sleep(0)
