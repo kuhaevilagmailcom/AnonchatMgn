@@ -189,6 +189,20 @@ def referral_keyboard(referral_url: str) -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
+
+def anonymous_reply_keyboard(sender_token: str) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(
+        b,
+        "Ответить",
+        callback_data=f"anonq:reply:{sender_token}",
+        icon="edit",
+        style="primary",
+    )
+    b.adjust(1)
+    return b.as_markup()
+
+
 def top_keyboard(period: str = "week") -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     labels = (("week", "Неделя"), ("month", "Месяц"), ("all", "Всё время"))
