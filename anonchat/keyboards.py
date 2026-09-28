@@ -550,6 +550,7 @@ CB_PANEL_USERS = "adm:panel:users"
 CB_PANEL_POINTS = "adm:panel:points"
 CB_PANEL_ADMINS = "adm:panel:admins"
 CB_PANEL_MONITOR = "adm:panel:monitor"
+CB_PANEL_ANON_MONITOR = "adm:panel:anon_monitor"
 CB_PANEL_GAMES = "adm:panel:games"
 CB_PANEL_BACKUP = "adm:panel:backup"
 CB_PANEL_DIAGNOSTICS = "adm:panel:diagnostics"
@@ -563,6 +564,7 @@ def admin_panel_keyboard(
     permissions: frozenset[str] | set[str] | None = None,
     owner: bool = False,
     monitor_enabled: bool = False,
+    anonymous_monitor_enabled: bool = False,
     xp_multiplier: int = 1,
     poll_active: bool = False,
 ) -> InlineKeyboardMarkup:
@@ -618,6 +620,13 @@ def admin_panel_keyboard(
             callback_data=CB_PANEL_MONITOR,
             icon="view",
             style="success" if monitor_enabled else "",
+        )
+        _button(
+            b,
+            f"Анонимные вопросы: {'ВКЛ' if anonymous_monitor_enabled else 'ВЫКЛ'}",
+            callback_data=CB_PANEL_ANON_MONITOR,
+            icon="view",
+            style="success" if anonymous_monitor_enabled else "",
         )
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
     b.adjust(2)
