@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
 import os
 from dataclasses import dataclass, fields
 from pathlib import Path
@@ -69,6 +72,44 @@ def _pick_db_path(raw: str) -> Path:
 
 def _bool(value: str) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _anon_question_key(secret: str) -> bytes:
+    return hashlib.sha256(str(secret).encode("utf-8")).digest()
+
+
+def make_anon_question_token(user_id: int, secret: str) -> str:
+    """Короткий подписанный токен: Telegram ID нельзя прочитать из ссылки."""
+    plain = int(user_id).to_bytes(8, "big", signed=False)
+    key = _anon_question_key(secret)
+    nonce = hmac.new(key, b"anonq-nonce:" + plain, hashlib.sha256).digest()[:6]
+    stream = hmac.new(key, b"anonq-stream:" + nonce, hashlib.sha256).digest()[:8]
+    cipher = bytes(a ^ b for a, b in zip(plain, stream))
+    tag = hmac.new(key, b"anonq-tag:" + nonce + cipher, hashlib.sha256).digest()[:6]
+    return base64.urlsafe_b64encode(nonce + cipher + tag).decode("ascii").rstrip("=")
+
+
+def decode_anon_question_token(token: str, secret: str) -> int | None:
+    """Принимает только токены, созданные текущим BOT_TOKEN."""
+    try:
+        raw = str(token or "").strip()
+        padded = raw + "=" * (-len(raw) % 4)
+        blob = base64.urlsafe_b64decode(padded.encode("ascii"))
+    except (ValueError, UnicodeEncodeError):
+        return None
+    if len(blob) != 20:
+        return None
+
+    nonce, cipher, tag = blob[:6], blob[6:14], blob[14:]
+    key = _anon_question_key(secret)
+    expected = hmac.new(key, b"anonq-tag:" + nonce + cipher, hashlib.sha256).digest()[:6]
+    if not hmac.compare_digest(tag, expected):
+        return None
+
+    stream = hmac.new(key, b"anonq-stream:" + nonce, hashlib.sha256).digest()[:8]
+    plain = bytes(a ^ b for a, b in zip(cipher, stream))
+    user_id = int.from_bytes(plain, "big", signed=False)
+    return user_id if user_id > 0 else None
 
 
 @dataclass(slots=True)
