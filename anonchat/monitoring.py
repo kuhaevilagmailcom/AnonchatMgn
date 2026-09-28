@@ -111,11 +111,9 @@ async def enqueue_anonymous_monitor(
 ) -> None:
     """Копирует анонимные вопросы/ответы только модераторам с включённым мониторингом."""
     ids = await _anonymous_monitor_ids(ctx.db, ctx.cfg.admin_ids)
-    ids = tuple(
-        admin_id
-        for admin_id in ids
-        if admin_id not in {int(ctx.user_id), int(target_id)}
-    )
+    # Для анонимных вопросов модератор получает копию даже если сам является
+    # отправителем или получателем — иначе тест собственной ссылки выглядит
+    # так, будто мониторинг не работает.
     if not ids or len(_PENDING) >= _MAX_PENDING:
         return
 
