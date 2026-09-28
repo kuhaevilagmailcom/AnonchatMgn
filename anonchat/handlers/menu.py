@@ -5,8 +5,10 @@ from __future__ import annotations
 import time
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from .. import keyboards as K
@@ -29,11 +31,169 @@ from ..actions import (
     show_quests,
 )
 from ..commands import ensure_for_admin
-from ..config import Config
+from ..config import Config, decode_anon_question_token, make_anon_question_token
 from ..db import Database, REFERRAL_DAILY_LIMIT
 
 router = Router(name="menu")
 REFERRAL_XP = 50
+
+
+class AnonymousQuestionStates(StatesGroup):
+    question = State()
+    answer = State()
+
+
+async def _deliver_anonymous_copy(
+    message: Message,
+    ctx: Ctx,
+    target_id: int,
+    title: str,
+    reply_markup=None,
+) -> bool:
+    """Копирует сообщение без forward-заголовка, не раскрывая отправителя."""
+    header = None
+    try:
+        header = await ctx.bot.send_message(target_id, title)
+        await message.send_copy(chat_id=target_id, reply_markup=reply_markup)
+        return True
+    except TelegramAPIError:
+        if header is not None:
+            try:
+                await ctx.bot.delete_message(target_id, header.message_id)
+            except TelegramAPIError:
+                pass
+        return False
+
+
+# ---------------------------------------------------------------------------------- анонимные вопросы
+@router.message(CommandStart(), F.text.startswith("/start ask_"))
+async def cmd_anonymous_question(
+    message: Message, ctx: Ctx, cfg: Config, state: FSMContext
+) -> None:
+    await state.clear()
+    if await ctx.restricted():
+        return
+
+    parts = (message.text or "").split(maxsplit=1)
+    payload = parts[1].strip() if len(parts) == 2 else ""
+    target_id = decode_anon_question_token(
+        payload.removeprefix("ask_"), cfg.bot_token
+    )
+    if not target_id:
+        await ctx.reply(
+            "Эта ссылка на анонимные вопросы не работает.",
+            K.back_menu_keyboard(),
+        )
+        return
+
+    await state.set_state(AnonymousQuestionStates.question)
+    await state.update_data(anonymous_question_target=int(target_id))
+    await ctx.reply(
+        "💌 <b>Анонимный вопрос</b>\n\n"
+        "Отправь сообщение. Можно текст, фото, GIF, стикер, "
+        "голосовое или другое медиа."
+    )
+
+
+@router.message(AnonymousQuestionStates.question)
+async def send_anonymous_question(
+    message: Message, ctx: Ctx, cfg: Config, state: FSMContext
+) -> None:
+    if message.text and message.text.startswith("/"):
+        await state.clear()
+        await show_menu(ctx)
+        return
+    if await ctx.restricted():
+        await state.clear()
+        return
+
+    data = await state.get_data()
+    target_id = int(data.get("anonymous_question_target") or 0)
+    if not target_id:
+        await state.clear()
+        await show_menu(ctx)
+        return
+
+    sender_token = make_anon_question_token(ctx.user_id, cfg.bot_token)
+    delivered = await _deliver_anonymous_copy(
+        message,
+        ctx,
+        target_id,
+        "💌 <b>Новый анонимный вопрос</b>",
+        K.anonymous_reply_keyboard(sender_token),
+    )
+    await state.clear()
+
+    if delivered:
+        await ctx.reply(
+            "✅ Анонимный вопрос отправлен.",
+            K.back_menu_keyboard(),
+        )
+    else:
+        await ctx.reply(
+            "Не получилось доставить анонимный вопрос.",
+            K.back_menu_keyboard(),
+        )
+
+
+@router.callback_query(F.data.startswith("anonq:reply:"))
+async def cb_anonymous_reply(
+    event: CallbackQuery, ctx: Ctx, cfg: Config, state: FSMContext
+) -> None:
+    token = (event.data or "").removeprefix("anonq:reply:")
+    target_id = decode_anon_question_token(token, cfg.bot_token)
+    if not target_id:
+        await ctx.ack("Этот вопрос уже недоступен", alert=True)
+        return
+    if await ctx.restricted():
+        await state.clear()
+        return
+
+    await state.clear()
+    await state.set_state(AnonymousQuestionStates.answer)
+    await state.update_data(anonymous_answer_target=int(target_id))
+    await ctx.ack()
+    await ctx.reply(
+        "💌 <b>Ответ на анонимный вопрос</b>\n\n"
+        "Отправь сообщение. Можно текст, фото, GIF, стикер, "
+        "голосовое или другое медиа."
+    )
+
+
+@router.message(AnonymousQuestionStates.answer)
+async def send_anonymous_answer(
+    message: Message, ctx: Ctx, state: FSMContext
+) -> None:
+    if message.text and message.text.startswith("/"):
+        await state.clear()
+        await show_menu(ctx)
+        return
+    if await ctx.restricted():
+        await state.clear()
+        return
+
+    data = await state.get_data()
+    target_id = int(data.get("anonymous_answer_target") or 0)
+    if not target_id:
+        await state.clear()
+        await show_menu(ctx)
+        return
+
+    delivered = await _deliver_anonymous_copy(
+        message,
+        ctx,
+        target_id,
+        "💌 <b>Ответ на твой анонимный вопрос</b>",
+    )
+    await state.clear()
+
+    if delivered:
+        await ctx.reply("✅ Ответ отправлен.", K.back_menu_keyboard())
+    else:
+        await ctx.reply(
+            "Не получилось доставить ответ.",
+            K.back_menu_keyboard(),
+        )
 
 
 # ---------------------------------------------------------------------------------- команды
