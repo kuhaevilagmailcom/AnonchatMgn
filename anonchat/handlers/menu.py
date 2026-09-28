@@ -31,7 +31,7 @@ from ..actions import (
     show_quests,
 )
 from ..commands import ensure_for_admin
-from ..config import Config, decode_anon_question_token, make_anon_question_token
+from ..config import Config, decode_anon_question_token
 from ..db import Database, REFERRAL_DAILY_LIMIT
 
 router = Router(name="menu")
