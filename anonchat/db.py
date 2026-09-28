@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import secrets
 import sqlite3
 import time
 from pathlib import Path
@@ -352,6 +353,7 @@ class Database:
         self._word_reward_lock = asyncio.Lock()
         self._engagement_lock = asyncio.Lock()
         self._nickname_lock = asyncio.Lock()
+        self._anon_question_lock = asyncio.Lock()
         self._admin_permissions_cache: dict[int, tuple[float, frozenset[str]]] = {}
         self._top_cache: dict[tuple[int, int], tuple[float, list[aiosqlite.Row]]] = {}
         self._xp_multiplier_cache: int | None = None
@@ -2481,6 +2483,44 @@ class Database:
             (key, value),
         )
         await self.db.commit()
+
+    async def anonymous_question_token(self, user_id: int) -> str:
+        """Постоянный короткий код пользователя для ссылки на анонимные вопросы."""
+        user_key = f"anonq:user:{int(user_id)}"
+        current = await self.get_kv(user_key)
+        if current:
+            return current
+
+        alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        async with self._anon_question_lock:
+            current = await self.get_kv(user_key)
+            if current:
+                return current
+
+            for _ in range(32):
+                token = "".join(secrets.choice(alphabet) for _ in range(6))
+                token_key = f"anonq:token:{token}"
+                if await self.get_kv(token_key):
+                    continue
+                await self.db.execute(
+                    "INSERT INTO kv (key, value) VALUES (?, ?), (?, ?)",
+                    (
+                        user_key, token,
+                        token_key, str(int(user_id)),
+                    ),
+                )
+                await self.db.commit()
+                return token
+
+        raise RuntimeError("Не удалось создать короткую ссылку анонимных вопросов")
+
+    async def anonymous_question_user(self, token: str) -> int | None:
+        """Разрешает короткий код обратно в Telegram user_id."""
+        value = str(token or "").strip()
+        if len(value) != 6 or not value.isalnum():
+            return None
+        raw = await self.get_kv(f"anonq:token:{value}")
+        return int(raw) if raw.isdigit() else None
 
     async def save_matchmaker(self, state: dict[str, Any]) -> None:
         await self.set_kv(
