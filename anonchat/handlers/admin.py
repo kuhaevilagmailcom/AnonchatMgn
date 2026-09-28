@@ -493,6 +493,7 @@ async def panel_screen(ctx: Ctx, db: Database, mm: Matchmaker, edit: bool = True
     kb = K.admin_panel_keyboard(
         int(s["open_reports"]), ctx.admin_permissions, owner=ctx.is_owner,
         monitor_enabled=await db.get_kv(f"chat_monitor:{ctx.user_id}") == "1",
+        anonymous_monitor_enabled=await db.get_kv(f"anonq_monitor:{ctx.user_id}") == "1",
         xp_multiplier=multiplier,
         poll_active=active_poll is not None,
     )
@@ -878,6 +879,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         K.CB_PANEL_BAN_LIST: "ban",
         K.CB_PANEL_POINTS: "points",
         K.CB_PANEL_MONITOR: "monitor",
+        K.CB_PANEL_ANON_MONITOR: "monitor",
     }.get(data)
     if required and not ctx.can(required):
         await ctx.ack("У тебя нет этого права", alert=True)
@@ -946,6 +948,14 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         await db.set_kv(key, "1" if enabled else "0")
         invalidate_monitor_cache()
         await ctx.ack(f"Слежение за чатами {'включено' if enabled else 'выключено'}")
+        await panel_screen(ctx, db, mm)
+        return
+    if data == K.CB_PANEL_ANON_MONITOR:
+        key = f"anonq_monitor:{ctx.user_id}"
+        enabled = await db.get_kv(key) != "1"
+        await db.set_kv(key, "1" if enabled else "0")
+        invalidate_monitor_cache()
+        await ctx.ack(f"Анонимные вопросы {'включены' if enabled else 'выключены'}")
         await panel_screen(ctx, db, mm)
         return
     if data == K.CB_PANEL_BACKUP:
