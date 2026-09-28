@@ -451,7 +451,7 @@ if (typeof window === 'undefined') {
     if(kind==='battle'){body.innerHTML=`${panel('Битва мнений','Оба отвечают отдельно. Идеальное совпадение 5/5 или 10/10 принесёт каждому 25 ★.')}<div class="modal-actions"><button class="action" data-battle="5">5 вопросов</button><button class="action accent" data-battle="10">10 вопросов</button></div>`;$$('[data-battle]',body).forEach(b=>b.onclick=()=>inviteBattle(+b.dataset.battle));return}
     if(kind==='numbers'){body.innerHTML=`${panel('Числа · 3 раунда','Точное совпадение даёт полную награду, близкое — половину. Для пары награда доступна один раз.')}<div class="modal-actions one"><button class="action" data-range="10">1–10 · до 25 ★</button><button class="action" data-range="100">1–100 · до 50 ★</button><button class="action accent" data-range="1000">1–1000 · до 100 ★</button></div>`;$$('[data-range]',body).forEach(b=>b.onclick=()=>inviteNumbers(+b.dataset.range));return}
   }
-  async function settings(body){const sub=await safe('/api/miniapp/subscription',{},null)||(!tg?.initData?state.subscription:null);state.subscription=sub;body.innerHTML=`<div class="setting"><div><strong>Твой пол</strong><small>необязательно</small></div><div class="segments" id="gender"><button data-value="m">Парень</button><button data-value="f">Девушка</button><button data-value="">Не указывать</button></div></div><div class="setting"><div><strong>Кого ищешь</strong><small>предпочтение</small></div><div class="segments" id="looking"><button data-value="m">Парня</button><button data-value="f">Девушку</button><button data-value="">Неважно</button></div></div><div class="setting"><div><strong>Твой берег</strong><small>необязательно</small></div><select id="district"><option value="">Любой</option><option value="Правый берег">Правый берег</option><option value="Левый берег">Левый берег</option></select></div><div class="setting"><div><strong>Возраст</strong><small>необязательно · 13–20</small></div><input id="age" type="number" inputmode="numeric" min="13" max="20" placeholder="Не указан"></div>${sub&&!sub.claimed?`<section class="panel reward"><span>${svg('gift')}</span><span><strong>${sub.amount} ★ за подписку</strong><small>Одноразовая награда</small></span><button id="subscribe">Получить</button></section>`:''}<section class="panel reward"><span>${svg('gift')}</span><span><strong>Поддержать проект</strong><small>Оплата Telegram Stars откроется в боте</small></span><button id="support">Открыть</button></section><div class="modal-actions"><button class="action" id="resetSettings">Сбросить</button><button class="action accent" id="saveSettings">Сохранить</button></div><div class="modal-actions one"><button class="action danger" id="forget">Удалить профиль</button></div>`;$('#district').value=state.user.district||'';$('#age').value=state.user.age||'';$$('#gender button').forEach(b=>b.classList.toggle('active',b.dataset.value===(state.user.gender||'')));$$('#looking button').forEach(b=>b.classList.toggle('active',b.dataset.value===(state.user.looking_for||'')));$$('#gender button,#looking button').forEach(b=>b.onclick=()=>{$$('button',b.parentElement).forEach(x=>x.classList.remove('active'));b.classList.add('active')});$('#saveSettings').onclick=saveSettings;$('#resetSettings').onclick=resetSettings;$('#forget').onclick=confirmForget;$('#support').onclick=openSupport;if($('#subscribe'))$('#subscribe').onclick=claimSubscription;}
+  async function settings(body){const sub=await safe('/api/miniapp/subscription',{},null)||(!tg?.initData?state.subscription:null);state.subscription=sub;body.innerHTML=`<div class="setting"><div><strong>Твой пол</strong><small>необязательно</small></div><div class="segments" id="gender"><button data-value="m">Парень</button><button data-value="f">Девушка</button><button data-value="">Не указывать</button></div></div><div class="setting"><div><strong>Кого ищешь</strong><small>предпочтение</small></div><div class="segments" id="looking"><button data-value="m">Парня</button><button data-value="f">Девушку</button><button data-value="">Неважно</button></div></div><div class="setting"><div><strong>Твой берег</strong><small>необязательно</small></div><select id="district"><option value="">Любой</option><option value="Правый берег">Правый берег</option><option value="Левый берег">Левый берег</option></select></div><div class="setting"><div><strong>Возраст</strong><small>необязательно · 13–20</small></div><input id="age" type="number" inputmode="numeric" min="13" max="20" placeholder="Не указан"></div>${sub&&!sub.claimed?`<section class="panel reward"><span>${svg('gift')}</span><span><strong>${sub.amount} ★ за подписку</strong><small>Одноразовая награда</small></span><button id="subscribe">Получить</button></section>`:''}<section class="panel reward"><span>${svg('gift')}</span><span><strong>Поддержать проект</strong><small>Оплата Telegram Stars прямо в приложении</small></span><button id="support">Поддержать</button></section><div class="modal-actions"><button class="action" id="resetSettings">Сбросить</button><button class="action accent" id="saveSettings">Сохранить</button></div><div class="modal-actions one"><button class="action danger" id="forget">Удалить профиль</button></div>`;$('#district').value=state.user.district||'';$('#age').value=state.user.age||'';$$('#gender button').forEach(b=>b.classList.toggle('active',b.dataset.value===(state.user.gender||'')));$$('#looking button').forEach(b=>b.classList.toggle('active',b.dataset.value===(state.user.looking_for||'')));$$('#gender button,#looking button').forEach(b=>b.onclick=()=>{$$('button',b.parentElement).forEach(x=>x.classList.remove('active'));b.classList.add('active')});$('#saveSettings').onclick=saveSettings;$('#resetSettings').onclick=resetSettings;$('#forget').onclick=confirmForget;$('#support').onclick=openSupport;if($('#subscribe'))$('#subscribe').onclick=claimSubscription;}
   function bindClose(root=document){$$('[data-close-modal]',root).forEach(b=>b.onclick=closeModal)}
   async function saveNick(){const nick=$('#nick').value.trim();if(nick.length<2)return toast('Минимум 2 символа');const r=await safe('/api/miniapp/profile/nick',{method:'POST',body:JSON.stringify({nick})},null);if(r||!tg?.initData){state.user.nick=r?.nick||nick;render();closeModal();toast('Ник сохранён');notify()}}
   async function saveSettings(){const payload={age:+($('#age').value||0),district:$('#district').value,gender:$('#gender .active')?.dataset.value||'',looking_for:$('#looking .active')?.dataset.value||'',same_district:0};const r=await safe('/api/miniapp/settings',{method:'POST',body:JSON.stringify(payload)},null);if(r||!tg?.initData){state.user={...state.user,...payload,...(r?.user||{})};render();closeModal();toast('Настройки сохранены');notify()}}
@@ -459,7 +459,54 @@ if (typeof window === 'undefined') {
   function confirmForget(){const body=$('#modalBody');body.innerHTML=`${panel('Удалить профиль?','Ник, звёзды, статистика и настройки будут удалены без возможности восстановления.')}<div class="modal-actions"><button class="action" id="cancelForget">Отмена</button><button class="action danger" id="doForget">Удалить</button></div>`;$('#cancelForget').onclick=()=>settings(body);$('#doForget').onclick=forgetProfile}
   async function forgetProfile(){const r=await safe('/api/miniapp/profile/forget',{method:'POST',body:'{}'},null);if(r){notify();try{tg?.close()}catch(_){location.reload()}}}
   async function claimSubscription(){if(!state.subscription)return;try{tg?.openTelegramLink?.(state.subscription.url)}catch(_){};toast('Подпишись и нажми ещё раз для проверки');const b=$('#subscribe');if(b){b.textContent='Проверить';b.onclick=async()=>{const r=await safe('/api/miniapp/subscription/claim',{method:'POST',body:'{}'},null);if(r){state.user.stars=r.stars;render();settings($('#modalBody'));toast(`+${r.amount} ★`);notify()}}}}
-  function openSupport(){if(!state.bot_url)return toast('Ссылка на бота пока недоступна');try{tg?.openTelegramLink?.(state.bot_url)}catch(_){location.href=state.bot_url}}
+  function openSupport(){
+    const body=$('#modalBody');
+    body.innerHTML=`${panel('Поддержать проект','Выбери любое количество Telegram Stars. Оплата откроется поверх Mini App — переходить в чат с ботом не нужно.')}<div class="setting"><div><strong>Количество звёзд</strong><small>от 1 до 10 000 ★</small></div><input id="supportStars" type="number" inputmode="numeric" min="1" max="10000" step="1" value="100" placeholder="100"></div><div class="modal-actions"><button class="action" id="supportBack">Назад</button><button class="action accent" id="supportPay">Оплатить ★</button></div>`;
+    const input=$('#supportStars');
+    $('#supportBack').onclick=()=>settings(body);
+    $('#supportPay').onclick=paySupport;
+    input?.addEventListener('keydown',e=>{if(e.key==='Enter')paySupport()});
+    setTimeout(()=>input?.focus(),80);
+  }
+  async function paySupport(){
+    if(!tg?.initData)return toast('Оплата доступна внутри Telegram');
+    const input=$('#supportStars');
+    const stars=Number(input?.value||0);
+    if(!Number.isInteger(stars)||stars<1||stars>10000)return toast('Укажи от 1 до 10 000 ★');
+    const button=$('#supportPay');
+    if(button){button.disabled=true;button.textContent='Создаём счёт…'}
+    const invoice=await safe('/api/miniapp/support/invoice',{method:'POST',body:JSON.stringify({stars})},null);
+    if(!invoice?.invoice_url){
+      if(button){button.disabled=false;button.textContent='Оплатить ★'}
+      return;
+    }
+    const finish=async status=>{
+      if(status==='paid'){
+        notify();
+        toast(`Спасибо за поддержку · ${stars} ★`);
+        await load();
+        if(!$('#modal')?.hidden)settings($('#modalBody'));
+        return;
+      }
+      if(status==='failed')toast('Оплата не прошла');
+      else if(status==='cancelled')toast('Оплата отменена');
+      if(button){button.disabled=false;button.textContent='Оплатить ★'}
+    };
+    try{
+      if(typeof tg?.openInvoice==='function'){
+        tg.openInvoice(invoice.invoice_url,finish);
+      }else if(typeof tg?.openTelegramLink==='function'){
+        if(button){button.disabled=false;button.textContent='Оплатить ★'}
+        tg.openTelegramLink(invoice.invoice_url);
+      }else{
+        if(button){button.disabled=false;button.textContent='Оплатить ★'}
+        location.href=invoice.invoice_url;
+      }
+    }catch(_){
+      if(button){button.disabled=false;button.textContent='Оплатить ★'}
+      toast('Не удалось открыть оплату');
+    }
+  }
   async function copyReferral(){try{await navigator.clipboard.writeText(state.referral_url);toast('Ссылка скопирована')}catch(_){$('#refLink').select();document.execCommand('copy');toast('Ссылка скопирована')}haptic()}
   async function sendFeedback(){const text=$('#feedback').value.trim();if(!text)return toast('Сначала напиши сообщение');const r=await safe('/api/miniapp/feedback',{method:'POST',body:JSON.stringify({text})},null);if(r||!tg?.initData){closeModal();toast('Сообщение отправлено');notify()}}
   async function updateSetting(key,value){const prev=state.user[key];state.user[key]=value;render();const payload={age:state.user.age||0,district:state.user.district||'',gender:state.user.gender||'',looking_for:state.user.looking_for||'',same_district:0};const r=await safe('/api/miniapp/settings',{method:'POST',body:JSON.stringify(payload)},null);if(!r&&tg?.initData){state.user[key]=prev;render()}else if(r?.user){state.user={...state.user,...r.user};render()}}
