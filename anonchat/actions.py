@@ -32,7 +32,7 @@ from aiogram.types import (
 
 from . import nick as nicklib
 from . import texts
-from .config import Config
+from .config import Config, make_anon_question_token
 from .db import Database, referral_day_start
 from .keyboards import (
     back_menu_keyboard, chat_keyboard, menu_keyboard,
@@ -736,6 +736,16 @@ async def show_profile(ctx: Ctx) -> None:
         f"Берег: <b>{texts.esc(me['district']) if me['district'] else 'не указан'}</b>",
         "",
         f"Приглашено: <b>{invited}</b> · +<b>{referral_xp} ⭐</b>",
+    ]
+    bot_me = await ctx.bot.me()
+    ask_token = make_anon_question_token(ctx.user_id, ctx.cfg.bot_token)
+    ask_username = (bot_me.username or "AnonChatMgn_Bot").lstrip("@")
+    ask_link = f"https://t.me/{ask_username}?start=ask_{ask_token}"
+    lines += [
+        "",
+        "💌 <b>Твои анонимные вопросы</b>",
+        "Делись ссылкой — тебе смогут отправлять сообщения полностью анонимно.",
+        f"🔗 <code>{ask_link}</code>",
     ]
     if nicklib.is_supporter(me["support_stars"]):
         lines += ["", f"💎 Поддержал проект: {int(me['support_stars'])} ⭐"]
