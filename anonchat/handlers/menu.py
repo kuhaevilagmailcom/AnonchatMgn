@@ -43,6 +43,18 @@ class AnonymousQuestionStates(StatesGroup):
     answer = State()
 
 
+def _anonymous_caption(title: str, body: str = "") -> str:
+    """Заголовок + подпись в одном Telegram-сообщении.
+
+    У медиа Telegram ограничивает caption, поэтому оставляем запас под заголовок.
+    """
+    clean = texts.esc((body or "").strip())
+    if clean:
+        clean = clean[:900]
+        return f"{title}\n\n{clean}"
+    return title
+
+
 async def _deliver_anonymous_copy(
     message: Message,
     ctx: Ctx,
@@ -50,18 +62,98 @@ async def _deliver_anonymous_copy(
     title: str,
     reply_markup=None,
 ) -> bool:
-    """Копирует сообщение без forward-заголовка, не раскрывая отправителя."""
-    header = None
+    """Доставляет вопрос/ответ одним сообщением без раскрытия отправителя."""
     try:
-        header = await ctx.bot.send_message(target_id, title)
+        if message.text is not None:
+            await ctx.bot.send_message(
+                target_id,
+                _anonymous_caption(title, message.text),
+                reply_markup=reply_markup,
+            )
+            return True
+
+        caption = _anonymous_caption(title, message.caption or "")
+
+        if message.photo:
+            await ctx.bot.send_photo(
+                target_id,
+                message.photo[-1].file_id,
+                caption=caption,
+                reply_markup=reply_markup,
+                has_spoiler=bool(getattr(message, "has_media_spoiler", False)),
+            )
+            return True
+
+        if message.animation:
+            await ctx.bot.send_animation(
+                target_id,
+                message.animation.file_id,
+                caption=caption,
+                reply_markup=reply_markup,
+                has_spoiler=bool(getattr(message, "has_media_spoiler", False)),
+            )
+            return True
+
+        if message.video:
+            await ctx.bot.send_video(
+                target_id,
+                message.video.file_id,
+                caption=caption,
+                reply_markup=reply_markup,
+                has_spoiler=bool(getattr(message, "has_media_spoiler", False)),
+            )
+            return True
+
+        if message.audio:
+            await ctx.bot.send_audio(
+                target_id,
+                message.audio.file_id,
+                caption=caption,
+                reply_markup=reply_markup,
+            )
+            return True
+
+        if message.voice:
+            await ctx.bot.send_voice(
+                target_id,
+                message.voice.file_id,
+                caption=caption,
+                reply_markup=reply_markup,
+            )
+            return True
+
+        if message.document:
+            await ctx.bot.send_document(
+                target_id,
+                message.document.file_id,
+                caption=caption,
+                reply_markup=reply_markup,
+            )
+            return True
+
+        # У стикеров и кружков Bot API не поддерживает caption.
+        # Всё равно доставляем их одним сообщением с кнопкой ответа.
+        if message.sticker:
+            await ctx.bot.send_sticker(
+                target_id,
+                message.sticker.file_id,
+                reply_markup=reply_markup,
+            )
+            return True
+
+        if message.video_note:
+            await ctx.bot.send_video_note(
+                target_id,
+                message.video_note.file_id,
+                reply_markup=reply_markup,
+            )
+            return True
+
+        # Прочие поддерживаемые Telegram-типы (контакт, гео и т.п.)
+        # копируем как одно сообщение. Заголовок к ним API тоже не прикрепляет.
         await message.send_copy(chat_id=target_id, reply_markup=reply_markup)
         return True
     except TelegramAPIError:
-        if header is not None:
-            try:
-                await ctx.bot.delete_message(target_id, header.message_id)
-            except TelegramAPIError:
-                pass
         return False
 
 
@@ -179,11 +271,13 @@ async def send_anonymous_answer(
         await show_menu(ctx)
         return
 
+    sender_token = make_anon_question_token(ctx.user_id, ctx.cfg.bot_token)
     delivered = await _deliver_anonymous_copy(
         message,
         ctx,
         target_id,
-        "💌 <b>Ответ на твой анонимный вопрос</b>",
+        "💌 <b>Ответ на анонимный вопрос</b>",
+        K.anonymous_reply_keyboard(sender_token),
     )
     await state.clear()
 
