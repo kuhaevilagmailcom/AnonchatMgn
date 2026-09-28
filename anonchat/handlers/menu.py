@@ -158,7 +158,7 @@ async def _deliver_anonymous_copy(
 
 
 # ---------------------------------------------------------------------------------- анонимные вопросы
-@router.message(CommandStart(), F.text.startswith("/start ask_"))
+@router.message(CommandStart(), F.text.startswith("/start ask_") | F.text.startswith("/start q_"))
 async def cmd_anonymous_question(
     message: Message, ctx: Ctx, cfg: Config, state: FSMContext
 ) -> None:
@@ -168,9 +168,12 @@ async def cmd_anonymous_question(
 
     parts = (message.text or "").split(maxsplit=1)
     payload = parts[1].strip() if len(parts) == 2 else ""
-    target_id = decode_anon_question_token(
-        payload.removeprefix("ask_"), cfg.bot_token
-    )
+    if payload.startswith("q_"):
+        target_id = await ctx.db.anonymous_question_user(payload.removeprefix("q_"))
+    else:
+        target_id = decode_anon_question_token(
+            payload.removeprefix("ask_"), cfg.bot_token
+        )
     if not target_id:
         await ctx.reply(
             "Эта ссылка на анонимные вопросы не работает.",
@@ -206,7 +209,7 @@ async def send_anonymous_question(
         await show_menu(ctx)
         return
 
-    sender_token = make_anon_question_token(ctx.user_id, cfg.bot_token)
+    sender_token = await ctx.db.anonymous_question_token(ctx.user_id)
     delivered = await _deliver_anonymous_copy(
         message,
         ctx,
@@ -233,7 +236,10 @@ async def cb_anonymous_reply(
     event: CallbackQuery, ctx: Ctx, cfg: Config, state: FSMContext
 ) -> None:
     token = (event.data or "").removeprefix("anonq:reply:")
-    target_id = decode_anon_question_token(token, cfg.bot_token)
+    target_id = await ctx.db.anonymous_question_user(token)
+    if not target_id:
+        # Старые длинные кнопки продолжают работать после перехода на короткие ссылки.
+        target_id = decode_anon_question_token(token, cfg.bot_token)
     if not target_id:
         await ctx.ack("Этот вопрос уже недоступен", alert=True)
         return
@@ -271,7 +277,7 @@ async def send_anonymous_answer(
         await show_menu(ctx)
         return
 
-    sender_token = make_anon_question_token(ctx.user_id, ctx.cfg.bot_token)
+    sender_token = await ctx.db.anonymous_question_token(ctx.user_id)
     delivered = await _deliver_anonymous_copy(
         message,
         ctx,
