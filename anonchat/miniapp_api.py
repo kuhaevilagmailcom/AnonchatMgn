@@ -12,6 +12,7 @@ import os
 import random
 import secrets
 import time
+from collections import defaultdict, deque
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
 
@@ -87,6 +88,7 @@ def _json_error(status: int, message: str) -> web.HTTPException:
         404: web.HTTPNotFound,
         409: web.HTTPConflict,
         413: web.HTTPRequestEntityTooLarge,
+        429: web.HTTPTooManyRequests,
         503: web.HTTPServiceUnavailable,
     }
     return classes.get(status, web.HTTPBadRequest)(
@@ -95,7 +97,7 @@ def _json_error(status: int, message: str) -> web.HTTPException:
     )
 
 
-def validate_init_data(raw: str, bot_token: str, max_age: int = 3600) -> dict:
+def validate_init_data(raw: str, bot_token: str, max_age: int = 43_200) -> dict:
     """Проверяет подпись Telegram WebApp initData по официальной HMAC-схеме."""
     if not raw:
         raise _json_error(401, "Открой Mini App внутри Telegram")
@@ -138,6 +140,10 @@ class MiniAppServer:
         self._bot_username = ""
         self._brand_sticker_file_id = ""
         self._brand_sticker_bytes: bytes | None = None
+        self._http_hits: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+        self._ffmpeg_sem = asyncio.Semaphore(
+            max(1, int(os.getenv("MINIAPP_FFMPEG_CONCURRENCY", "2")))
+        )
         self.serve_static = os.getenv("MINIAPP_SERVE_STATIC", "true").lower() in {
             "1", "true", "yes", "on"
         }
@@ -158,7 +164,7 @@ class MiniAppServer:
         user = validate_init_data(
             raw,
             self.cfg.bot_token,
-            int(os.getenv("MINIAPP_INITDATA_MAX_AGE", "3600")),
+            int(os.getenv("MINIAPP_INITDATA_MAX_AGE", "43200")),
         )
         user_id = int(user["id"])
         presence_touch(user_id)
@@ -196,6 +202,49 @@ class MiniAppServer:
         user_id = int(user["id"])
         presence_touch(user_id)
         return user_id, user
+
+    def _rate_limit(self, request: web.Request) -> None:
+        """Локальный rate-limit Mini App, независимый от aiogram middleware."""
+        path = request.path
+        if path in {"/api/miniapp/health", "/api/miniapp/ws"}:
+            return
+        raw = request.headers.get("X-Telegram-Init-Data", "")
+        identity = (
+            hashlib.sha256(raw.encode("utf-8")).hexdigest()[:20]
+            if raw
+            else f"ip:{request.remote or 'unknown'}"
+        )
+        if path == "/api/miniapp/chat/voice":
+            group, limit, window = "voice", 12, 60.0
+        elif path == "/api/miniapp/feedback":
+            group, limit, window = "feedback", 5, 600.0
+        elif path == "/api/miniapp/support/invoice":
+            group, limit, window = "invoice", 10, 60.0
+        elif path.startswith("/api/miniapp/chat/"):
+            group, limit, window = "chat", max(30, int(self.cfg.inchat_rate_limit)), 60.0
+        elif path.startswith("/api/miniapp/games/") or path.startswith("/api/miniapp/search/"):
+            group, limit, window = "action", max(20, int(self.cfg.menu_rate_limit)), 60.0
+        else:
+            group, limit, window = "general", 180, 60.0
+
+        key = (identity, group)
+        bucket = self._http_hits[key]
+        now_mono = time.monotonic()
+        cutoff = now_mono - window
+        while bucket and bucket[0] <= cutoff:
+            bucket.popleft()
+        if len(bucket) >= limit:
+            raise _json_error(429, "Слишком много запросов. Попробуй чуть позже")
+        bucket.append(now_mono)
+
+        if len(self._http_hits) > 6000:
+            stale_before = now_mono - 900
+            for stale_key in [
+                item_key
+                for item_key, hits in self._http_hits.items()
+                if not hits or hits[-1] < stale_before
+            ]:
+                self._http_hits.pop(stale_key, None)
 
     def _profile_json(self, row, user: dict) -> dict:
         rank = rank_for(int(row["messages"] or 0))
@@ -559,7 +608,17 @@ class MiniAppServer:
                 reply_event_id = int(reply_raw.get("event_id", 0) or 0)
             except (TypeError, ValueError):
                 reply_event_id = 0
-            reply_preview = str(reply_raw.get("text", "") or "").strip()[:160]
+            if reply_event_id:
+                original = next(
+                    (
+                        item for item in live_chat.events(uid, after=0, limit=160)
+                        if int(item.get("id", 0) or 0) == reply_event_id
+                    ),
+                    None,
+                )
+                if original is None:
+                    raise _json_error(409, "Сообщение для ответа уже недоступно")
+                reply_preview = str(original.get("text", "") or "").strip()[:160]
         if len(text) > int(self.cfg.max_message_len):
             raise _json_error(400, f"Максимум {self.cfg.max_message_len} символов")
         partner = self.mm.partner(uid)
@@ -666,33 +725,34 @@ class MiniAppServer:
         # MediaRecorder отдаёт разные контейнеры в iOS/Android/WebView.
         # Для Telegram всегда нормализуем в OGG/Opus.
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-i",
-                "pipe:0",
-                "-vn",
-                "-ac",
-                "1",
-                "-ar",
-                "48000",
-                "-c:a",
-                "libopus",
-                "-application",
-                "voip",
-                "-b:a",
-                "48k",
-                "-f",
-                "ogg",
-                "pipe:1",
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            out, err = await asyncio.wait_for(proc.communicate(payload), timeout=25)
-        except (FileNotFoundError, TimeoutError, asyncio.TimeoutError) as exc:
+            async with self._ffmpeg_sem:
+                proc = await asyncio.create_subprocess_exec(
+                        "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    "pipe:0",
+                    "-vn",
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "48000",
+                    "-c:a",
+                    "libopus",
+                    "-application",
+                    "voip",
+                    "-b:a",
+                    "48k",
+                    "-f",
+                    "ogg",
+                    "pipe:1",
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                out, err = await asyncio.wait_for(proc.communicate(payload), timeout=25)
+            except (FileNotFoundError, TimeoutError, asyncio.TimeoutError) as exc:
             raise _json_error(503, "Не удалось обработать голосовое") from exc
         if proc.returncode != 0 or not out:
             detail = err.decode("utf-8", "ignore").strip()[-180:]
@@ -1287,9 +1347,8 @@ class MiniAppServer:
         candidate, error = nicklib.validate(str(data.get("nick", "")).strip())
         if error:
             raise _json_error(400, str(error))
-        if await self.db.nickname_taken(candidate, except_user_id=uid):
+        if not await self.db.set_unique_nickname(uid, candidate):
             raise _json_error(409, "Этот ник уже занят")
-        await self.db.set_profile(uid, nickname=candidate)
         row = await self.db.get_user(uid)
         return web.json_response(
             {"nick": nicklib.display(row["nickname"], uid, int(row["support_stars"] or 0))}
@@ -1305,31 +1364,38 @@ class MiniAppServer:
             payload = self._status_payload(uid)
             payload["stats"] = {**await self._stats(uid, row), **payload["stats"]}
             return web.json_response(payload)
-        excluded = await self.db.excluded_partners(uid)
-        outcome, payload = self.mm.connect(
+
+        excluded = await self.db.excluded_partners(
             uid,
-            district=str(row["district"] or ""),
-            same_district=False,
-            gender=str(row["gender"] or ""),
-            looking_for=str(row["looking_for"] or ""),
-            excluded=excluded,
+            recent_seconds=max(
+                0, int(self.cfg.recent_partner_cooldown_minutes)
+            ) * 60,
         )
-        if outcome == "full":
-            raise _json_error(503, "Очередь заполнена. Попробуй чуть позже")
-        if outcome == "paired":
-            made = await announce_pairs(
-                self.bot, self.cfg, self.mm, [(uid, int(payload))], self.pack, self.db
+        outcome = "queued"
+        payload = None
+        for _ in range(3):
+            outcome, payload = self.mm.connect(
+                uid,
+                district=str(row["district"] or ""),
+                same_district=False,
+                gender=str(row["gender"] or ""),
+                looking_for=str(row["looking_for"] or ""),
+                excluded=excluded,
             )
-            if not made:
-                self.mm.forget(uid)
-                outcome, payload = "queued", self.mm.connect(
-                    uid,
-                    district=str(row["district"] or ""),
-                    same_district=False,
-                    gender=str(row["gender"] or ""),
-                    looking_for=str(row["looking_for"] or ""),
-                    excluded=excluded,
-                )[1]
+            if outcome == "full":
+                raise _json_error(503, "Очередь заполнена. Попробуй чуть позже")
+            if outcome != "paired":
+                break
+            partner_id = int(payload)
+            made = await announce_pairs(
+                self.bot, self.cfg, self.mm, [(uid, partner_id)], self.pack, self.db
+            )
+            if made:
+                break
+            # Не оставляем "тихую" пару. Исключаем недоступного кандидата и пробуем ещё.
+            self.mm.forget(uid)
+            excluded.add(partner_id)
+
         self.db.schedule_matchmaker_save(self.mm)
         current = self._status_payload(uid)
         current["stats"] = {**await self._stats(uid, row), **current["stats"]}
@@ -1351,9 +1417,10 @@ class MiniAppServer:
         chatting = self.mm.online_pairs() * 2
         searching = self.mm.queue_size()
         key = time.strftime("miniapp_peak:%Y-%m-%d", time.gmtime(time.time() + 18000))
-        peak = max(current, int(await self.db.get_kv(key, "0") or 0))
-        if peak == current:
-            await self.db.set_kv(key, str(peak))
+        saved_peak = int(await self.db.get_kv(key, "0") or 0)
+        peak = max(current, saved_peak)
+        if current > saved_peak:
+            await self.db.set_kv(key, str(current))
         return web.json_response(
             {
                 "online": current,
@@ -1551,7 +1618,10 @@ class MiniAppServer:
         if partner is None:
             raise _json_error(409, "Сначала найди собеседника")
         data = await request.json()
-        total = int(data.get("total", 10) or 10)
+        try:
+            total = int(data.get("total", 10) or 10)
+        except (TypeError, ValueError) as exc:
+            raise _json_error(400, "Неверное количество вопросов") from exc
         if total not in {5, 10}:
             total = 10
         existing = await self.db.game_for_pair(uid, partner)
@@ -2161,6 +2231,8 @@ class MiniAppServer:
             response = web.Response(status=204)
         else:
             try:
+                if request.path.startswith("/api/miniapp/"):
+                    self._rate_limit(request)
                 response = await handler(request)
             except web.HTTPException as exc:
                 response = exc
