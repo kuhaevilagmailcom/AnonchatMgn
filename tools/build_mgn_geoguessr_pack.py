@@ -14,7 +14,7 @@ import zipfile
 OUT = pathlib.Path(".mgn-pack-output")
 PHOTOS = OUT / "photos"
 B64 = OUT / "b64"
-ZIP_PATH = OUT / "Magnitogorsk_GeoGuessr_20.zip"
+ZIP_PATH = OUT / "Magnitogorsk_GeoGuessr_40.zip"
 
 items = [
     ("53.378356","58.996831","Views of Magnitogorsk-2021 - 2.jpeg","Магнитогорск. Вознесенская церковь (вид с ул. Завенягина)","https://thumb.wikimedia.org/wikipedia/commons/thumb/a/af/Views_of_Magnitogorsk-2021_-_2.jpeg/1280px-Views_of_Magnitogorsk-2021_-_2.jpeg"),
@@ -37,6 +37,26 @@ items = [
     ("53.411194","58.984722","Views of Magnitogorsk-2021 - 70.jpeg","Стела Славы Магнитки","https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a0/Views_of_Magnitogorsk-2021_-_70.jpeg/1280px-Views_of_Magnitogorsk-2021_-_70.jpeg"),
     ("53.381222","58.990631","Views of Magnitogorsk-2021 - 72.jpeg","Арена «Металлург»","https://thumb.wikimedia.org/wikipedia/commons/thumb/5/55/Views_of_Magnitogorsk-2021_-_72.jpeg/1280px-Views_of_Magnitogorsk-2021_-_72.jpeg"),
     ("53.380375","58.988700","Views of Magnitogorsk-2021 - 74.jpeg","Вид на Арену «Металлург» и Вознесенскую церковь","https://thumb.wikimedia.org/wikipedia/commons/thumb/2/26/Views_of_Magnitogorsk-2021_-_74.jpeg/1280px-Views_of_Magnitogorsk-2021_-_74.jpeg"),
+    ("53.378783","58.994806","Views of Magnitogorsk-2021 - 1.jpeg","Улица Завенягина; слева Вознесенская церковь","https://thumb.wikimedia.org/wikipedia/commons/thumb/6/6f/Views_of_Magnitogorsk-2021_-_1.jpeg/1280px-Views_of_Magnitogorsk-2021_-_1.jpeg"),
+    ("53.385456","58.998131","Views of Magnitogorsk-2021 - 10.jpeg","Заводской пруд на реке Урал","https://thumb.wikimedia.org/wikipedia/commons/thumb/4/44/Views_of_Magnitogorsk-2021_-_10.jpeg/1280px-Views_of_Magnitogorsk-2021_-_10.jpeg"),
+    ("53.385442","58.998139","Views of Magnitogorsk-2021 - 11.jpeg","Заводской пруд на реке Урал, другой ракурс","https://thumb.wikimedia.org/wikipedia/commons/thumb/2/29/Views_of_Magnitogorsk-2021_-_11.jpeg/1280px-Views_of_Magnitogorsk-2021_-_11.jpeg"),
+    ("53.398269","58.986511","Views of Magnitogorsk-2021 - 13.jpeg","Магнитогорский цирк","https://thumb.wikimedia.org/wikipedia/commons/thumb/0/08/Views_of_Magnitogorsk-2021_-_13.jpeg/1280px-Views_of_Magnitogorsk-2021_-_13.jpeg"),
+    ("53.398317","58.986522","Views of Magnitogorsk-2021 - 14.jpeg","Цирк и тротуар на улице Грязнова","https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ae/Views_of_Magnitogorsk-2021_-_14.jpeg/1280px-Views_of_Magnitogorsk-2021_-_14.jpeg"),
+    ("53.401111","58.985783","Views of Magnitogorsk-2021 - 15.jpeg","Проспект Ленина, вид на север от улицы Грязнова","https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1f/Views_of_Magnitogorsk-2021_-_15.jpeg/960px-Views_of_Magnitogorsk-2021_-_15.jpeg"),
+    ("53.407208","58.986256","Views of Magnitogorsk-2021 - 16.jpeg","Стела «Магнитогорск»","https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1d/Views_of_Magnitogorsk-2021_-_16.jpeg/1280px-Views_of_Magnitogorsk-2021_-_16.jpeg"),
+    ("53.407214","58.986267","Views of Magnitogorsk-2021 - 17.jpeg","Стела «Магнитогорск», другой ракурс","https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1a/Views_of_Magnitogorsk-2021_-_17.jpeg/1280px-Views_of_Magnitogorsk-2021_-_17.jpeg"),
+    ("53.407825","58.991017","Views of Magnitogorsk-2021 - 20.jpeg","Парк «У Вечного огня»","https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5a/Views_of_Magnitogorsk-2021_-_20.jpeg/1280px-Views_of_Magnitogorsk-2021_-_20.jpeg"),
+    ("53.407289","58.992456","Views of Magnitogorsk-2021 - 24.jpeg","Городской пляж и заводской пруд","https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0b/Views_of_Magnitogorsk-2021_-_24.jpeg/1280px-Views_of_Magnitogorsk-2021_-_24.jpeg"),
+    ("53.407222","58.992458","Views of Magnitogorsk-2021 - 25.jpeg","Городской пляж, на дальнем плане цеха ММК","https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b3/Views_of_Magnitogorsk-2021_-_25.jpeg/1280px-Views_of_Magnitogorsk-2021_-_25.jpeg"),
+    ("53.380131","58.996586","Views of Magnitogorsk-2021 - 3.jpeg","Вознесенская церковь","https://thumb.wikimedia.org/wikipedia/commons/thumb/0/07/Views_of_Magnitogorsk-2021_-_3.jpeg/1280px-Views_of_Magnitogorsk-2021_-_3.jpeg"),
+    ("53.406850","58.978775","Views of Magnitogorsk-2021 - 30.jpeg","Городские куранты на площади Народных гуляний","https://thumb.wikimedia.org/wikipedia/commons/thumb/8/84/Views_of_Magnitogorsk-2021_-_30.jpeg/1280px-Views_of_Magnitogorsk-2021_-_30.jpeg"),
+    ("53.406894","58.979672","Views of Magnitogorsk-2021 - 31.jpeg","Фонтаны на площади Народных гуляний","https://thumb.wikimedia.org/wikipedia/commons/thumb/2/28/Views_of_Magnitogorsk-2021_-_31.jpeg/1280px-Views_of_Magnitogorsk-2021_-_31.jpeg"),
+    ("53.420147","58.981536","Views of Magnitogorsk-2021 - 35.jpeg","Учебный корпус МГТУ на улице Калинина","https://thumb.wikimedia.org/wikipedia/commons/thumb/8/87/Views_of_Magnitogorsk-2021_-_35.jpeg/1280px-Views_of_Magnitogorsk-2021_-_35.jpeg"),
+    ("53.421300","58.979817","Views of Magnitogorsk-2021 - 37.jpeg","Учебный корпус МГТУ на проспекте Карла Маркса","https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a9/Views_of_Magnitogorsk-2021_-_37.jpeg/1280px-Views_of_Magnitogorsk-2021_-_37.jpeg"),
+    ("53.430058","58.981883","Views of Magnitogorsk-2021 - 38.jpeg","Театр оперы и балета с западной стороны","https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c1/Views_of_Magnitogorsk-2021_-_38.jpeg/1280px-Views_of_Magnitogorsk-2021_-_38.jpeg"),
+    ("53.437058","58.981444","Views of Magnitogorsk-2021 - 41.jpeg","Памятная плита на постаменте памятника Рабочему","https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e3/Views_of_Magnitogorsk-2021_-_41.jpeg/960px-Views_of_Magnitogorsk-2021_-_41.jpeg"),
+    ("53.437100","58.981239","Views of Magnitogorsk-2021 - 42.jpeg","Памятник Рабочему на привокзальной площади","https://thumb.wikimedia.org/wikipedia/commons/thumb/1/15/Views_of_Magnitogorsk-2021_-_42.jpeg/1280px-Views_of_Magnitogorsk-2021_-_42.jpeg"),
+    ("53.434906","58.983489","Views of Magnitogorsk-2021 - 43.jpeg","Проспект Ленина, вид на север от улицы Московской","https://thumb.wikimedia.org/wikipedia/commons/thumb/2/2f/Views_of_Magnitogorsk-2021_-_43.jpeg/1280px-Views_of_Magnitogorsk-2021_-_43.jpeg"),
 ]
 
 def commons_page(source_name: str) -> str:
@@ -80,7 +100,7 @@ def main() -> None:
     for index, (lat, lon, source_name, description, url) in enumerate(items, start=1):
         filename = f"{lat}_{lon}.jpg"
         path = PHOTOS / filename
-        print(f"[{index:02d}/20] {filename}", flush=True)
+        print(f"[{index:02d}/{len(items)}] {filename}", flush=True)
         data = download(url)
         path.write_bytes(data)
         # Be polite to Wikimedia's thumbnail service and avoid burst throttling.
@@ -104,7 +124,7 @@ def main() -> None:
 
     readme = OUT / "README.txt"
     readme.write_text(
-        "Magnitogorsk GeoGuessr — 20 photos\n"
+        "Magnitogorsk GeoGuessr — 40 photos\n"
         "Image filename format: latitude_longitude.jpg\n"
         "Coordinates are camera/location coordinates from Wikimedia Commons.\n"
         "Photos: Vyacheslav Bukharov, CC BY-SA 4.0.\n"
