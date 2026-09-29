@@ -92,8 +92,13 @@ async def _deliver(message, bot, pack, monitor_ids: tuple[int, ...], header: str
 async def enqueue_chat_monitor(message, ctx, partner_id: int) -> None:
     """Ставит monitor-copy в ограниченный фон, не тормозя основной диалог."""
     ids = await _monitor_ids(ctx.db, ctx.cfg.admin_ids)
-    # Если мониторинг включён, показываем обе стороны диалога полностью.
-    # Не исключаем администратора даже если он сам участник тестового диалога.
+    # Участнику диалога не шлём служебную monitor-копию с ID/username:
+    # он и так получает обычное анонимное сообщение. Наблюдающие админы видят обе стороны.
+    ids = tuple(
+        admin_id
+        for admin_id in ids
+        if admin_id not in {int(ctx.user_id), int(partner_id)}
+    )
     if not ids:
         return
     if len(_PENDING) >= _MAX_PENDING:
@@ -138,6 +143,11 @@ async def enqueue_chat_monitor_sent(
     Telegram Message и тот же формат мониторинга, что у обычного чата.
     """
     ids = await _monitor_ids(db, cfg.admin_ids)
+    ids = tuple(
+        admin_id
+        for admin_id in ids
+        if admin_id not in {int(sender_id), int(partner_id)}
+    )
     if not ids:
         return
 
