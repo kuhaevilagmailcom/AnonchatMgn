@@ -51,7 +51,7 @@ def _anonymous_body(body: str = "", *, media: bool = False) -> str:
     footer = "⬅️ Свайпни для ответа."
     limit = 820 if media else 3800
     if clean:
-        return f"{title}\n\n{clean[:limit]}\n\n{footer}"
+        return f"{title}\n\n<blockquote>{clean[:limit]}</blockquote>\n\n{footer}"
     return f"{title}\n\n{footer}"
 
 
