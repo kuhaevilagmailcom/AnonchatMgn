@@ -1,0 +1,34 @@
+name: Build Magnitogorsk GeoGuessr pack
+
+on:
+  push:
+    branches:
+      - tmp-mgn-geoguessr-pack
+    paths-ignore:
+      - ".mgn-pack-output/**"
+
+permissions:
+  contents: write
+
+jobs:
+  build-pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: tmp-mgn-geoguessr-pack
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build photo pack
+        run: python tools/build_mgn_geoguessr_pack.py
+
+      - name: Commit generated pack
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .mgn-pack-output
+          git commit -m "Build Magnitogorsk GeoGuessr photo pack [skip ci]"
+          git push origin HEAD:tmp-mgn-geoguessr-pack
