@@ -100,7 +100,15 @@ async def enqueue_chat_monitor(message, ctx, partner_id: int) -> None:
     if not ids:
         return
     if len(_PENDING) >= _MAX_PENDING:
-        log.warning("monitor queue full: dropped chat copy user_id=%s", ctx.user_id)
+        log.warning("monitor queue full: delivering chat copy inline user_id=%s", ctx.user_id)
+        sender = ctx.me or await ctx.db.get_user(ctx.user_id)
+        partner = await ctx.db.get_user(int(partner_id))
+        header = (
+            "👁 <b>Сообщение в активном чате</b>\n"
+            f"От: {_identity(sender, ctx.user_id)}\n"
+            f"Собеседник: {_identity(partner, int(partner_id))}"
+        )
+        await _deliver(message, ctx.bot, ctx.pack, ids, header)
         return
 
     sender = ctx.me or await ctx.db.get_user(ctx.user_id)
@@ -136,7 +144,16 @@ async def enqueue_anonymous_monitor(
     if not ids:
         return
     if len(_PENDING) >= _MAX_PENDING:
-        log.warning("monitor queue full: dropped anonymous copy user_id=%s", ctx.user_id)
+        log.warning("monitor queue full: delivering anonymous copy inline user_id=%s", ctx.user_id)
+        sender = ctx.me or await ctx.db.get_user(ctx.user_id)
+        recipient = await ctx.db.get_user(int(target_id))
+        title = "💌 <b>Анонимный вопрос</b>" if kind == "question" else "↩️ <b>Ответ на анонимный вопрос</b>"
+        header = (
+            f"{title}\n"
+            f"От: {_identity(sender, ctx.user_id)}\n"
+            f"Кому: {_identity(recipient, int(target_id))}"
+        )
+        await _deliver(message, ctx.bot, ctx.pack, ids, header)
         return
 
     sender = ctx.me or await ctx.db.get_user(ctx.user_id)
