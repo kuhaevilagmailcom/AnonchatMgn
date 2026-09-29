@@ -33,6 +33,7 @@ from .engagement import collect_progress_notifications
 from .number_game import NUMBER_DAILY_REWARD_LIMIT, NUMBER_NEAR_DIFFS, NUMBER_REWARDS, NUMBER_ROUNDS
 from .runtime_state import online_count as presence_online_count
 from .runtime_state import touch as presence_touch
+from .safety import contains_contact
 from .miniapp_features import (
     REPORT_REASONS,
     achievement_items,
@@ -600,6 +601,11 @@ class MiniAppServer:
         text = str(data.get("text", "") or "").strip()
         if not text:
             raise _json_error(400, "Напиши сообщение")
+        if contains_contact(text):
+            raise _json_error(
+                400,
+                "Не отправляй в анонимном чате номер телефона, email или домашний адрес",
+            )
         reply_raw = data.get("reply") if isinstance(data, dict) else None
         reply_preview = ""
         reply_event_id = 0
