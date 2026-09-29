@@ -723,11 +723,12 @@ class MiniAppServer:
         self, payload: bytes, content_type: str, filename: str
     ) -> tuple[bytes, str]:
         # MediaRecorder отдаёт разные контейнеры в iOS/Android/WebView.
-        # Для Telegram всегда нормализуем в OGG/Opus.
+        # Для Telegram всегда нормализуем в OGG/Opus. Тяжёлый ffmpeg ограничиваем,
+        # чтобы несколько голосовых одновременно не забили CPU хостинга.
         try:
             async with self._ffmpeg_sem:
                 proc = await asyncio.create_subprocess_exec(
-                        "ffmpeg",
+                    "ffmpeg",
                     "-hide_banner",
                     "-loglevel",
                     "error",
@@ -752,7 +753,7 @@ class MiniAppServer:
                     stderr=asyncio.subprocess.PIPE,
                 )
                 out, err = await asyncio.wait_for(proc.communicate(payload), timeout=25)
-            except (FileNotFoundError, TimeoutError, asyncio.TimeoutError) as exc:
+        except (FileNotFoundError, TimeoutError, asyncio.TimeoutError) as exc:
             raise _json_error(503, "Не удалось обработать голосовое") from exc
         if proc.returncode != 0 or not out:
             detail = err.decode("utf-8", "ignore").strip()[-180:]
