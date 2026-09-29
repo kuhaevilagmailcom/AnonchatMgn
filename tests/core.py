@@ -1633,8 +1633,8 @@ def test_miniapp_health_static_and_origin_guard() -> None:
 def test_anonymous_question_limits_and_cleanup() -> None:
     from anonchat.handlers.menu import _anonymous_body
 
-    plain = _anonymous_body("<b>title</b>", "x" * 2500)
-    media = _anonymous_body("<b>title</b>", "x" * 2500, media=True)
+    plain = _anonymous_body("x" * 2500)
+    media = _anonymous_body("x" * 2500, media=True)
     assert len(plain) > 900
     assert len(media) < len(plain)
 
