@@ -2,11 +2,17 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from typing import Any
 
+from aiogram.exceptions import TelegramAPIError
+from aiogram.types import ReplyParameters
+
 from . import texts
-from .actions import DeliveryResult, send_copy_to, send_to
+from .actions import DeliveryResult, send_copy_to_message, send_to
+
+log = logging.getLogger("anonchat.monitoring")
 
 _CACHE_UNTIL = 0.0
 _CACHE_IDS: tuple[int, ...] = ()
@@ -68,9 +74,19 @@ async def _deliver(message, bot, pack, monitor_ids: tuple[int, ...], header: str
                     bot, admin_id, f"{header}\n\n{texts.esc(message.text)}", None, pack
                 )
             else:
-                result = await send_to(bot, admin_id, header, None, pack)
+                result, sent = await send_copy_to_message(bot, message, admin_id)
                 if result is DeliveryResult.DELIVERED:
-                    await send_copy_to(bot, message, admin_id)
+                    if sent is not None:
+                        try:
+                            await bot.send_message(
+                                admin_id,
+                                header,
+                                reply_parameters=ReplyParameters(message_id=sent.message_id),
+                            )
+                        except TelegramAPIError:
+                            await send_to(bot, admin_id, header, None, pack)
+                    else:
+                        await send_to(bot, admin_id, header, None, pack)
 
 
 async def enqueue_chat_monitor(message, ctx, partner_id: int) -> None:
@@ -81,7 +97,10 @@ async def enqueue_chat_monitor(message, ctx, partner_id: int) -> None:
         for admin_id in ids
         if admin_id not in {int(ctx.user_id), int(partner_id)}
     )
-    if not ids or len(_PENDING) >= _MAX_PENDING:
+    if not ids:
+        return
+    if len(_PENDING) >= _MAX_PENDING:
+        log.warning("monitor queue full: dropped chat copy user_id=%s", ctx.user_id)
         return
 
     sender = ctx.me or await ctx.db.get_user(ctx.user_id)
@@ -114,7 +133,10 @@ async def enqueue_anonymous_monitor(
     # Для анонимных вопросов модератор получает копию даже если сам является
     # отправителем или получателем — иначе тест собственной ссылки выглядит
     # так, будто мониторинг не работает.
-    if not ids or len(_PENDING) >= _MAX_PENDING:
+    if not ids:
+        return
+    if len(_PENDING) >= _MAX_PENDING:
+        log.warning("monitor queue full: dropped anonymous copy user_id=%s", ctx.user_id)
         return
 
     sender = ctx.me or await ctx.db.get_user(ctx.user_id)
