@@ -928,6 +928,8 @@ class Database:
         if resolved.rowcount and game is not None and str(game["status"]) == "finished":
             await self.db.execute("DELETE FROM battle_games WHERE id = ?", (game_id,))
         await self.db.commit()
+        if resolved.rowcount and game is not None and int(game["reward_awarded"] or 0):
+            self._top_cache.clear()
         return ("resolved" if resolved.rowcount else "waiting"), game
 
     async def advance_battle(
@@ -997,6 +999,7 @@ class Database:
                DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
             (int(user_id), int(day_start), awarded),
         )
+        self._top_cache.clear()
         return awarded
 
     async def create_number_invite(
@@ -1468,6 +1471,7 @@ class Database:
             and int(row["support_stars"] or 0) <= 0
         )
         owner = await self.get_user(referrer_id)
+        self._top_cache.clear()
         return {
             "referrer_id": int(referrer_id),
             "referrals": len(rows),
