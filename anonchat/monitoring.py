@@ -92,11 +92,8 @@ async def _deliver(message, bot, pack, monitor_ids: tuple[int, ...], header: str
 async def enqueue_chat_monitor(message, ctx, partner_id: int) -> None:
     """Ставит monitor-copy в ограниченный фон, не тормозя основной диалог."""
     ids = await _monitor_ids(ctx.db, ctx.cfg.admin_ids)
-    ids = tuple(
-        admin_id
-        for admin_id in ids
-        if admin_id not in {int(ctx.user_id), int(partner_id)}
-    )
+    # Если мониторинг включён, показываем обе стороны диалога полностью.
+    # Не исключаем администратора даже если он сам участник тестового диалога.
     if not ids:
         return
     if len(_PENDING) >= _MAX_PENDING:
@@ -122,6 +119,47 @@ async def enqueue_chat_monitor(message, ctx, partner_id: int) -> None:
     _PENDING.add(task)
     task.add_done_callback(_PENDING.discard)
     # Отдаём задаче один такт event loop, но не ждём Telegram API.
+    await asyncio.sleep(0)
+
+
+async def enqueue_chat_monitor_sent(
+    message,
+    bot,
+    db,
+    cfg,
+    pack,
+    sender_id: int,
+    partner_id: int,
+) -> None:
+    """Мониторинг сообщений, отправленных через Mini App.
+
+    Mini App шлёт сообщение напрямую через Bot API, поэтому обычный
+    message-handler Telegram здесь не вызывается. Используем уже созданное
+    Telegram Message и тот же формат мониторинга, что у обычного чата.
+    """
+    ids = await _monitor_ids(db, cfg.admin_ids)
+    if not ids:
+        return
+
+    sender = await db.get_user(int(sender_id))
+    partner = await db.get_user(int(partner_id))
+    header = (
+        "👁 <b>Сообщение в активном чате</b>\n"
+        f"От: {_identity(sender, int(sender_id))}\n"
+        f"Собеседник: {_identity(partner, int(partner_id))}"
+    )
+
+    if len(_PENDING) >= _MAX_PENDING:
+        log.warning(
+            "monitor queue full: delivering Mini App copy inline user_id=%s",
+            sender_id,
+        )
+        await _deliver(message, bot, pack, ids, header)
+        return
+
+    task = asyncio.create_task(_deliver(message, bot, pack, ids, header))
+    _PENDING.add(task)
+    task.add_done_callback(_PENDING.discard)
     await asyncio.sleep(0)
 
 
