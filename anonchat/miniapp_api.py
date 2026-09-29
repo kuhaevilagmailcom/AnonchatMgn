@@ -198,7 +198,7 @@ class MiniAppServer:
         user = validate_init_data(
             raw,
             self.cfg.bot_token,
-            int(os.getenv("MINIAPP_INITDATA_MAX_AGE", "3600")),
+            int(os.getenv("MINIAPP_INITDATA_MAX_AGE", "43200")),
         )
         user_id = int(user["id"])
         presence_touch(user_id)
