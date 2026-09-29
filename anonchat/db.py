@@ -362,7 +362,10 @@ class Database:
     async def start(self) -> "Database":
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self._db = await aiosqlite.connect(self.path)
+            # Autocommit не даёт разным asyncio-обработчикам случайно делить одну
+            # неявную транзакцию одной Connection. Многошаговые операции остаются
+            # идемпотентными/защищёнными уникальными ключами и локами уровня домена.
+            self._db = await aiosqlite.connect(self.path, isolation_level=None)
             self._db.row_factory = aiosqlite.Row
             await self._db.execute("PRAGMA journal_mode=WAL")
             await self._db.execute("PRAGMA synchronous=NORMAL")
@@ -1333,6 +1336,7 @@ class Database:
             )
         if commit:
             await self.db.commit()
+        self._top_cache.clear()
         row = await self._fetchone("SELECT xp FROM users WHERE user_id = ?", (user_id,))
         return int(row["xp"]) if row else 0
 
@@ -1420,6 +1424,7 @@ class Database:
                 (int(referrer_id), referral_day_start(timestamp), int(amount)),
             )
             await self.db.commit()
+            self._top_cache.clear()
             return True
 
     async def referral_stats(self, referrer_id: int) -> tuple[int, int]:
@@ -1603,16 +1608,14 @@ class Database:
         provider_charge_id: str,
         payload: str,
     ) -> tuple[bool, int]:
-        try:
-            await self.db.execute(
-                """INSERT INTO payments
-                   (user_id, kind, stars, telegram_payment_charge_id,
-                    provider_payment_charge_id, created_at, payload)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (user_id, kind, stars, telegram_charge_id, provider_charge_id, now(), payload),
-            )
-        except aiosqlite.IntegrityError:
-            await self.db.rollback()
+        cur = await self.db.execute(
+            """INSERT OR IGNORE INTO payments
+               (user_id, kind, stars, telegram_payment_charge_id,
+                provider_payment_charge_id, created_at, payload)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, kind, stars, telegram_charge_id, provider_charge_id, now(), payload),
+        )
+        if cur.rowcount != 1:
             row = await self.get_user(user_id)
             return False, int(row["support_stars"] or 0) if row else 0
 
@@ -1624,7 +1627,6 @@ class Database:
             )
             row = await self.get_user(user_id)
             total_support = int(row["support_stars"] or 0) if row else stars
-        await self.db.commit()
         return True, total_support
 
     # ------------------------------------------------------------------ moderation
@@ -2188,6 +2190,7 @@ class Database:
                     (int(user_id), day, reward),
                 )
             await self.db.commit()
+            self._top_cache.clear()
             return True
 
     async def daily_quest_claimed(self, user_id: int, day: int | None = None) -> set[str]:
@@ -2232,6 +2235,7 @@ class Database:
                     (int(user_id), int(day), reward),
                 )
             await self.db.commit()
+            self._top_cache.clear()
             return True
 
     async def cleanup_daily_activity(self, retention_days: int = 40) -> int:
@@ -2637,6 +2641,7 @@ class Database:
             "UPDATE users SET xp = MAX(0, xp + ?) WHERE user_id = ?", (int(amount), user_id)
         )
         await self.db.commit()
+        self._top_cache.clear()
         row = await self.get_user(user_id)
         return int(row["xp"] or 0) if row else 0
 
@@ -2650,6 +2655,7 @@ class Database:
 
     async def forget_user(self, user_id: int) -> None:
         """Стирает профиль, но сохраняет действующий бан/мут и модерационные доказательства."""
+        anon_token = await self.get_kv(f"anonq:user:{int(user_id)}")
         row = await self.get_user(user_id)
         restricted = bool(row and (row["banned"] or int(row["mute_until"] or 0) > now()))
         if restricted:
@@ -2696,8 +2702,14 @@ class Database:
         )
         await self.db.execute("DELETE FROM daily_activity WHERE user_id=?", (user_id,))
         await self.db.execute("DELETE FROM user_engagement WHERE user_id=?", (user_id,))
+        # Короткая ссылка анонимных вопросов относится к профилю и после удаления
+        # не должна продолжать разрешаться обратно в Telegram ID.
+        await self.db.execute("DELETE FROM kv WHERE key=?", (f"anonq:user:{int(user_id)}",))
+        if anon_token:
+            await self.db.execute("DELETE FROM kv WHERE key=?", (f"anonq:token:{anon_token}",))
         # История диалогов/жалоб нужна для блокировок и открытой модерации; личные поля там не хранятся.
         await self.db.commit()
+        self._top_cache.clear()
 
     async def find_user_ids(self, name: str, limit: int = 10) -> list[aiosqlite.Row]:
         like = f"%{name.lstrip('@')}%"
