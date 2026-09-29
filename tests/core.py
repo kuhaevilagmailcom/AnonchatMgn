@@ -1629,6 +1629,92 @@ def test_miniapp_health_static_and_origin_guard() -> None:
     asyncio.run(scenario())
 
 
+
+def test_anonymous_question_limits_and_cleanup() -> None:
+    from anonchat.handlers.menu import _anonymous_body
+
+    plain = _anonymous_body("<b>title</b>", "x" * 2500)
+    media = _anonymous_body("<b>title</b>", "x" * 2500, media=True)
+    assert len(plain) > 900
+    assert len(media) < len(plain)
+
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "anonq.db"
+        db = await Database(path).start()
+        try:
+            await db.ensure_user(950001, "user950001", "User")
+            token = await db.anonymous_question_token(950001)
+            assert len(token) == 6
+            assert await db.anonymous_question_user(token) == 950001
+            await db.forget_user(950001)
+            assert await db.anonymous_question_user(token) is None
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
+def test_database_uses_autocommit_for_shared_connection() -> None:
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "autocommit.db"
+        db = await Database(path).start()
+        try:
+            assert db.db.isolation_level is None
+            await db.ensure_user(960001, "u1", "U1")
+            await db.ensure_user(960002, "u2", "U2")
+            await db.award_xp(960001, 7)
+            created, _ = await db.record_payment(
+                960002, "support", 5, "charge-1", "", "support:960002:5:x"
+            )
+            assert created
+            created_again, _ = await db.record_payment(
+                960002, "support", 5, "charge-1", "", "support:960002:5:x"
+            )
+            assert not created_again
+            assert int((await db.get_user(960001))["xp"]) == 7
+            assert int((await db.get_user(960002))["support_stars"]) == 5
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
+def test_miniapp_rate_limit_guard() -> None:
+    from types import SimpleNamespace
+    from aiohttp import web
+    from anonchat.miniapp_api import MiniAppServer
+
+    cfg = SimpleNamespace(
+        miniapp_url="",
+        inchat_rate_limit=120,
+        menu_rate_limit=60,
+    )
+    server = MiniAppServer(None, cfg, None, None, None)
+    request = SimpleNamespace(
+        path="/api/miniapp/feedback",
+        headers={"X-Telegram-Init-Data": "signed-user"},
+        remote="127.0.0.1",
+    )
+    for _ in range(5):
+        server._rate_limit(request)
+    try:
+        server._rate_limit(request)
+    except web.HTTPTooManyRequests:
+        pass
+    else:
+        raise AssertionError("feedback rate-limit must reject the sixth request")
+
+
+def test_miniapp_frontend_hardening_markers() -> None:
+    app_js = (
+        Path(__file__).resolve().parents[1] / "miniapp" / "web" / "app.js"
+    ).read_text(encoding="utf-8")
+    assert "35000" in app_js
+    assert "URL.revokeObjectURL" in app_js
+    assert "status==='pending'" in app_js
+    assert "Сессия Telegram устарела" in app_js
+
+
 def run_all() -> int:  # python -m tests.core
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:
