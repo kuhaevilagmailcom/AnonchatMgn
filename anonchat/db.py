@@ -267,6 +267,14 @@ CREATE TABLE IF NOT EXISTS kv (
     value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS anonymous_reply_routes (
+    recipient_id INTEGER NOT NULL,
+    message_id   INTEGER NOT NULL,
+    target_id    INTEGER NOT NULL,
+    created_at   INTEGER NOT NULL,
+    PRIMARY KEY (recipient_id, message_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_reports_target ON reports(target_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_users_xp ON users(xp DESC);
@@ -278,6 +286,8 @@ CREATE INDEX IF NOT EXISTS idx_poll_votes_poll_choice ON poll_votes(poll_id, cho
 CREATE INDEX IF NOT EXISTS idx_matches_recent ON matches(ended_at, user_a, user_b);
 CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_anon_reply_routes_created
+ON anonymous_reply_routes(created_at);
 CREATE INDEX IF NOT EXISTS idx_admins_granted_by ON admins(granted_by, updated_at);
 CREATE INDEX IF NOT EXISTS idx_battle_users_a ON battle_games(user_a, status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_battle_users_b ON battle_games(user_b, status, updated_at);
@@ -2262,6 +2272,10 @@ class Database:
                WHERE status='done' AND handled_at IS NOT NULL AND handled_at < ?""",
             (ts - 90 * 86_400,),
         )
+        await self.db.execute(
+            "DELETE FROM anonymous_reply_routes WHERE created_at < ?",
+            (ts - 30 * 86_400,),
+        )
         old_poll_ids = [
             int(row["id"]) for row in await self._fetchall(
                 "SELECT id FROM polls WHERE active=0 AND closed_at IS NOT NULL AND closed_at < ?",
@@ -2530,6 +2544,29 @@ class Database:
         raw = await self.get_kv(f"anonq:token:{value}")
         return int(raw) if raw.isdigit() else None
 
+    async def remember_anonymous_reply(
+        self, recipient_id: int, message_id: int, target_id: int
+    ) -> None:
+        """Запоминает, кому отправить свайп-ответ на конкретную анонимку."""
+        await self.db.execute(
+            """INSERT INTO anonymous_reply_routes(
+                   recipient_id, message_id, target_id, created_at
+               ) VALUES (?, ?, ?, ?)
+               ON CONFLICT(recipient_id, message_id)
+               DO UPDATE SET target_id=excluded.target_id, created_at=excluded.created_at""",
+            (int(recipient_id), int(message_id), int(target_id), now()),
+        )
+
+    async def anonymous_reply_target(
+        self, recipient_id: int, message_id: int
+    ) -> int | None:
+        row = await self._fetchone(
+            """SELECT target_id FROM anonymous_reply_routes
+               WHERE recipient_id=? AND message_id=? LIMIT 1""",
+            (int(recipient_id), int(message_id)),
+        )
+        return int(row["target_id"]) if row else None
+
     async def save_matchmaker(self, state: dict[str, Any]) -> None:
         await self.set_kv(
             "matchmaker_state",
@@ -2706,6 +2743,10 @@ class Database:
         )
         await self.db.execute("DELETE FROM daily_activity WHERE user_id=?", (user_id,))
         await self.db.execute("DELETE FROM user_engagement WHERE user_id=?", (user_id,))
+        await self.db.execute(
+            "DELETE FROM anonymous_reply_routes WHERE recipient_id=? OR target_id=?",
+            (user_id, user_id),
+        )
         # Короткая ссылка анонимных вопросов относится к профилю и после удаления
         # не должна продолжать разрешаться обратно в Telegram ID.
         await self.db.execute("DELETE FROM kv WHERE key=?", (f"anonq:user:{int(user_id)}",))
