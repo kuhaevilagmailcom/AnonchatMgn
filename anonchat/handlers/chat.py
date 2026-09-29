@@ -16,6 +16,7 @@ from ..actions import (
 from ..config import Config
 from ..matching import Matchmaker
 from ..monitoring import enqueue_chat_monitor
+from ..safety import contains_contact
 from ..diagnostics import METRICS
 from ..engagement import collect_progress_notifications
 from .. import relay_state
@@ -47,6 +48,14 @@ async def relay_to_partner(
         return
 
     if await ctx.restricted():
+        return
+
+    contact_body = message.text if message.text is not None else (message.caption or "")
+    if contact_body and contains_contact(contact_body):
+        await ctx.reply(
+            "🔒 Не отправляй в анонимном чате номер телефона, email или домашний адрес.",
+            K.chat_keyboard() if mm.status(ctx.user_id) == "paired" else K.menu_keyboard(mm.status(ctx.user_id)),
+        )
         return
 
     current_partner = mm.partner(ctx.user_id)
