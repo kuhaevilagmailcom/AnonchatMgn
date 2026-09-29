@@ -5,6 +5,8 @@ import csv
 import hashlib
 import io
 import pathlib
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -42,18 +44,33 @@ def commons_page(source_name: str) -> str:
     return "https://commons.wikimedia.org/wiki/" + urllib.parse.quote(title, safe=":_-().")
 
 def download(url: str) -> bytes:
-    request = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "AnonMGN-GeoGame/1.0 (educational game pack; contact via project repository)",
-            "Accept": "image/jpeg,image/*;q=0.8,*/*;q=0.5",
-        },
-    )
-    with urllib.request.urlopen(request, timeout=45) as response:
-        data = response.read()
-    if len(data) < 10_000:
-        raise RuntimeError(f"Downloaded image is unexpectedly small: {url} ({len(data)} bytes)")
-    return data
+    last_error: Exception | None = None
+    for attempt, delay in enumerate((0, 4, 12, 30, 60), start=1):
+        if delay:
+            print(f"  retry {attempt}/5 after {delay}s", flush=True)
+            time.sleep(delay)
+        request = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "AnonMGN-GeoGame/1.0 (Wikimedia Commons CC BY-SA photo pack)",
+                "Accept": "image/jpeg,image/*;q=0.8,*/*;q=0.5",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                data = response.read()
+            if len(data) < 10_000:
+                raise RuntimeError(
+                    f"Downloaded image is unexpectedly small: {url} ({len(data)} bytes)"
+                )
+            return data
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code != 429:
+                raise
+        except (urllib.error.URLError, TimeoutError) as exc:
+            last_error = exc
+    raise RuntimeError(f"Could not download after retries: {url}") from last_error
 
 def main() -> None:
     PHOTOS.mkdir(parents=True, exist_ok=True)
@@ -63,9 +80,11 @@ def main() -> None:
     for index, (lat, lon, source_name, description, url) in enumerate(items, start=1):
         filename = f"{lat}_{lon}.jpg"
         path = PHOTOS / filename
-        print(f"[{index:02d}/20] {filename}")
+        print(f"[{index:02d}/20] {filename}", flush=True)
         data = download(url)
         path.write_bytes(data)
+        # Be polite to Wikimedia's thumbnail service and avoid burst throttling.
+        time.sleep(1.5)
         credits.append({
             "filename": filename,
             "latitude": lat,
