@@ -1380,7 +1380,7 @@ class MiniAppServer:
         )
         outcome = "queued"
         payload = None
-        for _ in range(3):
+        for _ in range(8):
             outcome, payload = self.mm.connect(
                 uid,
                 district=str(row["district"] or ""),
@@ -1402,6 +1402,26 @@ class MiniAppServer:
             # Не оставляем "тихую" пару. Исключаем недоступного кандидата и пробуем ещё.
             self.mm.forget(uid)
             excluded.add(partner_id)
+
+        if self.mm.status(uid) == "free":
+            # После серии недоступных кандидатов гарантированно возвращаем пользователя
+            # в очередь, а не оставляем поиск молча выключенным.
+            excluded.update(
+                candidate_id
+                for candidate_id, _district in self.mm.queue_snapshot(
+                    self.mm.queue_size() + 1
+                )
+            )
+            outcome, payload = self.mm.connect(
+                uid,
+                district=str(row["district"] or ""),
+                same_district=False,
+                gender=str(row["gender"] or ""),
+                looking_for=str(row["looking_for"] or ""),
+                excluded=excluded,
+            )
+            if outcome == "full":
+                raise _json_error(503, "Очередь заполнена. Попробуй чуть позже")
 
         self.db.schedule_matchmaker_save(self.mm)
         current = self._status_payload(uid)
