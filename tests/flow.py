@@ -691,6 +691,44 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await onboard(B, 18)
     await onboard(C, 16)
 
+    # Анонимные вопросы: short-link → одно сообщение → цепочка ответа.
+    token_b = await db.anonymous_question_token(B)
+    session.clear()
+    await send(A, f"/start q_{token_b}")
+    check("Анонимный вопрос" in session.last_to(A), "short-link открывает ввод анонимного вопроса")
+    session.clear()
+    question_text = "анонимный вопрос " + ("длинный текст " * 90)
+    await send(A, question_text)
+    delivered_to_b = session.to(B)
+    check(len(delivered_to_b) == 1, "анонимный текст приходит получателю одним сообщением")
+    check("Новый анонимный вопрос" in session.last_to(B) and "длинный текст" in session.last_to(B),
+          "анонимный вопрос содержит заголовок и текст")
+    reply_markup = delivered_to_b[-1].get("reply_markup", {})
+    reply_cb = next(
+        button.get("callback_data", "")
+        for row in reply_markup.get("inline_keyboard", [])
+        for button in row
+        if button.get("callback_data", "").startswith("anonq:reply:")
+    )
+    session.clear()
+    await press(B, reply_cb)
+    check("Ответ на анонимный вопрос" in session.last_to(B), "кнопка ответа открывает ввод")
+    session.clear()
+    await send(B, "мой ответ")
+    delivered_to_a = session.to(A)
+    check(len(delivered_to_a) == 1, "ответ на анонимный вопрос приходит одним сообщением")
+    check("Ответ на анонимный вопрос" in session.last_to(A) and "мой ответ" in session.last_to(A),
+          "ответ содержит заголовок и текст")
+    answer_markup = delivered_to_a[-1].get("reply_markup", {})
+    check(
+        any(
+            button.get("callback_data", "").startswith("anonq:reply:")
+            for row in answer_markup.get("inline_keyboard", [])
+            for button in row
+        ),
+        "на ответ можно ответить снова",
+    )
+
     session.clear()
     await send(ADMIN, f"/adminadd {D} reports,users")
     await send(D, "/admin")
