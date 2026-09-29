@@ -74,12 +74,17 @@ if (typeof window === 'undefined') {
     try{res=await fetch(apiBase+path,{cache:'no-store',...options,headers,signal:controller.signal})}
     catch(e){if(e?.name==='AbortError')throw new Error('Сервер не ответил за 5 секунд');throw new Error('Нет соединения с сервером')}
     finally{clearTimeout(timeout)}
-    let data={}; try{data=await res.json()}catch(_){} if(!res.ok)throw new Error(data.message||`Ошибка ${res.status}`); return data;
+    let data={}; try{data=await res.json()}catch(_){}
+    if(!res.ok){
+      if(res.status===401)throw new Error('Сессия Telegram устарела. Закрой и снова открой Mini App');
+      throw new Error(data.message||`Ошибка ${res.status}`);
+    }
+    return data;
   }
   async function safe(path,options,fallback=null){try{return await request(path,options)}catch(e){if(tg?.initData)toast(e.message);return fallback}}
   async function upload(path, formData){
     const headers={}; if(tg?.initData)headers['X-Telegram-Init-Data']=tg.initData;
-    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
+    const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),35000);
     let res;
     try{res=await fetch(apiBase+path,{method:'POST',body:formData,headers,cache:'no-store',signal:controller.signal})}
     catch(e){if(e?.name==='AbortError')throw new Error('Загрузка заняла слишком долго');throw new Error('Нет соединения с сервером')}
@@ -96,6 +101,10 @@ if (typeof window === 'undefined') {
     if(!res.ok)throw new Error('Медиа недоступно');
     const blob=await res.blob();
     const objectUrl=URL.createObjectURL(blob);
+    if(chat.mediaCache.size>=80){
+      const first=chat.mediaCache.entries().next().value;
+      if(first){URL.revokeObjectURL(first[1]);chat.mediaCache.delete(first[0])}
+    }
     chat.mediaCache.set(url,objectUrl);
     return objectUrl;
   }
@@ -488,6 +497,15 @@ if (typeof window === 'undefined') {
         if(!$('#modal')?.hidden)settings($('#modalBody'));
         return;
       }
+      if(status==='pending'){
+        toast('Платёж обрабатывается Telegram…');
+        if(button){button.disabled=true;button.textContent='Платёж обрабатывается…'}
+        setTimeout(async()=>{
+          await load();
+          if(!$('#modal')?.hidden)settings($('#modalBody'));
+        },2500);
+        return;
+      }
       if(status==='failed')toast('Оплата не прошла');
       else if(status==='cancelled')toast('Оплата отменена');
       if(button){button.disabled=false;button.textContent='Оплатить ★'}
@@ -512,6 +530,8 @@ if (typeof window === 'undefined') {
   async function updateSetting(key,value){const prev=state.user[key];state.user[key]=value;render();const payload={age:state.user.age||0,district:state.user.district||'',gender:state.user.gender||'',looking_for:state.user.looking_for||'',same_district:0};const r=await safe('/api/miniapp/settings',{method:'POST',body:JSON.stringify(payload)},null);if(!r&&tg?.initData){state.user[key]=prev;render()}else if(r?.user){state.user={...state.user,...r.user};render()}}
   function clearChatView(){
     chat.latest=0;chat.startedAt=0;chat.sent=0;chat.received=0;chat.seen.clear();
+    chat.mediaCache.forEach(objectUrl=>{try{URL.revokeObjectURL(objectUrl)}catch(_){}});
+    chat.mediaCache.clear();
     const list=$('#chatMessages');if(list)list.querySelectorAll('.chat-message,.chat-system,.game-invite,.game-round-card').forEach(x=>x.remove());
     const empty=$('#chatEmpty');if(empty)empty.hidden=false;
     $('#chatSent')&&($('#chatSent').textContent='0');$('#chatReceived')&&($('#chatReceived').textContent='0');
