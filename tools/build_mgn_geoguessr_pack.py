@@ -20,7 +20,7 @@ items = [
     ("53.378356","58.996831","Views of Magnitogorsk-2021 - 2.jpeg","Магнитогорск. Вознесенская церковь (вид с ул. Завенягина)","https://thumb.wikimedia.org/wikipedia/commons/thumb/a/af/Views_of_Magnitogorsk-2021_-_2.jpeg/1280px-Views_of_Magnitogorsk-2021_-_2.jpeg"),
     ("53.385461","58.998108","Views of Magnitogorsk-2021 - 12.jpeg","Заводской пруд на реке Урал","https://thumb.wikimedia.org/wikipedia/commons/thumb/7/76/Views_of_Magnitogorsk-2021_-_12.jpeg/1280px-Views_of_Magnitogorsk-2021_-_12.jpeg"),
     ("53.407722","58.991169","Views of Magnitogorsk-2021 - 21.jpeg","Парк «У Вечного огня»","https://thumb.wikimedia.org/wikipedia/commons/thumb/4/46/Views_of_Magnitogorsk-2021_-_21.jpeg/1280px-Views_of_Magnitogorsk-2021_-_21.jpeg"),
-    ("53.407494","58.992128","Views of Magnitogorsk-2021 - 23.jpeg","Городской пляж; на дальнем плане цеха ММК","https://upload.wikimedia.org/wikipedia/commons/thumb/7/7e/Views_of_Magnitogorsk-2021_-_23.jpeg/1280px-Views_of_Magnitogorsk-2021_-_23.jpeg"),
+    ("53.407494","58.992128","Views of Magnitogorsk-2021 - 23.jpeg","Городской пляж; на дальнем плане цеха ММК","https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7e/Views_of_Magnitogorsk-2021_-_23.jpeg/1280px-Views_of_Magnitogorsk-2021_-_23.jpeg"),
     ("53.407150","58.991117","Views of Magnitogorsk-2021 - 28.jpeg","Памятник Героям Советского Союза","https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e7/Views_of_Magnitogorsk-2021_-_28.jpeg/1280px-Views_of_Magnitogorsk-2021_-_28.jpeg"),
     ("53.407319","58.983600","Views of Magnitogorsk-2021 - 29.jpeg","Площадь торжеств и фонтан перед зданием городской администрации","https://thumb.wikimedia.org/wikipedia/commons/thumb/3/34/Views_of_Magnitogorsk-2021_-_29.jpeg/1280px-Views_of_Magnitogorsk-2021_-_29.jpeg"),
     ("53.419875","58.979747","Views of Magnitogorsk-2021 - 33.jpeg","Вход в университетский сквер со стороны пр. Карла Маркса","https://thumb.wikimedia.org/wikipedia/commons/thumb/0/07/Views_of_Magnitogorsk-2021_-_33.jpeg/1280px-Views_of_Magnitogorsk-2021_-_33.jpeg"),
@@ -34,9 +34,9 @@ items = [
     ("53.417869","59.001625","Views of Magnitogorsk-2021 - 64.jpeg","ДК Металлургов (Набережная улица, 1)","https://thumb.wikimedia.org/wikipedia/commons/thumb/8/81/Views_of_Magnitogorsk-2021_-_64.jpeg/1280px-Views_of_Magnitogorsk-2021_-_64.jpeg"),
     ("53.417308","59.001969","Views of Magnitogorsk-2021 - 66.jpeg","Сквер им. 50-летия ММК","https://thumb.wikimedia.org/wikipedia/commons/thumb/3/3e/Views_of_Magnitogorsk-2021_-_66.jpeg/1280px-Views_of_Magnitogorsk-2021_-_66.jpeg"),
     ("53.415700","59.001594","Views of Magnitogorsk-2021 - 68.jpeg","Фонтан «50-летие ММК» в одноимённом сквере","https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9d/Views_of_Magnitogorsk-2021_-_68.jpeg/1280px-Views_of_Magnitogorsk-2021_-_68.jpeg"),
-    ("53.411194","58.984722","Views of Magnitogorsk-2021 - 70.jpeg","Стела Славы Магнитки","https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/Views_of_Magnitogorsk-2021_-_70.jpeg/1280px-Views_of_Magnitogorsk-2021_-_70.jpeg"),
-    ("53.381222","58.990631","Views of Magnitogorsk-2021 - 72.jpeg","Арена «Металлург»","https://upload.wikimedia.org/wikipedia/commons/thumb/5/55/Views_of_Magnitogorsk-2021_-_72.jpeg/1280px-Views_of_Magnitogorsk-2021_-_72.jpeg"),
-    ("53.380375","58.988700","Views of Magnitogorsk-2021 - 74.jpeg","Вид на Арену «Металлург» и Вознесенскую церковь","https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/Views_of_Magnitogorsk-2021_-_74.jpeg/1280px-Views_of_Magnitogorsk-2021_-_74.jpeg"),
+    ("53.411194","58.984722","Views of Magnitogorsk-2021 - 70.jpeg","Стела Славы Магнитки","https://thumb.wikimedia.org/wikipedia/commons/thumb/a/a0/Views_of_Magnitogorsk-2021_-_70.jpeg/1280px-Views_of_Magnitogorsk-2021_-_70.jpeg"),
+    ("53.381222","58.990631","Views of Magnitogorsk-2021 - 72.jpeg","Арена «Металлург»","https://thumb.wikimedia.org/wikipedia/commons/thumb/5/55/Views_of_Magnitogorsk-2021_-_72.jpeg/1280px-Views_of_Magnitogorsk-2021_-_72.jpeg"),
+    ("53.380375","58.988700","Views of Magnitogorsk-2021 - 74.jpeg","Вид на Арену «Металлург» и Вознесенскую церковь","https://thumb.wikimedia.org/wikipedia/commons/thumb/2/26/Views_of_Magnitogorsk-2021_-_74.jpeg/1280px-Views_of_Magnitogorsk-2021_-_74.jpeg"),
 ]
 
 def commons_page(source_name: str) -> str:
