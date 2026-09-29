@@ -629,11 +629,16 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     step = 1000
 
-    async def send(uid: int, text: str) -> int:
+    async def send(
+        uid: int, text: str, reply_to_message_id: int | None = None
+    ) -> int:
         nonlocal step
         step += 1
         message_id = step
-        await dp.feed_update(bot, msg_update(bot, uid, text, message_id))
+        await dp.feed_update(
+            bot,
+            msg_update(bot, uid, text, message_id, reply_to_message_id=reply_to_message_id),
+        )
         return message_id
 
     async def edit(uid: int, message_id: int, text: str) -> None:
