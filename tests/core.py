@@ -171,6 +171,49 @@ def test_district_priority_and_fallback() -> None:
     assert mm2.status(10) == "queued"
 
 
+def test_matchmaker_never_pairs_user_with_self() -> None:
+    mm = Matchmaker()
+    assert mm.connect(777) == ("queued", 1)
+    # Повторный поиск того же Telegram ID (например, бот + Mini App)
+    # обновляет ту же очередь, а не создаёт второго кандидата.
+    assert mm.connect(777) == ("queued", 1)
+    assert mm.queue_size() == 1
+    assert mm.partner(777) is None
+
+    restored = Matchmaker()
+    restored.restore({
+        "queue": [],
+        "pairs": [
+            {
+                "a": 888,
+                "b": 888,
+                "started_at": 100.0,
+                "counts": {"888": 0},
+                "game_stats": {},
+                "bonus_xp": {},
+            }
+        ],
+        "pending_rating": {},
+    })
+    assert restored.status(888) == "free"
+    assert restored.partner(888) is None
+
+    try:
+        mm._pair(999, 999)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("self-pair must be rejected")
+
+
+def test_miniapp_chat_all_message_types_have_monitoring() -> None:
+    source = (
+        Path(__file__).resolve().parents[1] / "anonchat" / "miniapp_api.py"
+    ).read_text(encoding="utf-8")
+    # import + text/photo/voice/sticker hooks
+    assert source.count("enqueue_chat_monitor_sent(") >= 4
+
+
 def test_forget_and_ratings() -> None:
     mm = Matchmaker()
     mm.connect(1)
