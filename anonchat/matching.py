@@ -142,6 +142,13 @@ class Matchmaker:
 
     # ------------------------------------------------------------------ pairing
     def _pair(self, a: int, b: int) -> Pair:
+        a, b = int(a), int(b)
+        if a == b:
+            # Жёсткий инвариант: один Telegram user_id никогда не может
+            # стать собеседником самому себе, независимо от источника поиска.
+            self._queue.pop(a, None)
+            self._touch_persistence()
+            raise ValueError("self-match is forbidden")
         self._queue.pop(a, None)
         self._queue.pop(b, None)
         pair = Pair(a=a, b=b)
@@ -190,7 +197,7 @@ class Matchmaker:
         )
         # сначала пытаемся дать собеседника НОВОМУ, потом — кому-то из ожидающих
         partner_id = self._pick(me)
-        if partner_id is not None:
+        if partner_id is not None and int(partner_id) != int(user_id):
             self._pair(user_id, partner_id)
             return "paired", partner_id
 
@@ -222,9 +229,13 @@ class Matchmaker:
                 continue
             pairs.append((a, b))
             taken.update({a, b})
+        safe_pairs: list[tuple[int, int]] = []
         for a, b in pairs:
+            if int(a) == int(b):
+                continue
             self._pair(a, b)
-        return pairs
+            safe_pairs.append((a, b))
+        return safe_pairs
 
     def refresh(
         self, user_id: int, *, district: str, same_district: bool,
@@ -424,9 +435,15 @@ class Matchmaker:
             )
             self._queue[candidate.user_id] = candidate
         for item in state.get("pairs", []):
+            a = int(item["a"])
+            b = int(item["b"])
+            if a == b:
+                # Не поднимаем повреждённый self-pair из старого snapshot.
+                self._queue.pop(a, None)
+                continue
             pair = Pair(
-                a=int(item["a"]),
-                b=int(item["b"]),
+                a=a,
+                b=b,
                 started_at=float(item.get("started_at", time.time())),
                 counts={int(uid): int(count) for uid, count in dict(item.get("counts", {})).items()},
                 history=[],
