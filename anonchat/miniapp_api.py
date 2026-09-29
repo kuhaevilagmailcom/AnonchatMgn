@@ -34,6 +34,7 @@ from .number_game import NUMBER_DAILY_REWARD_LIMIT, NUMBER_NEAR_DIFFS, NUMBER_RE
 from .runtime_state import online_count as presence_online_count
 from .runtime_state import touch as presence_touch
 from .safety import contains_contact
+from .monitoring import enqueue_chat_monitor_sent
 from .miniapp_features import (
     REPORT_REASONS,
     achievement_items,
@@ -656,6 +657,9 @@ class MiniAppServer:
                 else {}
             ),
         )
+        await enqueue_chat_monitor_sent(
+            sent, self.bot, self.db, self.cfg, self.pack, uid, partner
+        )
         await self._after_chat_message(
             uid, partner, sent_count, text=text
         )
@@ -721,6 +725,15 @@ class MiniAppServer:
             text=caption,
             file_id=file_id,
             telegram_message_id=sent.message_id,
+        )
+        await enqueue_chat_monitor_sent(
+            sent, self.bot, self.db, self.cfg, self.pack, uid, partner
+        )
+        await enqueue_chat_monitor_sent(
+            sent, self.bot, self.db, self.cfg, self.pack, uid, partner
+        )
+        await enqueue_chat_monitor_sent(
+            sent, self.bot, self.db, self.cfg, self.pack, uid, partner
         )
         await self._after_chat_message(uid, partner, sent_count)
         return web.json_response({"ok": True, "latest": live_chat.latest_seq(uid)})
