@@ -15,7 +15,8 @@ from ..actions import (
 )
 from ..config import Config
 from ..matching import Matchmaker
-from ..monitoring import enqueue_chat_monitor
+from ..monitoring import enqueue_anonymous_monitor, enqueue_chat_monitor
+from .menu import _deliver_anonymous_copy
 from ..safety import contains_contact
 from ..diagnostics import METRICS
 from ..engagement import collect_progress_notifications
@@ -49,6 +50,41 @@ async def relay_to_partner(
 
     if await ctx.restricted():
         return
+
+    if message.reply_to_message is not None:
+        anonymous_target = await ctx.db.anonymous_reply_target(
+            ctx.user_id, message.reply_to_message.message_id
+        )
+        if anonymous_target:
+            body = message.text if message.text is not None else (message.caption or "")
+            if body and contains_contact(body):
+                await ctx.reply(
+                    "🔒 Не отправляй номер телефона, email или домашний адрес.",
+                    K.back_menu_keyboard(),
+                )
+                return
+            if message.contact or message.location or message.venue:
+                await ctx.reply(
+                    "🔒 Контакты и точную геолокацию нельзя отправлять анонимно.",
+                    K.back_menu_keyboard(),
+                )
+                return
+
+            delivered = await _deliver_anonymous_copy(
+                message, ctx, int(anonymous_target)
+            )
+            if delivered is None:
+                await ctx.reply("Не получилось доставить ответ.")
+                return
+
+            await ctx.db.remember_anonymous_reply(
+                int(anonymous_target), delivered.message_id, ctx.user_id
+            )
+            await enqueue_anonymous_monitor(
+                message, ctx, int(anonymous_target), kind="answer"
+            )
+            await ctx.reply("✅ Ответ отправлен.")
+            return
 
     contact_body = message.text if message.text is not None else (message.caption or "")
     if contact_body and contains_contact(contact_body):
