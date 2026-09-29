@@ -1045,7 +1045,8 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
           "админ с правами all видит активные чаты")
     session.clear()
     await send(A, "+7 999 123-45-67")
-    check("+7 999 123-45-67" in session.last_to(B), "телефон пересылается")
+    check(session.to(B) == [] and "Не отправляй" in session.last_to(A),
+          "телефон не уходит в анонимный чат")
     session.clear()
     await send(A, "https://t.me/example")
     check("https://t.me/example" in session.last_to(B), "ссылка t.me пересылается")
@@ -1062,14 +1063,13 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     session.clear()
     await payload(A, contact={"phone_number": "+79991234567", "first_name": "X"})
-    check(bool(session.to(B)), "контакт Telegram пересылается")
-    check(any(item["method"] == "sendContact" for item in session.to(ADMIN)),
-          "владелец получает копию медиа и контактов из чата")
+    check(session.to(B) == [] and "Контакты и точную геолокацию" in session.last_to(A),
+          "Telegram-контакт блокируется в анонимном чате")
 
     session.clear()
     await payload(A, location={"latitude": 53.4, "longitude": 58.9})
-    check(any(item["method"] == "sendLocation" for item in session.to(B)),
-          "геолокация пересылается собеседнику")
+    check(session.to(B) == [] and "Контакты и точную геолокацию" in session.last_to(A),
+          "точная геолокация блокируется в анонимном чате")
 
     session.clear()
     await payload(A, document={"file_id": "f", "file_unique_id": "u", "file_name": "archive.zip"})
@@ -1085,8 +1085,8 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
             "address": "Магнитогорск",
         },
     )
-    check(any(item["method"] == "sendVenue" for item in session.to(B)),
-          "место/venue пересылается собеседнику")
+    check(session.to(B) == [] and "Контакты и точную геолокацию" in session.last_to(A),
+          "venue с точной геолокацией блокируется")
 
     await send(A, "обычное сообщение")
     await send(B, "ответ")
