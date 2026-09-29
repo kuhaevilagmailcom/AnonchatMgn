@@ -44,116 +44,107 @@ class AnonymousQuestionStates(StatesGroup):
     answer = State()
 
 
-def _anonymous_body(title: str, body: str = "", *, media: bool = False) -> str:
-    """Заголовок + содержимое с корректным лимитом Telegram."""
+def _anonymous_body(body: str = "", *, media: bool = False) -> str:
+    """Новый единый вид анонимного сообщения."""
     clean = texts.esc((body or "").strip())
-    if not clean:
-        return title
-    # Caption ограничен сильнее обычного текста. Оставляем запас под заголовок.
-    limit = 900 if media else 3900
-    return f"{title}\n\n{clean[:limit]}"
+    title = "💬 <b>У тебя новое анонимное сообщение!</b>"
+    footer = "⬅️ Свайпни для ответа."
+    limit = 820 if media else 3800
+    if clean:
+        return f"{title}\n\n{clean[:limit]}\n\n{footer}"
+    return f"{title}\n\n{footer}"
 
 
 async def _deliver_anonymous_copy(
     message: Message,
     ctx: Ctx,
     target_id: int,
-    title: str,
+    title: str = "",
     reply_markup=None,
-) -> bool:
-    """Доставляет вопрос/ответ одним сообщением без раскрытия отправителя."""
+) -> Message | None:
+    """Доставляет анонимку одним сообщением и возвращает Telegram Message."""
     try:
         if message.text is not None:
-            await ctx.bot.send_message(
+            return await ctx.bot.send_message(
                 target_id,
-                _anonymous_body(title, message.text),
+                _anonymous_body(message.text),
                 reply_markup=reply_markup,
             )
-            return True
 
-        caption = _anonymous_body(title, message.caption or "", media=True)
+        caption = _anonymous_body(message.caption or "", media=True)
 
         if message.photo:
-            await ctx.bot.send_photo(
+            return await ctx.bot.send_photo(
                 target_id,
                 message.photo[-1].file_id,
                 caption=caption,
                 reply_markup=reply_markup,
                 has_spoiler=bool(getattr(message, "has_media_spoiler", False)),
             )
-            return True
 
         if message.animation:
-            await ctx.bot.send_animation(
+            return await ctx.bot.send_animation(
                 target_id,
                 message.animation.file_id,
                 caption=caption,
                 reply_markup=reply_markup,
                 has_spoiler=bool(getattr(message, "has_media_spoiler", False)),
             )
-            return True
 
         if message.video:
-            await ctx.bot.send_video(
+            return await ctx.bot.send_video(
                 target_id,
                 message.video.file_id,
                 caption=caption,
                 reply_markup=reply_markup,
                 has_spoiler=bool(getattr(message, "has_media_spoiler", False)),
             )
-            return True
 
         if message.audio:
-            await ctx.bot.send_audio(
+            return await ctx.bot.send_audio(
                 target_id,
                 message.audio.file_id,
                 caption=caption,
                 reply_markup=reply_markup,
             )
-            return True
 
         if message.voice:
-            await ctx.bot.send_voice(
+            return await ctx.bot.send_voice(
                 target_id,
                 message.voice.file_id,
                 caption=caption,
                 reply_markup=reply_markup,
             )
-            return True
 
         if message.document:
-            await ctx.bot.send_document(
+            return await ctx.bot.send_document(
                 target_id,
                 message.document.file_id,
                 caption=caption,
                 reply_markup=reply_markup,
             )
-            return True
 
         # У стикеров и кружков Bot API не поддерживает caption.
         # Всё равно доставляем их одним сообщением с кнопкой ответа.
         if message.sticker:
-            await ctx.bot.send_sticker(
+            return await ctx.bot.send_sticker(
                 target_id,
                 message.sticker.file_id,
                 reply_markup=reply_markup,
             )
-            return True
 
         if message.video_note:
-            await ctx.bot.send_video_note(
+            return await ctx.bot.send_video_note(
                 target_id,
                 message.video_note.file_id,
                 reply_markup=reply_markup,
             )
-            return True
 
         # Прочие поддерживаемые Telegram-типы (контакт, гео и т.п.)
         # копируем как одно сообщение. Заголовок к ним API тоже не прикрепляет.
-        await message.send_copy(chat_id=target_id, reply_markup=reply_markup)
-        return True
+        return await message.send_copy(chat_id=target_id, reply_markup=reply_markup)
     except TelegramAPIError:
-        return False
+        return None
 
 
 # ---------------------------------------------------------------------------------- анонимные вопросы
@@ -214,15 +205,15 @@ async def send_anonymous_question(
         await show_menu(ctx)
         return
 
-    sender_token = await ctx.db.anonymous_question_token(ctx.user_id)
     delivered = await _deliver_anonymous_copy(
         message,
         ctx,
         target_id,
-        "💌 <b>Новый анонимный вопрос</b>",
-        K.anonymous_reply_keyboard(sender_token),
     )
     if delivered:
+        await ctx.db.remember_anonymous_reply(
+            target_id, delivered.message_id, ctx.user_id
+        )
         await enqueue_anonymous_monitor(
             message, ctx, target_id, kind="question"
         )
@@ -289,15 +280,15 @@ async def send_anonymous_answer(
         await show_menu(ctx)
         return
 
-    sender_token = await ctx.db.anonymous_question_token(ctx.user_id)
     delivered = await _deliver_anonymous_copy(
         message,
         ctx,
         target_id,
-        "💌 <b>Ответ на анонимный вопрос</b>",
-        K.anonymous_reply_keyboard(sender_token),
     )
     if delivered:
+        await ctx.db.remember_anonymous_reply(
+            target_id, delivered.message_id, ctx.user_id
+        )
         await enqueue_anonymous_monitor(
             message, ctx, target_id, kind="answer"
         )
