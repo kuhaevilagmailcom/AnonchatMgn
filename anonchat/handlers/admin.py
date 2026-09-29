@@ -405,7 +405,7 @@ async def do_mute(
 
 
 async def do_broadcast(ctx: Ctx, db: Database, body: str) -> str:
-    ids = await db.active_ids(days=7)
+    ids = await db.broadcast_ids()
     await ctx.reply(texts.PANEL_BC_PROGRESS.format(total=len(ids)))
     sent = 0
     for uid in ids:
@@ -417,7 +417,7 @@ async def do_broadcast(ctx: Ctx, db: Database, body: str) -> str:
 
 async def do_broadcast_message(ctx: Ctx, db: Database, message: Message) -> str:
     """Копирует текст/фото/видео как есть, всегда без inline-кнопок."""
-    ids = await db.active_ids(days=7)
+    ids = await db.broadcast_ids()
     await ctx.reply(texts.PANEL_BC_PROGRESS.format(total=len(ids)))
     sent = 0
     for uid in ids:
