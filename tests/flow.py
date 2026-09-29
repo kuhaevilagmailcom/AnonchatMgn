@@ -701,33 +701,28 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await send(A, question_text)
     delivered_to_b = session.to(B)
     check(len(delivered_to_b) == 1, "анонимный текст приходит получателю одним сообщением")
-    check("Новый анонимный вопрос" in session.last_to(B) and "длинный текст" in session.last_to(B),
-          "анонимный вопрос содержит заголовок и текст")
-    reply_markup = delivered_to_b[-1].get("reply_markup", {})
-    reply_cb = next(
-        button.get("callback_data", "")
-        for row in reply_markup.get("inline_keyboard", [])
-        for button in row
-        if button.get("callback_data", "").startswith("anonq:reply:")
+    check("У тебя новое анонимное сообщение" in session.last_to(B)
+          and "длинный текст" in session.last_to(B)
+          and "Свайпни для ответа" in session.last_to(B),
+          "анонимка приходит в новом формате со свайп-ответом")
+    route_b = await db._fetchone(
+        "SELECT message_id FROM anonymous_reply_routes WHERE recipient_id=? ORDER BY created_at DESC LIMIT 1",
+        (B,),
     )
+    check(route_b is not None, "для анонимки сохранён маршрут свайп-ответа")
     session.clear()
-    await press(B, reply_cb)
-    check("Ответ на анонимный вопрос" in session.last_to(B), "кнопка ответа открывает ввод")
-    session.clear()
-    await send(B, "мой ответ")
+    await send(B, "мой ответ", reply_to_message_id=int(route_b["message_id"]))
     delivered_to_a = session.to(A)
-    check(len(delivered_to_a) == 1, "ответ на анонимный вопрос приходит одним сообщением")
-    check("Ответ на анонимный вопрос" in session.last_to(A) and "мой ответ" in session.last_to(A),
-          "ответ содержит заголовок и текст")
-    answer_markup = delivered_to_a[-1].get("reply_markup", {})
-    check(
-        any(
-            button.get("callback_data", "").startswith("anonq:reply:")
-            for row in answer_markup.get("inline_keyboard", [])
-            for button in row
-        ),
-        "на ответ можно ответить снова",
+    check(len(delivered_to_a) == 1, "свайп-ответ приходит одним сообщением")
+    check("У тебя новое анонимное сообщение" in session.last_to(A)
+          and "мой ответ" in session.last_to(A)
+          and "Свайпни для ответа" in session.last_to(A),
+          "свайп-ответ получает тот же формат")
+    route_a = await db._fetchone(
+        "SELECT message_id FROM anonymous_reply_routes WHERE recipient_id=? ORDER BY created_at DESC LIMIT 1",
+        (A,),
     )
+    check(route_a is not None, "ответ тоже можно свайпнуть обратно")
 
     session.clear()
     await send(ADMIN, f"/adminadd {D} reports,users")
