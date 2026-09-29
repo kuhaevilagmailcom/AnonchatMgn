@@ -57,6 +57,12 @@ async def relay_to_partner(
             K.chat_keyboard() if mm.status(ctx.user_id) == "paired" else K.menu_keyboard(mm.status(ctx.user_id)),
         )
         return
+    if message.contact or message.location or message.venue:
+        await ctx.reply(
+            "🔒 Контакты и точную геолокацию нельзя отправлять в анонимном чате.",
+            K.chat_keyboard() if mm.status(ctx.user_id) == "paired" else K.menu_keyboard(mm.status(ctx.user_id)),
+        )
+        return
 
     current_partner = mm.partner(ctx.user_id)
     if (
