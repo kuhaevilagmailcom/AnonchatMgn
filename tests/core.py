@@ -1637,6 +1637,7 @@ def test_anonymous_question_limits_and_cleanup() -> None:
     media = _anonymous_body("x" * 2500, media=True)
     assert len(plain) > 900
     assert len(media) < len(plain)
+    assert "<blockquote>" in plain and "</blockquote>" in plain
 
     async def scenario() -> None:
         path = Path(tempfile.mkdtemp()) / "anonq.db"
