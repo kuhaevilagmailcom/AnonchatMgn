@@ -44,16 +44,14 @@ class AnonymousQuestionStates(StatesGroup):
     answer = State()
 
 
-def _anonymous_caption(title: str, body: str = "") -> str:
-    """Заголовок + подпись в одном Telegram-сообщении.
-
-    У медиа Telegram ограничивает caption, поэтому оставляем запас под заголовок.
-    """
+def _anonymous_body(title: str, body: str = "", *, media: bool = False) -> str:
+    """Заголовок + содержимое с корректным лимитом Telegram."""
     clean = texts.esc((body or "").strip())
-    if clean:
-        clean = clean[:900]
-        return f"{title}\n\n{clean}"
-    return title
+    if not clean:
+        return title
+    # Caption ограничен сильнее обычного текста. Оставляем запас под заголовок.
+    limit = 900 if media else 3900
+    return f"{title}\n\n{clean[:limit]}"
 
 
 async def _deliver_anonymous_copy(
@@ -68,12 +66,12 @@ async def _deliver_anonymous_copy(
         if message.text is not None:
             await ctx.bot.send_message(
                 target_id,
-                _anonymous_caption(title, message.text),
+                _anonymous_body(title, message.text),
                 reply_markup=reply_markup,
             )
             return True
 
-        caption = _anonymous_caption(title, message.caption or "")
+        caption = _anonymous_body(title, message.caption or "", media=True)
 
         if message.photo:
             await ctx.bot.send_photo(
@@ -181,6 +179,12 @@ async def cmd_anonymous_question(
             K.back_menu_keyboard(),
         )
         return
+    if ctx.mm.status(ctx.user_id) in {"paired", "queued"}:
+        await ctx.reply(
+            "Сначала заверши текущий диалог или останови поиск, затем открой ссылку ещё раз.",
+            K.back_menu_keyboard(),
+        )
+        return
 
     await state.set_state(AnonymousQuestionStates.question)
     await state.update_data(anonymous_question_target=int(target_id))
@@ -247,6 +251,9 @@ async def cb_anonymous_reply(
         target_id = decode_anon_question_token(token, cfg.bot_token)
     if not target_id:
         await ctx.ack("Этот вопрос уже недоступен", alert=True)
+        return
+    if ctx.mm.status(ctx.user_id) in {"paired", "queued"}:
+        await ctx.ack("Сначала заверши текущий диалог или останови поиск", alert=True)
         return
     if await ctx.restricted():
         await state.clear()
