@@ -9,6 +9,7 @@ import asyncio
 from collections import defaultdict, deque
 from dataclasses import dataclass
 import json
+import logging
 import secrets
 import time
 from typing import Any
@@ -22,6 +23,8 @@ class MediaRef:
     kind: str
     created_at: float
 
+
+log = logging.getLogger("anonchat.live_chat")
 
 _SEQ = int(time.time() * 1000)
 _EVENTS: dict[int, deque[dict[str, Any]]] = defaultdict(lambda: deque(maxlen=160))
@@ -122,7 +125,15 @@ async def _persist_loop() -> None:
             while _PERSIST_QUEUE and len(ops) < 100:
                 ops.append(_PERSIST_QUEUE.popleft())
             if ops:
-                await _DB.apply_active_chat_ops(ops)
+                try:
+                    await _DB.apply_active_chat_ops(ops)
+                except Exception:
+                    # Не теряем уже вынутые из очереди события при временной ошибке SQLite.
+                    for op in reversed(ops):
+                        _PERSIST_QUEUE.appendleft(op)
+                    log.exception("Не удалось сохранить Mini App chat batch; пакет возвращён в очередь")
+                    await asyncio.sleep(0.5)
+                    return
     finally:
         _PERSIST_TASK = None
 
