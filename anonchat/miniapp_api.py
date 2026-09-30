@@ -461,8 +461,8 @@ class MiniAppServer:
                 float(other_distance) if other_distance is not None else None
             ),
             "instructions": (
-                "В Telegram: скрепка → Геопозиция → выбери точку на карте "
-                "Магнитогорска → отправь. Не отправляй текущую геопозицию."
+                "В Telegram: скрепка → Геопозиция → выбери любую точку на карте "
+                "→ отправь. Игра принимает любую корректную точку."
             ),
         }
         if place is not None:
