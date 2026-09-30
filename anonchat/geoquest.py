@@ -17,10 +17,27 @@ from typing import Iterable
 
 
 GEO_ROUNDS = 3
-GEO_WIN_REWARD = 3
-GEO_TIE_REWARD = 2
+GEO_ROUND_OPTIONS = (3, 5, 10)
+GEO_ROUND_SECONDS = 120
 GEO_TIE_METERS = 25.0
-GEO_DAILY_REWARD_LIMIT = 30
+GEO_DAILY_REWARD_LIMIT = 100
+
+# Награда теперь зависит не от победы как таковой, а от точности метки.
+# Верхняя граница 10 ⭐ за раунд держит экономику предсказуемой даже в игре
+# на 10 раундов.
+GEO_REWARD_TIERS: tuple[tuple[float, int], ...] = (
+    (100.0, 10),
+    (300.0, 8),
+    (700.0, 6),
+    (1_500.0, 5),
+    (3_000.0, 4),
+    (5_000.0, 3),
+    (8_000.0, 2),
+    (15_000.0, 1),
+)
+# Старые имена оставлены для совместимости с внешними импортами.
+GEO_WIN_REWARD = GEO_REWARD_TIERS[0][1]
+GEO_TIE_REWARD = GEO_REWARD_TIERS[0][1]
 
 # Некоторые хостинги служебно исключают каталоги с именем ``data``. Поэтому
 # игровой набор лежит рядом с модулем, а старый путь читается только для
@@ -51,6 +68,45 @@ class GeoPlace:
 def _valid_coordinate(latitude: float, longitude: float) -> bool:
     # Граница города с небольшим запасом для ближайших узнаваемых мест.
     return 53.20 <= latitude <= 53.60 and 58.70 <= longitude <= 59.35
+
+
+def valid_guess_coordinate(latitude: float, longitude: float) -> bool:
+    """Разрешаем только игровую метку в районе Магнитогорска.
+
+    Это заодно защищает от случайной отправки пользователем своей текущей
+    геопозиции из другого города вместо выбора произвольной точки на карте.
+    """
+    try:
+        latitude, longitude = float(latitude), float(longitude)
+    except (TypeError, ValueError):
+        return False
+    return (
+        math.isfinite(latitude)
+        and math.isfinite(longitude)
+        and _valid_coordinate(latitude, longitude)
+    )
+
+
+def geo_reward(distance: float) -> int:
+    """Количество ⭐ за точность одной метки."""
+    try:
+        meters = max(0.0, float(distance))
+    except (TypeError, ValueError):
+        return 0
+    if not math.isfinite(meters):
+        return 0
+    for limit, reward in GEO_REWARD_TIERS:
+        if meters <= limit:
+            return reward
+    return 0
+
+
+def reward_scale_text() -> str:
+    return (
+        "до 100 м — 10 ⭐ · до 300 м — 8 ⭐ · до 700 м — 6 ⭐\n"
+        "до 1,5 км — 5 ⭐ · до 3 км — 4 ⭐ · до 5 км — 3 ⭐\n"
+        "до 8 км — 2 ⭐ · до 15 км — 1 ⭐"
+    )
 
 
 @lru_cache(maxsize=1)
