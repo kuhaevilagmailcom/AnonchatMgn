@@ -149,7 +149,7 @@ def result_body(
     index = int(row["question_index"])
     total = max(1, int(row["total_questions"] or GQ.GEO_ROUNDS))
     finished = str(row["status"]) == "finished"
-    mine_total = int(row["reward_total_a"] if mine_a else row["reward_total_b"] or 0)
+    mine_total = int((row["reward_total_a"] if mine_a else row["reward_total_b"]) or 0)
 
     body = (
         f"🗺 <b>РЕЗУЛЬТАТ · {index + 1}/{total}</b>\n\n"
