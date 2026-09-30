@@ -1829,7 +1829,7 @@ class MiniAppServer:
         result = await send_to(
             self.bot,
             partner,
-            "🗺 <b>ТЕБЯ ЗОВУТ В ГЕОГУСЕР</b>\n\n"
+            "🗺 <b>ТЕБЯ ЗОВУТ В GeoGuessr📍</b>\n\n"
             f"🎮 Раундов: <b>{total}</b>\n"
             "⏱ На каждый раунд: <b>2 минуты</b>\n"
             + (
@@ -1851,7 +1851,7 @@ class MiniAppServer:
             partner,
             "geo",
             int(game["id"]),
-            "🗺 Геогусер",
+            "GeoGuessr📍",
             f"{total} раундов · 2 минуты на раунд",
         )
         return web.json_response({"ok": True, "message": "Приглашение отправлено"})
@@ -1961,7 +1961,7 @@ class MiniAppServer:
                     "geo",
                     game_id,
                     "accepted",
-                    "Геогусер начался",
+                    "GeoGuessr📍 начался",
                 )
                 if not await GR.send_round(self.bot, self.pack, game):
                     await self.db.cancel_battle(game_id)
@@ -1976,7 +1976,7 @@ class MiniAppServer:
             await send_to(
                 self.bot,
                 int(declined["inviter_id"]),
-                "🗺 Собеседник пока не хочет играть в Геогусер.",
+                "🗺 Собеседник пока не хочет играть в GeoGuessr📍.",
                 K.chat_keyboard(),
                 self.pack,
             )
