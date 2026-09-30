@@ -838,7 +838,7 @@ async def cb_geo_next(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     await _send_geo_round(ctx, game)
 
 
-@router.message(F.location)
+@router.message(F.location | F.venue)
 async def geo_location(message: Message, ctx: Ctx, db: Database) -> None:
     partner = ctx.mm.partner(ctx.user_id)
     if partner is None:
@@ -853,7 +853,10 @@ async def geo_location(message: Message, ctx: Ctx, db: Database) -> None:
         return
 
     place = _geo_place(geo_game)
-    if place is None or message.location is None:
+    point = message.location
+    if point is None and message.venue is not None:
+        point = message.venue.location
+    if place is None or point is None:
         await db.cancel_battle(int(geo_game["id"]))
         await ctx.reply("Место недоступно. Игра остановлена.", K.chat_keyboard())
         return
@@ -864,8 +867,8 @@ async def geo_location(message: Message, ctx: Ctx, db: Database) -> None:
         game_id,
         ctx.user_id,
         round_index,
-        message.location.latitude,
-        message.location.longitude,
+        point.latitude,
+        point.longitude,
         place.latitude,
         place.longitude,
     )
