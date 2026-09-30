@@ -665,8 +665,7 @@ async def cb_geo(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
             await ctx.ack("Игра уже идёт")
             if _geo_answered(existing, ctx.user_id):
                 await ctx.reply(
-                    "✅ <b>Метка принята</b>\n\nЖдём ответ собеседника…",
-                    K.chat_keyboard(),
+                    "✅ <b>Метка принята</b>\n\nЖдём ответ собеседника…"
                 )
             else:
                 await _send_geo_round(ctx, existing)
@@ -874,8 +873,7 @@ async def geo_location(message: Message, ctx: Ctx, db: Database) -> None:
     if result == "waiting":
         await ctx.reply(
             "✅ <b>Метка принята!</b>\n\n"
-            "📍 Ответ сохранён. Теперь ждём собеседника…",
-            K.chat_keyboard(),
+            "📍 Ответ сохранён. Теперь ждём собеседника…"
         )
         return
     if result == "resolved" and game is not None:
@@ -898,12 +896,11 @@ async def geo_location(message: Message, ctx: Ctx, db: Database) -> None:
             GR.cancel_timeout(game_id, round_index)
             await _send_geo_result(ctx, expired_game, reward_a, reward_b)
         else:
-            await ctx.reply("⏰ Время этого раунда уже вышло.", K.chat_keyboard())
+            await ctx.reply("⏰ Время этого раунда уже вышло.")
         return
     if result == "already":
         await ctx.reply(
-            "✅ Ты уже отправил метку. Ждём собеседника…",
-            K.chat_keyboard(),
+            "✅ Ты уже отправил метку. Ждём собеседника…"
         )
         return
     if result == "invalid":
@@ -911,7 +908,7 @@ async def geo_location(message: Message, ctx: Ctx, db: Database) -> None:
             "Не получилось прочитать координаты. Выбери точку на карте ещё раз."
         )
         return
-    await ctx.reply("Этот раунд уже закрыт.", K.chat_keyboard())
+    await ctx.reply("Этот раунд уже закрыт.")
 
 
 @router.callback_query(F.data == K.CB_BATTLE)
