@@ -766,6 +766,10 @@ if (typeof window === 'undefined') {
   }
   function renderActiveGame(game){
     const root=$('#activeGame');if(!root)return;
+    const geoLocksChat=!!(game&&game.type==='geo'&&['active','round_done'].includes(game.status));
+    const nextButton=$('#chatNext'),stopButton=$('#chatStop');
+    if(nextButton)nextButton.hidden=geoLocksChat;
+    if(stopButton)stopButton.hidden=geoLocksChat;
     if(!game){
       if(chat.gameHoldUntil>Date.now())return;
       stopGeoTimer();
