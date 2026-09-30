@@ -63,11 +63,12 @@ _done: set[int] = set()
 
 
 async def register_common(bot: Bot, cfg: Config) -> None:
-    """Общее меню для всех личных чатов + попытка поставить админское."""
+    """Команды лички, отдельная /gamegeo для групп и динамическое меню админов."""
     try:
         await bot.set_my_commands(list(COMMANDS), scope=BotCommandScopeAllPrivateChats())
+        await bot.set_my_commands(list(GROUP_COMMANDS), scope=BotCommandScopeAllGroupChats())
     except TelegramAPIError as exc:  # pragma: no cover
-        log.warning("не удалось задать общее меню команд: %s", exc)
+        log.warning("не удалось задать меню команд: %s", exc)
     for admin_id in cfg.admin_ids:
         await ensure_for_admin(bot, cfg, admin_id, quiet=True)
 
