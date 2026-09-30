@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass, field
 
 from aiogram import F, Router
+from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -352,7 +353,9 @@ async def cb_group_geo_cancel(event: CallbackQuery) -> None:
 
 @router.message(F.location | F.venue)
 async def group_geo_location(message: Message) -> None:
-    if message.chat.type not in GROUP_TYPES or message.from_user is None:
+    if message.chat.type not in GROUP_TYPES:
+        raise SkipHandler
+    if message.from_user is None:
         return
     game = _games_by_chat.get(int(message.chat.id))
     if game is None or game.status != "active" or game.round_started_at <= 0:
