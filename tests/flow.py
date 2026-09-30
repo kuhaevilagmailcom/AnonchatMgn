@@ -960,8 +960,8 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check("3 раунда" in geo_round_markup and "5 раундов" in geo_round_markup
           and "10 раундов" in geo_round_markup,
           "перед GeoGuessr📍 можно выбрать 3, 5 или 10 раундов")
-    check("Скрепка" in session.last_to(A) and "текущую геопозицию" in session.last_to(A),
-          "инструкция объясняет выбор точки через Telegram без запроса GPS")
+    check("Скрепка" in session.last_to(A) and "любую точку" in session.last_to(A),
+          "инструкция объясняет, что GeoGuessr принимает любую точку карты")
     await press(A, "game:geo:rounds:5")
     geo_invite = await db.geo_for_pair(A, B)
     check(bool(geo_invite and geo_invite["status"] == "invited"
