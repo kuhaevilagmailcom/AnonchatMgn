@@ -806,17 +806,19 @@ def test_geoquest_persistence_rewards_and_pair_limit() -> None:
 
 def test_geoquest_dataset_is_deployable() -> None:
     from anonchat import geoquest
-    from anonchat.geoquest import get_place, places, select_place_ids
+    from anonchat.geoquest import get_place, is_right_bank_urban, places, select_place_ids
 
     places.cache_clear()
     dataset = places()
-    assert 300 <= len(dataset) <= 400
+    assert 300 <= len(dataset) <= 700
     assert len({place.id for place in dataset}) == len(dataset)
     assert all(place.image_url.startswith("https://") for place in dataset)
     assert all(place.source_url.startswith("https://commons.wikimedia.org/") for place in dataset)
     selected = select_place_ids()
     assert len(selected) == 3 and len(set(selected)) == 3
     assert all(get_place(place_id) is not None for place_id in selected)
+    long_game = [get_place(place_id) for place_id in select_place_ids(10)]
+    assert sum(is_right_bank_urban(place) for place in long_game if place is not None) >= 8
 
     original_data, original_legacy = geoquest.DATA_PATH, geoquest.LEGACY_DATA_PATH
     missing = Path(tempfile.mkdtemp()) / "missing.json"

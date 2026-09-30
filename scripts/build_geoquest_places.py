@@ -22,24 +22,50 @@ from pathlib import Path
 
 API = "https://commons.wikimedia.org/w/api.php"
 OUTPUT = Path(__file__).resolve().parents[1] / "anonchat" / "geoquest_places.json"
+# Правый берег Магнитогорска — западнее Урала, здесь сосредоточена основная
+# жилая застройка. Несколько небольших радиусов дают улицы и дома, а не поля
+# в десяти километрах от города.
 CENTERS = (
-    # Сначала окраины: центральные точки обычно уже лежат в сохранённом наборе.
-    (53.285, 58.825),
-    (53.285, 59.180),
-    (53.535, 58.825),
-    (53.535, 59.180),
-    (53.407, 58.979),
-    (53.455, 58.995),
-    (53.365, 58.965),
-    (53.425, 59.075),
-    (53.390, 58.865),
+    (53.424, 58.982),
+    (53.451, 58.991),
+    (53.398, 58.975),
+    (53.373, 58.982),
+    (53.348, 58.965),
+    (53.405, 58.935),
 )
 ALLOWED_LICENSES = ("CC BY", "CC0", "PUBLIC DOMAIN", "NO RESTRICTIONS")
-TARGET_COUNT = 350
+TARGET_COUNT = 650
+RIGHT_BANK_BOUNDS = (53.32, 53.49, 58.90, 59.025)
+NON_URBAN_WORDS = (
+    "поле", "степ", "гора", "горы ", "вершина", "карьер", "озеро", "лес", "закат",
+    "восход", "обла", "цвет", "птиц", "eclipse", "mountain", "quarry",
+    "landscape", "forest", "sunset", "lake", "парад", "мото", "автомоб",
+    "машин", "вагон", "мкс", "гроз", "truck", "vehicle", "motorcycle", "parade", "iss ",
+)
+URBAN_SCENE_WORDS = (
+    "улиц", "просп", "дом", "здан", "двор", "район", "квартал", "площад",
+    "парк", "театр", "храм", "церк", "школ", "универс", "мгту", "памят",
+    "стел", "мост", "переправ", "вокзал", "станц", "арен", "цирк",
+    "администрац", "бульвар", "шоссе", "street", "ulitsa", "building",
+    "theatre", "church", "monument", "park",
+)
 
 
 def plain(value: str) -> str:
     return " ".join(re.sub(r"<[^>]+>", " ", html.unescape(value or "")).split())
+
+
+def is_right_bank(row: dict) -> bool:
+    south, north, west, east = RIGHT_BANK_BOUNDS
+    return south <= float(row["latitude"]) <= north and west <= float(row["longitude"]) <= east
+
+
+def looks_urban(row: dict) -> bool:
+    title = str(row.get("title", "")).casefold()
+    return (
+        not any(word in title for word in NON_URBAN_WORDS)
+        and any(word in title for word in URBAN_SCENE_WORDS)
+    )
 
 
 def request(params: dict[str, str]) -> dict:
@@ -84,7 +110,7 @@ def collect() -> list[dict]:
             params = {
                 "action": "query", "format": "json", "formatversion": "2",
                 "generator": "geosearch", "ggsprimary": "all", "ggsnamespace": "6",
-                "ggsradius": "10000", "ggscoord": f"{latitude}|{longitude}", "ggslimit": "50",
+                "ggsradius": "4500", "ggscoord": f"{latitude}|{longitude}", "ggslimit": "50",
                 "prop": "coordinates|imageinfo", "iiprop": "url|extmetadata|mime",
                 "iiurlwidth": "1280", "maxlag": "5", **continuation,
             }
@@ -126,7 +152,7 @@ def collect() -> list[dict]:
                     "license_url": str(meta.get("LicenseUrl", {}).get("value", "")),
                 }
             nxt = data.get("continue") or {}
-            if not nxt or pages_read >= 3:
+            if not nxt or pages_read >= 10:
                 break
             continuation = {str(key): str(value) for key, value in nxt.items()}
             # Wikimedia просит не делать массовые запросы рывком.
@@ -135,17 +161,27 @@ def collect() -> list[dict]:
             break
         time.sleep(12)
 
-    # Каждый объект — отдельная фотография с собственными координатами. У одного
-    # узнаваемого места могут быть разные ракурсы, поэтому дедупликация идёт по
-    # Wikimedia page id выше, а не по округлённой геометке.
-    return sorted(by_id.values(), key=lambda row: row["id"])[:TARGET_COUNT]
+    # Сначала жилой правый берег и городские сюжеты. Левобережные и природные
+    # фотографии остаются небольшой добавкой для разнообразия, но не забивают игру.
+    rows = list(by_id.values())
+    rows.sort(
+        key=lambda row: (
+            not (is_right_bank(row) and looks_urban(row)),
+            not is_right_bank(row),
+            not looks_urban(row),
+            int(row["id"]),
+        )
+    )
+    return rows[:TARGET_COUNT]
 
 
 def main() -> None:
     rows = collect()
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     OUTPUT.write_text(json.dumps(rows, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"saved {len(rows)} places to {OUTPUT}")
+    right = sum(is_right_bank(row) for row in rows)
+    urban_right = sum(is_right_bank(row) and looks_urban(row) for row in rows)
+    print(f"saved {len(rows)} places: right_bank={right}, urban_right_bank={urban_right}")
 
 
 if __name__ == "__main__":

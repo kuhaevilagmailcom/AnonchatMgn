@@ -44,6 +44,20 @@ GEO_TIE_REWARD = GEO_REWARD_TIERS[0][1]
 # обратной совместимости локальных установок.
 DATA_PATH = Path(__file__).with_name("geoquest_places.json")
 LEGACY_DATA_PATH = Path(__file__).with_name("data") / "geoquest_places.json"
+RIGHT_BANK_BOUNDS = (53.32, 53.49, 58.90, 59.025)
+NON_URBAN_WORDS = (
+    "поле", "степ", "гора", "горы ", "вершина", "карьер", "озеро", "лес", "закат",
+    "восход", "обла", "цвет", "птиц", "eclipse", "mountain", "quarry",
+    "landscape", "forest", "sunset", "lake", "парад", "мото", "автомоб",
+    "машин", "вагон", "мкс", "гроз", "truck", "vehicle", "motorcycle", "parade", "iss ",
+)
+URBAN_SCENE_WORDS = (
+    "улиц", "просп", "дом", "здан", "двор", "район", "квартал", "площад",
+    "парк", "театр", "храм", "церк", "школ", "универс", "мгту", "памят",
+    "стел", "мост", "переправ", "вокзал", "станц", "арен", "цирк",
+    "администрац", "бульвар", "шоссе", "street", "ulitsa", "building",
+    "theatre", "church", "monument", "park",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -177,6 +191,26 @@ def get_place(place_id: int) -> GeoPlace | None:
     return next((place for place in places() if place.id == int(place_id)), None)
 
 
+def is_urban_place(place: GeoPlace) -> bool:
+    title = place.title.casefold()
+    return (
+        53.32 <= place.latitude <= 53.49
+        and 58.90 <= place.longitude <= 59.17
+        and not any(word in title for word in NON_URBAN_WORDS)
+    )
+
+
+def is_right_bank_urban(place: GeoPlace) -> bool:
+    south, north, west, east = RIGHT_BANK_BOUNDS
+    title = place.title.casefold()
+    return (
+        is_urban_place(place)
+        and south <= place.latitude <= north
+        and west <= place.longitude <= east
+        and any(word in title for word in URBAN_SCENE_WORDS)
+    )
+
+
 def select_place_ids(total: int = GEO_ROUNDS, *, excluded: Iterable[int] = ()) -> list[int]:
     excluded_ids = {int(value) for value in excluded}
     pool = [place for place in places() if place.id not in excluded_ids]
@@ -184,21 +218,45 @@ def select_place_ids(total: int = GEO_ROUNDS, *, excluded: Iterable[int] = ()) -
         pool = list(places())
     if len(pool) < total:
         raise RuntimeError("Для Геогусера пока недостаточно фотографий")
-    random.shuffle(pool)
+    preferred = [place for place in pool if is_right_bank_urban(place)]
+    other_urban = [
+        place for place in pool
+        if not is_right_bank_urban(place) and is_urban_place(place)
+    ]
+    other = [place for place in pool if not is_urban_place(place)]
+    random.shuffle(preferred)
+    random.shuffle(other_urban)
+    random.shuffle(other)
     selected: list[GeoPlace] = []
-    # В одной партии не показываем три соседних ракурса одного здания.
-    for candidate in pool:
-        if all(
-            distance_meters(
-                candidate.latitude, candidate.longitude,
-                chosen.latitude, chosen.longitude,
-            ) >= 500
-            for chosen in selected
-        ):
-            selected.append(candidate)
-            if len(selected) == total:
-                return [place.id for place in selected]
-    return [place.id for place in random.sample(pool, total)]
+
+    def add_spaced(candidates: list[GeoPlace], wanted: int) -> None:
+        for candidate in candidates:
+            if len(selected) >= wanted:
+                return
+            if all(
+                distance_meters(
+                    candidate.latitude, candidate.longitude,
+                    chosen.latitude, chosen.longitude,
+                ) >= 500
+                for chosen in selected
+            ):
+                selected.append(candidate)
+
+    # В каждой партии около 80% городских мест с правого берега.
+    preferred_count = min(total, max(1, math.ceil(total * 0.8)))
+    add_spaced(preferred, preferred_count)
+    if len(selected) < preferred_count:
+        remaining_preferred = [place for place in preferred if place not in selected]
+        take = min(preferred_count - len(selected), len(remaining_preferred))
+        selected.extend(random.sample(remaining_preferred, take))
+    add_spaced(other_urban, total)
+    add_spaced(other, total)
+    add_spaced(preferred, total)
+    if len(selected) < total:
+        remaining = [place for place in pool if place not in selected]
+        selected.extend(random.sample(remaining, total - len(selected)))
+    random.shuffle(selected)
+    return [place.id for place in selected]
 
 
 def distance_meters(
