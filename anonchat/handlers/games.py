@@ -655,7 +655,7 @@ async def cb_geo(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
                 await ctx.ack("Предложение уже отправлено", alert=True)
             else:
                 await ctx.reply(
-                    "🗺 <b>Собеседник предлагает сыграть в Геогусер</b>\n\n"
+                    "🗺 <b>Собеседник предлагает сыграть в GeoGuessr📍</b>\n\n"
                     f"🎮 Раундов: <b>{int(existing['total_questions'])}</b> · "
                     "⏱ по <b>2 минуты</b> на место.",
                     K.geo_invite_keyboard(game_id),
@@ -679,7 +679,7 @@ async def cb_geo(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
 
     await ctx.ack()
     await ctx.reply(
-        "🗺 <b>ГЕОГУСЕР ПО МАГНИТОГОРСКУ</b>\n\n"
+        "🗺 <b>GeoGuessr📍 · МАГНИТОГОРСК</b>\n\n"
         "📸 Бот показывает фотографию места, а вы с собеседником угадываете, "
         "где оно находится.\n\n"
         "⭐ <b>Чем ближе метка — тем больше звёзд.</b>\n"
@@ -732,7 +732,7 @@ async def cb_geo_rounds(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     result = await send_to(
         ctx.bot,
         partner,
-        "🗺 <b>ТЕБЯ ЗОВУТ В ГЕОГУСЕР</b>\n\n"
+        "🗺 <b>ТЕБЯ ЗОВУТ В GeoGuessr📍</b>\n\n"
         f"🎮 Раундов: <b>{total}</b>\n"
         "⏱ На каждый раунд: <b>2 минуты</b>\n"
         f"{reward_text}\n\n"
@@ -752,13 +752,13 @@ async def cb_geo_rounds(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         partner,
         "geo",
         int(game["id"]),
-        "🗺 Геогусер",
+        "GeoGuessr📍",
         f"{total} раундов · 2 минуты на раунд",
     )
     event_id = await db.add_miniapp_event(
         partner,
         "games",
-        "Приглашение в «Геогусер»",
+        "Приглашение в «GeoGuessr📍»",
         f"{total} раундов · по 2 минуты",
         icon="geo",
         action="chat",
@@ -767,7 +767,7 @@ async def cb_geo_rounds(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     await ctx.ack("Предложение отправлено")
     await ctx.reply(
         "✅ <b>Предложение отправлено</b>\n"
-        f"🗺 Геогусер · {total} раундов · по 2 минуты."
+        f"GeoGuessr📍 · {total} раундов · по 2 минуты."
     )
 
 
@@ -786,7 +786,7 @@ async def cb_geo_accept(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         await ctx.ack("На это предложение уже ответили", alert=True)
         return
     live_chat.game_status(
-        set(_players(game)), "geo", game_id, "accepted", "Геогусер начался"
+        set(_players(game)), "geo", game_id, "accepted", "GeoGuessr📍 начался"
     )
     await ctx.ack("Игра началась")
     await _send_geo_round(ctx, game)
@@ -813,7 +813,7 @@ async def cb_geo_decline(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     await send_to(
         ctx.bot,
         int(declined["inviter_id"]),
-        "🗺 Собеседник пока не хочет играть в Геогусер.",
+        "🗺 Собеседник пока не хочет играть в GeoGuessr📍.",
         K.chat_keyboard(),
         ctx.pack,
     )
@@ -845,7 +845,7 @@ async def geo_location(message: Message, ctx: Ctx, db: Database) -> None:
         raise SkipHandler
     geo_game = await db.geo_for_pair(ctx.user_id, partner)
     if geo_game is None or str(geo_game["status"]) != "active":
-        # Вне Геогусера точная геолокация по-прежнему блокируется обычным релеем.
+        # Вне GeoGuessr точная геолокация по-прежнему блокируется обычным релеем.
         raise SkipHandler
     if not _current_pair(ctx.mm, geo_game):
         await db.cancel_battle(int(geo_game["id"]))
