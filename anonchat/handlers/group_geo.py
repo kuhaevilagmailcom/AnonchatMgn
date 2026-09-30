@@ -12,7 +12,7 @@ import secrets
 import time
 from dataclasses import dataclass, field
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
@@ -238,7 +238,7 @@ async def _resolve_round(bot, game: GroupGeoGame, round_index: int) -> None:
 
 
 @router.message(Command("gamegeo"))
-async def cmd_group_geo(message: Message) -> None:
+async def cmd_group_geo(message: Message, bot: Bot) -> None:
     if message.chat.type not in GROUP_TYPES or message.from_user is None or message.from_user.is_bot:
         return
 
@@ -280,11 +280,11 @@ async def cmd_group_geo(message: Message) -> None:
         "Первый, кто нажмёт <b>«Играть»</b>, станет вторым игроком.",
         reply_markup=_invite_keyboard(game.id),
     )
-    game.invite_task = asyncio.create_task(_expire_invite(message.bot, game.id))
+    game.invite_task = asyncio.create_task(_expire_invite(bot, game.id))
 
 
 @router.callback_query(F.data.startswith("ggeo:join:"))
-async def cb_group_geo_join(event: CallbackQuery) -> None:
+async def cb_group_geo_join(event: CallbackQuery, bot: Bot) -> None:
     game_id = (event.data or "").rsplit(":", 1)[-1]
     game = _games_by_id.get(game_id)
     message = event.message
@@ -321,7 +321,7 @@ async def cb_group_geo_join(event: CallbackQuery) -> None:
     except TelegramAPIError:
         pass
 
-    await event.bot.send_message(
+    await bot.send_message(
         game.chat_id,
         "🔥 <b>ИГРА НАЧАЛАСЬ</b>\n\n"
         f"👤 {_mention(game.inviter_id, game.inviter_name)}\n"
@@ -329,7 +329,7 @@ async def cb_group_geo_join(event: CallbackQuery) -> None:
         f"👤 {_mention(game.player_b_id, game.player_b_name)}\n\n"
         f"🎮 {ROUNDS} раунда · по {GQ.GEO_ROUND_SECONDS // 60} минуты.",
     )
-    await _send_round(event.bot, game)
+    await _send_round(bot, game)
 
 
 @router.callback_query(F.data.startswith("ggeo:cancel:"))
@@ -352,7 +352,7 @@ async def cb_group_geo_cancel(event: CallbackQuery) -> None:
 
 
 @router.message(F.location | F.venue)
-async def group_geo_location(message: Message) -> None:
+async def group_geo_location(message: Message, bot: Bot) -> None:
     if message.chat.type not in GROUP_TYPES:
         raise SkipHandler
     if message.from_user is None:
@@ -395,7 +395,7 @@ async def group_geo_location(message: Message) -> None:
         )
         return
 
-    await _resolve_round(message.bot, game, game.round_index)
+    await _resolve_round(bot, game, game.round_index)
 
 
 async def clear_group_geo_state() -> None:
