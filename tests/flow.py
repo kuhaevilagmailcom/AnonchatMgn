@@ -976,6 +976,42 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check(await db.geo_for_pair(A, B) is None,
           "собеседник может отклонить приглашение GeoGuessr📍")
 
+    # В активном GeoGuessr принимается любая Telegram-геоточка:
+    # выбранная на карте, фактическая текущая позиция и venue.
+    await press(A, "game:geo")
+    await press(A, "game:geo:rounds:3")
+    geo_active = await db.geo_for_pair(A, B)
+    geo_active_id = int(geo_active["id"])
+    await press(B, f"game:geo:yes:{geo_active_id}")
+
+    session.clear()
+    await payload(
+        A,
+        location={
+            "latitude": 54.7,
+            "longitude": 20.5,
+            "horizontal_accuracy": 15.0,
+        },
+    )
+    check("Метка принята" in session.last_to(A),
+          "GeoGuessr принимает текущую/обычную геопозицию без определения её происхождения")
+    check(not any(item.get("method") == "sendLocation" for item in session.to(B)),
+          "координаты ответа игрока не пересылаются собеседнику")
+
+    session.clear()
+    await payload(
+        B,
+        venue={
+            "location": {"latitude": 53.4, "longitude": 58.9},
+            "title": "Любая точка",
+            "address": "Магнитогорск",
+        },
+    )
+    geo_after = await db.geo_for_pair(A, B)
+    check(bool(geo_after and geo_after["status"] == "round_done"),
+          "GeoGuessr принимает venue как координату игрового ответа")
+    await db.cancel_battle(geo_active_id)
+
     await press(A, "game:battle")
     check("5 вопросов" in str(session.to(A)[-1].get("reply_markup"))
           and "10 вопросов" in str(session.to(A)[-1].get("reply_markup")),
