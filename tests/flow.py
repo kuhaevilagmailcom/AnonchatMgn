@@ -953,28 +953,26 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await send(A, "/game")
     check("Битва мнений" in str(session.to(A)[-1].get("reply_markup")),
           "/game открывает игры в активном чате")
-    check("Геогусер" not in str(session.to(A)[-1].get("reply_markup")),
-          "обычный пользователь не видит запуск Геогусера")
-    await press(A, "game:geo")
-    check(await db.geo_for_pair(A, B) is None,
-          "поддельная кнопка не позволяет обычному пользователю запустить Геогусер")
-
-    await db.set_admin(A, {"reports"}, ADMIN)
-    session.clear()
-    await send(A, "/game")
     check("Геогусер" in str(session.to(A)[-1].get("reply_markup")),
-          "администратор с любыми правами видит запуск Геогусера")
+          "Геогусер доступен обычному пользователю")
     await press(A, "game:geo")
+    geo_round_markup = str(session.to(A)[-1].get("reply_markup"))
+    check("3 раунда" in geo_round_markup and "5 раундов" in geo_round_markup
+          and "10 раундов" in geo_round_markup,
+          "перед Геогусером можно выбрать 3, 5 или 10 раундов")
+    check("Скрепка" in session.last_to(A) and "текущую геопозицию" in session.last_to(A),
+          "инструкция объясняет выбор точки через Telegram без запроса GPS")
+    await press(A, "game:geo:rounds:5")
     geo_invite = await db.geo_for_pair(A, B)
-    check(bool(geo_invite and geo_invite["status"] == "invited"),
-          "администратор может предложить Геогусер обычному собеседнику")
+    check(bool(geo_invite and geo_invite["status"] == "invited"
+               and int(geo_invite["total_questions"]) == 5),
+          "обычный пользователь может предложить Геогусер на пять раундов")
     geo_id = int(geo_invite["id"])
-    check("Геогусер" in session.last_to(B),
-          "обычный собеседник получает приглашение в Геогусер")
+    check("Геогусер" in session.last_to(B) and "2 минуты" in session.last_to(B),
+          "собеседник получает приглашение с таймером")
     await press(B, f"game:geo:no:{geo_id}")
     check(await db.geo_for_pair(A, B) is None,
-          "обычный собеседник может ответить на приглашение Геогусера")
-    await db.remove_admin(A)
+          "собеседник может отклонить приглашение Геогусера")
 
     await press(A, "game:battle")
     check("5 вопросов" in str(session.to(A)[-1].get("reply_markup"))
