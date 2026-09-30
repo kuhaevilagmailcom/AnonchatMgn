@@ -58,7 +58,7 @@ if (typeof window === 'undefined') {
   let realtime = null;
   let realtimeConnected = false;
   let resultShownFor = 0;
-  const chat = {latest:0,startedAt:0,sent:0,received:0,timer:null,seen:new Set(),stickersLoaded:false,recording:false,recorder:null,stream:null,chunks:[],recordTimer:null,mediaCache:new Map(),game:null,gameHoldUntil:0,reply:null};
+  const chat = {latest:0,startedAt:0,sent:0,received:0,timer:null,geoTimer:null,seen:new Set(),stickersLoaded:false,recording:false,recorder:null,stream:null,chunks:[],recordTimer:null,mediaCache:new Map(),game:null,gameHoldUntil:0,reply:null};
   const CHAT_EMOJIS = ['😀','😃','😄','😁','😂','🤣','🥹','😊','🙂','😉','😍','😘','😎','🤨','😐','😴','😭','😡','🤬','🥰','🤍','❤️','🩷','🔥','⭐','✨','💀','🤝','👍','👎','🙏','💬','👀','🤡','😈','💯','🎉','🥳','😏','🙃','😌','🤔','😳','🫠','😅','🤝','💋','🫶'];
   const svg = n => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[n] || paths['circle-help']}</svg>`;
   function icons(root=document){$$('[data-icon]',root).forEach(el=>{el.innerHTML=svg(el.dataset.icon)})}
@@ -375,6 +375,7 @@ if (typeof window === 'undefined') {
     return `<div class="result-games">${games.map(g=>{
       if(g.type==='battle')return `<span>⚔️ Битва мнений <b>${g.matches||0}/${g.total||0}</b></span>`;
       if(g.type==='numbers')return `<span>🔢 Числа <b>${g.exact||0} точных</b></span>`;
+      if(g.type==='geo')return `<span>🗺 Геогусер <b>${g.total||g.games||1} раунд.</b></span>`;
       return `<span>🗣 Объясни слово <b>${g.games||1}</b></span>`;
     }).join('')}</div>`;
   }
@@ -448,17 +449,40 @@ if (typeof window === 'undefined') {
           <button data-chat-game="words"><span>🗣</span><div><strong>Объясни слово</strong><small>Один объясняет, второй угадывает</small></div></button>
           <button data-chat-game="battle"><span>⚔️</span><div><strong>Битва мнений</strong><small>5 или 10 вопросов</small></div></button>
           <button data-chat-game="numbers"><span>🔢</span><div><strong>Числа</strong><small>Угадайте одинаковое число</small></div></button>
+          <button data-chat-game="geo"><span>🗺</span><div><strong>Геогусер</strong><small>Угадай место в Магнитогорске</small></div></button>
         </div>`;
       $$('[data-chat-game]',body).forEach(b=>b.onclick=()=>{
         const game=b.dataset.chatGame;
         if(game==='words')inviteWords();
         else if(game==='battle'){closeModal();openModal('battle','Битва мнений','ИГРА ВДВОЁМ')}
+        else if(game==='geo'){closeModal();openModal('geo','Геогусер','МАГНИТОГОРСК')}
         else{closeModal();openModal('numbers','Числа','ИГРА ВДВОЁМ')}
       });
       return;
     }
     if(kind==='battle'){body.innerHTML=`${panel('Битва мнений','Оба отвечают отдельно. Идеальное совпадение 5/5 или 10/10 принесёт каждому 25 ★.')}<div class="modal-actions"><button class="action" data-battle="5">5 вопросов</button><button class="action accent" data-battle="10">10 вопросов</button></div>`;$$('[data-battle]',body).forEach(b=>b.onclick=()=>inviteBattle(+b.dataset.battle));return}
-    if(kind==='numbers'){body.innerHTML=`${panel('Числа · 3 раунда','Точное совпадение даёт полную награду, близкое — половину. Для пары награда доступна один раз.')}<div class="modal-actions one"><button class="action" data-range="10">1–10 · до 25 ★</button><button class="action" data-range="100">1–100 · до 50 ★</button><button class="action accent" data-range="1000">1–1000 · до 100 ★</button></div>`;$$('[data-range]',body).forEach(b=>b.onclick=()=>inviteNumbers(+b.dataset.range));return}
+    if(kind==='numbers'){body.innerHTML=`${panel('Числа · 3 раунда','Точное совпадение даёт полную награду, близкое — половину. Для пары награда доступна один раз.')}<div class="modal-actions one"><button class="action" data-range="10">1–10 · до 25 ★</button><button class="action" data-range="100">1–100 · до 50 ★</button><button class="action accent" data-range="1000">1–1000 · до 100 ★</button></div>`;$('[data-range]',body).forEach(b=>b.onclick=()=>inviteNumbers(+b.dataset.range));return}
+    if(kind==='geo'){
+      body.innerHTML=`
+        <section class="geo-intro">
+          <div class="geo-intro-icon">🗺</div>
+          <h3>Угадай Магнитогорск</h3>
+          <p>Смотри фото и ставь точку там, где, по-твоему, находится это место.</p>
+          <div class="geo-rules">
+            <span>⏱ <b>2 минуты</b> на раунд</span>
+            <span>⭐ Чем ближе — тем больше звёзд</span>
+            <span>📍 Ответ отправляется через Telegram</span>
+          </div>
+          <div class="geo-safety"><b>Как ответить:</b><br>📎 Скрепка → Геопозиция → передвинь карту → выбери точку в Магнитогорске → отправь.<br><br><b>Не отправляй текущую геопозицию.</b></div>
+        </section>
+        <div class="geo-round-choice">
+          <button data-geo-rounds="3"><b>3</b><small>быстро</small></button>
+          <button data-geo-rounds="5" class="selected"><b>5</b><small>оптимально</small></button>
+          <button data-geo-rounds="10"><b>10</b><small>долго</small></button>
+        </div>`;
+      $('[data-geo-rounds]',body).forEach(b=>b.onclick=()=>inviteGeo(+b.dataset.geoRounds));
+      return;
+    }
   }
   async function settings(body){const sub=await safe('/api/miniapp/subscription',{},null)||(!tg?.initData?state.subscription:null);state.subscription=sub;body.innerHTML=`<div class="setting"><div><strong>Твой пол</strong><small>необязательно</small></div><div class="segments" id="gender"><button data-value="m">Парень</button><button data-value="f">Девушка</button><button data-value="">Не указывать</button></div></div><div class="setting"><div><strong>Кого ищешь</strong><small>предпочтение</small></div><div class="segments" id="looking"><button data-value="m">Парня</button><button data-value="f">Девушку</button><button data-value="">Неважно</button></div></div><div class="setting"><div><strong>Твой берег</strong><small>необязательно</small></div><select id="district"><option value="">Любой</option><option value="Правый берег">Правый берег</option><option value="Левый берег">Левый берег</option></select></div><div class="setting"><div><strong>Возраст</strong><small>необязательно · 13–20</small></div><input id="age" type="number" inputmode="numeric" min="13" max="20" placeholder="Не указан"></div>${sub&&!sub.claimed?`<section class="panel reward"><span>${svg('gift')}</span><span><strong>${sub.amount} ★ за подписку</strong><small>Одноразовая награда</small></span><button id="subscribe">Получить</button></section>`:''}<section class="panel reward"><span>${svg('gift')}</span><span><strong>Поддержать проект</strong><small>Оплата Telegram Stars прямо в приложении</small></span><button id="support">Поддержать</button></section><div class="modal-actions"><button class="action" id="resetSettings">Сбросить</button><button class="action accent" id="saveSettings">Сохранить</button></div><div class="modal-actions one"><button class="action danger" id="forget">Удалить профиль</button></div>`;$('#district').value=state.user.district||'';$('#age').value=state.user.age||'';$$('#gender button').forEach(b=>b.classList.toggle('active',b.dataset.value===(state.user.gender||'')));$$('#looking button').forEach(b=>b.classList.toggle('active',b.dataset.value===(state.user.looking_for||'')));$$('#gender button,#looking button').forEach(b=>b.onclick=()=>{$$('button',b.parentElement).forEach(x=>x.classList.remove('active'));b.classList.add('active')});$('#saveSettings').onclick=saveSettings;$('#resetSettings').onclick=resetSettings;$('#forget').onclick=confirmForget;$('#support').onclick=openSupport;if($('#subscribe'))$('#subscribe').onclick=claimSubscription;}
   function bindClose(root=document){$$('[data-close-modal]',root).forEach(b=>b.onclick=closeModal)}
@@ -718,16 +742,40 @@ if (typeof window === 'undefined') {
   function gameAction(payload){
     return request('/api/miniapp/games/action',{method:'POST',body:JSON.stringify(payload)});
   }
+  function formatGeoDistance(value){
+    const m=Number(value);
+    if(!Number.isFinite(m))return '—';
+    if(m<1000)return `${Math.max(0,Math.round(m))} м`;
+    return `${(m/1000).toFixed(1).replace('.',',')} км`;
+  }
+  function stopGeoTimer(){
+    if(chat.geoTimer){clearInterval(chat.geoTimer);chat.geoTimer=null}
+  }
+  function startGeoTimer(deadline){
+    stopGeoTimer();
+    const tick=()=>{
+      const el=$('[data-geo-timer]');
+      if(!el)return stopGeoTimer();
+      const left=Math.max(0,Number(deadline||0)*1000-Date.now());
+      const sec=Math.ceil(left/1000),min=Math.floor(sec/60),rest=sec%60;
+      el.textContent=`${min}:${String(rest).padStart(2,'0')}`;
+      el.classList.toggle('ending',sec<=20);
+      if(sec<=0){stopGeoTimer();setTimeout(()=>syncChat(false),500)}
+    };
+    tick();chat.geoTimer=setInterval(tick,1000);
+  }
   function renderActiveGame(game){
     const root=$('#activeGame');if(!root)return;
     if(!game){
       if(chat.gameHoldUntil>Date.now())return;
+      stopGeoTimer();
       chat.game=null;root.hidden=true;root.innerHTML='';return;
     }
+    if(game.type!=='geo')stopGeoTimer();
     chat.game=game;
     if(game.finished)chat.gameHoldUntil=Date.now()+6000;
     root.hidden=false;
-    const top=`<header><span><small>${game.type==='battle'?'БИТВА МНЕНИЙ':game.type==='numbers'?'ЧИСЛА':'ОБЪЯСНИ СЛОВО'}</small><strong>Раунд ${game.round||1}/${game.total||1}</strong></span><button type="button" data-game-collapse>×</button></header>`;
+    const top=`<header><span><small>${game.type==='battle'?'БИТВА МНЕНИЙ':game.type==='numbers'?'ЧИСЛА':game.type==='geo'?'ГЕОГУСЕР':'ОБЪЯСНИ СЛОВО'}</small><strong>Раунд ${game.round||1}/${game.total||1}</strong></span><button type="button" data-game-collapse>×</button></header>`;
 
     if(game.status==='invited'){
       root.innerHTML=top+`<div class="active-game-body"><p>${game.inviter?'Ждём ответ собеседника…':'Собеседник предлагает сыграть. Ответь на карточке приглашения выше.'}</p></div>`;
@@ -796,6 +844,41 @@ if (typeof window === 'undefined') {
           const r=await gameAction({game_type:'numbers',game_id:game.id,action:'answer',value});
           if(r?.game)renderActiveGame(r.game);await syncChat(false);haptic();
         }catch(err){toast(err.message);form.querySelector('button').disabled=false}
+      };
+    }else if(game.type==='geo'){
+      let body=`<div class="active-game-body geo-active">`;
+      if(game.image_url)body+=`<div class="geo-game-photo"><img src="${esc(game.image_url)}" alt="Место в Магнитогорске"></div>`;
+      if(game.status==='active'){
+        body+=`
+          <div class="geo-live-head"><span>⏱ Осталось</span><strong data-geo-timer>2:00</strong></div>
+          <div class="geo-instructions">
+            <strong>📍 Отправь выбранную точку через Telegram</strong>
+            <p>📎 Скрепка → <b>Геопозиция</b> → передвинь карту → выбери место в Магнитогорске → отправь.</p>
+          </div>
+          <div class="geo-warning">⚠️ Не отправляй свою текущую геопозицию. Нужна только предполагаемая точка на карте.</div>`;
+        if(game.answered){
+          body+=`<div class="game-wait">✅ Метка принята · ждём собеседника</div>`;
+        }else{
+          body+=`<button class="geo-open-telegram" type="button" data-geo-telegram>Открыть Telegram для ответа</button>`;
+        }
+        body+=`<div class="geo-stars-hint">⭐ Чем ближе к месту — тем больше звёзд · до 10 ★ за раунд</div>`;
+      }else if(game.status==='round_done'||game.finished){
+        body+=`<div class="game-result geo-result">
+          <strong>📍 ${esc(game.place_title||'Результат раунда')}</strong>
+          <span>Твоя ошибка: <b>${formatGeoDistance(game.my_distance)}</b></span>
+          <span>Собеседник: <b>${formatGeoDistance(game.partner_distance)}</b></span>
+          <small>✨ За игру: ${game.reward_total||0} ★</small>
+        </div>`;
+        if(game.source_url)body+=`<a class="geo-source" href="${esc(game.source_url)}" target="_blank" rel="noopener">Источник фото · ${esc(game.license||'лицензия')}</a>`;
+        if(game.can_next)body+=`<button class="game-next" type="button" data-game-next>Следующее место</button>`;
+        if(game.finished)body+=`<div class="game-finished">🏁 Геогусер окончен · получено ${game.reward_total||0} ★</div>`;
+      }
+      body+='</div>';root.innerHTML=top+body;
+      if(game.status==='active')startGeoTimer(game.deadline);
+      const telegram=$('[data-geo-telegram]',root);if(telegram)telegram.onclick=()=>{
+        haptic('medium');
+        toast('В Telegram: 📎 → Геопозиция → выбери точку на карте');
+        setTimeout(()=>{try{tg?.close()}catch(_){}},250);
       };
     }else if(game.type==='words'){
       let body=`<div class="active-game-body words-game">`;
@@ -1005,8 +1088,9 @@ if (typeof window === 'undefined') {
   }
   async function inviteBattle(total){const r=await safe('/api/miniapp/games/battle/invite',{method:'POST',body:JSON.stringify({total})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify();syncChat(false)}}
   async function inviteNumbers(range_max){const r=await safe('/api/miniapp/games/numbers/invite',{method:'POST',body:JSON.stringify({range_max})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify();syncChat(false)}}
+  async function inviteGeo(rounds){const r=await safe('/api/miniapp/games/geo/invite',{method:'POST',body:JSON.stringify({rounds})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение в Геогусер отправлено');notify();syncChat(false)}}
   function bind(){
-    document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить ник','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','help':'Помощь и правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game){if(game.dataset.game==='words')inviteWords();else openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':'Числа','ИГРА ВДВОЁМ')}});
+    document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить ник','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','help':'Помощь и правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game){if(game.dataset.game==='words')inviteWords();else openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':game.dataset.game==='geo'?'Геогусер':'Числа',game.dataset.game==='geo'?'МАГНИТОГОРСК':'ИГРА ВДВОЁМ')}});
     $$('[data-close-modal]').forEach(b=>b.onclick=closeModal);
     $('#searchToggle').onclick=toggleSearch;
     $$('[data-setting] button').forEach(b=>b.onclick=()=>updateSetting(b.parentElement.dataset.setting,b.dataset.value));
