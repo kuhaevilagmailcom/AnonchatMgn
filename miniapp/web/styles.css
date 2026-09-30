@@ -728,3 +728,67 @@
 .geo-stars-hint{text-align:center;color:var(--muted);font-size:11px}
 .geo-result{gap:6px}.geo-source{display:block;text-align:center;color:var(--muted);font-size:11px;text-decoration:none;padding:4px}
 @media(max-width:390px){.geo-round-choice{gap:6px}.geo-round-choice button{min-height:68px}.geo-round-choice button b{font-size:21px}}
+
+
+/* GeoGuessr viewport hardening */
+html,body{max-width:100%;overflow-x:hidden}
+.chat-page,.active-game,.active-game>header,.active-game-body,
+.geo-active,.geo-live-head,.geo-instructions,.geo-warning,
+.geo-stars-hint,.geo-result,.geo-round-choice,.geo-intro,.geo-safety{
+  min-width:0;max-width:100%
+}
+.active-game{
+  width:100%;
+  overflow:hidden;
+}
+.active-game>header>span{min-width:0}
+.active-game-body{
+  width:100%;
+  max-height:min(52dvh,420px);
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  scrollbar-width:none;
+}
+.active-game-body::-webkit-scrollbar{display:none}
+.geo-active>*{min-width:0;max-width:100%}
+.geo-game-photo{
+  width:100%;
+  max-width:100%;
+  min-width:0;
+  aspect-ratio:16/9;
+  max-height:180px;
+}
+.geo-game-photo img{
+  width:100%;
+  max-width:100%;
+  height:100%;
+}
+.geo-live-head,
+.geo-instructions,
+.geo-warning,
+.geo-stars-hint,
+.geo-result,
+.geo-source,
+.geo-open-telegram{
+  width:100%;
+  min-width:0;
+  max-width:100%;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.geo-round-choice{grid-template-columns:repeat(3,minmax(0,1fr))}
+.geo-round-choice button{min-width:0;width:100%;padding-left:4px;padding-right:4px}
+@media(max-width:370px){
+  .active-game-body{max-height:46dvh;padding:10px;gap:8px}
+  .geo-game-photo{max-height:145px}
+  .geo-instructions{padding:10px}
+  .geo-instructions strong{font-size:12px}
+  .geo-instructions p{font-size:11px}
+  .geo-warning{font-size:10px}
+  .geo-round-choice button small{font-size:9px}
+}
+@media(max-height:650px){
+  .active-game-body{max-height:42dvh}
+  .geo-game-photo{max-height:130px}
+}
