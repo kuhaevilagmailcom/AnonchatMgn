@@ -71,11 +71,7 @@ def _valid_coordinate(latitude: float, longitude: float) -> bool:
 
 
 def valid_guess_coordinate(latitude: float, longitude: float) -> bool:
-    """Разрешаем только игровую метку в районе Магнитогорска.
-
-    Это заодно защищает от случайной отправки пользователем своей текущей
-    геопозиции из другого города вместо выбора произвольной точки на карте.
-    """
+    """Разрешаем любую корректную WGS-84 точку как игровой ответ."""
     try:
         latitude, longitude = float(latitude), float(longitude)
     except (TypeError, ValueError):
@@ -83,7 +79,8 @@ def valid_guess_coordinate(latitude: float, longitude: float) -> bool:
     return (
         math.isfinite(latitude)
         and math.isfinite(longitude)
-        and _valid_coordinate(latitude, longitude)
+        and -90.0 <= latitude <= 90.0
+        and -180.0 <= longitude <= 180.0
     )
 
 
