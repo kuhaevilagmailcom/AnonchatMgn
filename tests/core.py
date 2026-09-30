@@ -665,7 +665,7 @@ def test_geoquest_persistence_rewards_and_pair_limit() -> None:
     assert geo_reward(12_000) == 1
     assert geo_reward(20_000) == 0
     assert valid_guess_coordinate(53.4, 59.0) is True
-    assert valid_guess_coordinate(54.7, 20.5) is False
+    assert valid_guess_coordinate(54.7, 20.5) is True
     assert 110_000 < distance_meters(53.4, 59.0, 54.4, 59.0) < 112_000
     assert format_distance(950) == "950 м"
     assert format_distance(1_250) == "1,2 км"
@@ -717,10 +717,10 @@ def test_geoquest_persistence_rewards_and_pair_limit() -> None:
             game = await db.advance_geo(game_id, 322, 1)
             assert game is not None
 
-            # Невалидные и явно не-магнитогорские координаты не записываются.
+            # Невалидные координаты отклоняются, но любая корректная точка мира принимается.
             assert (await db.answer_geo(game_id, 321, 2, float("nan"), 1, *target))[0] == "invalid"
-            assert (await db.answer_geo(game_id, 321, 2, 54.7, 20.5, *target))[0] == "outside"
-            assert (await db.answer_geo(game_id, 321, 2, *target, *target))[0] == "waiting"
+            world_guess = (54.7, 20.5)
+            assert (await db.answer_geo(game_id, 321, 2, *world_guess, *target))[0] == "waiting"
             far_final = (53.5, 59.2)
             state, game, reward_a, reward_b = await db.answer_geo(
                 game_id, 322, 2, *far_final, *target,
@@ -733,7 +733,7 @@ def test_geoquest_persistence_rewards_and_pair_limit() -> None:
             expected_a = (
                 10
                 + geo_reward(distance_meters(*guess_a, *target))
-                + 10
+                + geo_reward(distance_meters(*world_guess, *target))
             )
             expected_b = (
                 geo_reward(distance_meters(*far_b, *target))
