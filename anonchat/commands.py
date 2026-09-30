@@ -16,7 +16,10 @@ import logging
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramAPIError
-from aiogram.types import (\n    BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats,\n    BotCommandScopeChat,\n)
+from aiogram.types import (
+    BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats,
+    BotCommandScopeChat,
+)
 
 from .config import Config
 
@@ -41,8 +44,13 @@ COMMANDS = (
     BotCommand(command="forget", description="🧹 Удалить мой профиль"),
 )
 
+#: команда, видимая только в меню команд групповых чатов
+GROUP_COMMANDS = (
+    BotCommand(command="gamegeo", description="🗺 GeoGuessr в группе"),
+)
+
 #: админские команды, которые видны в меню модератора
-GROUP_COMMANDS = (\n    BotCommand(command="gamegeo", description="🗺 GeoGuessr в группе"),\n)\n\n#: админские команды, которые видны в меню модератора\nADMIN_VISIBLE = (
+ADMIN_VISIBLE = (
     BotCommand(command="admin", description="🛡 Панель модератора"),
 )
 
