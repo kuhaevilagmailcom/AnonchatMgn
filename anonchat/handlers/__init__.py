@@ -7,6 +7,7 @@ from aiogram import Router
 from .admin import router as admin_router
 from .chat import router as chat_router
 from .games import router as games_router
+from .group_geo import router as group_geo_router
 from .menu import router as menu_router
 from .polls import router as polls_router
 from .reports import router as reports_router
@@ -16,6 +17,7 @@ from .support import router as support_router
 
 def get_routers() -> list[Router]:
     return [
+        group_geo_router, # /gamegeo и геометки в группах
         settings_router,  # /profile, /settings, FSM ника
         support_router,   # добровольная поддержка через Telegram Stars
         reports_router,   # /report, FSM комментария жалобы
