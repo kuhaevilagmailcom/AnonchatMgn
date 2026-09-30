@@ -44,6 +44,15 @@ class AnonymousQuestionStates(StatesGroup):
     answer = State()
 
 
+async def _geo_blocks_chat_exit(ctx: Ctx, db: Database) -> bool:
+    """Не даём старым Next/Stop-кнопкам оборвать активный Геогусер."""
+    partner = ctx.mm.partner(ctx.user_id)
+    if partner is None:
+        return False
+    game = await db.geo_for_pair(ctx.user_id, partner)
+    return bool(game is not None and str(game["status"]) in {"active", "round_done"})
+
+
 def _anonymous_body(body: str = "", *, media: bool = False) -> str:
     """Новый единый вид анонимного сообщения."""
     clean = texts.esc((body or "").strip())
@@ -356,12 +365,18 @@ async def cmd_connect(message: Message, ctx: Ctx) -> None:
 
 
 @router.message(Command("next", "skip"))
-async def cmd_next(message: Message, ctx: Ctx) -> None:
+async def cmd_next(message: Message, ctx: Ctx, db: Database) -> None:
+    if await _geo_blocks_chat_exit(ctx, db):
+        await ctx.reply("🗺 Сначала заверши текущий раунд Геогусера.")
+        return
     await act_next(ctx)
 
 
 @router.message(Command("stop", "disconnect", "leave"))
-async def cmd_stop(message: Message, ctx: Ctx) -> None:
+async def cmd_stop(message: Message, ctx: Ctx, db: Database) -> None:
+    if await _geo_blocks_chat_exit(ctx, db):
+        await ctx.reply("🗺 Сначала заверши Геогусер.")
+        return
     await act_stop(ctx)
 
 
@@ -403,13 +418,19 @@ async def cb_connect(event: CallbackQuery, ctx: Ctx) -> None:
 
 
 @router.callback_query(F.data == K.CB_NEXT)
-async def cb_next(event: CallbackQuery, ctx: Ctx) -> None:
+async def cb_next(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    if await _geo_blocks_chat_exit(ctx, db):
+        await ctx.ack("Сначала заверши Геогусер", alert=True)
+        return
     await ctx.ack()
     await act_next(ctx)
 
 
 @router.callback_query(F.data == K.CB_STOP)
-async def cb_stop(event: CallbackQuery, ctx: Ctx, cfg: Config) -> None:
+async def cb_stop(event: CallbackQuery, ctx: Ctx, cfg: Config, db: Database) -> None:
+    if await _geo_blocks_chat_exit(ctx, db):
+        await ctx.ack("Сначала заверши Геогусер", alert=True)
+        return
     status = ctx.mm.status(ctx.user_id)
     if status == "queued":
         ctx.mm.forget(ctx.user_id)
@@ -436,7 +457,10 @@ async def cb_stop(event: CallbackQuery, ctx: Ctx, cfg: Config) -> None:
 
 
 @router.callback_query(F.data == K.CB_STOP_YES)
-async def cb_stop_yes(event: CallbackQuery, ctx: Ctx) -> None:
+async def cb_stop_yes(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    if await _geo_blocks_chat_exit(ctx, db):
+        await ctx.ack("Сначала заверши Геогусер", alert=True)
+        return
     await ctx.ack()
     await act_stop(ctx)
 
