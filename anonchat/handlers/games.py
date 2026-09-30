@@ -8,6 +8,7 @@ from typing import Any
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramAPIError
+from aiogram.dispatcher.event.bases import SkipHandler
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
@@ -26,6 +27,7 @@ from ..number_game import (
     number_reward,
 )
 from .. import word_game as WG
+from .. import geoquest as GQ
 from .. import live_chat
 
 router = Router(name="games")
@@ -66,6 +68,19 @@ def _number_answered(row: Any, user_id: int) -> bool:
     return row[column] is not None
 
 
+def _geo_answered(row: Any, user_id: int) -> bool:
+    suffix = "a" if int(row["user_a"]) == int(user_id) else "b"
+    return row[f"geo_lat_{suffix}"] is not None
+
+
+def _geo_place(row: Any) -> GQ.GeoPlace | None:
+    try:
+        ids = json.loads(str(row["question_ids"] or "[]"))
+        return GQ.get_place(int(ids[int(row["question_index"])]))
+    except (IndexError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
 async def _require_current_game(ctx: Ctx, db: Database, game_id: int) -> Any | None:
     row = await db.get_battle(game_id)
     if (
@@ -96,6 +111,116 @@ async def _require_current_number(ctx: Ctx, db: Database, game_id: int) -> Any |
         await ctx.ack("Диалог уже завершён", alert=True)
         return None
     return row
+
+
+async def _require_current_geo(ctx: Ctx, db: Database, game_id: int) -> Any | None:
+    row = await db.get_battle(game_id)
+    if (
+        row is None
+        or _game_type(row) != "geo"
+        or ctx.user_id not in set(_players(row))
+    ):
+        await ctx.ack("Игра не найдена", alert=True)
+        return None
+    if not _current_pair(ctx.mm, row):
+        await db.cancel_battle(game_id)
+        await ctx.ack("Диалог уже завершён", alert=True)
+        return None
+    return row
+
+
+async def _send_geo_round(ctx: Ctx, row: Any) -> None:
+    place = _geo_place(row)
+    if place is None:
+        await ctx.db.cancel_battle(int(row["id"]))
+        for user_id in _players(row):
+            await send_to(
+                ctx.bot, user_id,
+                "🗺 Не получилось открыть место. Игра остановлена.",
+                K.chat_keyboard(), ctx.pack,
+            )
+        return
+    index = int(row["question_index"])
+    reward_note = (
+        f"Победителю +{GQ.GEO_WIN_REWARD} ⭐ · лимит {GQ.GEO_DAILY_REWARD_LIMIT} ⭐ в сутки."
+        if int(row["reward_awarded"] or 0)
+        else "Сегодня с этим собеседником игра идёт без награды."
+    )
+    caption = (
+        f"🗺 <b>Геогусер · раунд {index + 1}/{GQ.GEO_ROUNDS}</b>\n\n"
+        "Где в Магнитогорске сделано это фото? Нажми «Отправить метку» "
+        "и поставь точку на карте. Ответ изменить нельзя.\n\n"
+        f"{reward_note}\n"
+        f"<i>Фото: {texts.esc(place.credit)}</i>"
+    )
+    for user_id in _players(row):
+        try:
+            await ctx.bot.send_photo(
+                user_id, place.image_url, caption=ctx.pack.wrap(caption),
+                reply_markup=K.geo_location_keyboard(),
+            )
+        except TelegramAPIError:
+            await send_to(
+                ctx.bot, user_id,
+                f"{caption}\n\n<a href=\"{texts.esc(place.image_url)}\">Открыть фотографию</a>",
+                K.geo_location_keyboard(), ctx.pack,
+            )
+
+
+async def _send_geo_result(
+    ctx: Ctx, row: Any, reward_a: int, reward_b: int
+) -> None:
+    place = _geo_place(row)
+    if place is None:
+        return
+    user_a, user_b = _players(row)
+    distance_a = float(row["geo_distance_a"] or 0)
+    distance_b = float(row["geo_distance_b"] or 0)
+    tied = abs(distance_a - distance_b) <= GQ.GEO_TIE_METERS
+    if tied:
+        outcome_a = outcome_b = "🤝 Почти одинаково — ничья!"
+    elif distance_a < distance_b:
+        outcome_a, outcome_b = "🏆 Ты оказался ближе!", "Собеседник оказался ближе."
+    else:
+        outcome_a, outcome_b = "Собеседник оказался ближе.", "🏆 Ты оказался ближе!"
+
+    finished = str(row["status"]) == "finished"
+    next_markup = K.geo_next_keyboard(int(row["id"]), int(row["question_index"]))
+
+    def body(mine: float, other: float, outcome: str, reward: int, total: int) -> str:
+        reward_line = f"+<b>{reward} ⭐</b>" if reward else "+<b>0 ⭐</b>"
+        final = (
+            f"\n\n🏁 <b>Геогусер окончен</b>\nЗа игру получено: <b>{total} ⭐</b>."
+            if finished else ""
+        )
+        return (
+            f"📍 <b>{texts.esc(place.title)}</b>\n\n"
+            f"Ты ошибся на <b>{GQ.format_distance(mine)}</b>.\n"
+            f"Собеседник — на <b>{GQ.format_distance(other)}</b>.\n"
+            f"{outcome} {reward_line}{final}\n\n"
+            f"<a href=\"{texts.esc(place.source_url)}\">Источник фото</a> · "
+            f"<a href=\"{texts.esc(place.license_url or place.source_url)}\">{texts.esc(place.license)}</a>"
+        )
+
+    admin_a = bool(await ctx.db.get_admin_permissions(user_a, ctx.cfg.admin_ids))
+    admin_b = bool(await ctx.db.get_admin_permissions(user_b, ctx.cfg.admin_ids))
+    markup_a = K.geo_end_keyboard(can_start=admin_a) if finished else next_markup
+    markup_b = K.geo_end_keyboard(can_start=admin_b) if finished else next_markup
+    await send_to(
+        ctx.bot, user_a,
+        body(distance_a, distance_b, outcome_a, reward_a, int(row["reward_total_a"] or 0)),
+        markup_a, ctx.pack,
+    )
+    await send_to(
+        ctx.bot, user_b,
+        body(distance_b, distance_a, outcome_b, reward_b, int(row["reward_total_b"] or 0)),
+        markup_b, ctx.pack,
+    )
+    for user_id in (user_a, user_b):
+        try:
+            await ctx.bot.send_location(user_id, place.latitude, place.longitude)
+        except TelegramAPIError:
+            pass
 
 
 def _number_prompt(row: Any) -> str:
@@ -279,7 +404,10 @@ async def _open_games(ctx: Ctx) -> None:
     if ctx.mm.partner(ctx.user_id) is None:
         await ctx.reply("🎮 Игры доступны только в активном диалоге.", K.menu_keyboard())
         return
-    await ctx.reply("🎮 <b>Игры с собеседником</b>\n\nВыбери игру.", K.games_keyboard())
+    await ctx.reply(
+        "🎮 <b>Игры с собеседником</b>\n\nВыбери игру.",
+        K.games_keyboard(admin=ctx.is_admin),
+    )
 
 
 @router.message(Command("game", "games"))
@@ -579,6 +707,185 @@ async def cb_number_next(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         return
     await ctx.ack()
     await _send_number_round(ctx, game)
+
+
+@router.callback_query(F.data == K.CB_GEO)
+async def cb_geo(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    if not ctx.is_admin:
+        await ctx.ack("Запустить Геогусер может только администратор", alert=True)
+        return
+    partner = ctx.mm.partner(ctx.user_id)
+    if partner is None:
+        await ctx.ack("Сначала найди собеседника", alert=True)
+        return
+    if WG.active_for_pair(ctx.user_id, partner):
+        await ctx.ack("Сначала заверши игру «Объясни слово»", alert=True)
+        return
+    existing = await db.game_for_pair(ctx.user_id, partner)
+    if existing is not None:
+        if _game_type(existing) != "geo":
+            await ctx.ack("Сначала заверши текущую игру", alert=True)
+            return
+        status = str(existing["status"])
+        game_id = int(existing["id"])
+        if status == "invited":
+            if int(existing["inviter_id"]) == ctx.user_id:
+                await ctx.ack("Предложение уже отправлено", alert=True)
+            else:
+                await ctx.reply(
+                    "🗺 Собеседник предлагает сыграть в Геогусер.",
+                    K.geo_invite_keyboard(game_id),
+                )
+            return
+        if status == "active":
+            await ctx.ack("Игра уже идёт")
+            if _geo_answered(existing, ctx.user_id):
+                await ctx.reply("📍 Метка принята. Ждём собеседника…", K.chat_keyboard())
+            else:
+                await _send_geo_round(ctx, existing)
+            return
+        await ctx.ack()
+        await ctx.reply(
+            "🗺 Раунд завершён. Можно открыть следующее место.",
+            K.geo_next_keyboard(game_id, int(existing["question_index"])),
+        )
+        return
+
+    try:
+        place_ids = GQ.select_place_ids()
+    except RuntimeError:
+        await ctx.ack("Набор мест ещё загружается", alert=True)
+        return
+    game, created = await db.create_geo_invite(ctx.user_id, partner, place_ids)
+    if not created:
+        await ctx.ack("У вас уже есть активная игра", alert=True)
+        return
+    reward_available = await db.geo_pair_reward_available(ctx.user_id, partner)
+    result = await send_to(
+        ctx.bot,
+        partner,
+        "🗺 <b>Собеседник предлагает сыграть в Геогусер</b>\n\n"
+        f"Раундов: <b>{GQ.GEO_ROUNDS}</b>. На каждом фото нужно поставить метку "
+        "на карте Магнитогорска. Кто ближе — побеждает.\n"
+        + (
+            f"Победителю раунда — до <b>{GQ.GEO_WIN_REWARD} ⭐</b>."
+            if reward_available
+            else "Сегодня вы уже получали награду вместе — игра будет без ⭐."
+        ),
+        K.geo_invite_keyboard(int(game["id"])),
+        ctx.pack,
+    )
+    if result is DeliveryResult.UNAVAILABLE:
+        await db.cancel_battle(int(game["id"]))
+        await ctx.reply("Не получилось отправить предложение.")
+        return
+    await ctx.ack()
+    await ctx.reply("🗺 Предложение отправлено.")
+
+
+@router.callback_query(F.data.startswith("game:geo:yes:"))
+async def cb_geo_accept(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    try:
+        game_id = int((event.data or "").rsplit(":", 1)[1])
+    except (TypeError, ValueError):
+        await ctx.ack("Игра не найдена", alert=True)
+        return
+    row = await _require_current_geo(ctx, db, game_id)
+    if row is None:
+        return
+    game = await db.accept_geo(game_id, ctx.user_id)
+    if game is None:
+        await ctx.ack("На это предложение уже ответили", alert=True)
+        return
+    await ctx.ack("Игра началась")
+    await _send_geo_round(ctx, game)
+
+
+@router.callback_query(F.data.startswith("game:geo:no:"))
+async def cb_geo_decline(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    try:
+        game_id = int((event.data or "").rsplit(":", 1)[1])
+    except (TypeError, ValueError):
+        await ctx.ack("Игра не найдена", alert=True)
+        return
+    row = await _require_current_geo(ctx, db, game_id)
+    if row is None:
+        return
+    declined = await db.decline_geo(game_id, ctx.user_id)
+    if declined is None:
+        await ctx.ack("Предложение уже закрыто", alert=True)
+        return
+    await ctx.ack("Не сейчас")
+    await send_to(
+        ctx.bot, int(declined["inviter_id"]),
+        "Собеседник пока не хочет играть в Геогусер.",
+        K.chat_keyboard(), ctx.pack,
+    )
+
+
+@router.callback_query(F.data.startswith("game:geo:next:"))
+async def cb_geo_next(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    try:
+        _, _, _, raw_game, raw_round = (event.data or "").split(":")
+        game_id, round_index = int(raw_game), int(raw_round)
+    except (TypeError, ValueError):
+        await ctx.ack("Раунд уже закрыт", alert=True)
+        return
+    row = await _require_current_geo(ctx, db, game_id)
+    if row is None:
+        return
+    game = await db.advance_geo(game_id, ctx.user_id, round_index)
+    if game is None:
+        await ctx.ack("Собеседник уже перешёл дальше", alert=True)
+        return
+    await ctx.ack()
+    await _send_geo_round(ctx, game)
+
+
+@router.message(F.location)
+async def geo_location(
+    message: Message, ctx: Ctx, db: Database
+) -> None:
+    partner = ctx.mm.partner(ctx.user_id)
+    if partner is None:
+        raise SkipHandler
+    geo_game = await db.geo_for_pair(ctx.user_id, partner)
+    if geo_game is None or str(geo_game["status"]) != "active":
+        # Обычная геолокация должна дойти до стандартного анонимного релея.
+        raise SkipHandler
+    if not _current_pair(ctx.mm, geo_game):
+        await db.cancel_battle(int(geo_game["id"]))
+        await ctx.reply("Диалог уже завершён.", K.menu_keyboard())
+        return
+    place = _geo_place(geo_game)
+    if place is None or message.location is None:
+        await db.cancel_battle(int(geo_game["id"]))
+        await ctx.reply("Место недоступно. Игра остановлена.", K.chat_keyboard())
+        return
+    result, game, reward_a, reward_b = await db.answer_geo(
+        int(geo_game["id"]), ctx.user_id, int(geo_game["question_index"]),
+        message.location.latitude, message.location.longitude,
+        place.latitude, place.longitude,
+    )
+    if result == "waiting":
+        await ctx.reply("📍 Метка принята. Ждём собеседника…", K.chat_keyboard())
+        return
+    if result == "resolved" and game is not None:
+        await _send_geo_result(ctx, game, reward_a, reward_b)
+        if str(game["status"]) == "finished":
+            user_a, user_b = _players(game)
+            ctx.mm.record_game(user_a, "geo", 0, GQ.GEO_ROUNDS)
+            for user_id in (user_a, user_b):
+                await db.record_game_engagement(user_id, "geo", total=GQ.GEO_ROUNDS)
+                await _notify_progress(ctx, user_id)
+        return
+    if result == "already":
+        await ctx.reply("Ты уже отправил метку. Ждём собеседника…", K.chat_keyboard())
+        return
+    if result == "invalid":
+        await ctx.reply("Не получилось прочитать координаты. Отправь метку ещё раз.")
+        return
+    await ctx.reply("Этот раунд уже закрыт.", K.chat_keyboard())
 
 
 @router.callback_query(F.data == K.CB_BATTLE)

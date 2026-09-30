@@ -10,6 +10,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from .texts import esc
+
 WORD_ROUNDS = 5
 WORD_REWARD = 3
 WORD_PAIR_DAILY_REWARD_LIMIT = 6
@@ -404,7 +406,8 @@ def role_text(game: WordGame, user_id: int) -> str:
     if int(user_id) == game.explainer_id:
         return (
             f"🗣 <b>Объясни слово · {n}/{WORD_ROUNDS}</b>\n\n"
-            f"Твоё слово: <b>{game.word}</b>\n\n"
+            "Твоё слово — нажми, чтобы открыть:\n"
+            f"<blockquote><tg-spoiler><b>{esc(game.word)}</b></tg-spoiler></blockquote>\n"
             "Объясняй его своими словами, но не пиши само слово."
         )
     return (

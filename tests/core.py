@@ -640,6 +640,118 @@ def test_number_game_three_rounds_and_rewards() -> None:
     asyncio.run(scenario())
 
 
+def test_geoquest_persistence_rewards_and_pair_limit() -> None:
+    from anonchat.geoquest import (
+        GEO_DAILY_REWARD_LIMIT,
+        GEO_ROUNDS,
+        GEO_TIE_REWARD,
+        GEO_WIN_REWARD,
+        distance_meters,
+        format_distance,
+    )
+
+    assert GEO_ROUNDS == 3
+    assert GEO_WIN_REWARD == 3 and GEO_TIE_REWARD == 2
+    assert GEO_DAILY_REWARD_LIMIT == 30
+    assert 110_000 < distance_meters(53.4, 59.0, 54.4, 59.0) < 112_000
+    assert format_distance(950) == "950 м"
+    assert format_distance(1_250) == "1,2 км"
+
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "geoquest.db"
+        db = await Database(path).start()
+        try:
+            await db.ensure_user(321, "geo_a", "A")
+            await db.ensure_user(322, "geo_b", "B")
+            invite, created = await db.create_geo_invite(321, 322, [11, 22, 33])
+            assert created and invite["game_type"] == "geo"
+            game_id = int(invite["id"])
+            game = await db.accept_geo(game_id, 322)
+            assert game is not None and game["status"] == "active"
+            assert int(game["reward_awarded"]) == 1
+            assert await db.geo_pair_reward_available(321, 322) is False
+
+            # Игра и уже принятая наградная попытка переживают рестарт процесса.
+            await db.close()
+            db = await Database(path).start()
+            game = await db.get_battle(game_id)
+            assert game is not None and int(game["reward_awarded"]) == 1
+
+            target = (53.407, 58.979)
+            assert (await db.answer_geo(game_id, 321, 0, *target, *target))[0] == "waiting"
+            state, game, reward_a, reward_b = await db.answer_geo(
+                game_id, 322, 0, 53.45, 59.05, *target,
+            )
+            assert state == "resolved" and game is not None
+            assert (reward_a, reward_b) == (GEO_WIN_REWARD, 0)
+            game = await db.advance_geo(game_id, 321, 0)
+            assert game is not None and int(game["question_index"]) == 1
+
+            # Почти одинаковая точность считается ничьёй.
+            assert (await db.answer_geo(game_id, 321, 1, 53.408, 58.979, *target))[0] == "waiting"
+            state, game, reward_a, reward_b = await db.answer_geo(
+                game_id, 322, 1, 53.40805, 58.979, *target,
+            )
+            assert state == "resolved" and (reward_a, reward_b) == (
+                GEO_TIE_REWARD, GEO_TIE_REWARD,
+            )
+            game = await db.advance_geo(game_id, 322, 1)
+            assert game is not None
+
+            # Невалидные координаты не записываются.
+            assert (await db.answer_geo(game_id, 321, 2, float("nan"), 1, *target))[0] == "invalid"
+            assert (await db.answer_geo(game_id, 321, 2, *target, *target))[0] == "waiting"
+            state, game, reward_a, reward_b = await db.answer_geo(
+                game_id, 322, 2, 53.5, 59.2, *target,
+            )
+            assert state == "resolved" and game is not None and game["status"] == "finished"
+            assert (reward_a, reward_b) == (GEO_WIN_REWARD, 0)
+            assert await db.get_battle(game_id) is None
+            assert int((await db.get_user(321))["xp"]) == 8
+            assert int((await db.get_user(322))["xp"]) == 2
+
+            # Повтор той же пары в эти сутки доступен, но уже без фарма звёзд.
+            again, created = await db.create_geo_invite(322, 321, [44, 55, 66])
+            assert created
+            again = await db.accept_geo(int(again["id"]), 321)
+            assert again is not None and int(again["reward_awarded"]) == 0
+            await db.cancel_battle(int(again["id"]))
+
+            # Если никто не успел поставить метку, попытка пары возвращается.
+            await db.ensure_user(323, "geo_c", "C")
+            abandoned, created = await db.create_geo_invite(321, 323, [77, 88, 99])
+            assert created
+            abandoned = await db.accept_geo(int(abandoned["id"]), 323)
+            assert abandoned is not None and int(abandoned["reward_awarded"]) == 1
+            assert await db.close_battles_for_users(321, 323) == 1
+            assert await db.geo_pair_reward_available(321, 323) is True
+
+            await db.forget_user(321)
+            assert await db.geo_pair_reward_available(321, 322) is True
+            row = await db._fetchone(
+                "SELECT stars FROM geo_daily_rewards WHERE user_id=?", (321,)
+            )
+            assert row is None
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
+def test_geoquest_dataset_is_deployable() -> None:
+    from anonchat.geoquest import get_place, places, select_place_ids
+
+    places.cache_clear()
+    dataset = places()
+    assert 300 <= len(dataset) <= 400
+    assert len({place.id for place in dataset}) == len(dataset)
+    assert all(place.image_url.startswith("https://") for place in dataset)
+    assert all(place.source_url.startswith("https://commons.wikimedia.org/") for place in dataset)
+    selected = select_place_ids()
+    assert len(selected) == 3 and len(set(selected)) == 3
+    assert all(get_place(place_id) is not None for place_id in selected)
+
+
 def test_stale_games_cleanup_after_two_days() -> None:
     async def scenario() -> None:
         path = Path(tempfile.mkdtemp()) / "stale-games.db"
@@ -849,7 +961,9 @@ def test_keyboard_styles_and_icons() -> None:
         K.chat_keyboard(), K.profile_keyboard("https://t.me/test_bot?start=ref_1"),
         K.district_keyboard(), K.gender_keyboard(), K.looking_for_keyboard(),
         K.settings_keyboard(True, "Правый берег", "Лена О", "m", "f"),
-        K.games_keyboard(), K.number_range_keyboard(), K.number_invite_keyboard(1),
+        K.games_keyboard(), K.games_keyboard(admin=True),
+        K.geo_end_keyboard(), K.geo_end_keyboard(can_start=True),
+        K.number_range_keyboard(), K.number_invite_keyboard(1),
         K.number_input_keyboard(1, 0), K.number_input_keyboard(1, 0, "10"),
         K.number_next_keyboard(1, 0), K.number_end_keyboard(),
         K.battle_invite_keyboard(1),
@@ -902,7 +1016,16 @@ def test_keyboard_styles_and_icons() -> None:
     assert [[button.text for button in row] for row in paired.inline_keyboard] == [
         ["Следующий"], ["Стоп", "Жалоба"], ["Игры"],
     ]
-    assert texts_of(K.games_keyboard()) == ["Битва мнений", "Числа", "Объясни слово", "Вернуться в чат"]
+    assert texts_of(K.games_keyboard()) == [
+        "Битва мнений", "Числа", "Объясни слово", "Вернуться в чат",
+    ]
+    assert texts_of(K.games_keyboard(admin=True)) == [
+        "Битва мнений", "Числа", "Объясни слово", "Геогусер", "Вернуться в чат",
+    ]
+    assert texts_of(K.geo_end_keyboard()) == ["Вернуться в чат"]
+    assert texts_of(K.geo_end_keyboard(can_start=True)) == ["Сыграть ещё", "Вернуться в чат"]
+    location_button = K.geo_location_keyboard().keyboard[0][0]
+    assert location_button.request_location is True
     assert texts_of(K.number_range_keyboard()) == [
         "1–10 · 25 ⭐", "1–100 · 50 ⭐", "1–1000 · 100 ⭐", "Назад",
     ]
@@ -1337,12 +1460,21 @@ def test_relay_state_reply_and_cleanup() -> None:
 
 
 def test_word_game_word_pool() -> None:
-    from anonchat.word_game import WORDS, WORD_DAILY_REWARD_LIMIT
+    from anonchat.word_game import WORDS, WORD_DAILY_REWARD_LIMIT, WordGame, role_text
 
     assert WORD_DAILY_REWARD_LIMIT == 300
     assert len(WORDS) >= 500
     assert len(WORDS) == len(set(WORDS))
     assert {"магнитка", "могну", "магнитогорск", "черемша"} <= set(WORDS)
+    secret = role_text(
+        WordGame(
+            id=1, user_a=10, user_b=20, inviter_id=10, status="active",
+            explainer_id=10, guesser_id=20, word="слово <тест>",
+        ),
+        10,
+    )
+    assert "<blockquote><tg-spoiler><b>" in secret
+    assert "слово &lt;тест&gt;" in secret and "слово <тест>" not in secret
 
 
 def test_miniapp_init_data_signature() -> None:

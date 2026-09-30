@@ -953,6 +953,29 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await send(A, "/game")
     check("Битва мнений" in str(session.to(A)[-1].get("reply_markup")),
           "/game открывает игры в активном чате")
+    check("Геогусер" not in str(session.to(A)[-1].get("reply_markup")),
+          "обычный пользователь не видит запуск Геогусера")
+    await press(A, "game:geo")
+    check(await db.geo_for_pair(A, B) is None,
+          "поддельная кнопка не позволяет обычному пользователю запустить Геогусер")
+
+    await db.set_admin(A, {"reports"}, ADMIN)
+    session.clear()
+    await send(A, "/game")
+    check("Геогусер" in str(session.to(A)[-1].get("reply_markup")),
+          "администратор с любыми правами видит запуск Геогусера")
+    await press(A, "game:geo")
+    geo_invite = await db.geo_for_pair(A, B)
+    check(bool(geo_invite and geo_invite["status"] == "invited"),
+          "администратор может предложить Геогусер обычному собеседнику")
+    geo_id = int(geo_invite["id"])
+    check("Геогусер" in session.last_to(B),
+          "обычный собеседник получает приглашение в Геогусер")
+    await press(B, f"game:geo:no:{geo_id}")
+    check(await db.geo_for_pair(A, B) is None,
+          "обычный собеседник может ответить на приглашение Геогусера")
+    await db.remove_admin(A)
+
     await press(A, "game:battle")
     check("5 вопросов" in str(session.to(A)[-1].get("reply_markup"))
           and "10 вопросов" in str(session.to(A)[-1].get("reply_markup")),
@@ -1151,10 +1174,8 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     closed_battle = await db.get_battle(int(active_battle["id"]))
     check(closed_battle is None, "/stop удаляет активную игру из SQLite")
     dialog_results = session.texts_to(A)
-    check(any("Итог разговора" in text and "Отправлено сообщений:" in text and "Получено:" in text for text in dialog_results),
-          "после диалога показывается персональный итог разговора")
-    check(any("Битва мнений:" in text and "Числа:" in text for text in dialog_results),
-          "итог диалога показывает только реально сыгранные игры")
+    check(any("сообщений" in text and "2 игры · +" in text for text in dialog_results),
+          "после диалога показывается компактный итог разговора")
     session.clear()
     check(B not in await db.excluded_partners(A, recent_seconds=0),
           "вечной блокировки собеседника больше нет")
@@ -1164,7 +1185,15 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await press(C, "act:connect")
     check(mm.partner(A) == C, "очередь выбирает следующего подходящего пользователя")
 
+    await db.set_xp_multiplier(3)
+    xp_before_x3 = int((await db.get_user(A))["xp"])
+    await send(A, "проверка x3")
+    await db.set_xp_multiplier(2)
+    await send(A, "проверка x2")
     await send(A, "/stop")
+    check(int((await db.get_user(A))["xp"]) - xp_before_x3 == 5,
+          "x2/x3 начисляют две и три звезды за сообщения в чате")
+    await db.set_xp_multiplier(1)
     await press(A, "act:settings")
     await press(A, "cfg:nick:ask")
     await send(A, "/start")

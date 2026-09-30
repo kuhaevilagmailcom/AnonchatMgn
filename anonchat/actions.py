@@ -878,28 +878,24 @@ async def _send_progress_notices(ctx: Ctx, user_id: int) -> None:
 
 
 def _dialog_summary_text(summary: dict, user_id: int, earned_xp: int) -> str:
+    def count(value: int, one: str, few: str, many: str) -> str:
+        form = many if value % 100 in range(11, 15) else one if value % 10 == 1 else few if value % 10 in range(2, 5) else many
+        return f"{value} {form}"
+
     started = float(summary.get("started_at", time.time()))
     seconds = max(0, int(time.time() - started))
     if seconds < 60:
         duration = "меньше минуты"
     else:
-        duration = f"{max(1, seconds // 60)} мин"
+        duration = count(max(1, seconds // 60), "минута", "минуты", "минут")
     counts = summary.get("counts", {}) or {}
-    sent = int(counts.get(int(user_id), 0))
+    messages = sum(max(0, int(value)) for value in counts.values())
     game = summary.get("game_stats", {}) or {}
-    lines = [
-        "💬 <b>Итог разговора</b>",
-        f"Диалог длился: <b>{duration}</b>",
-        f"Отправлено сообщений: <b>{sent}</b>",
-        f"Получено: <b>+{max(0, int(earned_xp))} ⭐</b>",
-    ]
-    if int(game.get("battle_games", 0)):
-        lines.append(
-            f"Битва мнений: <b>{int(game.get('battle_matches', 0))}/{int(game.get('battle_questions', 0))}</b>"
-        )
-    if int(game.get("number_games", 0)):
-        lines.append(f"Числа: <b>{int(game.get('number_exact', 0))}</b> точных совпадений")
-    return "\n".join(lines)
+    games = max(0, int(game.get("games", 0)))
+    return (
+        f"{duration} · {count(messages, 'сообщение', 'сообщения', 'сообщений')}\n"
+        f"{count(games, 'игра', 'игры', 'игр')} · +{max(0, int(earned_xp))} ★"
+    )
 
 
 async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -> None:

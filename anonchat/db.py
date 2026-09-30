@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import math
 import secrets
 import sqlite3
 import time
@@ -24,6 +25,13 @@ from .word_game import (
     WORD_DAILY_REWARD_LIMIT,
     WORD_PAIR_DAILY_REWARD_LIMIT,
     WORD_REWARD,
+)
+from .geoquest import (
+    GEO_DAILY_REWARD_LIMIT,
+    GEO_ROUNDS,
+    GEO_TIE_METERS,
+    GEO_TIE_REWARD,
+    GEO_WIN_REWARD,
 )
 
 SCHEMA = """
@@ -161,6 +169,21 @@ CREATE TABLE IF NOT EXISTS word_game_rewards (
     PRIMARY KEY (user_id, partner_id, day_start)
 );
 
+CREATE TABLE IF NOT EXISTS geo_game_pairs (
+    user_low    INTEGER NOT NULL,
+    user_high   INTEGER NOT NULL,
+    day_start   INTEGER NOT NULL,
+    consumed_at INTEGER NOT NULL,
+    PRIMARY KEY (user_low, user_high, day_start)
+);
+
+CREATE TABLE IF NOT EXISTS geo_daily_rewards (
+    user_id   INTEGER NOT NULL,
+    day_start INTEGER NOT NULL,
+    stars     INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day_start)
+);
+
 CREATE TABLE IF NOT EXISTS active_chat_events (
     id                  INTEGER PRIMARY KEY,
     user_low            INTEGER NOT NULL,
@@ -294,6 +317,8 @@ CREATE INDEX IF NOT EXISTS idx_battle_users_b ON battle_games(user_b, status, up
 CREATE INDEX IF NOT EXISTS idx_battle_status_updated ON battle_games(status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_number_daily_day ON number_daily_rewards(day_start);
 CREATE INDEX IF NOT EXISTS idx_word_game_rewards_day ON word_game_rewards(day_start, user_id);
+CREATE INDEX IF NOT EXISTS idx_geo_game_pairs_day ON geo_game_pairs(day_start);
+CREATE INDEX IF NOT EXISTS idx_geo_daily_day ON geo_daily_rewards(day_start);
 CREATE INDEX IF NOT EXISTS idx_activity_day ON daily_activity(day_start, xp_earned DESC);
 CREATE INDEX IF NOT EXISTS idx_activity_user_day ON daily_activity(user_id, day_start DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_battle_live_pair
@@ -326,6 +351,12 @@ _BATTLE_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("reward_total", "ALTER TABLE battle_games ADD COLUMN reward_total INTEGER NOT NULL DEFAULT 0"),
     ("reward_total_a", "ALTER TABLE battle_games ADD COLUMN reward_total_a INTEGER NOT NULL DEFAULT 0"),
     ("reward_total_b", "ALTER TABLE battle_games ADD COLUMN reward_total_b INTEGER NOT NULL DEFAULT 0"),
+    ("geo_lat_a", "ALTER TABLE battle_games ADD COLUMN geo_lat_a REAL"),
+    ("geo_lon_a", "ALTER TABLE battle_games ADD COLUMN geo_lon_a REAL"),
+    ("geo_lat_b", "ALTER TABLE battle_games ADD COLUMN geo_lat_b REAL"),
+    ("geo_lon_b", "ALTER TABLE battle_games ADD COLUMN geo_lon_b REAL"),
+    ("geo_distance_a", "ALTER TABLE battle_games ADD COLUMN geo_distance_a REAL"),
+    ("geo_distance_b", "ALTER TABLE battle_games ADD COLUMN geo_distance_b REAL"),
 )
 
 
@@ -475,6 +506,14 @@ class Database:
         )
         await self.db.execute(
             "DELETE FROM word_game_rewards WHERE day_start < ?",
+            (referral_day_start() - 7 * 86_400,),
+        )
+        await self.db.execute(
+            "DELETE FROM geo_game_pairs WHERE day_start < ?",
+            (referral_day_start() - 7 * 86_400,),
+        )
+        await self.db.execute(
+            "DELETE FROM geo_daily_rewards WHERE day_start < ?",
             (referral_day_start() - 7 * 86_400,),
         )
         # Активная лента нужна только для незавершённого диалога; очень старые
@@ -782,6 +821,16 @@ class Database:
             (user_a, user_b, user_b, user_a),
         )
 
+    async def geo_for_pair(self, user_a: int, user_b: int) -> aiosqlite.Row | None:
+        return await self._fetchone(
+            """SELECT * FROM battle_games
+               WHERE game_type='geo'
+                 AND status IN ('invited', 'active', 'round_done')
+                 AND ((user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?))
+               ORDER BY id DESC LIMIT 1""",
+            (user_a, user_b, user_b, user_a),
+        )
+
     async def get_battle(self, game_id: int) -> aiosqlite.Row | None:
         return await self._fetchone("SELECT * FROM battle_games WHERE id = ?", (game_id,))
 
@@ -792,9 +841,7 @@ class Database:
         cutoff = (now() if timestamp is None else int(timestamp)) - max(1, int(max_age))
         async with self._number_reward_lock:
             rows = await self._fetchall(
-                """SELECT id, user_a, user_b, game_type, status, question_index,
-                          reward_awarded
-                     FROM battle_games
+                """SELECT * FROM battle_games
                     WHERE status IN ('invited', 'active', 'round_done')
                       AND updated_at <= ?""",
                 (cutoff,),
@@ -805,6 +852,7 @@ class Database:
             ids = [int(row["id"]) for row in rows]
             for row in rows:
                 await self._release_unplayed_number_pair(row)
+                await self._release_unplayed_geo_pair(row)
 
             placeholders = ",".join("?" for _ in ids)
             await self.db.execute(
@@ -1187,6 +1235,221 @@ class Database:
         await self.db.commit()
         return await self.get_battle(game_id) if cur.rowcount else None
 
+    async def geo_pair_reward_available(self, user_a: int, user_b: int) -> bool:
+        low, high = sorted((int(user_a), int(user_b)))
+        row = await self._fetchone(
+            """SELECT 1 FROM geo_game_pairs
+               WHERE user_low=? AND user_high=? AND day_start=?""",
+            (low, high, referral_day_start()),
+        )
+        return row is None
+
+    async def create_geo_invite(
+        self, inviter_id: int, partner_id: int, place_ids: Sequence[int]
+    ) -> tuple[aiosqlite.Row, bool]:
+        ids = [int(value) for value in place_ids]
+        if len(ids) != GEO_ROUNDS or len(set(ids)) != GEO_ROUNDS:
+            raise ValueError("Для Геогусера нужны разные места")
+        ts = now()
+        cur = await self.db.execute(
+            """INSERT OR IGNORE INTO battle_games(
+                   user_a, user_b, inviter_id, game_type, total_questions,
+                   question_ids, reward_total, reward_total_a, reward_total_b,
+                   created_at, updated_at
+               ) VALUES (?, ?, ?, 'geo', ?, ?, 0, 0, 0, ?, ?)""",
+            (
+                int(inviter_id), int(partner_id), int(inviter_id), GEO_ROUNDS,
+                json.dumps(ids), ts, ts,
+            ),
+        )
+        await self.db.commit()
+        created = cur.rowcount > 0
+        row = (
+            await self.get_battle(int(cur.lastrowid))
+            if created
+            else await self.game_for_pair(inviter_id, partner_id)
+        )
+        assert row is not None
+        return row, created
+
+    async def accept_geo(self, game_id: int, user_id: int) -> aiosqlite.Row | None:
+        async with self._number_reward_lock:
+            row = await self.get_battle(game_id)
+            if (
+                row is None
+                or str(row["game_type"] or "") != "geo"
+                or str(row["status"]) != "invited"
+                or int(row["user_b"]) != int(user_id)
+                or int(row["inviter_id"]) == int(user_id)
+            ):
+                return None
+            low, high = sorted((int(row["user_a"]), int(row["user_b"])))
+            day = referral_day_start()
+            claimed = await self.db.execute(
+                """INSERT OR IGNORE INTO geo_game_pairs(
+                       user_low, user_high, day_start, consumed_at
+                   ) VALUES (?, ?, ?, ?)""",
+                (low, high, day, now()),
+            )
+            reward_enabled = 1 if claimed.rowcount else 0
+            cur = await self.db.execute(
+                """UPDATE battle_games
+                   SET status='active', question_index=0, reward_awarded=?,
+                       reward_total=0, reward_total_a=0, reward_total_b=0,
+                       geo_lat_a=NULL, geo_lon_a=NULL, geo_lat_b=NULL, geo_lon_b=NULL,
+                       geo_distance_a=NULL, geo_distance_b=NULL, updated_at=?
+                   WHERE id=? AND game_type='geo' AND status='invited'
+                     AND user_b=? AND inviter_id<>?""",
+                (reward_enabled, now(), game_id, user_id, user_id),
+            )
+            if not cur.rowcount and reward_enabled:
+                await self.db.execute(
+                    "DELETE FROM geo_game_pairs WHERE user_low=? AND user_high=? AND day_start=?",
+                    (low, high, day),
+                )
+            await self.db.commit()
+            return await self.get_battle(game_id) if cur.rowcount else None
+
+    async def decline_geo(self, game_id: int, user_id: int) -> aiosqlite.Row | None:
+        row = await self.get_battle(game_id)
+        if (
+            row is None
+            or str(row["game_type"] or "") != "geo"
+            or int(row["user_b"]) != int(user_id)
+        ):
+            return None
+        cur = await self.db.execute(
+            "DELETE FROM battle_games WHERE id=? AND game_type='geo' AND status='invited'",
+            (game_id,),
+        )
+        await self.db.commit()
+        return row if cur.rowcount else None
+
+    async def _award_geo_daily_unlocked(
+        self, user_id: int, requested: int, day_start: int
+    ) -> int:
+        requested = max(0, int(requested))
+        row = await self._fetchone(
+            "SELECT stars FROM geo_daily_rewards WHERE user_id=? AND day_start=?",
+            (int(user_id), int(day_start)),
+        )
+        current = int(row["stars"] or 0) if row else 0
+        awarded = min(requested, max(0, GEO_DAILY_REWARD_LIMIT - current))
+        if awarded <= 0:
+            return 0
+        await self.db.execute(
+            """INSERT INTO geo_daily_rewards(user_id, day_start, stars)
+               VALUES (?, ?, ?)
+               ON CONFLICT(user_id, day_start)
+               DO UPDATE SET stars=stars+excluded.stars""",
+            (int(user_id), int(day_start), awarded),
+        )
+        await self.db.execute(
+            "UPDATE users SET xp=xp+? WHERE user_id=?", (awarded, int(user_id))
+        )
+        await self.db.execute(
+            """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+               VALUES (?, ?, ?)
+               ON CONFLICT(user_id, day_start)
+               DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
+            (int(user_id), int(day_start), awarded),
+        )
+        return awarded
+
+    async def answer_geo(
+        self, game_id: int, user_id: int, round_index: int,
+        latitude: float, longitude: float, target_latitude: float, target_longitude: float,
+    ) -> tuple[str, aiosqlite.Row | None, int, int]:
+        from .geoquest import distance_meters
+
+        latitude, longitude = float(latitude), float(longitude)
+        target_latitude, target_longitude = float(target_latitude), float(target_longitude)
+        if not all(math.isfinite(value) for value in (
+            latitude, longitude, target_latitude, target_longitude,
+        )) or not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            return "invalid", await self.get_battle(game_id), 0, 0
+        async with self._number_reward_lock:
+            row = await self.get_battle(game_id)
+            if (
+                row is None
+                or str(row["game_type"] or "") != "geo"
+                or int(user_id) not in {int(row["user_a"]), int(row["user_b"])}
+            ):
+                return "missing", row, 0, 0
+            if str(row["status"]) != "active" or int(row["question_index"]) != int(round_index):
+                return "closed", row, 0, 0
+            suffix = "a" if int(row["user_a"]) == int(user_id) else "b"
+            if row[f"geo_lat_{suffix}"] is not None:
+                return "already", row, 0, 0
+            dist = distance_meters(latitude, longitude, target_latitude, target_longitude)
+            cur = await self.db.execute(
+                f"""UPDATE battle_games
+                    SET geo_lat_{suffix}=?, geo_lon_{suffix}=?, geo_distance_{suffix}=?, updated_at=?
+                    WHERE id=? AND game_type='geo' AND status='active'
+                      AND question_index=? AND geo_lat_{suffix} IS NULL""",
+                (latitude, longitude, dist, now(), game_id, round_index),
+            )
+            if not cur.rowcount:
+                await self.db.commit()
+                return "already", await self.get_battle(game_id), 0, 0
+            game = await self.get_battle(game_id)
+            if game is None or game["geo_lat_a"] is None or game["geo_lat_b"] is None:
+                await self.db.commit()
+                return "waiting", game, 0, 0
+
+            distance_a = float(game["geo_distance_a"])
+            distance_b = float(game["geo_distance_b"])
+            raw_a = raw_b = 0
+            if abs(distance_a - distance_b) <= GEO_TIE_METERS:
+                raw_a = raw_b = GEO_TIE_REWARD
+            elif distance_a < distance_b:
+                raw_a = GEO_WIN_REWARD
+            else:
+                raw_b = GEO_WIN_REWARD
+            reward_a = reward_b = 0
+            if int(game["reward_awarded"] or 0):
+                day = referral_day_start()
+                reward_a = await self._award_geo_daily_unlocked(int(game["user_a"]), raw_a, day)
+                reward_b = await self._award_geo_daily_unlocked(int(game["user_b"]), raw_b, day)
+            status = "finished" if round_index >= GEO_ROUNDS - 1 else "round_done"
+            await self.db.execute(
+                """UPDATE battle_games
+                   SET status=?, reward_total=reward_total+?,
+                       reward_total_a=reward_total_a+?, reward_total_b=reward_total_b+?,
+                       updated_at=?
+                   WHERE id=? AND game_type='geo' AND status='active' AND question_index=?""",
+                (
+                    status, max(reward_a, reward_b), reward_a, reward_b,
+                    now(), game_id, round_index,
+                ),
+            )
+            game = await self.get_battle(game_id)
+            if game is not None and status == "finished":
+                await self.db.execute("DELETE FROM battle_games WHERE id=?", (game_id,))
+            await self.db.commit()
+            return "resolved", game, reward_a, reward_b
+
+    async def advance_geo(
+        self, game_id: int, user_id: int, round_index: int
+    ) -> aiosqlite.Row | None:
+        row = await self.get_battle(game_id)
+        if (
+            row is None
+            or str(row["game_type"] or "") != "geo"
+            or int(user_id) not in {int(row["user_a"]), int(row["user_b"])}
+        ):
+            return None
+        cur = await self.db.execute(
+            """UPDATE battle_games
+               SET status='active', question_index=question_index+1,
+                   geo_lat_a=NULL, geo_lon_a=NULL, geo_lat_b=NULL, geo_lon_b=NULL,
+                   geo_distance_a=NULL, geo_distance_b=NULL, updated_at=?
+               WHERE id=? AND game_type='geo' AND status='round_done' AND question_index=?""",
+            (now(), game_id, round_index),
+        )
+        await self.db.commit()
+        return await self.get_battle(game_id) if cur.rowcount else None
+
     async def _release_unplayed_number_pair(self, row: Any) -> None:
         if (
             str(row["game_type"] or "battle") == "numbers"
@@ -1200,12 +1463,29 @@ class Database:
                 (low, high),
             )
 
+    async def _release_unplayed_geo_pair(self, row: Any) -> None:
+        if (
+            str(row["game_type"] or "") == "geo"
+            and str(row["status"]) == "active"
+            and int(row["question_index"] or 0) == 0
+            and row["geo_lat_a"] is None
+            and row["geo_lat_b"] is None
+            and int(row["reward_awarded"] or 0) == 1
+        ):
+            low, high = sorted((int(row["user_a"]), int(row["user_b"])))
+            await self.db.execute(
+                """DELETE FROM geo_game_pairs
+                   WHERE user_low=? AND user_high=? AND day_start=?""",
+                (low, high, referral_day_start()),
+            )
+
     async def cancel_battle(self, game_id: int) -> bool:
         async with self._number_reward_lock:
             row = await self.get_battle(game_id)
             if row is None or str(row["status"]) not in {"invited", "active", "round_done"}:
                 return False
             await self._release_unplayed_number_pair(row)
+            await self._release_unplayed_geo_pair(row)
             cur = await self.db.execute(
                 "DELETE FROM battle_games WHERE id=? AND status IN ('invited', 'active', 'round_done')",
                 (game_id,),
@@ -1228,6 +1508,7 @@ class Database:
             )
             for row in rows:
                 await self._release_unplayed_number_pair(row)
+                await self._release_unplayed_geo_pair(row)
             cur = await self.db.execute(
                 f"""DELETE FROM battle_games
                      WHERE status IN ('invited', 'active', 'round_done')
@@ -2310,6 +2591,7 @@ class Database:
             """SELECT COUNT(*) total,
                       SUM(CASE WHEN game_type='battle' THEN 1 ELSE 0 END) battle,
                       SUM(CASE WHEN game_type='numbers' THEN 1 ELSE 0 END) numbers,
+                      SUM(CASE WHEN game_type='geo' THEN 1 ELSE 0 END) geo,
                       SUM(CASE WHEN updated_at<=? THEN 1 ELSE 0 END) stale
                  FROM battle_games
                 WHERE status IN ('invited','active','round_done')""",
@@ -2319,6 +2601,7 @@ class Database:
             "total": int(row["total"] or 0) if row else 0,
             "battle": int(row["battle"] or 0) if row else 0,
             "numbers": int(row["numbers"] or 0) if row else 0,
+            "geo": int(row["geo"] or 0) if row else 0,
             "stale": int(row["stale"] or 0) if row else 0,
         }
 
@@ -2723,6 +3006,14 @@ class Database:
         )
         await self.db.execute(
             "DELETE FROM word_game_rewards WHERE user_id = ? OR partner_id = ?",
+            (user_id, user_id),
+        )
+        await self.db.execute(
+            "DELETE FROM geo_daily_rewards WHERE user_id = ?",
+            (user_id,),
+        )
+        await self.db.execute(
+            "DELETE FROM geo_game_pairs WHERE user_low = ? OR user_high = ?",
             (user_id, user_id),
         )
         await self.db.execute(

@@ -466,6 +466,11 @@ class MiniAppServer:
         game_type = str(row["game_type"] or "battle")
         if game_type == "numbers":
             return self._number_state_from_row(uid, row)
+        # Геогусер принимает именно нативную геолокацию Telegram. Не пытаемся
+        # отрисовать его как «Битву мнений» и не подменяем безопасный запрос
+        # координат браузерной геолокацией Mini App.
+        if game_type == "geo":
+            return None
         return self._battle_state_from_row(uid, row)
 
     async def chat_state(self, request: web.Request) -> web.Response:
@@ -1076,25 +1081,21 @@ class MiniAppServer:
             sent=theirs, received=mine, earned=int(earned_xp.get(partner, 0)),
             games=games_summary,
         )
-        duration_label = (
-            f"{max(1, duration_seconds // 60)} мин"
-            if duration_seconds >= 60 else "меньше минуты"
-        )
-        await self._push_event(
-            uid, "dialog", "Диалог завершён",
-            f"{duration_label} · {mine} сообщений · +{int(earned_xp.get(uid, 0))} ⭐",
-            icon="message-circle", action="dialog:result",
-        )
-        await self._push_event(
-            partner, "dialog", "Диалог завершён",
-            f"{duration_label} · {theirs} сообщений · +{int(earned_xp.get(partner, 0))} ⭐",
-            icon="message-circle", action="dialog:result",
-        )
         my_summary = _dialog_summary_text(
             summary, uid, earned_xp.get(uid, 0)
         )
         partner_summary = _dialog_summary_text(
             summary, partner, earned_xp.get(partner, 0)
+        )
+        await self._push_event(
+            uid, "dialog", "Диалог завершён",
+            my_summary,
+            icon="message-circle", action="dialog:result",
+        )
+        await self._push_event(
+            partner, "dialog", "Диалог завершён",
+            partner_summary,
+            icon="message-circle", action="dialog:result",
         )
         partner_note = texts.PARTNER_SKIPPED if next_chat else texts.PARTNER_LEFT
         my_note = "Пропустил." if next_chat else texts.DIALOG_STOPPED

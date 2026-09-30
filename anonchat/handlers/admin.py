@@ -133,7 +133,7 @@ async def diagnostics_text(db: Database, mm: Matchmaker) -> str:
         f"Очередь: <b>{mm.queue_size()}</b> · самый долгий: <b>{longest // 60} мин</b>\n"
         f"Активные диалоги: <b>{mm.online_pairs()}</b>\n"
         f"Активные игры: <b>{games['total']}</b> "
-        f"(⚔️ {games['battle']} · 🔢 {games['numbers']})\n"
+        f"(⚔️ {games['battle']} · 🔢 {games['numbers']} · 🗺 {games['geo']})\n"
         f"Просроченных игр: <b>{games['stale']}</b>\n"
         f"Открытых жалоб: <b>{stats['open_reports']}</b>\n\n"
         f"Временные ошибки Telegram: <b>{METRICS.temp_errors}</b>\n"
@@ -280,8 +280,8 @@ async def game_watch_text(db: Database) -> str:
         game_type = str(row["game_type"] or "battle")
         total_questions = int(row["total_questions"])
         current = min(int(row["question_index"]) + 1, total_questions)
-        title = "Числа" if game_type == "numbers" else "Битва мнений"
-        unit = "Раунд" if game_type == "numbers" else "Вопрос"
+        title = {"numbers": "Числа", "geo": "Геогусер"}.get(game_type, "Битва мнений")
+        unit = "Раунд" if game_type in {"numbers", "geo"} else "Вопрос"
         lines.extend([
             f"<b>Игра #{row['id']} · {title} · {status_labels.get(status, status)}</b>",
             f"{unit}: <b>{current}/{total_questions}</b> · совпадений: <b>{row['matches']}</b>",
@@ -301,6 +301,14 @@ async def game_watch_text(db: Database) -> str:
                     if int(row["reward_awarded"] or 0)
                     else "Повторная игра пары · без награды"
                 ),
+            ])
+        elif game_type == "geo":
+            distance_a = "ждёт метку" if row["geo_distance_a"] is None else f"{float(row['geo_distance_a']):.0f} м"
+            distance_b = "ждёт метку" if row["geo_distance_b"] is None else f"{float(row['geo_distance_b']):.0f} м"
+            lines.extend([
+                f"Метка A: <b>{texts.esc(distance_a)}</b>",
+                f"Метка B: <b>{texts.esc(distance_b)}</b>",
+                f"Награды: <b>A {int(row['reward_total_a'])} ⭐ · B {int(row['reward_total_b'])} ⭐</b>",
             ])
         else:
             question_ids = json.loads(str(row["question_ids"] or "[]"))
