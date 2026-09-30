@@ -880,14 +880,6 @@ async def geo_location(message: Message, ctx: Ctx, db: Database) -> None:
         GR.cancel_timeout(game_id, round_index)
         await _send_geo_result(ctx, game, reward_a, reward_b)
         return
-    if result == "outside":
-        await ctx.reply(
-            "⚠️ <b>Эта точка не похожа на Магнитогорск.</b>\n\n"
-            "Для ответа не нужно отправлять свою текущую геопозицию.\n\n"
-            "📎 <b>Скрепка → Геопозиция → передвинь карту → выбери "
-            "предполагаемую точку в Магнитогорске → отправь.</b>"
-        )
-        return
     if result == "expired":
         state, expired_game, reward_a, reward_b = await db.expire_geo_round(
             game_id, round_index
