@@ -11,7 +11,6 @@ from urllib.parse import quote
 
 from aiogram.types import (
     CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup,
-    KeyboardButton, ReplyKeyboardMarkup,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
@@ -294,8 +293,7 @@ def games_keyboard(*, admin: bool = False) -> InlineKeyboardMarkup:
     _button(b, "Битва мнений", callback_data=CB_BATTLE, icon="bonus", style="primary")
     _button(b, "Числа", callback_data=CB_NUMBERS, icon="stars", style="success")
     _button(b, "Объясни слово", callback_data=CB_WORDS, icon="ticket", style="primary")
-    if admin:
-        _button(b, "Геогусер", callback_data=CB_GEO, icon="geo", style="success")
+    _button(b, "Геогусер", callback_data=CB_GEO, icon="geo", style="success")
     _button(b, "Вернуться в чат", callback_data="game:return", icon="home")
     b.adjust(1)
     return b.as_markup()
@@ -309,14 +307,14 @@ def geo_invite_keyboard(game_id: int) -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def geo_location_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="Отправить метку", request_location=True)]],
-        resize_keyboard=True,
-        one_time_keyboard=True,
-        input_field_placeholder="Поставь метку на карте",
-        selective=True,
-    )
+def geo_rounds_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "3 раунда", callback_data="game:geo:rounds:3", icon="geo")
+    _button(b, "5 раундов", callback_data="game:geo:rounds:5", icon="geo", style="primary")
+    _button(b, "10 раундов", callback_data="game:geo:rounds:10", icon="geo", style="success")
+    _button(b, "Назад к играм", callback_data=CB_GAMES, icon="home")
+    b.adjust(3, 1)
+    return b.as_markup()
 
 
 def geo_next_keyboard(game_id: int, round_index: int) -> InlineKeyboardMarkup:
@@ -329,7 +327,7 @@ def geo_next_keyboard(game_id: int, round_index: int) -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def geo_end_keyboard(*, can_start: bool = False) -> InlineKeyboardMarkup:
+def geo_end_keyboard(*, can_start: bool = True) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     if can_start:
         _button(b, "Сыграть ещё", callback_data=CB_GEO, icon="refresh", style="success")
