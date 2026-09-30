@@ -473,7 +473,7 @@ if (typeof window === 'undefined') {
             <span>⭐ Чем ближе — тем больше звёзд</span>
             <span>📍 Ответ отправляется через Telegram</span>
           </div>
-          <div class="geo-safety"><b>Как ответить:</b><br>📎 Скрепка → Геопозиция → передвинь карту → выбери точку в Магнитогорске → отправь.<br><br><b>Не отправляй текущую геопозицию.</b></div>
+          <div class="geo-safety"><b>Как ответить:</b><br>📎 Скрепка → Геопозиция → передвинь карту → выбери любую точку → отправь.<br><br><b>Можно поставить метку в любой точке карты.</b></div>
         </section>
         <div class="geo-round-choice">
           <button data-geo-rounds="3"><b>3</b><small>быстро</small></button>
@@ -857,9 +857,9 @@ if (typeof window === 'undefined') {
           <div class="geo-live-head"><span>⏱ Осталось</span><strong data-geo-timer>2:00</strong></div>
           <div class="geo-instructions">
             <strong>📍 Отправь выбранную точку через Telegram</strong>
-            <p>📎 Скрепка → <b>Геопозиция</b> → передвинь карту → выбери место в Магнитогорске → отправь.</p>
+            <p>📎 Скрепка → <b>Геопозиция</b> → передвинь карту → выбери любую точку → отправь.</p>
           </div>
-          <div class="geo-warning">⚠️ Не отправляй свою текущую геопозицию. Нужна только предполагаемая точка на карте.</div>`;
+          <div class="geo-warning">🌍 Игра принимает любую корректную точку на карте.</div>`;
         if(game.answered){
           body+=`<div class="game-wait">✅ Метка принята · ждём собеседника</div>`;
         }else{
