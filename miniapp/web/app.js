@@ -375,7 +375,7 @@ if (typeof window === 'undefined') {
     return `<div class="result-games">${games.map(g=>{
       if(g.type==='battle')return `<span>⚔️ Битва мнений <b>${g.matches||0}/${g.total||0}</b></span>`;
       if(g.type==='numbers')return `<span>🔢 Числа <b>${g.exact||0} точных</b></span>`;
-      if(g.type==='geo')return `<span>🗺 Геогусер <b>${g.total||g.games||1} раунд.</b></span>`;
+      if(g.type==='geo')return `<span>GeoGuessr📍 <b>${g.total||g.games||1} раунд.</b></span>`;
       return `<span>🗣 Объясни слово <b>${g.games||1}</b></span>`;
     }).join('')}</div>`;
   }
@@ -449,13 +449,13 @@ if (typeof window === 'undefined') {
           <button data-chat-game="words"><span>🗣</span><div><strong>Объясни слово</strong><small>Один объясняет, второй угадывает</small></div></button>
           <button data-chat-game="battle"><span>⚔️</span><div><strong>Битва мнений</strong><small>5 или 10 вопросов</small></div></button>
           <button data-chat-game="numbers"><span>🔢</span><div><strong>Числа</strong><small>Угадайте одинаковое число</small></div></button>
-          <button data-chat-game="geo"><span>🗺</span><div><strong>Геогусер</strong><small>Угадай место в Магнитогорске</small></div></button>
+          <button data-chat-game="geo"><span>🗺</span><div><strong>GeoGuessr📍</strong><small>Угадай место в Магнитогорске</small></div></button>
         </div>`;
       $$('[data-chat-game]',body).forEach(b=>b.onclick=()=>{
         const game=b.dataset.chatGame;
         if(game==='words')inviteWords();
         else if(game==='battle'){closeModal();openModal('battle','Битва мнений','ИГРА ВДВОЁМ')}
-        else if(game==='geo'){closeModal();openModal('geo','Геогусер','МАГНИТОГОРСК')}
+        else if(game==='geo'){closeModal();openModal('geo','GeoGuessr📍','МАГНИТОГОРСК')}
         else{closeModal();openModal('numbers','Числа','ИГРА ВДВОЁМ')}
       });
       return;
@@ -779,7 +779,7 @@ if (typeof window === 'undefined') {
     chat.game=game;
     if(game.finished)chat.gameHoldUntil=Date.now()+6000;
     root.hidden=false;
-    const top=`<header><span><small>${game.type==='battle'?'БИТВА МНЕНИЙ':game.type==='numbers'?'ЧИСЛА':game.type==='geo'?'ГЕОГУСЕР':'ОБЪЯСНИ СЛОВО'}</small><strong>Раунд ${game.round||1}/${game.total||1}</strong></span><button type="button" data-game-collapse>×</button></header>`;
+    const top=`<header><span><small>${game.type==='battle'?'БИТВА МНЕНИЙ':game.type==='numbers'?'ЧИСЛА':game.type==='geo'?'GeoGuessr📍':'ОБЪЯСНИ СЛОВО'}</small><strong>Раунд ${game.round||1}/${game.total||1}</strong></span><button type="button" data-game-collapse>×</button></header>`;
 
     if(game.status==='invited'){
       root.innerHTML=top+`<div class="active-game-body"><p>${game.inviter?'Ждём ответ собеседника…':'Собеседник предлагает сыграть. Ответь на карточке приглашения выше.'}</p></div>`;
@@ -875,7 +875,7 @@ if (typeof window === 'undefined') {
         </div>`;
         if(game.source_url)body+=`<a class="geo-source" href="${esc(game.source_url)}" target="_blank" rel="noopener">Источник фото · ${esc(game.license||'лицензия')}</a>`;
         if(game.can_next)body+=`<button class="game-next" type="button" data-game-next>Следующее место</button>`;
-        if(game.finished)body+=`<div class="game-finished">🏁 Геогусер окончен · получено ${game.reward_total||0} ★</div>`;
+        if(game.finished)body+=`<div class="game-finished">🏁 GeoGuessr📍 окончен · получено ${game.reward_total||0} ★</div>`;
       }
       body+='</div>';root.innerHTML=top+body;
       if(game.status==='active')startGeoTimer(game.deadline);
@@ -1092,9 +1092,9 @@ if (typeof window === 'undefined') {
   }
   async function inviteBattle(total){const r=await safe('/api/miniapp/games/battle/invite',{method:'POST',body:JSON.stringify({total})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify();syncChat(false)}}
   async function inviteNumbers(range_max){const r=await safe('/api/miniapp/games/numbers/invite',{method:'POST',body:JSON.stringify({range_max})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify();syncChat(false)}}
-  async function inviteGeo(rounds){const r=await safe('/api/miniapp/games/geo/invite',{method:'POST',body:JSON.stringify({rounds})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение в Геогусер отправлено');notify();syncChat(false)}}
+  async function inviteGeo(rounds){const r=await safe('/api/miniapp/games/geo/invite',{method:'POST',body:JSON.stringify({rounds})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение в GeoGuessr📍 отправлено');notify();syncChat(false)}}
   function bind(){
-    document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить ник','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','help':'Помощь и правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game){if(game.dataset.game==='words')inviteWords();else openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':game.dataset.game==='geo'?'Геогусер':'Числа',game.dataset.game==='geo'?'МАГНИТОГОРСК':'ИГРА ВДВОЁМ')}});
+    document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить ник','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','help':'Помощь и правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game){if(game.dataset.game==='words')inviteWords();else openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':game.dataset.game==='geo'?'GeoGuessr📍':'Числа',game.dataset.game==='geo'?'МАГНИТОГОРСК':'ИГРА ВДВОЁМ')}});
     $$('[data-close-modal]').forEach(b=>b.onclick=closeModal);
     $('#searchToggle').onclick=toggleSearch;
     $$('[data-setting] button').forEach(b=>b.onclick=()=>updateSetting(b.parentElement.dataset.setting,b.dataset.value));
