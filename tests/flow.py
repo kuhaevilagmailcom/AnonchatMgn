@@ -1317,6 +1317,101 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check("Диагностика" in session.last_to(ADMIN) and "Reply-map" in session.last_to(ADMIN),
           "админская диагностика открывается")
 
+    # Групповой GeoGuessr: /gamegeo -> любой второй участник принимает -> две метки.
+    from anonchat.handlers.group_geo import clear_group_geo_state
+
+    GROUP, GA, GB = -100777001, 8_101, 8_102
+
+    async def group_message(uid: int, text: str = "", **extra: Any) -> None:
+        nonlocal step
+        step += 1
+        body: dict[str, Any] = {
+            "message_id": step,
+            "date": 1_700_000_000,
+            "chat": {"id": GROUP, "type": "supergroup", "title": "Geo test"},
+            "from": {
+                "id": uid, "is_bot": False, "first_name": f"G{uid}",
+                "username": f"g{uid}",
+            },
+        }
+        if text:
+            body["text"] = text
+        body.update(extra)
+        await dp.feed_update(
+            bot,
+            Update.model_validate(
+                {"update_id": step, "message": body},
+                context={"bot": bot},
+            ),
+        )
+
+    session.clear()
+    await group_message(GA, "/gamegeo")
+    group_out = session.to(GROUP)
+    invite = next(
+        item for item in reversed(group_out)
+        if item.get("reply_markup") and "GeoGuessr" in str(item.get("text", ""))
+    )
+    join_data = invite["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
+    check(join_data.startswith("ggeo:join:"), "/gamegeo создаёт групповой вызов с кнопкой Играть")
+
+    step += 1
+    await dp.feed_update(
+        bot,
+        Update.model_validate(
+            {
+                "update_id": step,
+                "callback_query": {
+                    "id": f"group-cb-{step}",
+                    "chat_instance": "group",
+                    "from": {
+                        "id": GB, "is_bot": False, "first_name": f"G{GB}",
+                        "username": f"g{GB}",
+                    },
+                    "data": join_data,
+                    "message": {
+                        "message_id": 9_001,
+                        "date": 1_700_000_000,
+                        "chat": {"id": GROUP, "type": "supergroup", "title": "Geo test"},
+                        "from": {"id": 777, "is_bot": True, "first_name": "Анончат"},
+                        "text": "GeoGuessr invite",
+                    },
+                },
+            },
+            context={"bot": bot},
+        ),
+    )
+    check(
+        any("ИГРА НАЧАЛАСЬ" in text and "VS" in text for text in session.texts_to(GROUP)),
+        "в группе показывается, кто с кем играет",
+    )
+    check(
+        any(item.get("method") == "sendPhoto" for item in session.to(GROUP)),
+        "после принятия бот отправляет фотографию места в группу",
+    )
+
+    session.clear()
+    await group_message(
+        GA,
+        location={"latitude": 54.7, "longitude": 20.5, "horizontal_accuracy": 15.0},
+    )
+    check("Метка" in session.last_to(GROUP) and "принята" in session.last_to(GROUP),
+          "первая любая геолокация игрока принимается")
+
+    await group_message(
+        GB,
+        location={"latitude": 53.4, "longitude": 58.9},
+    )
+    check(
+        any("Результат" in text and "Счёт:" in text for text in session.texts_to(GROUP)),
+        "после второй метки показываются результат и счёт",
+    )
+    check(
+        any(item.get("method") == "sendLocation" for item in session.to(GROUP)),
+        "после раунда бот показывает правильную геолокацию",
+    )
+    await clear_group_geo_state()
+
     await bot.session.close()
     await db.close()
     print("\nmodern flow test passed")
