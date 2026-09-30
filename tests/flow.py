@@ -953,28 +953,28 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await send(A, "/game")
     check("Битва мнений" in str(session.to(A)[-1].get("reply_markup")),
           "/game открывает игры в активном чате")
-    check("Геогусер" in str(session.to(A)[-1].get("reply_markup")),
+    check("GeoGuessr📍" in str(session.to(A)[-1].get("reply_markup")),
           "Геогусер доступен обычному пользователю")
     await press(A, "game:geo")
     geo_round_markup = str(session.to(A)[-1].get("reply_markup"))
     check("3 раунда" in geo_round_markup and "5 раундов" in geo_round_markup
           and "10 раундов" in geo_round_markup,
-          "перед Геогусером можно выбрать 3, 5 или 10 раундов")
+          "перед GeoGuessr📍 можно выбрать 3, 5 или 10 раундов")
     check("Скрепка" in session.last_to(A) and "текущую геопозицию" in session.last_to(A),
           "инструкция объясняет выбор точки через Telegram без запроса GPS")
     await press(A, "game:geo:rounds:5")
     geo_invite = await db.geo_for_pair(A, B)
     check(bool(geo_invite and geo_invite["status"] == "invited"
                and int(geo_invite["total_questions"]) == 5),
-          "обычный пользователь может предложить Геогусер на пять раундов")
+          "обычный пользователь может предложить GeoGuessr📍 на пять раундов")
     geo_id = int(geo_invite["id"])
     check(
-        any("ТЕБЯ ЗОВУТ В ГЕОГУСЕР" in text for text in session.texts_to(B)),
-        "собеседник получает приглашение в Геогусер",
+        any("ТЕБЯ ЗОВУТ В GeoGuessr📍" in text for text in session.texts_to(B)),
+        "собеседник получает приглашение в GeoGuessr📍",
     )
     await press(B, f"game:geo:no:{geo_id}")
     check(await db.geo_for_pair(A, B) is None,
-          "собеседник может отклонить приглашение Геогусера")
+          "собеседник может отклонить приглашение GeoGuessr📍")
 
     await press(A, "game:battle")
     check("5 вопросов" in str(session.to(A)[-1].get("reply_markup"))
