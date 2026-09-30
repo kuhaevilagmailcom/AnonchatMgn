@@ -726,7 +726,7 @@ def test_geoquest_persistence_rewards_and_pair_limit() -> None:
                 game_id, 322, 2, *far_final, *target,
             )
             assert state == "resolved" and game is not None and game["status"] == "finished"
-            assert reward_a == 10
+            assert reward_a == geo_reward(distance_meters(*world_guess, *target))
             assert reward_b == geo_reward(distance_meters(*far_final, *target))
             assert await db.get_battle(game_id) is None
 
