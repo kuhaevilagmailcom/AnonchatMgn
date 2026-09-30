@@ -1073,8 +1073,11 @@ def test_keyboard_styles_and_icons() -> None:
                     icons.add(icon)
     assert total >= 40, f"клавиатур стало подозрительно мало: {total} кнопок"
     assert len(icons) >= 12, f"иконки должны брать из пака, а не из одного места: {len(icons)}"
-    # Эмодзи в подписях разрешены только там, где это часть выбора пола/поиска.
-    emoji_labels = {"👨 М", "👩 Д", "👨 Ищу М", "👩 Ищу Д", "🤷 Без разницы"}
+    # Эмодзи в подписях разрешены только для осознанных брендовых/выборочных меток.
+    emoji_labels = {
+        "👨 М", "👩 Д", "👨 Ищу М", "👩 Ищу Д", "🤷 Без разницы",
+        "GeoGuessr📍",
+    }
     for markup in markups:
         for row in markup.inline_keyboard:
             for btn in row:
