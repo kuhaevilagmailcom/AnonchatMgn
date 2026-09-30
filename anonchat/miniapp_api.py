@@ -25,6 +25,8 @@ from . import texts
 from . import relay_state
 from . import live_chat
 from . import word_game as WG
+from . import geoquest as GQ
+from . import geo_runtime as GR
 from . import nick as nicklib
 from .actions import DeliveryResult, _dialog_summary_text, announce_pairs, break_pair, send_to
 from .levels import rank_for
@@ -429,6 +431,54 @@ class MiniAppServer:
             payload["matched"] = int(mine) == int(other)
         return payload
 
+    def _geo_state_from_row(self, uid: int, row) -> dict:
+        status = str(row["status"] or "")
+        user_a = int(row["user_a"])
+        mine_a = user_a == int(uid)
+        mine = row["geo_lat_a"] if mine_a else row["geo_lat_b"]
+        other = row["geo_lat_b"] if mine_a else row["geo_lat_a"]
+        my_distance = row["geo_distance_a"] if mine_a else row["geo_distance_b"]
+        other_distance = row["geo_distance_b"] if mine_a else row["geo_distance_a"]
+        place = GR.place_for(row)
+        payload = {
+            "type": "geo",
+            "id": int(row["id"]),
+            "status": status,
+            "inviter": int(row["inviter_id"]) == int(uid),
+            "round": int(row["question_index"] or 0) + 1,
+            "total": int(row["total_questions"] or GQ.GEO_ROUNDS),
+            "answered": mine is not None,
+            "partner_answered": other is not None,
+            "reward_enabled": bool(int(row["reward_awarded"] or 0)),
+            "reward_total": int(
+                (row["reward_total_a"] if mine_a else row["reward_total_b"]) or 0
+            ),
+            "deadline": GR.round_deadline(row) if status == "active" else 0,
+            "can_next": status == "round_done",
+            "finished": status == "finished",
+            "my_distance": float(my_distance) if my_distance is not None else None,
+            "partner_distance": (
+                float(other_distance) if other_distance is not None else None
+            ),
+            "instructions": (
+                "В Telegram: скрепка → Геопозиция → выбери точку на карте "
+                "Магнитогорска → отправь. Не отправляй текущую геопозицию."
+            ),
+        }
+        if place is not None:
+            payload.update(
+                {
+                    "image_url": place.image_url,
+                    "place_title": place.title if status in {"round_done", "finished"} else "",
+                    "credit": place.credit,
+                    "source_url": place.source_url,
+                    "license": place.license,
+                    "license_url": place.license_url,
+                }
+            )
+        return payload
+
+
     def _word_state(self, uid: int, partner: int) -> dict | None:
         game = WG.get_for_pair(uid, partner)
         if game is None:
@@ -466,11 +516,24 @@ class MiniAppServer:
         game_type = str(row["game_type"] or "battle")
         if game_type == "numbers":
             return self._number_state_from_row(uid, row)
-        # Геогусер принимает именно нативную геолокацию Telegram. Не пытаемся
-        # отрисовать его как «Битву мнений» и не подменяем безопасный запрос
-        # координат браузерной геолокацией Mini App.
         if game_type == "geo":
-            return None
+            if str(row["status"] or "") == "active":
+                deadline = GR.round_deadline(row)
+                if deadline <= int(time.time()):
+                    round_index = int(row["question_index"] or 0)
+                    state, expired, reward_a, reward_b = await self.db.expire_geo_round(
+                        int(row["id"]), round_index
+                    )
+                    if state == "resolved" and expired is not None:
+                        GR.cancel_timeout(int(row["id"]), round_index)
+                        await GR.send_result(
+                            self.bot, self.pack, expired, reward_a, reward_b
+                        )
+                        await GR.finish_tracking(
+                            self.bot, self.db, self.mm, self.pack, expired
+                        )
+                        return self._geo_state_from_row(uid, expired)
+            return self._geo_state_from_row(uid, row)
         return self._battle_state_from_row(uid, row)
 
     async def chat_state(self, request: web.Request) -> web.Response:
@@ -1738,6 +1801,62 @@ class MiniAppServer:
         )
         return web.json_response({"ok": True, "message": "Приглашение отправлено"})
 
+    async def game_geo(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        partner = self.mm.partner(uid)
+        if partner is None:
+            raise _json_error(409, "Сначала найди собеседника")
+        data = await request.json()
+        try:
+            total = int(data.get("rounds", 0) or 0)
+        except (TypeError, ValueError) as exc:
+            raise _json_error(400, "Неверное количество раундов") from exc
+        if total not in GQ.GEO_ROUND_OPTIONS:
+            raise _json_error(400, "Можно выбрать 3, 5 или 10 раундов")
+        if WG.active_for_pair(uid, partner):
+            raise _json_error(409, "Сначала заверши игру «Объясни слово»")
+        if await self.db.game_for_pair(uid, partner) is not None:
+            raise _json_error(409, "У вас уже есть активная игра")
+
+        try:
+            place_ids = GQ.select_place_ids(total)
+        except RuntimeError as exc:
+            raise _json_error(503, "Для игры пока не хватает загруженных мест") from exc
+        game, created = await self.db.create_geo_invite(uid, partner, place_ids)
+        if not created:
+            raise _json_error(409, "Предложение уже создано")
+        reward_available = await self.db.geo_pair_reward_available(uid, partner)
+        result = await send_to(
+            self.bot,
+            partner,
+            "🗺 <b>ТЕБЯ ЗОВУТ В ГЕОГУСЕР</b>\n\n"
+            f"🎮 Раундов: <b>{total}</b>\n"
+            "⏱ На каждый раунд: <b>2 минуты</b>\n"
+            + (
+                "⭐ Чем точнее метка, тем больше награда — <b>до 10 ⭐ за раунд</b>.\n"
+                if reward_available
+                else "⭐ Сегодня эта пара играет без начисления ⭐.\n"
+            )
+            + "\n📍 Ответ: <b>📎 Скрепка → Геопозиция → выбрать точку "
+            "на карте Магнитогорска → отправить.</b>\n"
+            "⚠️ Не отправляй свою текущую геопозицию.",
+            K.geo_invite_keyboard(int(game["id"])),
+            self.pack,
+        )
+        if result is DeliveryResult.UNAVAILABLE:
+            await self.db.cancel_battle(int(game["id"]))
+            raise _json_error(503, "Не удалось доставить приглашение")
+        live_chat.game_invite(
+            uid,
+            partner,
+            "geo",
+            int(game["id"]),
+            "🗺 Геогусер",
+            f"{total} раундов · 2 минуты на раунд",
+        )
+        return web.json_response({"ok": True, "message": "Приглашение отправлено"})
+
+
     async def game_words(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
         partner = self.mm.partner(uid)
@@ -1831,6 +1950,44 @@ class MiniAppServer:
         actual_type = str(row["game_type"] or "battle")
         if actual_type != game_type:
             raise _json_error(400, "Тип игры не совпадает")
+
+        if game_type == "geo":
+            if accept:
+                game = await self.db.accept_geo(game_id, uid)
+                if game is None:
+                    raise _json_error(409, "На предложение уже ответили")
+                live_chat.game_status(
+                    {user_a, user_b},
+                    "geo",
+                    game_id,
+                    "accepted",
+                    "Геогусер начался",
+                )
+                if not await GR.send_round(self.bot, self.pack, game):
+                    await self.db.cancel_battle(game_id)
+                    raise _json_error(503, "Не удалось открыть фотографию")
+                GR.schedule_timeout(self.bot, self.db, self.mm, self.pack, game)
+                return web.json_response(
+                    {"ok": True, "status": "accepted", "game": self._geo_state_from_row(uid, game)}
+                )
+            declined = await self.db.decline_geo(game_id, uid)
+            if declined is None:
+                raise _json_error(409, "Предложение уже закрыто")
+            await send_to(
+                self.bot,
+                int(declined["inviter_id"]),
+                "🗺 Собеседник пока не хочет играть в Геогусер.",
+                K.chat_keyboard(),
+                self.pack,
+            )
+            live_chat.game_status(
+                {user_a, user_b},
+                "geo",
+                game_id,
+                "declined",
+                "Предложение отклонено",
+            )
+            return web.json_response({"ok": True, "status": "declined"})
 
         if game_type == "battle":
             if accept:
@@ -1956,6 +2113,31 @@ class MiniAppServer:
         actual_type = str(row["game_type"] or "battle")
         if actual_type != game_type:
             raise _json_error(400, "Тип игры не совпадает")
+
+        if game_type == "geo":
+            if action != "next":
+                raise _json_error(
+                    400,
+                    "Метка отправляется через Telegram: скрепка → Геопозиция → выбрать точку",
+                )
+            index = int(row["question_index"] or 0)
+            game = await self.db.advance_geo(game_id, uid, index)
+            if game is None:
+                raise _json_error(409, "Собеседник уже перешёл дальше")
+            live_chat.game_status(
+                {user_a, user_b},
+                "geo",
+                game_id,
+                "active",
+                f"Раунд {int(game['question_index']) + 1}/{int(game['total_questions'])}",
+            )
+            if not await GR.send_round(self.bot, self.pack, game):
+                await self.db.cancel_battle(game_id)
+                raise _json_error(503, "Не удалось открыть фотографию")
+            GR.schedule_timeout(self.bot, self.db, self.mm, self.pack, game)
+            return web.json_response(
+                {"ok": True, "game": self._geo_state_from_row(uid, game)}
+            )
 
         if game_type == "battle":
             if action == "answer":
@@ -2351,6 +2533,7 @@ class MiniAppServer:
         app.router.add_post("/api/miniapp/support/invoice", self.support_invoice)
         app.router.add_post("/api/miniapp/games/battle/invite", self.game_battle)
         app.router.add_post("/api/miniapp/games/numbers/invite", self.game_numbers)
+        app.router.add_post("/api/miniapp/games/geo/invite", self.game_geo)
         app.router.add_post("/api/miniapp/games/words/invite", self.game_words)
         app.router.add_post("/api/miniapp/games/respond", self.game_respond)
         app.router.add_post("/api/miniapp/games/action", self.game_action)
