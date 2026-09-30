@@ -22,7 +22,11 @@ GEO_TIE_REWARD = 2
 GEO_TIE_METERS = 25.0
 GEO_DAILY_REWARD_LIMIT = 30
 
-DATA_PATH = Path(__file__).with_name("data") / "geoquest_places.json"
+# Некоторые хостинги служебно исключают каталоги с именем ``data``. Поэтому
+# игровой набор лежит рядом с модулем, а старый путь читается только для
+# обратной совместимости локальных установок.
+DATA_PATH = Path(__file__).with_name("geoquest_places.json")
+LEGACY_DATA_PATH = Path(__file__).with_name("data") / "geoquest_places.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,10 +55,42 @@ def _valid_coordinate(latitude: float, longitude: float) -> bool:
 
 @lru_cache(maxsize=1)
 def places() -> tuple[GeoPlace, ...]:
-    try:
-        raw = json.loads(DATA_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return ()
+    raw = None
+    for path in (DATA_PATH, LEGACY_DATA_PATH):
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            break
+        except (OSError, json.JSONDecodeError):
+            continue
+    if raw is None:
+        # Аварийный минимум находится в Python-коде: даже если панель хостинга
+        # ошибочно отфильтрует JSON, игра не покажет вечное «загружается».
+        raw = [
+            {
+                "id": 10880047, "title": "Место в Магнитогорске",
+                "latitude": 53.407019, "longitude": 58.985906,
+                "image_url": "https://upload.wikimedia.org/wikipedia/commons/7/7e/Actros_fire_engine_in_Russia.JPG",
+                "source_url": "https://commons.wikimedia.org/wiki/File:Actros_fire_engine_in_Russia.JPG",
+                "author": "Ardianen", "license": "CC BY-SA 3.0",
+                "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
+            },
+            {
+                "id": 16401669, "title": "Гора Мулдак-Тау",
+                "latitude": 53.467767, "longitude": 58.769474,
+                "image_url": "https://upload.wikimedia.org/wikipedia/commons/e/e7/Quarry_mt._Muldak-Tau.jpg",
+                "source_url": "https://commons.wikimedia.org/wiki/File:Quarry_mt._Muldak-Tau.jpg",
+                "author": "Pesotsky", "license": "CC BY 3.0",
+                "license_url": "https://creativecommons.org/licenses/by/3.0",
+            },
+            {
+                "id": 17275942, "title": "Вершина Магнитной горы",
+                "latitude": 53.436323, "longitude": 59.102615,
+                "image_url": "https://upload.wikimedia.org/wikipedia/commons/b/bf/Magnitnaya_gora.jpg",
+                "source_url": "https://commons.wikimedia.org/wiki/File:Magnitnaya_gora.jpg",
+                "author": "Pesotsky", "license": "CC BY 3.0",
+                "license_url": "https://creativecommons.org/licenses/by/3.0",
+            },
+        ]
     result: list[GeoPlace] = []
     seen: set[int] = set()
     for item in raw if isinstance(raw, list) else []:

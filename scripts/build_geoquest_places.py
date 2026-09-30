@@ -21,7 +21,7 @@ from pathlib import Path
 
 
 API = "https://commons.wikimedia.org/w/api.php"
-OUTPUT = Path(__file__).resolve().parents[1] / "anonchat" / "data" / "geoquest_places.json"
+OUTPUT = Path(__file__).resolve().parents[1] / "anonchat" / "geoquest_places.json"
 CENTERS = (
     # Сначала окраины: центральные точки обычно уже лежат в сохранённом наборе.
     (53.285, 58.825),

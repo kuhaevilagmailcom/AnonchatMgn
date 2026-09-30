@@ -8,8 +8,6 @@ venv/
 
 # данные и логи
 data/
-!anonchat/data/
-!anonchat/data/geoquest_places.json
 *.db
 *.db-wal
 *.db-shm

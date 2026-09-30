@@ -739,6 +739,7 @@ def test_geoquest_persistence_rewards_and_pair_limit() -> None:
 
 
 def test_geoquest_dataset_is_deployable() -> None:
+    from anonchat import geoquest
     from anonchat.geoquest import get_place, places, select_place_ids
 
     places.cache_clear()
@@ -750,6 +751,18 @@ def test_geoquest_dataset_is_deployable() -> None:
     selected = select_place_ids()
     assert len(selected) == 3 and len(set(selected)) == 3
     assert all(get_place(place_id) is not None for place_id in selected)
+
+    original_data, original_legacy = geoquest.DATA_PATH, geoquest.LEGACY_DATA_PATH
+    missing = Path(tempfile.mkdtemp()) / "missing.json"
+    try:
+        geoquest.DATA_PATH = missing
+        geoquest.LEGACY_DATA_PATH = missing.with_name("also-missing.json")
+        places.cache_clear()
+        assert len(places()) == 3
+        assert len(select_place_ids()) == 3
+    finally:
+        geoquest.DATA_PATH, geoquest.LEGACY_DATA_PATH = original_data, original_legacy
+        places.cache_clear()
 
 
 def test_stale_games_cleanup_after_two_days() -> None:
