@@ -461,7 +461,7 @@ if (typeof window === 'undefined') {
       return;
     }
     if(kind==='battle'){body.innerHTML=`${panel('Битва мнений','Оба отвечают отдельно. Идеальное совпадение 5/5 или 10/10 принесёт каждому 25 ★.')}<div class="modal-actions"><button class="action" data-battle="5">5 вопросов</button><button class="action accent" data-battle="10">10 вопросов</button></div>`;$$('[data-battle]',body).forEach(b=>b.onclick=()=>inviteBattle(+b.dataset.battle));return}
-    if(kind==='numbers'){body.innerHTML=`${panel('Числа · 3 раунда','Точное совпадение даёт полную награду, близкое — половину. Для пары награда доступна один раз.')}<div class="modal-actions one"><button class="action" data-range="10">1–10 · до 25 ★</button><button class="action" data-range="100">1–100 · до 50 ★</button><button class="action accent" data-range="1000">1–1000 · до 100 ★</button></div>`;$('[data-range]',body).forEach(b=>b.onclick=()=>inviteNumbers(+b.dataset.range));return}
+    if(kind==='numbers'){body.innerHTML=`${panel('Числа · 3 раунда','Точное совпадение даёт полную награду, близкое — половину. Для пары награда доступна один раз.')}<div class="modal-actions one"><button class="action" data-range="10">1–10 · до 25 ★</button><button class="action" data-range="100">1–100 · до 50 ★</button><button class="action accent" data-range="1000">1–1000 · до 100 ★</button></div>`;$$('[data-range]',body).forEach(b=>b.onclick=()=>inviteNumbers(+b.dataset.range));return}
     if(kind==='geo'){
       body.innerHTML=`
         <section class="geo-intro">
@@ -480,7 +480,7 @@ if (typeof window === 'undefined') {
           <button data-geo-rounds="5" class="selected"><b>5</b><small>оптимально</small></button>
           <button data-geo-rounds="10"><b>10</b><small>долго</small></button>
         </div>`;
-      $('[data-geo-rounds]',body).forEach(b=>b.onclick=()=>inviteGeo(+b.dataset.geoRounds));
+      $$('[data-geo-rounds]',body).forEach(b=>b.onclick=()=>inviteGeo(+b.dataset.geoRounds));
       return;
     }
   }
