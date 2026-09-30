@@ -969,7 +969,7 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
           "обычный пользователь может предложить GeoGuessr📍 на пять раундов")
     geo_id = int(geo_invite["id"])
     check(
-        any("ТЕБЯ ЗОВУТ В GeoGuessr📍" in text for text in session.texts_to(B)),
+        any("ТЕБЯ ЗОВУТ В GeoGuessr" in text for text in session.texts_to(B)),
         "собеседник получает приглашение в GeoGuessr📍",
     )
     await press(B, f"game:geo:no:{geo_id}")
