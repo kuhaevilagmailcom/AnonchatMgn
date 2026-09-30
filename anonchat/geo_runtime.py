@@ -1,4 +1,4 @@
-"""Общая Telegram/UI-логика игры «Геогусер»."""
+"""Общая Telegram/UI-логика игры «GeoGuessr📍»."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def round_caption(row: Any, place: GQ.GeoPlace) -> str:
         else "⭐ Сегодня с этим собеседником раунд идёт без начисления ⭐"
     )
     return (
-        f"🗺 <b>ГЕОГУСЕР · РАУНД {index + 1}/{total}</b>\n"
+        f"🗺 <b>GeoGuessr📍 · РАУНД {index + 1}/{total}</b>\n"
         f"⏱ <b>Время: 2 минуты</b>\n\n"
         "📸 <b>Где в Магнитогорске сделано это фото?</b>\n\n"
         "📍 <b>Как отправить ответ:</b>\n"
@@ -164,7 +164,7 @@ def result_body(
     if finished:
         body += (
             "\n\n━━━━━━━━━━━━━━\n"
-            "🏁 <b>ГЕОГУСЕР ЗАВЕРШЁН</b>\n"
+            "🏁 <b>GeoGuessr📍 ЗАВЕРШЁН</b>\n"
             f"🎮 Раундов сыграно: <b>{total}</b>\n"
             f"⭐ Получено за игру: <b>{mine_total} ⭐</b>\n"
             "━━━━━━━━━━━━━━"
