@@ -28,10 +28,10 @@ from .word_game import (
 )
 from .geoquest import (
     GEO_DAILY_REWARD_LIMIT,
-    GEO_ROUNDS,
-    GEO_TIE_METERS,
-    GEO_TIE_REWARD,
-    GEO_WIN_REWARD,
+    GEO_ROUND_OPTIONS,
+    GEO_ROUND_SECONDS,
+    geo_reward,
+    valid_guess_coordinate,
 )
 
 SCHEMA = """
@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS battle_games (
     reward_total   INTEGER NOT NULL DEFAULT 0,
     reward_total_a INTEGER NOT NULL DEFAULT 0,
     reward_total_b INTEGER NOT NULL DEFAULT 0,
+    geo_round_started_at INTEGER NOT NULL DEFAULT 0,
     created_at     INTEGER NOT NULL,
     updated_at     INTEGER NOT NULL
 );
@@ -357,6 +358,7 @@ _BATTLE_MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("geo_lon_b", "ALTER TABLE battle_games ADD COLUMN geo_lon_b REAL"),
     ("geo_distance_a", "ALTER TABLE battle_games ADD COLUMN geo_distance_a REAL"),
     ("geo_distance_b", "ALTER TABLE battle_games ADD COLUMN geo_distance_b REAL"),
+    ("geo_round_started_at", "ALTER TABLE battle_games ADD COLUMN geo_round_started_at INTEGER NOT NULL DEFAULT 0"),
 )
 
 
@@ -1248,8 +1250,9 @@ class Database:
         self, inviter_id: int, partner_id: int, place_ids: Sequence[int]
     ) -> tuple[aiosqlite.Row, bool]:
         ids = [int(value) for value in place_ids]
-        if len(ids) != GEO_ROUNDS or len(set(ids)) != GEO_ROUNDS:
-            raise ValueError("Для Геогусера нужны разные места")
+        total = len(ids)
+        if total not in GEO_ROUND_OPTIONS or len(set(ids)) != total:
+            raise ValueError("Для Геогусера выбери 3, 5 или 10 разных мест")
         ts = now()
         cur = await self.db.execute(
             """INSERT OR IGNORE INTO battle_games(
@@ -1258,7 +1261,7 @@ class Database:
                    created_at, updated_at
                ) VALUES (?, ?, ?, 'geo', ?, ?, 0, 0, 0, ?, ?)""",
             (
-                int(inviter_id), int(partner_id), int(inviter_id), GEO_ROUNDS,
+                int(inviter_id), int(partner_id), int(inviter_id), total,
                 json.dumps(ids), ts, ts,
             ),
         )
@@ -1297,10 +1300,11 @@ class Database:
                    SET status='active', question_index=0, reward_awarded=?,
                        reward_total=0, reward_total_a=0, reward_total_b=0,
                        geo_lat_a=NULL, geo_lon_a=NULL, geo_lat_b=NULL, geo_lon_b=NULL,
-                       geo_distance_a=NULL, geo_distance_b=NULL, updated_at=?
+                       geo_distance_a=NULL, geo_distance_b=NULL,
+                       geo_round_started_at=?, updated_at=?
                    WHERE id=? AND game_type='geo' AND status='invited'
                      AND user_b=? AND inviter_id<>?""",
-                (reward_enabled, now(), game_id, user_id, user_id),
+                (reward_enabled, now(), now(), game_id, user_id, user_id),
             )
             if not cur.rowcount and reward_enabled:
                 await self.db.execute(
@@ -1356,6 +1360,54 @@ class Database:
         )
         return awarded
 
+    async def _resolve_geo_round_unlocked(
+        self, game: aiosqlite.Row, game_id: int, round_index: int
+    ) -> tuple[aiosqlite.Row | None, int, int]:
+        """Начислить награду за точность и закрыть текущий гео-раунд."""
+        raw_a = (
+            geo_reward(float(game["geo_distance_a"]))
+            if game["geo_lat_a"] is not None and game["geo_distance_a"] is not None
+            else 0
+        )
+        raw_b = (
+            geo_reward(float(game["geo_distance_b"]))
+            if game["geo_lat_b"] is not None and game["geo_distance_b"] is not None
+            else 0
+        )
+        reward_a = reward_b = 0
+        if int(game["reward_awarded"] or 0):
+            day = referral_day_start()
+            reward_a = await self._award_geo_daily_unlocked(
+                int(game["user_a"]), raw_a, day
+            )
+            reward_b = await self._award_geo_daily_unlocked(
+                int(game["user_b"]), raw_b, day
+            )
+
+        total = max(1, int(game["total_questions"] or 1))
+        status = "finished" if int(round_index) >= total - 1 else "round_done"
+        await self.db.execute(
+            """UPDATE battle_games
+               SET status=?, reward_total=reward_total+?,
+                   reward_total_a=reward_total_a+?, reward_total_b=reward_total_b+?,
+                   updated_at=?
+               WHERE id=? AND game_type='geo' AND status='active' AND question_index=?""",
+            (
+                status,
+                max(reward_a, reward_b),
+                reward_a,
+                reward_b,
+                now(),
+                int(game_id),
+                int(round_index),
+            ),
+        )
+        snapshot = await self.get_battle(game_id)
+        if snapshot is not None and status == "finished":
+            await self.db.execute("DELETE FROM battle_games WHERE id=?", (game_id,))
+        await self.db.commit()
+        return snapshot, reward_a, reward_b
+
     async def answer_geo(
         self, game_id: int, user_id: int, round_index: int,
         latitude: float, longitude: float, target_latitude: float, target_longitude: float,
@@ -1368,6 +1420,9 @@ class Database:
             latitude, longitude, target_latitude, target_longitude,
         )) or not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
             return "invalid", await self.get_battle(game_id), 0, 0
+        if not valid_guess_coordinate(latitude, longitude):
+            return "outside", await self.get_battle(game_id), 0, 0
+
         async with self._number_reward_lock:
             row = await self.get_battle(game_id)
             if (
@@ -1378,6 +1433,11 @@ class Database:
                 return "missing", row, 0, 0
             if str(row["status"]) != "active" or int(row["question_index"]) != int(round_index):
                 return "closed", row, 0, 0
+
+            started_at = int(row["geo_round_started_at"] or row["updated_at"] or 0)
+            if started_at and now() >= started_at + GEO_ROUND_SECONDS:
+                return "expired", row, 0, 0
+
             suffix = "a" if int(row["user_a"]) == int(user_id) else "b"
             if row[f"geo_lat_{suffix}"] is not None:
                 return "already", row, 0, 0
@@ -1397,36 +1457,30 @@ class Database:
                 await self.db.commit()
                 return "waiting", game, 0, 0
 
-            distance_a = float(game["geo_distance_a"])
-            distance_b = float(game["geo_distance_b"])
-            raw_a = raw_b = 0
-            if abs(distance_a - distance_b) <= GEO_TIE_METERS:
-                raw_a = raw_b = GEO_TIE_REWARD
-            elif distance_a < distance_b:
-                raw_a = GEO_WIN_REWARD
-            else:
-                raw_b = GEO_WIN_REWARD
-            reward_a = reward_b = 0
-            if int(game["reward_awarded"] or 0):
-                day = referral_day_start()
-                reward_a = await self._award_geo_daily_unlocked(int(game["user_a"]), raw_a, day)
-                reward_b = await self._award_geo_daily_unlocked(int(game["user_b"]), raw_b, day)
-            status = "finished" if round_index >= GEO_ROUNDS - 1 else "round_done"
-            await self.db.execute(
-                """UPDATE battle_games
-                   SET status=?, reward_total=reward_total+?,
-                       reward_total_a=reward_total_a+?, reward_total_b=reward_total_b+?,
-                       updated_at=?
-                   WHERE id=? AND game_type='geo' AND status='active' AND question_index=?""",
-                (
-                    status, max(reward_a, reward_b), reward_a, reward_b,
-                    now(), game_id, round_index,
-                ),
+            game, reward_a, reward_b = await self._resolve_geo_round_unlocked(
+                game, game_id, round_index
             )
-            game = await self.get_battle(game_id)
-            if game is not None and status == "finished":
-                await self.db.execute("DELETE FROM battle_games WHERE id=?", (game_id,))
-            await self.db.commit()
+            return "resolved", game, reward_a, reward_b
+
+    async def expire_geo_round(
+        self, game_id: int, round_index: int
+    ) -> tuple[str, aiosqlite.Row | None, int, int]:
+        """Закрывает раунд после двух минут; неответивший получает 0 ⭐."""
+        async with self._number_reward_lock:
+            row = await self.get_battle(game_id)
+            if (
+                row is None
+                or str(row["game_type"] or "") != "geo"
+                or str(row["status"]) != "active"
+                or int(row["question_index"]) != int(round_index)
+            ):
+                return "closed", row, 0, 0
+            started_at = int(row["geo_round_started_at"] or row["updated_at"] or 0)
+            if started_at and now() < started_at + GEO_ROUND_SECONDS:
+                return "early", row, 0, 0
+            game, reward_a, reward_b = await self._resolve_geo_round_unlocked(
+                row, game_id, round_index
+            )
             return "resolved", game, reward_a, reward_b
 
     async def advance_geo(
@@ -1443,9 +1497,10 @@ class Database:
             """UPDATE battle_games
                SET status='active', question_index=question_index+1,
                    geo_lat_a=NULL, geo_lon_a=NULL, geo_lat_b=NULL, geo_lon_b=NULL,
-                   geo_distance_a=NULL, geo_distance_b=NULL, updated_at=?
+                   geo_distance_a=NULL, geo_distance_b=NULL,
+                   geo_round_started_at=?, updated_at=?
                WHERE id=? AND game_type='geo' AND status='round_done' AND question_index=?""",
-            (now(), game_id, round_index),
+            (now(), now(), game_id, round_index),
         )
         await self.db.commit()
         return await self.get_battle(game_id) if cur.rowcount else None
