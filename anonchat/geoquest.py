@@ -45,6 +45,7 @@ GEO_TIE_REWARD = GEO_REWARD_TIERS[0][1]
 DATA_PATH = Path(__file__).with_name("geoquest_places.json")
 LEGACY_DATA_PATH = Path(__file__).with_name("data") / "geoquest_places.json"
 RIGHT_BANK_BOUNDS = (53.32, 53.49, 58.90, 59.025)
+RECENT_PLACE_RADIUS_METERS = 180
 NON_URBAN_WORDS = (
     "поле", "степ", "гора", "горы ", "вершина", "карьер", "озеро", "лес", "закат",
     "восход", "обла", "цвет", "птиц", "eclipse", "mountain", "quarry",
@@ -213,7 +214,18 @@ def is_right_bank_urban(place: GeoPlace) -> bool:
 
 def select_place_ids(total: int = GEO_ROUNDS, *, excluded: Iterable[int] = ()) -> list[int]:
     excluded_ids = {int(value) for value in excluded}
-    pool = [place for place in places() if place.id not in excluded_ids]
+    excluded_places = [place for place in places() if place.id in excluded_ids]
+    pool = [
+        place for place in places()
+        if place.id not in excluded_ids
+        and all(
+            distance_meters(
+                place.latitude, place.longitude,
+                recent.latitude, recent.longitude,
+            ) >= RECENT_PLACE_RADIUS_METERS
+            for recent in excluded_places
+        )
+    ]
     if len(pool) < total:
         pool = list(places())
     if len(pool) < total:

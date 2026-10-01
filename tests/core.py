@@ -685,6 +685,7 @@ def test_geoquest_persistence_rewards_and_pair_limit() -> None:
             assert int(game["reward_awarded"]) == 1
             assert int(game["geo_round_started_at"]) > 0
             assert await db.geo_pair_reward_available(321, 322) is False
+            assert await db.recent_geo_place_ids((321, 322)) == {11, 22, 33}
 
             # Игра и уже принятая наградная попытка переживают рестарт процесса.
             await db.close()
@@ -769,8 +770,10 @@ def test_geoquest_persistence_rewards_and_pair_limit() -> None:
             await db.ensure_user(325, "geo_timer_b", "Timer B")
             timed, created = await db.create_geo_invite(324, 325, [201, 202, 203])
             assert created
+            assert await db.recent_geo_place_ids((324, 325)) == set()
             timed = await db.accept_geo(int(timed["id"]), 325)
             assert timed is not None
+            assert await db.recent_geo_place_ids((324, 325)) == {201, 202, 203}
             timed_id = int(timed["id"])
             assert (await db.answer_geo(timed_id, 324, 0, *target, *target))[0] == "waiting"
             await db.db.execute(
@@ -806,7 +809,9 @@ def test_geoquest_persistence_rewards_and_pair_limit() -> None:
 
 def test_geoquest_dataset_is_deployable() -> None:
     from anonchat import geoquest
-    from anonchat.geoquest import get_place, is_right_bank_urban, places, select_place_ids
+    from anonchat.geoquest import (
+        distance_meters, get_place, is_right_bank_urban, places, select_place_ids,
+    )
 
     places.cache_clear()
     dataset = places()
@@ -817,6 +822,16 @@ def test_geoquest_dataset_is_deployable() -> None:
     selected = select_place_ids()
     assert len(selected) == 3 and len(set(selected)) == 3
     assert all(get_place(place_id) is not None for place_id in selected)
+    anchor = get_place(selected[0])
+    assert anchor is not None
+    next_game = [get_place(place_id) for place_id in select_place_ids(10, excluded=selected)]
+    assert all(
+        place is not None
+        and distance_meters(
+            place.latitude, place.longitude, anchor.latitude, anchor.longitude
+        ) >= 180
+        for place in next_game
+    )
     long_game = [get_place(place_id) for place_id in select_place_ids(10)]
     assert sum(is_right_bank_urban(place) for place in long_game if place is not None) >= 8
 

@@ -1819,7 +1819,8 @@ class MiniAppServer:
             raise _json_error(409, "У вас уже есть активная игра")
 
         try:
-            place_ids = GQ.select_place_ids(total)
+            excluded = await self.db.recent_geo_place_ids((uid, partner))
+            place_ids = GQ.select_place_ids(total, excluded=excluded)
         except RuntimeError as exc:
             raise _json_error(503, "Для игры пока не хватает загруженных мест") from exc
         game, created = await self.db.create_geo_invite(uid, partner, place_ids)

@@ -185,6 +185,16 @@ CREATE TABLE IF NOT EXISTS geo_daily_rewards (
     PRIMARY KEY (user_id, day_start)
 );
 
+CREATE TABLE IF NOT EXISTS geo_place_history (
+    user_id  INTEGER NOT NULL,
+    place_id INTEGER NOT NULL,
+    shown_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, place_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_geo_place_history_recent
+    ON geo_place_history(user_id, shown_at DESC);
+
 CREATE TABLE IF NOT EXISTS active_chat_events (
     id                  INTEGER PRIMARY KEY,
     user_low            INTEGER NOT NULL,
@@ -1246,6 +1256,45 @@ class Database:
         )
         return row is None
 
+    async def recent_geo_place_ids(
+        self, user_ids: Sequence[int], limit_per_user: int = 150
+    ) -> set[int]:
+        """Места, недавно показанные любому из указанных игроков."""
+        result: set[int] = set()
+        limit = max(1, int(limit_per_user))
+        for user_id in {int(value) for value in user_ids}:
+            cursor = await self.db.execute(
+                """SELECT place_id FROM geo_place_history
+                   WHERE user_id=? ORDER BY shown_at DESC LIMIT ?""",
+                (user_id, limit),
+            )
+            result.update(int(row["place_id"]) for row in await cursor.fetchall())
+        return result
+
+    async def _remember_geo_places_unlocked(
+        self, user_ids: Sequence[int], place_ids: Sequence[int]
+    ) -> None:
+        timestamp = now()
+        rows = [
+            (int(user_id), int(place_id), timestamp)
+            for user_id in {int(value) for value in user_ids}
+            for place_id in {int(value) for value in place_ids}
+        ]
+        if rows:
+            await self.db.executemany(
+                """INSERT INTO geo_place_history(user_id, place_id, shown_at)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(user_id, place_id)
+                   DO UPDATE SET shown_at=excluded.shown_at""",
+                rows,
+            )
+
+    async def remember_geo_places(
+        self, user_ids: Sequence[int], place_ids: Sequence[int]
+    ) -> None:
+        await self._remember_geo_places_unlocked(user_ids, place_ids)
+        await self.db.commit()
+
     async def create_geo_invite(
         self, inviter_id: int, partner_id: int, place_ids: Sequence[int]
     ) -> tuple[aiosqlite.Row, bool]:
@@ -1311,6 +1360,12 @@ class Database:
                     "DELETE FROM geo_game_pairs WHERE user_low=? AND user_high=? AND day_start=?",
                     (low, high, day),
                 )
+            if cur.rowcount:
+                try:
+                    place_ids = [int(value) for value in json.loads(row["question_ids"] or "[]")]
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    place_ids = []
+                await self._remember_geo_places_unlocked((low, high), place_ids)
             await self.db.commit()
             return await self.get_battle(game_id) if cur.rowcount else None
 

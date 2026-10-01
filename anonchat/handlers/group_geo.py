@@ -19,6 +19,7 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from .. import geoquest as GQ
+from ..db import Database
 
 router = Router(name="group_geo")
 
@@ -284,7 +285,7 @@ async def cmd_group_geo(message: Message, bot: Bot) -> None:
 
 
 @router.callback_query(F.data.startswith("ggeo:join:"))
-async def cb_group_geo_join(event: CallbackQuery, bot: Bot) -> None:
+async def cb_group_geo_join(event: CallbackQuery, bot: Bot, db: Database) -> None:
     game_id = (event.data or "").rsplit(":", 1)[-1]
     game = _games_by_id.get(game_id)
     message = event.message
@@ -301,19 +302,25 @@ async def cb_group_geo_join(event: CallbackQuery, bot: Bot) -> None:
         await event.answer("Ты уже первый игрок — нужен соперник", show_alert=True)
         return
 
+    player_b_id = int(event.from_user.id)
+    excluded = await db.recent_geo_place_ids((game.inviter_id, player_b_id))
+    place_ids = tuple(GQ.select_place_ids(ROUNDS, excluded=excluded))
+
     async with _state_lock:
         if game.status != "waiting":
             await event.answer("Кто-то уже принял игру", show_alert=True)
             return
-        game.player_b_id = int(event.from_user.id)
+        game.player_b_id = player_b_id
         game.player_b_name = _name(event.from_user)
-        game.place_ids = tuple(GQ.select_place_ids(ROUNDS))
+        game.place_ids = place_ids
         game.totals = {game.inviter_id: 0, game.player_b_id: 0}
         game.round_index = 0
         game.status = "active"
         if game.invite_task is not None and not game.invite_task.done():
             game.invite_task.cancel()
         game.invite_task = None
+
+    await db.remember_geo_places((game.inviter_id, player_b_id), place_ids)
 
     await event.answer("Игра началась!")
     try:

@@ -35,6 +35,7 @@ CENTERS = (
 )
 ALLOWED_LICENSES = ("CC BY", "CC0", "PUBLIC DOMAIN", "NO RESTRICTIONS")
 TARGET_COUNT = 650
+MAX_PHOTOS_PER_COORDINATE = 2
 RIGHT_BANK_BOUNDS = (53.32, 53.49, 58.90, 59.025)
 NON_URBAN_WORDS = (
     "поле", "степ", "гора", "горы ", "вершина", "карьер", "озеро", "лес", "закат",
@@ -172,7 +173,20 @@ def collect() -> list[dict]:
             int(row["id"]),
         )
     )
-    return rows[:TARGET_COUNT]
+    # Commons нередко содержит целые репортажи, у которых все кадры привязаны
+    # к одной координате. Для игрока они выглядят как повторы, даже если файлы
+    # технически разные. Оставляем не больше двух кадров с одной точки.
+    coordinate_counts: dict[tuple[float, float], int] = {}
+    curated: list[dict] = []
+    for row in rows:
+        key = (round(float(row["latitude"]), 5), round(float(row["longitude"]), 5))
+        if coordinate_counts.get(key, 0) >= MAX_PHOTOS_PER_COORDINATE:
+            continue
+        coordinate_counts[key] = coordinate_counts.get(key, 0) + 1
+        curated.append(row)
+        if len(curated) >= TARGET_COUNT:
+            break
+    return curated
 
 
 def main() -> None:

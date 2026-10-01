@@ -714,7 +714,8 @@ async def cb_geo_rounds(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         return
 
     try:
-        place_ids = GQ.select_place_ids(total)
+        excluded = await db.recent_geo_place_ids((ctx.user_id, partner))
+        place_ids = GQ.select_place_ids(total, excluded=excluded)
     except RuntimeError:
         await ctx.ack("Для такого количества раундов пока не хватает мест", alert=True)
         return
