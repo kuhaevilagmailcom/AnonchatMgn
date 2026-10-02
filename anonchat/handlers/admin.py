@@ -104,10 +104,10 @@ async def stats_text(db: Database, mm: Matchmaker, cfg: Config) -> str:
         f"✉️ Сообщений переслано: <b>{s['messages']}</b>\n"
         f"⏳ В очереди: <b>{mm.queue_size()}</b> · в парах: <b>{mm.online_pairs()}</b>\n"
         f"🚩 Открытых жалоб: <b>{s['open_reports']}</b>\n\n"
-        f"💎 Anon+ активно: <b>{pay['anonplus_active']}</b>\n"
-        f"⭐ Anon+ Stars: <b>{pay['anonplus_stars_count']}</b> · "
+        f"💎 Анон Plus активно: <b>{pay['anonplus_active']}</b>\n"
+        f"⭐ Анон Plus Stars: <b>{pay['anonplus_stars_count']}</b> · "
         f"{pay['anonplus_stars_total']} ★\n"
-        f"💳 Anon+ СБП: <b>{pay['anonplus_sbp_count']}</b> · "
+        f"💳 Анон Plus СБП: <b>{pay['anonplus_sbp_count']}</b> · "
         f"{pay['anonplus_sbp_total']} ₽\n"
         f"💖 Донаты Stars: <b>{pay['support_stars_count']}</b> · "
         f"{pay['support_stars_total']} ★\n"
@@ -209,9 +209,9 @@ async def who_text(db: Database, uid: int) -> str | None:
     rank = rank_for(int(row["messages"]))
     premium_until = int(row["premium_until"] or 0)
     premium_line = (
-        f"💎 Anon+: до <b>{time.strftime('%d.%m.%Y', time.localtime(premium_until))}</b>\n"
+        "💎 Анон Plus: <b>навсегда</b>\n"
         if premium_until > int(time.time())
-        else "💎 Anon+: выключен\n"
+        else "💎 Анон Plus: выключен\n"
     )
     return (
         f"👤 <code>{uid}</code> · 🙋 "
@@ -545,8 +545,8 @@ PANEL_PROMPTS = {
     ),
     K.CB_PANEL_ANONPLUS: (
         "anonplus",
-        "💎 Пришли <code>id +30</code> чтобы добавить дни Anon+, "
-        "<code>id -30</code> чтобы снять, или <code>id 0</code> чтобы отключить.",
+        "💎 Пришли <code>id 1</code>, чтобы включить Анон Plus навсегда, "
+        "или <code>id 0</code>, чтобы отключить.",
     ),
     K.CB_PANEL_ADMINS: (
         "admins",
@@ -1289,26 +1289,18 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
     elif what == "anonplus":
         uid, tail = _id_args(raw)
         try:
-            days = int(tail)
+            enabled = int(tail)
         except ValueError:
             uid = None
-            days = 0
-        if uid is None:
-            await ctx.reply(
-                "Формат: <code>123456 +30</code>, "
-                "<code>123456 -30</code> или <code>123456 0</code>."
-            )
+            enabled = 0
+        if uid is None or enabled not in {0, 1}:
+            await ctx.reply("Формат: <code>123456 1</code> или <code>123456 0</code>.")
         else:
-            premium_until = await db.adjust_anon_plus(uid, days)
+            premium_until = await db.adjust_anon_plus(uid, enabled)
             if premium_until:
-                until = time.strftime(
-                    "%d.%m.%Y", time.localtime(premium_until)
-                )
-                await ctx.reply(
-                    f"💎 Anon+ <code>{uid}</code> активен до <b>{until}</b>."
-                )
+                await ctx.reply(f"💎 Анон Plus <code>{uid}</code> включён <b>навсегда</b>.")
             else:
-                await ctx.reply(f"💎 Anon+ <code>{uid}</code> отключён.")
+                await ctx.reply(f"💎 Анон Plus <code>{uid}</code> отключён.")
     elif what == "admins":
         uid, tail = _id_args(raw)
         permissions = parse_permissions(tail)
