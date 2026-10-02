@@ -14,6 +14,8 @@ from typing import Any, Sequence
 
 import aiosqlite
 
+ANON_PLUS_LIFETIME_UNTIL = 253402300799
+
 from .number_game import (
     NUMBER_DAILY_REWARD_LIMIT,
     NUMBER_ROUNDS,
@@ -64,6 +66,7 @@ CREATE TABLE IF NOT EXISTS users (
     anon_plus_emoji   TEXT    NOT NULL DEFAULT '',
     anon_plus_show_nick INTEGER NOT NULL DEFAULT 0,
     support_stars    INTEGER NOT NULL DEFAULT 0,
+    support_rub      INTEGER NOT NULL DEFAULT 0,
     profile_deleted  INTEGER NOT NULL DEFAULT 0
 );
 
@@ -368,6 +371,7 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("anon_plus_emoji", "ALTER TABLE users ADD COLUMN anon_plus_emoji TEXT NOT NULL DEFAULT ''"),
     ("anon_plus_show_nick", "ALTER TABLE users ADD COLUMN anon_plus_show_nick INTEGER NOT NULL DEFAULT 0"),
     ("support_stars", "ALTER TABLE users ADD COLUMN support_stars INTEGER NOT NULL DEFAULT 0"),
+    ("support_rub", "ALTER TABLE users ADD COLUMN support_rub INTEGER NOT NULL DEFAULT 0"),
     ("profile_deleted", "ALTER TABLE users ADD COLUMN profile_deleted INTEGER NOT NULL DEFAULT 0"),
 )
 
@@ -600,6 +604,25 @@ class Database:
                        WHERE payments.user_id = users.user_id AND payments.kind = 'support'
                    )"""
             )
+        await self.db.execute(
+            """UPDATE users SET support_rub = (
+                   SELECT COALESCE(SUM(amount_rub), 0) FROM sbp_payments
+                   WHERE sbp_payments.user_id = users.user_id
+                     AND sbp_payments.kind = 'support'
+                     AND sbp_payments.status = 'paid'
+               )
+               WHERE EXISTS (
+                   SELECT 1 FROM sbp_payments
+                   WHERE sbp_payments.user_id = users.user_id
+                     AND sbp_payments.kind = 'support'
+                     AND sbp_payments.status = 'paid'
+               )"""
+        )
+        # Все уже активные подписки переводим на новую бессрочную модель.
+        await self.db.execute(
+            "UPDATE users SET premium_until=? WHERE premium_until>?",
+            (ANON_PLUS_LIFETIME_UNTIL, now()),
+        )
 
     async def _backfill_nick_keys(self) -> None:
         """Регистронезависимый ключ ника: LOWER() в SQLite не понимает кириллицу, считаем в Python."""
@@ -2064,9 +2087,8 @@ class Database:
         telegram_charge_id: str,
         provider_charge_id: str,
         payload: str,
-        days: int,
+        days: int = 0,
     ) -> tuple[bool, int]:
-        days = max(1, int(days))
         ts = now()
         async with aiosqlite.connect(self.path, timeout=15.0) as conn:
             conn.row_factory = aiosqlite.Row
@@ -2090,8 +2112,7 @@ class Database:
             if cur.rowcount != 1:
                 await conn.commit()
                 return False, int(row["premium_until"] or 0)
-            current = int(row["premium_until"] or 0)
-            premium_until = max(ts, current) + days * 86_400
+            premium_until = ANON_PLUS_LIFETIME_UNTIL
             await conn.execute(
                 "UPDATE users SET premium_until=? WHERE user_id=?",
                 (premium_until, int(user_id)),
@@ -2228,11 +2249,15 @@ class Database:
 
             premium_until = int(user["premium_until"] or 0)
             if str(payment["kind"]) == "anonplus":
-                days = max(1, int(payment["premium_days"] or 0))
-                premium_until = max(ts, premium_until) + days * 86_400
+                premium_until = ANON_PLUS_LIFETIME_UNTIL
                 await conn.execute(
                     "UPDATE users SET premium_until=? WHERE user_id=?",
                     (premium_until, user_id),
+                )
+            if str(payment["kind"]) == "support":
+                await conn.execute(
+                    "UPDATE users SET support_rub = support_rub + ? WHERE user_id=?",
+                    (int(payment["amount_rub"]), user_id),
                 )
             await conn.execute(
                 "UPDATE sbp_payments SET status='paid', paid_at=? WHERE payment_id=?",
@@ -2665,7 +2690,7 @@ class Database:
             start = referral_day_start() - (max(1, days) - 1) * 86_400
             rows = await self._fetchall(
                 """SELECT u.user_id, u.nickname, u.support_stars,
-                          u.premium_until, u.anon_plus_emoji,
+                          u.premium_until, u.anon_plus_emoji, u.support_rub,
                           SUM(a.xp_earned) AS xp,
                           SUM(a.dialogs) AS dialogs,
                           SUM(a.messages) AS messages
@@ -3017,7 +3042,7 @@ class Database:
         """Активность с упором на диалоги и оценки; спам в одном чате быстро упирается в лимит."""
         return await self._fetchall(
             """SELECT user_id, nickname, messages, xp, dialogs, good_ratings,
-                      support_stars, premium_until, anon_plus_emoji
+                      support_stars, support_rub, premium_until, anon_plus_emoji
                FROM users WHERE banned = 0
                ORDER BY xp DESC, dialogs DESC, messages DESC LIMIT ?""",
             (limit,),
@@ -3344,7 +3369,7 @@ class Database:
                    bad_ratings=0, reports_sent=0, district='', gender='', looking_for='', same_district=0,
                    about='', last_seen=0, premium_until=0, anon_plus_theme='pink',
                    anon_plus_emoji='', anon_plus_show_nick=0, support_stars=0,
-                   profile_deleted=1 WHERE user_id=?""",
+                   support_rub=0, profile_deleted=1 WHERE user_id=?""",
                 (user_id,),
             )
         else:
