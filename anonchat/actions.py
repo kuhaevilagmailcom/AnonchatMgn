@@ -853,7 +853,7 @@ async def set_nick(ctx: Ctx, raw: str) -> tuple[bool, str]:
 
 # --------------------------------------------------------------------- пары
 async def announce_pair(ctx: Ctx, user_id: int, partner_id: int) -> bool:
-    """Сообщаем о паре; ник виден только если владелец сам включил Anonymous Plus-опцию."""
+    """Сообщаем о паре; ник виден только если владелец сам включил Анон Plus-опцию."""
     found_kb = chat_keyboard()
     identity_user = await _shared_identity(ctx.db, ctx.pack, user_id)
     identity_partner = await _shared_identity(ctx.db, ctx.pack, partner_id)
