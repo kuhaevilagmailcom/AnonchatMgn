@@ -750,27 +750,34 @@ async def show_profile(ctx: Ctx) -> None:
     rank = rank_for(messages)
     badge = _anon_plus_badge(ctx.pack, me)
     lines = [
-        f"<b>{texts.esc(ctx.nick)}</b>{(' ' + badge) if badge else ''}",
-        f"{rank.emoji} {texts.esc(rank.title)}",
+        "👤 <b>Твой профиль</b>",
         "",
-        f"Очки: <b>{int(me['xp'])} ⭐</b>",
-        f"Сообщений: <b>{messages}</b>",
-        f"Диалогов: <b>{me['dialogs']}</b>",
-        f"Оценки: 👍 {me['good_ratings']} · 👎 {me['bad_ratings']}",
+        "<blockquote>"
+        f"<b>{texts.esc(ctx.nick)}</b>{(' ' + badge) if badge else ''}\n"
+        f"<i>{rank.emoji} {texts.esc(rank.title)}</i>"
+        "</blockquote>",
+        "",
+        f"⭐ Очки: <b>{int(me['xp'])}</b>",
+        f"💬 Сообщения: <b>{messages}</b> · Диалоги: <b>{me['dialogs']}</b>",
+        f"👍 Хорошие оценки: <b>{me['good_ratings']}</b> · 👎 <b>{me['bad_ratings']}</b>",
     ]
     if not rank.is_max:
         progress_bar = ctx.pack.progress_bar(rank.progress)
         lines += [
-            progress_bar or f"<code>{rank.bar}</code>",
-            f"До «{texts.esc(rank.next_title)}»: <b>{rank.to_next}</b> сообщений",
+            "",
+            "<blockquote>"
+            f"{progress_bar or rank.bar}\n"
+            f"<i>До «{texts.esc(rank.next_title)}»: "
+            f"<b>{rank.to_next}</b> сообщений</i>"
+            "</blockquote>",
         ]
     lines += [
         "",
-        f"Возраст: <b>{me['age'] if int(me['age'] or 0) else 'не указан'}</b>",
+        "<b>О тебе</b>",
         f"Пол: <b>{'👨 М' if me['gender'] == 'm' else '👩 Д' if me['gender'] == 'f' else 'не указан'}</b>",
         f"Берег: <b>{texts.esc(me['district']) if me['district'] else 'не указан'}</b>",
         "",
-        f"Приглашено: <b>{invited}</b> · +<b>{referral_xp} ⭐</b>",
+        f"🎁 Приглашено: <b>{invited}</b> · получено <b>{referral_xp} ⭐</b>",
     ]
     bot_me = await ctx.bot.me()
     ask_token = await ctx.db.anonymous_question_token(ctx.user_id)
