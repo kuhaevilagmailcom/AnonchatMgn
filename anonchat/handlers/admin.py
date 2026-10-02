@@ -94,6 +94,7 @@ async def notify_reporter_about_action(
 # ---------------------------------------------------------------------------------- тексты экранов
 async def stats_text(db: Database, mm: Matchmaker, cfg: Config) -> str:
     s = await db.stats()
+    pay = await db.payment_stats()
     return (
         f"📈 <b>Анончат {texts.esc(cfg.city_short)} · сводка</b>\n\n"
         f"👥 Пользователей: <b>{s['users']}</b>\n"
@@ -102,7 +103,16 @@ async def stats_text(db: Database, mm: Matchmaker, cfg: Config) -> str:
         f"💬 Диалогов сыграно: <b>{s['dialogs']}</b>\n"
         f"✉️ Сообщений переслано: <b>{s['messages']}</b>\n"
         f"⏳ В очереди: <b>{mm.queue_size()}</b> · в парах: <b>{mm.online_pairs()}</b>\n"
-        f"🚩 Открытых жалоб: <b>{s['open_reports']}</b>"
+        f"🚩 Открытых жалоб: <b>{s['open_reports']}</b>\n\n"
+        f"💎 Anon+ активно: <b>{pay['anonplus_active']}</b>\n"
+        f"⭐ Anon+ Stars: <b>{pay['anonplus_stars_count']}</b> · "
+        f"{pay['anonplus_stars_total']} ★\n"
+        f"💳 Anon+ СБП: <b>{pay['anonplus_sbp_count']}</b> · "
+        f"{pay['anonplus_sbp_total']} ₽\n"
+        f"💖 Донаты Stars: <b>{pay['support_stars_count']}</b> · "
+        f"{pay['support_stars_total']} ★\n"
+        f"💖 Донаты СБП: <b>{pay['support_sbp_count']}</b> · "
+        f"{pay['support_sbp_total']} ₽"
     )
 
 
@@ -197,6 +207,12 @@ async def who_text(db: Database, uid: int) -> str | None:
     if row is None:
         return None
     rank = rank_for(int(row["messages"]))
+    premium_until = int(row["premium_until"] or 0)
+    premium_line = (
+        f"💎 Anon+: до <b>{time.strftime('%d.%m.%Y', time.localtime(premium_until))}</b>\n"
+        if premium_until > int(time.time())
+        else "💎 Anon+: выключен\n"
+    )
     return (
         f"👤 <code>{uid}</code> · 🙋 "
         f"<b>{texts.esc(nicklib.display(row['nickname'], uid, row['support_stars']))}</b>\n"
@@ -205,6 +221,7 @@ async def who_text(db: Database, uid: int) -> str | None:
         f"💬 диалогов: {row['dialogs']} · 👍 {row['good_ratings']} · 👎 {row['bad_ratings']}\n"
         f"🚩 жалоб: {row['reports_received']} · {texts.esc(row['district'] or 'район не указан')}\n"
         f"💎 Поддержка: {int(row['support_stars'])} ⭐\n"
+        f"{premium_line}"
         f"в чате с {time.strftime('%d.%m.%Y', time.localtime(row['created_at']))}"
         + ("\n⛔ в бане" if row["banned"] else "")
     )
@@ -525,6 +542,11 @@ PANEL_PROMPTS = {
     K.CB_PANEL_POINTS: (
         "points",
         "⭐ Пришли <code>id +50</code> для выдачи или <code>id -50</code> для снятия очков.",
+    ),
+    K.CB_PANEL_ANONPLUS: (
+        "anonplus",
+        "💎 Пришли <code>id +30</code> чтобы добавить дни Anon+, "
+        "<code>id -30</code> чтобы снять, или <code>id 0</code> чтобы отключить.",
     ),
     K.CB_PANEL_ADMINS: (
         "admins",
@@ -1222,7 +1244,7 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
 
     required = {
         "find": "users", "ban": "ban", "unban": "ban", "mute": "mute",
-        "bc": "broadcast", "points": "points",
+        "bc": "broadcast", "points": "points", "anonplus": "users",
     }.get(what)
     if required and not ctx.can(required):
         await ctx.reply("У тебя нет этого права.")
@@ -1264,6 +1286,29 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
         else:
             balance = await db.adjust_xp(uid, amount)
             await ctx.reply(f"⭐ Баланс <code>{uid}</code>: <b>{balance}</b> очков.")
+    elif what == "anonplus":
+        uid, tail = _id_args(raw)
+        try:
+            days = int(tail)
+        except ValueError:
+            uid = None
+            days = 0
+        if uid is None:
+            await ctx.reply(
+                "Формат: <code>123456 +30</code>, "
+                "<code>123456 -30</code> или <code>123456 0</code>."
+            )
+        else:
+            premium_until = await db.adjust_anon_plus(uid, days)
+            if premium_until:
+                until = time.strftime(
+                    "%d.%m.%Y", time.localtime(premium_until)
+                )
+                await ctx.reply(
+                    f"💎 Anon+ <code>{uid}</code> активен до <b>{until}</b>."
+                )
+            else:
+                await ctx.reply(f"💎 Anon+ <code>{uid}</code> отключён.")
     elif what == "admins":
         uid, tail = _id_args(raw)
         permissions = parse_permissions(tail)
