@@ -982,3 +982,27 @@ body[data-theme="mono"] .premium-overlay-button{color:#000}
   .profile-feedback-card{min-height:58px;border-left:0;border-top:1px solid var(--line);grid-template-columns:auto 1fr auto;text-align:left;justify-items:start}
   .profile-feedback-card small{grid-column:2}
 }
+
+/* Анон Plus: free users do not see premium numbers */
+.profile-stats-wrap.locked .profile-stats{
+  visibility:hidden!important;
+  filter:none!important;
+  opacity:1!important;
+}
+.profile-stats-wrap.locked .anon-plus-lock{
+  display:grid;
+  padding:12px 18px;
+  background:transparent;
+  backdrop-filter:none;
+}
+.profile-stats-wrap.locked .anon-plus-lock strong{
+  max-width:270px;
+  margin:auto;
+  font-size:12px;
+  line-height:1.35;
+}
+.locked-result{min-height:170px;display:grid;align-items:center}
+.result-plus-lock{display:grid;gap:8px;text-align:center;padding:18px 6px}
+.result-plus-lock strong{font-size:15px;line-height:1.4}
+.result-plus-lock small{font-size:11px;color:var(--muted);line-height:1.45}
+.result-plus-lock .action{margin-top:7px}
