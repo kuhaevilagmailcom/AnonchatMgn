@@ -48,7 +48,7 @@ if (typeof window === 'undefined') {
     'target':'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>','shield-check':'<path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3Z"/><path d="m9 12 2 2 4-4"/>','swords':'<path d="M21 3v5l-11 9-4 4-3-3 4-4 9-11h5M5 13l6 6M14.32 17.32 18 21l3-3-3.365-3.365M10 5.5 8 3H3v5l3 2.5"/>','hash':'<path d="M5 9h14M4 15h14M10 3 8 21M16 3l-2 18"/>',
     'pencil':'<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>','thumbs-up':'<path d="M7 10v12H3V10h4ZM7 20h10.5a2 2 0 0 0 2-1.6l1.4-7A2 2 0 0 0 19 9h-5l1-4a2 2 0 0 0-2-2l-6 7"/>','chart':'<path d="M3 3v18h18M7 16v2M12 12v6M17 7v11"/>','trophy':'<path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0ZM7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3"/>','link':'<path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/>','sliders':'<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>','mail':'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>','circle-help':'<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2-3 4M12 18h.01"/>','wifi-off':'<path d="m1 1 22 22M8.5 8.5A9 9 0 0 1 21 9M3 9a14 14 0 0 1 2.5-1.7M5 13a10 10 0 0 1 7-2.6M19 13a10 10 0 0 0-2.1-1.4M8.5 16.5a5 5 0 0 1 7 0M12 20h.01"/>','copy':'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>','gift':'<rect x="3" y="8" width="18" height="13" rx="2"/><path d="M12 8v13M3 12h18M7.5 8C5 8 4 6.8 4 5.5S5 3 6.5 3C9 3 12 8 12 8M16.5 8C19 8 20 6.8 20 5.5S19 3 17.5 3C15 3 12 8 12 8"/>'
   };
-  const state = {page:'home', modal:null, status:'free', position:null, user:{nick:'Аноним',rank:'Новичок',stars:0,age:0,district:'',gender:'',looking_for:'',photo_url:'',anon_plus_theme:'pink'},stats:{online:0,chatting:0,searching:0,dialogs:0,messages:0,ratings:0,games:0,battle_games:0,number_games:0,streak:0,best_streak:0,quest_current:0,quest_target:20},referral:{invited:0,earned:0},referral_url:'',bot_url:'',events:[],subscription:null,anonPlus:{active:false,until:0,days:30,price_stars:25,price_rub:50,sbp_enabled:false,theme:'pink'}};
+  const state = {page:'home', modal:null, status:'free', position:null, user:{nick:'Аноним',rank:'Новичок',stars:0,age:0,district:'',gender:'',looking_for:'',photo_url:'',anon_plus_theme:'pink'},stats:{online:0,chatting:0,searching:0,dialogs:0,messages:0,ratings:0,games:0,battle_games:0,number_games:0,streak:0,best_streak:0,quest_current:0,quest_target:20},referral:{invited:0,earned:0},referral_url:'',bot_url:'',events:[],subscription:null,anonPlus:{active:false,until:0,days:30,price_stars:25,price_rub:50,sbp_enabled:false,theme:'pink',emoji:'',emoji_glyph:'',show_nick:false}};
   let statusRequestSeq = 0;
   let statusAppliedSeq = 0;
   let statusTimer = null;
@@ -205,7 +205,7 @@ if (typeof window === 'undefined') {
     $$('[data-avatar]').forEach(el=>{if(state.user.photo_url){el.src=state.user.photo_url;el.hidden=false}else{el.removeAttribute('src');el.hidden=true}});
     $$('[data-flame]').forEach((el,i)=>el.classList.toggle('on',i<Math.min(7,state.stats.streak)));
     $$('[data-setting]').forEach(group=>$$('button',group).forEach(b=>b.classList.toggle('active',String(b.dataset.value)===String(state.user[group.dataset.setting]||''))));
-    $$('[data-anon-plus-badge]').forEach(el=>el.hidden=!state.anonPlus?.active);
+    $('[data-profile-emoji]').forEach(el=>{const glyph=state.anonPlus?.active?(state.anonPlus.emoji_glyph||''):'';el.textContent=glyph;el.hidden=!glyph});
     const premiumStats=$('#anonPlusStats');if(premiumStats)premiumStats.classList.toggle('locked',!state.anonPlus?.active);
     applyTheme();renderSearch();renderEvents();
   }
@@ -306,7 +306,7 @@ if (typeof window === 'undefined') {
       const medal=x.place===1?'🥇':x.place===2?'🥈':x.place===3?'🥉':'';
       return `<article class="top-page-item ${x.me?'me':''} ${x.place<=3?'podium':''}">
         <span class="top-place">${medal||x.place}</span>
-        <span class="top-person"><strong>${esc(x.nick)}</strong><small>${esc(x.rank||'')}</small></span>
+        <span class="top-person"><strong>${esc(x.nick)}${x.emoji?` <i class="top-user-emoji">${esc(x.emoji)}</i>`:''}</strong><small>${esc(x.rank||'')}</small></span>
         <span class="top-stars"><b>${Number(x.stars||0).toLocaleString('ru-RU')}</b><i>★</i></span>
       </article>`;
     }).join('');
@@ -459,7 +459,13 @@ if (typeof window === 'undefined') {
       const data=await safe('/api/miniapp/achievements',{},null);const items=data?.items||[];
       body.innerHTML=`<div class="achievement-head"><strong>${data?.unlocked||0}/${data?.total||items.length}</strong><span>получено</span></div><div class="achievement-grid">${items.map(a=>`<article class="${a.unlocked?'unlocked':'locked'}"><span>${a.unlocked?'🏆':'🔒'}</span><strong>${esc(a.title)}</strong><small>${a.unlocked?'Выполнено':`${a.current}/${a.target}`} · ${a.reward} ★</small></article>`).join('')}</div>`;return;
     }
-    if(kind==='edit-profile'){body.innerHTML=`${panel('Ник в приложении','Используй любое имя, которое тебе нравится.')}<div class="form-field"><label>Новый ник · 2–24 символа</label><input id="nick" maxlength="24" value="${esc(state.user.nick.replace(/^@/,''))}" placeholder="Аноним"></div><div class="modal-actions"><button class="action" data-close-modal>Отмена</button><button class="action accent" id="saveNick">Сохранить</button></div>`;$('#saveNick').onclick=saveNick;bindClose(body);return}
+    if(kind==='edit-profile'){
+      const badges=[['','Без эмодзи'],['diamond','💎'],['star','⭐️'],['fire','🔥'],['bolt','⚡️'],['siren','🚨'],['music','🎵']];
+      const picker=state.anonPlus?.active?`<div class="setting profile-emoji-setting"><div><strong>Эмодзи рядом с ником</strong><small>Anonymous Plus · NewsEmoji</small></div><div class="profile-emoji-picker">${badges.map(([key,label])=>`<button type="button" data-edit-emoji="${key}" class="${(state.anonPlus.emoji||'')===key?'active':''}">${label}</button>`).join('')}</div></div>`:'';
+      body.innerHTML=`${panel('Профиль','Измени ник. С Anonymous Plus можно также выбрать премиум-эмодзи рядом с ним.')}<div class="form-field"><label>Новый ник · 2–24 символа</label><input id="nick" maxlength="24" value="${esc(state.user.nick.replace(/^@/,''))}" placeholder="Аноним"></div>${picker}<div class="modal-actions"><button class="action" data-close-modal>Отмена</button><button class="action accent" id="saveNick">Сохранить</button></div>`;
+      $$('[data-edit-emoji]',body).forEach(btn=>btn.onclick=()=>{$$('[data-edit-emoji]',body).forEach(x=>x.classList.remove('active'));btn.classList.add('active')});
+      $('#saveNick').onclick=saveNick;bindClose(body);return
+    }
     if(kind==='quests'){const d=await safe('/api/miniapp/quests',{},null);const items=d?.items||[];body.innerHTML=items.length?items.map(q=>`<article class="quest ${q.claimed?'claimed':''}"><div><strong>${esc(q.title)}</strong><b>${q.claimed?'Получено':`${q.current}/${q.target}`}</b></div><p>${q.claimed?`+${q.reward} ★ уже начислено`:q.done?'Награда начислится автоматически':`Награда: ${q.reward} ★`}</p><i class="progress"><i style="width:${Math.min(100,q.current/Math.max(1,q.target)*100)}%"></i></i></article>`).join(''):'<div class="empty">Сегодня заданий нет.</div>';return}
     if(kind==='streak'){const d=await safe('/api/miniapp/streak',{},null);if(d){state.stats.streak=d.current;state.stats.best_streak=d.best;render()}body.innerHTML=`${panel('Текущая серия',`<b>${state.stats.streak} дней</b> подряд. Серия не ограничена семью днями.`)}<div class="flame-grid">${Array.from({length:7},(_,i)=>`<i class="${i<Math.min(7,state.stats.streak)?'on':''}"></i>`).join('')}</div>${panel('Личный рекорд',`${state.stats.best_streak} дней. Активным считается день, когда ты общался в боте.`)}`;return}
     if(kind==='activity'){
@@ -530,7 +536,23 @@ if (typeof window === 'undefined') {
     $$('[data-theme-choice]',body).forEach(b=>b.onclick=()=>setAnonPlusTheme(b.dataset.themeChoice));
   }
   function bindClose(root=document){$$('[data-close-modal]',root).forEach(b=>b.onclick=closeModal)}
-  async function saveNick(){const nick=$('#nick').value.trim();if(nick.length<2)return toast('Минимум 2 символа');const r=await safe('/api/miniapp/profile/nick',{method:'POST',body:JSON.stringify({nick})},null);if(r||!tg?.initData){state.user.nick=r?.nick||nick;render();closeModal();toast('Ник сохранён');notify()}}
+  async function saveNick(){
+    const nick=$('#nick').value.trim();
+    if(nick.length<2)return toast('Минимум 2 символа');
+    const r=await safe('/api/miniapp/profile/nick',{method:'POST',body:JSON.stringify({nick})},null);
+    if(!r&&tg?.initData)return;
+    state.user.nick=r?.nick||nick;
+    if(state.anonPlus?.active){
+      const emoji=$('[data-edit-emoji].active')?.dataset.editEmoji??state.anonPlus.emoji??'';
+      const identity=await safe('/api/miniapp/anon-plus/identity',{method:'POST',body:JSON.stringify({emoji})},null);
+      if(identity){
+        state.anonPlus.emoji=identity.emoji||'';
+        state.anonPlus.emoji_glyph=identity.emoji_glyph||'';
+        state.anonPlus.show_nick=!!identity.show_nick;
+      }
+    }
+    render();closeModal();toast('Профиль сохранён');notify()
+  }
   async function saveSettings(){const payload={age:+($('#age').value||0),district:$('#district').value,gender:$('#gender .active')?.dataset.value||'',looking_for:$('#looking .active')?.dataset.value||'',same_district:0};const r=await safe('/api/miniapp/settings',{method:'POST',body:JSON.stringify(payload)},null);if(r||!tg?.initData){state.user={...state.user,...payload,...(r?.user||{})};render();closeModal();toast('Настройки сохранены');notify()}}
   async function resetSettings(){const r=await safe('/api/miniapp/settings/reset',{method:'POST',body:'{}'},null);if(r||!tg?.initData){Object.assign(state.user,{age:0,district:'',gender:'',looking_for:''});render();settings($('#modalBody'));toast('Настройки сброшены')}}
   function confirmForget(){const body=$('#modalBody');body.innerHTML=`${panel('Удалить профиль?','Ник, звёзды, статистика и настройки будут удалены без возможности восстановления.')}<div class="modal-actions"><button class="action" id="cancelForget">Отмена</button><button class="action danger" id="doForget">Удалить</button></div>`;$('#cancelForget').onclick=()=>settings(body);$('#doForget').onclick=forgetProfile}
@@ -547,18 +569,19 @@ if (typeof window === 'undefined') {
       <div class="anon-plus-features">
         <article><b>Темы Mini App</b><span>Розовая, синяя, фиолетовая, зелёная, оранжевая и ч/б.</span></article>
         <article><b>Расширенная статистика</b><span>Диалоги, сообщения, игры и возраст без размытия.</span></article>
-        <article><b>Значок Anon+</b><span>Аккуратная отметка в профиле.</span></article>
+        <article><b>Премиум-эмодзи</b><span>💎 ⭐️ 🔥 ⚡️ 🚨 🎵 из NewsEmoji рядом с ником и в топе.</span></article>
       </div>
       <div class="anon-plus-price"><strong>${p.days||30} дней</strong><span>${p.price_rub||50} ₽ · ${p.price_stars||25} ★</span></div>
       <div class="payment-grid">
         <button class="action accent" id="anonPlusStars">Купить за ${p.price_stars||25} ★</button>
         <button class="action" id="anonPlusSbp" ${p.sbp_enabled?'':'disabled'}>${p.sbp_enabled?`Оплатить ${p.price_rub||50} ₽ по СБП`:'СБП не настроена'}</button>
       </div>
-      ${p.active?`<div class="setting"><div><strong>Тема</strong><small>применяется сразу</small></div><div class="theme-picker">${[['pink','Розовая'],['blue','Синяя'],['violet','Фиолетовая'],['green','Зелёная'],['orange','Оранжевая'],['mono','Ч/Б']].map(([v,t])=>`<button data-plus-theme="${v}" class="${(p.theme||'pink')===v?'active':''}">${t}</button>`).join('')}</div></div>`:''}
+      ${p.active?`<div class="setting"><div><strong>Тема</strong><small>применяется сразу</small></div><div class="theme-picker">${[['pink','Розовая'],['blue','Синяя'],['violet','Фиолетовая'],['green','Зелёная'],['orange','Оранжевая'],['mono','Ч/Б']].map(([v,t])=>`<button data-plus-theme="${v}" class="${(p.theme||'pink')===v?'active':''}">${t}</button>`).join('')}</div></div><button class="anon-plus-identity-toggle ${p.show_nick?'active':''}" id="anonPlusShowNick"><span><strong>Показывать мой ник в диалогах</strong><small>${p.show_nick?'Собеседник видит твой ник и эмодзи':'Ник остаётся скрытым'}</small></span><b>${p.show_nick?'ВКЛ':'ВЫКЛ'}</b></button>`:''}
     `;
     $('#anonPlusStars').onclick=buyAnonPlusStars;
     if($('#anonPlusSbp')&&!$('#anonPlusSbp').disabled)$('#anonPlusSbp').onclick=buyAnonPlusSbp;
-    $$('[data-plus-theme]',body).forEach(b=>b.onclick=()=>setAnonPlusTheme(b.dataset.plusTheme));
+    $('[data-plus-theme]',body).forEach(b=>b.onclick=()=>setAnonPlusTheme(b.dataset.plusTheme));
+    if($('#anonPlusShowNick'))$('#anonPlusShowNick').onclick=toggleAnonPlusShowNick;
   }
   async function setAnonPlusTheme(theme){
     if(!state.anonPlus?.active)return openModal('anon-plus','Anon+','ПОДПИСКА');
@@ -568,6 +591,16 @@ if (typeof window === 'undefined') {
       if(state.modal==='anon-plus')renderAnonPlus($('#modalBody'));else if(state.modal==='settings')settings($('#modalBody'));
       toast('Тема применена');haptic();
     }
+  }
+  async function toggleAnonPlusShowNick(){
+    if(!state.anonPlus?.active)return;
+    const r=await safe('/api/miniapp/anon-plus/identity',{method:'POST',body:JSON.stringify({show_nick:!state.anonPlus.show_nick})},null);
+    if(!r)return;
+    state.anonPlus.show_nick=!!r.show_nick;
+    state.anonPlus.emoji=r.emoji||state.anonPlus.emoji||'';
+    state.anonPlus.emoji_glyph=r.emoji_glyph||state.anonPlus.emoji_glyph||'';
+    renderAnonPlus($('#modalBody'));render();
+    toast(state.anonPlus.show_nick?'Ник будет виден собеседнику':'Ник скрыт');
   }
   async function buyAnonPlusStars(){
     if(!tg?.initData)return toast('Оплата доступна внутри Telegram');
@@ -1011,6 +1044,8 @@ if (typeof window === 'undefined') {
       chat.sent=Number(data.sent||0);chat.received=Number(data.received||0);
       $('#chatSent')&&($('#chatSent').textContent=String(chat.sent));
       $('#chatReceived')&&($('#chatReceived').textContent=String(chat.received));
+      const peerName=$('#chatPeer strong');
+      if(peerName)peerName.textContent=data.peer?.nick?(data.peer.nick+(data.peer.emoji?' '+data.peer.emoji:'')):'Собеседник';
       (data.events||[]).forEach(appendChatEvent);
       chat.latest=Math.max(chat.latest,Number(data.latest||0),...(data.events||[]).map(x=>Number(x.id||0)));
       renderActiveGame(data.game||null);
@@ -1184,7 +1219,7 @@ if (typeof window === 'undefined') {
   async function inviteNumbers(range_max){const r=await safe('/api/miniapp/games/numbers/invite',{method:'POST',body:JSON.stringify({range_max})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify();syncChat(false)}}
   async function inviteGeo(rounds){const r=await safe('/api/miniapp/games/geo/invite',{method:'POST',body:JSON.stringify({rounds})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение в GeoGuessr📍 отправлено');notify();syncChat(false)}}
   function bind(){
-    document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить ник','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','help':'Помощь и правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game){if(game.dataset.game==='words')inviteWords();else openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':game.dataset.game==='geo'?'GeoGuessr📍':'Числа',game.dataset.game==='geo'?'МАГНИТОГОРСК':'ИГРА ВДВОЁМ')}});
+    document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить профиль','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','help':'Помощь и правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game){if(game.dataset.game==='words')inviteWords();else openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':game.dataset.game==='geo'?'GeoGuessr📍':'Числа',game.dataset.game==='geo'?'МАГНИТОГОРСК':'ИГРА ВДВОЁМ')}});
     $$('[data-close-modal]').forEach(b=>b.onclick=closeModal);
     $('#searchToggle').onclick=toggleSearch;
     $$('[data-setting] button').forEach(b=>b.onclick=()=>updateSetting(b.parentElement.dataset.setting,b.dataset.value));
