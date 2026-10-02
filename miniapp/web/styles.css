@@ -855,8 +855,8 @@ html,body{max-width:100%;overflow-x:hidden}
 /* ------------------------------ Anon+ */
 .profile-name-line{display:flex!important;align-items:center;gap:7px;min-width:0}
 .profile-hero-copy{display:grid;gap:3px;min-width:0}
-.profile-rank-line{display:block!important;color:#e8e1e6!important;font-size:11px!important;font-weight:700;line-height:1.2;margin-top:1px}
-.profile-stars-line{display:flex!important;align-items:center;gap:4px;color:var(--muted)!important;font-size:11px!important;line-height:1.2}
+.profile-meta-line{display:flex!important;align-items:center;gap:4px;color:var(--muted)!important;font-size:11px!important;line-height:1.2}
+.profile-meta-line [data-rank]{color:#e8e1e6;font-weight:700}
 .profile-name-line>strong{min-width:0}
 .profile-emoji{display:inline-flex;align-items:center;justify-content:center;font-style:normal;font-size:19px;line-height:1;flex:0 0 auto}
 .profile-stats-wrap{position:relative;border-bottom:1px solid var(--line)}
