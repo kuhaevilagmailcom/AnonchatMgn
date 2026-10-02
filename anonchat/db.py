@@ -109,6 +109,20 @@ CREATE TABLE IF NOT EXISTS payments (
     payload                    TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS sbp_payments (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    payment_id    TEXT    NOT NULL UNIQUE,
+    order_id      TEXT    NOT NULL UNIQUE,
+    user_id       INTEGER NOT NULL,
+    kind          TEXT    NOT NULL,
+    amount_rub    INTEGER NOT NULL,
+    premium_days  INTEGER NOT NULL DEFAULT 0,
+    pay_url       TEXT    NOT NULL DEFAULT '',
+    status        TEXT    NOT NULL DEFAULT 'creating',
+    created_at    INTEGER NOT NULL,
+    paid_at       INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS reward_claims (
     user_id    INTEGER NOT NULL,
     reward_key TEXT    NOT NULL,
@@ -320,6 +334,8 @@ CREATE INDEX IF NOT EXISTS idx_poll_votes_poll_choice ON poll_votes(poll_id, cho
 CREATE INDEX IF NOT EXISTS idx_matches_recent ON matches(ended_at, user_a, user_b);
 CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_sbp_payments_user ON sbp_payments(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_sbp_payments_status ON sbp_payments(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_anon_reply_routes_created
 ON anonymous_reply_routes(created_at);
 CREATE INDEX IF NOT EXISTS idx_admins_granted_by ON admins(granted_by, updated_at);
@@ -345,6 +361,7 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("gender", "ALTER TABLE users ADD COLUMN gender TEXT NOT NULL DEFAULT ''"),
     ("looking_for", "ALTER TABLE users ADD COLUMN looking_for TEXT NOT NULL DEFAULT ''"),
     ("premium_until", "ALTER TABLE users ADD COLUMN premium_until INTEGER NOT NULL DEFAULT 0"),
+    ("anon_plus_theme", "ALTER TABLE users ADD COLUMN anon_plus_theme TEXT NOT NULL DEFAULT 'pink'"),
     ("support_stars", "ALTER TABLE users ADD COLUMN support_stars INTEGER NOT NULL DEFAULT 0"),
     ("profile_deleted", "ALTER TABLE users ADD COLUMN profile_deleted INTEGER NOT NULL DEFAULT 0"),
 )
@@ -2032,7 +2049,207 @@ class Database:
             )
             row = await self.get_user(user_id)
             total_support = int(row["support_stars"] or 0) if row else stars
+        await self.db.commit()
         return True, total_support
+
+    async def record_anon_plus_payment(
+        self,
+        user_id: int,
+        stars: int,
+        telegram_charge_id: str,
+        provider_charge_id: str,
+        payload: str,
+        days: int,
+    ) -> tuple[bool, int]:
+        days = max(1, int(days))
+        ts = now()
+        async with aiosqlite.connect(self.path, timeout=15.0) as conn:
+            conn.row_factory = aiosqlite.Row
+            await conn.execute("BEGIN IMMEDIATE")
+            row = await (await conn.execute(
+                "SELECT premium_until FROM users WHERE user_id=?", (int(user_id),)
+            )).fetchone()
+            if row is None:
+                await conn.rollback()
+                raise ValueError("User does not exist")
+            cur = await conn.execute(
+                """INSERT OR IGNORE INTO payments
+                   (user_id, kind, stars, telegram_payment_charge_id,
+                    provider_payment_charge_id, created_at, payload)
+                   VALUES (?, 'anonplus', ?, ?, ?, ?, ?)""",
+                (
+                    int(user_id), int(stars), str(telegram_charge_id),
+                    str(provider_charge_id or ""), ts, str(payload),
+                ),
+            )
+            if cur.rowcount != 1:
+                await conn.commit()
+                return False, int(row["premium_until"] or 0)
+            current = int(row["premium_until"] or 0)
+            premium_until = max(ts, current) + days * 86_400
+            await conn.execute(
+                "UPDATE users SET premium_until=? WHERE user_id=?",
+                (premium_until, int(user_id)),
+            )
+            await conn.commit()
+            return True, premium_until
+
+    async def set_anon_plus_theme(self, user_id: int, theme: str) -> None:
+        await self.db.execute(
+            "UPDATE users SET anon_plus_theme=? WHERE user_id=?",
+            (str(theme)[:24], int(user_id)),
+        )
+        await self.db.commit()
+
+    async def adjust_anon_plus(self, user_id: int, days: int) -> int:
+        await self._ensure_row(int(user_id))
+        row = await self.get_user(int(user_id))
+        current = int(row["premium_until"] or 0) if row else 0
+        if int(days) == 0:
+            premium_until = 0
+        elif int(days) > 0:
+            premium_until = max(now(), current) + int(days) * 86_400
+        else:
+            premium_until = max(0, current + int(days) * 86_400)
+            if premium_until <= now():
+                premium_until = 0
+        await self.db.execute(
+            "UPDATE users SET premium_until=? WHERE user_id=?",
+            (premium_until, int(user_id)),
+        )
+        await self.db.commit()
+        return premium_until
+
+    async def create_sbp_order(
+        self, *, order_id: str, user_id: int, kind: str,
+        amount_rub: int, premium_days: int = 0,
+    ) -> str:
+        local_id = f"creating:{order_id}"
+        await self.db.execute(
+            """INSERT INTO sbp_payments
+               (payment_id, order_id, user_id, kind, amount_rub, premium_days,
+                status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, 'creating', ?)""",
+            (
+                local_id, str(order_id), int(user_id), str(kind),
+                int(amount_rub), max(0, int(premium_days)), now(),
+            ),
+        )
+        await self.db.commit()
+        return local_id
+
+    async def attach_sbp_provider_payment(
+        self, local_id: str, payment_id: str, pay_url: str
+    ) -> None:
+        cur = await self.db.execute(
+            """UPDATE sbp_payments
+               SET payment_id=?, pay_url=?, status='awaiting_payment'
+               WHERE payment_id=? AND status='creating'""",
+            (str(payment_id), str(pay_url), str(local_id)),
+        )
+        if cur.rowcount != 1:
+            raise ValueError("Local payment order is not attachable")
+        await self.db.commit()
+
+    async def get_sbp_payment(self, payment_id: str) -> dict[str, Any] | None:
+        row = await self._fetchone(
+            "SELECT * FROM sbp_payments WHERE payment_id=?",
+            (str(payment_id),),
+        )
+        return dict(row) if row else None
+
+    async def list_pending_sbp_payments(self, limit: int = 100) -> list[dict[str, Any]]:
+        rows = await self._fetchall(
+            """SELECT * FROM sbp_payments
+               WHERE status IN ('creating','awaiting_payment','pending','processing')
+               ORDER BY created_at ASC LIMIT ?""",
+            (max(1, min(int(limit), 300)),),
+        )
+        return [dict(row) for row in rows]
+
+    async def set_sbp_status(self, payment_id: str, status: str) -> None:
+        await self.db.execute(
+            """UPDATE sbp_payments SET status=?
+               WHERE payment_id=? AND status!='paid'""",
+            (str(status or "")[:32], str(payment_id)),
+        )
+        await self.db.commit()
+
+    async def settle_sbp_payment(self, payment_id: str) -> dict[str, Any]:
+        ts = now()
+        async with aiosqlite.connect(self.path, timeout=15.0) as conn:
+            conn.row_factory = aiosqlite.Row
+            await conn.execute("BEGIN IMMEDIATE")
+            payment = await (await conn.execute(
+                "SELECT * FROM sbp_payments WHERE payment_id=?", (str(payment_id),)
+            )).fetchone()
+            if payment is None:
+                await conn.rollback()
+                raise ValueError("Payment not found")
+            user_id = int(payment["user_id"])
+            user = await (await conn.execute(
+                "SELECT premium_until FROM users WHERE user_id=?", (user_id,)
+            )).fetchone()
+            if user is None:
+                await conn.rollback()
+                raise ValueError("Payment user does not exist")
+            if str(payment["status"]) == "paid":
+                await conn.commit()
+                return {
+                    "fresh": False, "kind": str(payment["kind"]), "user_id": user_id,
+                    "premium_until": int(user["premium_until"] or 0),
+                }
+
+            premium_until = int(user["premium_until"] or 0)
+            if str(payment["kind"]) == "anonplus":
+                days = max(1, int(payment["premium_days"] or 0))
+                premium_until = max(ts, premium_until) + days * 86_400
+                await conn.execute(
+                    "UPDATE users SET premium_until=? WHERE user_id=?",
+                    (premium_until, user_id),
+                )
+            await conn.execute(
+                "UPDATE sbp_payments SET status='paid', paid_at=? WHERE payment_id=?",
+                (ts, str(payment_id)),
+            )
+            await conn.commit()
+            return {
+                "fresh": True, "kind": str(payment["kind"]), "user_id": user_id,
+                "premium_until": premium_until,
+                "amount_rub": int(payment["amount_rub"]),
+            }
+
+    async def payment_stats(self) -> dict[str, int]:
+        star_rows = await self._fetchall(
+            """SELECT kind, COUNT(*) AS count, COALESCE(SUM(stars), 0) AS total
+               FROM payments GROUP BY kind"""
+        )
+        sbp_rows = await self._fetchall(
+            """SELECT kind, COUNT(*) AS count, COALESCE(SUM(amount_rub), 0) AS total
+               FROM sbp_payments WHERE status='paid' GROUP BY kind"""
+        )
+        result = {
+            "anonplus_stars_count": 0, "anonplus_stars_total": 0,
+            "support_stars_count": 0, "support_stars_total": 0,
+            "anonplus_sbp_count": 0, "anonplus_sbp_total": 0,
+            "support_sbp_count": 0, "support_sbp_total": 0,
+            "anonplus_active": 0,
+        }
+        for row in star_rows:
+            kind = str(row["kind"])
+            if kind in {"anonplus", "support"}:
+                result[f"{kind}_stars_count"] = int(row["count"] or 0)
+                result[f"{kind}_stars_total"] = int(row["total"] or 0)
+        for row in sbp_rows:
+            kind = str(row["kind"])
+            if kind in {"anonplus", "support"}:
+                result[f"{kind}_sbp_count"] = int(row["count"] or 0)
+                result[f"{kind}_sbp_total"] = int(row["total"] or 0)
+        active = await self._fetchone(
+            "SELECT COUNT(*) AS n FROM users WHERE premium_until > ?", (now(),)
+        )
+        result["anonplus_active"] = int(active["n"] or 0) if active else 0
+        return result
 
     # ------------------------------------------------------------------ moderation
     async def is_restricted(self, user_id: int) -> str | None:
