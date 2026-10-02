@@ -54,6 +54,20 @@ PACK: dict[str, tuple[str, str, tuple[str, ...]]] = {
 #: имя -> id, для кнопок (icon_custom_emoji_id)
 ICONS: dict[str, str] = {name: emoji_id for name, (emoji_id, _, _) in PACK.items()}
 
+#: Anonymous Plus: пользователь выбирает один знак рядом с ником.
+PROFILE_BADGES: dict[str, str] = {
+    "diamond": "💎",
+    "star": "⭐️",
+    "fire": "🔥",
+    "bolt": "⚡️",
+    "siren": "🚨",
+    "music": "🎵",
+}
+
+
+def _emoji_key(value: str) -> str:
+    return str(value or "").replace("\ufe0f", "").strip()
+
 
 class EmojiPack:
     def __init__(self, url: str = "") -> None:
@@ -63,6 +77,10 @@ class EmojiPack:
         self._map: dict[str, tuple[str, str]] = {}
         self._progress_bar: list[tuple[str, str]] = []
         self._top_flags: dict[int, tuple[str, str]] = {}
+        self._profile_badges: dict[str, tuple[str, str]] = {
+            "diamond": (ICONS.get("bonus", ""), PROFILE_BADGES["diamond"]),
+            "star": (ICONS.get("stars", ""), PROFILE_BADGES["star"]),
+        }
         for _name, (emoji_id, canonical, aliases) in PACK.items():
             for glyph in (canonical, *aliases):
                 self._map.setdefault(glyph, (emoji_id, canonical))
@@ -114,6 +132,37 @@ class EmojiPack:
             0: ("5458531398853865378", "0️⃣"),
         }
         return 10
+
+    async def load_profile_badges(self, bot, name: str = "NewsEmoji") -> int:
+        """Находит нужные Anonymous Plus custom emoji прямо в NewsEmoji."""
+        try:
+            sticker_set = await bot.get_sticker_set(name=name)
+        except Exception:
+            return sum(1 for emoji_id, _ in self._profile_badges.values() if emoji_id)
+
+        targets = {_emoji_key(glyph): key for key, glyph in PROFILE_BADGES.items()}
+        found = dict(self._profile_badges)
+        for sticker in getattr(sticker_set, "stickers", ()) or ():
+            glyph = str(getattr(sticker, "emoji", "") or "").strip()
+            key = targets.get(_emoji_key(glyph))
+            custom_id = str(getattr(sticker, "custom_emoji_id", "") or "")
+            if key and custom_id:
+                found[key] = (custom_id, PROFILE_BADGES[key])
+        self._profile_badges = found
+        return sum(1 for emoji_id, _ in found.values() if emoji_id)
+
+    def profile_badge(self, key: str) -> str:
+        key = str(key or "").strip().lower()
+        glyph = PROFILE_BADGES.get(key, "")
+        if not glyph:
+            return ""
+        item = self._profile_badges.get(key)
+        if self.enabled and item and item[0]:
+            return f'<tg-emoji emoji-id="{item[0]}">{item[1]}</tg-emoji>'
+        return glyph
+
+    def profile_badge_glyph(self, key: str) -> str:
+        return PROFILE_BADGES.get(str(key or "").strip().lower(), "")
 
     def top_flag(self, place: int) -> str:
         """Цифровые custom emoji мест. Для 10 выводим отдельные custom emoji 1 и 0."""
