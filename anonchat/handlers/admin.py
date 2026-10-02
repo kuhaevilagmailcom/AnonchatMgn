@@ -464,7 +464,7 @@ async def do_ad_broadcast(
     caption_entities: list[MessageEntity] | None = None,
 ) -> str:
     """Рекламная рассылка: фото + текст + URL-кнопка всем незаблокированным."""
-    ids = await db.broadcast_ids()
+    ids = await db.broadcast_ids(exclude_anon_plus=True)
     await ctx.reply(texts.PANEL_BC_PROGRESS.format(total=len(ids)))
     sent = 0
     for uid in ids:
@@ -485,6 +485,38 @@ async def do_ad_broadcast(
     return (
         f"✅ Рассылка завершена. Доставлено: <b>{sent}</b> из <b>{len(ids)}</b>. "
         f"Не доставлено: <b>{failed}</b>."
+    )
+
+
+async def do_anon_plus_broadcast(
+    ctx: Ctx,
+    db: Database,
+    photo_file_id: str,
+    body: str,
+    caption_entities: list[MessageEntity] | None = None,
+) -> str:
+    """Промо Анон Plus: фото + текст + кнопка, только пользователям без Plus."""
+    ids = await db.broadcast_ids(exclude_anon_plus=True)
+    await ctx.reply(texts.PANEL_BC_PROGRESS.format(total=len(ids)))
+    sent = 0
+    for uid in ids:
+        try:
+            await ctx.bot.send_photo(
+                chat_id=uid,
+                photo=photo_file_id,
+                caption=body,
+                caption_entities=caption_entities or None,
+                parse_mode=None,
+                reply_markup=K.broadcast_anon_plus_keyboard(),
+            )
+            sent += 1
+        except TelegramAPIError:
+            pass
+        await asyncio.sleep(0.05)
+    failed = max(0, len(ids) - sent)
+    return (
+        f"✅ Рассылка Анон Plus завершена. Доставлено: <b>{sent}</b> "
+        f"из <b>{len(ids)}</b>. Не доставлено: <b>{failed}</b>."
     )
 
 
@@ -790,6 +822,36 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         await ctx.ack("У тебя нет права на рассылку", alert=True)
         return
 
+    if data == K.CB_PANEL_BC_PLUS_SEND:
+        draft = await state.get_data()
+        photo_file_id = str(draft.get("bc_photo") or "")
+        body = str(draft.get("bc_text") or "").strip()
+        caption_entities = [
+            MessageEntity.model_validate(item)
+            for item in (draft.get("bc_entities") or [])
+            if isinstance(item, dict)
+        ]
+        if draft.get("adm") != "bc_plus_ready" or not photo_file_id or not body:
+            await ctx.ack("Черновик рассылки Анон Plus устарел. Создай его заново.", alert=True)
+            await state.clear()
+            return
+        await state.update_data(adm="bc_plus_sending")
+        await ctx.ack("Рассылка запущена")
+        if event.message is not None:
+            try:
+                await event.message.edit_reply_markup(
+                    reply_markup=K.broadcast_anon_plus_keyboard()
+                )
+            except TelegramAPIError:
+                pass
+        result = await do_anon_plus_broadcast(
+            ctx, db, photo_file_id, body, caption_entities
+        )
+        await state.clear()
+        await ctx.reply(result)
+        await panel_screen(ctx, db, mm, edit=False)
+        return
+
     if data == K.CB_PANEL_BC_SEND:
         draft = await state.get_data()
         photo_file_id = str(draft.get("bc_photo") or "")
@@ -841,6 +903,19 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
             "Бот должен быть администратором этого канала с правом публикации сообщений.",
             K.panel_cancel_keyboard(),
         )
+        return
+
+    if data == K.CB_PANEL_BC_PLUS:
+        await state.set_state(AdminStates.await_input)
+        await state.set_data({"adm": "bc_plus_image"})
+        await ctx.edit(
+            "💎 <b>Рассылка Анон Plus · шаг 1/2</b>\n\n"
+            "Отправь <b>картинку</b> как фото. После текста бот автоматически "
+            "добавит снизу кнопку «Анон Plus».\n\n"
+            "Пользователям с уже активным Анон Plus эта рассылка не придёт.",
+            K.panel_cancel_keyboard(),
+        )
+        await ctx.ack()
         return
 
     if data == K.CB_PANEL_BC_SIMPLE:
@@ -1123,6 +1198,61 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
             f"ID сообщения: <code>{published.message_id}</code>."
         )
         await panel_screen(ctx, db, mm, edit=False)
+        return
+
+    if what == "bc_plus_image":
+        if not message.photo:
+            await ctx.reply(
+                "Нужна именно <b>картинка как фото</b>.",
+                K.panel_cancel_keyboard(),
+            )
+            return
+        photo_file_id = message.photo[-1].file_id
+        await state.update_data(adm="bc_plus_text", bc_photo=photo_file_id)
+        await ctx.reply(
+            "💎 <b>Рассылка Анон Plus · шаг 2/2</b>\n\n"
+            "Теперь отправь <b>текст</b> одним сообщением. Максимум 900 символов.",
+            K.panel_cancel_keyboard(),
+        )
+        return
+
+    if what == "bc_plus_text":
+        body_text = message.text if message.text is not None else (message.caption or "")
+        if not body_text.strip():
+            await ctx.reply("Текст не может быть пустым.")
+            return
+        if len(body_text) > 900:
+            await ctx.reply("Текст слишком длинный. Максимум 900 символов.")
+            return
+        draft = await state.get_data()
+        photo_file_id = str(draft.get("bc_photo") or "")
+        if not photo_file_id:
+            await state.clear()
+            await ctx.reply("Картинка потерялась. Создай рассылку заново.")
+            return
+        source_entities = message.entities if message.text is not None else message.caption_entities
+        serialized_entities = [
+            entity.model_dump(mode="json", exclude_none=True)
+            for entity in (source_entities or [])
+        ]
+        await state.update_data(
+            adm="bc_plus_ready",
+            bc_text=body_text,
+            bc_entities=serialized_entities,
+        )
+        await ctx.bot.send_photo(
+            chat_id=ctx.user_id,
+            photo=photo_file_id,
+            caption=body_text,
+            caption_entities=source_entities or None,
+            parse_mode=None,
+            reply_markup=K.broadcast_anon_plus_preview_keyboard(),
+        )
+        await ctx.reply(
+            "👆 <b>Предпросмотр готов.</b> Кнопка «Анон Plus» будет добавлена "
+            "автоматически. Нажми «Отправить всем без Анон Plus».",
+            K.panel_cancel_keyboard(),
+        )
         return
 
     if what == "bc_image":
