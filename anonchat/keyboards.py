@@ -716,7 +716,7 @@ def admin_panel_keyboard(
         _button(b, "Выдать / снять очки", callback_data=CB_PANEL_POINTS, icon="stars")
     if "users" in permissions:
         _button(
-            b, "Anon+ по ID", callback_data=CB_PANEL_ANONPLUS,
+            b, "Анон Plus по ID", callback_data=CB_PANEL_ANONPLUS,
             icon="bonus", style="primary",
         )
     if owner:
