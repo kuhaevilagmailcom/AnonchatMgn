@@ -291,20 +291,26 @@ class MiniAppServer:
         row = row or await self.db.get_user(user_id)
         today = await self.db.activity_totals(user_id, 1)
         engagement = await self.db.engagement_state(user_id)
+        plus_active = bool(
+            row and int(row["premium_until"] or 0) > int(time.time())
+        )
         return {
             "online": presence_online_count(),
             "chatting": self.mm.online_pairs() * 2,
             "searching": self.mm.queue_size(),
-            "dialogs": int(row["dialogs"] or 0) if row else 0,
-            "messages": int(row["messages"] or 0) if row else 0,
-            "ratings": int(row["good_ratings"] or 0) if row else 0,
-            "games": int(engagement["games_total"] or 0),
-            "battle_games": int(engagement["battle_games_total"] or 0),
-            "number_games": int(engagement["number_games_total"] or 0),
+            # Расширенные цифры вообще не отдаём бесплатному клиенту.
+            "dialogs": int(row["dialogs"] or 0) if plus_active else 0,
+            "messages": int(row["messages"] or 0) if plus_active else 0,
+            "ratings": int(row["good_ratings"] or 0) if plus_active else 0,
+            "games": int(engagement["games_total"] or 0) if plus_active else 0,
+            "battle_games": int(engagement["battle_games_total"] or 0) if plus_active else 0,
+            "number_games": int(engagement["number_games_total"] or 0) if plus_active else 0,
+            # Серии и дневной квест остаются базовыми функциями.
             "streak": int(engagement["current_streak"] or 0),
             "best_streak": int(engagement["best_streak"] or 0),
             "quest_current": int(today.get("messages", 0)),
             "quest_target": 20,
+            "premium_locked": not plus_active,
         }
 
     def _status_payload(self, user_id: int) -> dict:
