@@ -128,6 +128,15 @@ class Config:
     miniapp_enabled: bool = True
     miniapp_url: str = "https://bot-1789383103-4489-furadev.bothost.tech"
 
+    # Anon+ / payments
+    anon_plus_days: int = 30
+    anon_plus_price_rub: int = 99
+    anon_plus_price_stars: int = 99
+    rollypay_api_base: str = "https://api.rollypay.io"
+    rollypay_terminal_id: str = ""
+    rollypay_api_key: str = ""
+    rollypay_test_mode: bool = False
+
     # limits
     max_message_len: int = 3000
     inchat_rate_limit: int = 120         # сообщений в минуту внутри диалога
@@ -178,6 +187,13 @@ class Config:
             miniapp_url=env(
                 "MINIAPP_URL", cls._default("miniapp_url")
             ).strip().rstrip("/"),
+            anon_plus_days=max(1, int(env("ANON_PLUS_DAYS", str(cls._default("anon_plus_days"))))),
+            anon_plus_price_rub=max(1, int(env("ANON_PLUS_PRICE_RUB", str(cls._default("anon_plus_price_rub"))))),
+            anon_plus_price_stars=max(1, int(env("ANON_PLUS_PRICE_STARS", str(cls._default("anon_plus_price_stars"))))),
+            rollypay_api_base=env("ROLLYPAY_API_BASE", cls._default("rollypay_api_base")).strip().rstrip("/"),
+            rollypay_terminal_id=env("ROLLYPAY_TERMINAL_ID", "").strip(),
+            rollypay_api_key=env("ROLLYPAY_API_KEY", "").strip(),
+            rollypay_test_mode=_bool(env("ROLLYPAY_TEST_MODE", "false")),
             auto_mute_reports=int(env("AUTO_MUTE_REPORTS", str(cls._default("auto_mute_reports")))),
             auto_mute_minutes=int(env("AUTO_MUTE_MINUTES", str(cls._default("auto_mute_minutes")))),
             report_context_retention_days=int(
@@ -198,6 +214,11 @@ class Config:
             xp_good_rating=int(env("XP_GOOD_RATING", str(cls._default("xp_good_rating")))),
             debug=_bool(env("DEBUG", "false")),
         )
+
+    @property
+    def rollypay_enabled(self) -> bool:
+        key = self.rollypay_api_key.strip()
+        return bool(key and key.upper() not in {"CHANGE_ME", "YOUR_TOKEN"})
 
     @property
     def is_admin(self) -> frozenset[int]:
