@@ -197,7 +197,7 @@ if (typeof window === 'undefined') {
     setAll('online',state.stats.online);setAll('chatting',state.stats.chatting);setAll('searching',state.stats.searching);
     setAll('dialogs',state.stats.dialogs);setAll('messages',state.stats.messages);setAll('ratings',state.stats.ratings);setAll('games',state.stats.games);
     setAll('battle-games',state.stats.battle_games);setAll('number-games',state.stats.number_games);setAll('streak',state.stats.streak);
-    setAll('invited',state.referral.invited);setAll('ref-earned',state.referral.earned);setAll('age-display',state.user.age||'—');
+    setAll('invited',state.referral.invited);setAll('ref-earned',state.referral.earned);
     setAll('quest-progress-text',`${state.stats.quest_current}/${state.stats.quest_target}`);
     $$('[data-quest-progress]').forEach(el=>el.style.width=`${Math.min(100,state.stats.quest_current/Math.max(1,state.stats.quest_target)*100)}%`);
     const initial=(state.user.nick||'А').replace(/^./u,m=>m.toUpperCase()).slice(0,1);
@@ -480,7 +480,8 @@ if (typeof window === 'undefined') {
     if(kind==='anon-plus'){await renderAnonPlus(body);return}
     if(kind==='settings'){await settings(body);return}
     if(kind==='feedback'){body.innerHTML=`${panel('Напиши команде','Сообщение уйдёт всем администраторам бота.')}<div class="form-field"><label>Сообщение · до 1000 символов</label><textarea id="feedback" maxlength="1000" placeholder="Что случилось или что можно улучшить?"></textarea></div><div class="modal-actions one"><button class="action accent" id="sendFeedback">Отправить</button></div>`;$('#sendFeedback').onclick=sendFeedback;return}
-    if(kind==='help'){body.innerHTML=panel('Поиск','Банк и пол — предпочтения. Если точного совпадения нет, бот всё равно постарается быстро найти собеседника.')+panel('Диалог','/next — следующий собеседник, /stop — закончить, /game — открыть игры. Личные контакты и ссылки отправлять можно.')+panel('Приватность','Обычные пользователи не видят Telegram ID и username. Для нарушений используй кнопку жалобы в чате.');return}
+    if(kind==='rules'){
+      body.innerHTML=`<section class="rules-card"><h3>Правила АНОН МГН</h3><blockquote><b>1. Уважай собеседника</b><p>Без травли, угроз и оскорблений.</p><b>2. Не распространяй личные данные</b><p>Не отправляй чужие номера, адреса и другую приватную информацию.</p><b>3. Без спама и неподходящего контента</b><p>Не засоряй чат рекламой и материалами 18+.</p><b>4. Анонимность — по умолчанию</b><p>Telegram ID и username не показываются. Anonymous Plus позволяет добровольно показать только выбранный ник.</p><b>5. Нарушения — через жалобу</b><p>Модерация получает только нужный контекст для разбора.</p></blockquote><i>Общайся нормально — и всё будет нормально.</i></section>`;return}
     if(kind==='chat-games'){
       body.innerHTML=`
         <div class="chat-game-picker">
@@ -1219,7 +1220,7 @@ if (typeof window === 'undefined') {
   async function inviteNumbers(range_max){const r=await safe('/api/miniapp/games/numbers/invite',{method:'POST',body:JSON.stringify({range_max})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify();syncChat(false)}}
   async function inviteGeo(rounds){const r=await safe('/api/miniapp/games/geo/invite',{method:'POST',body:JSON.stringify({rounds})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение в GeoGuessr📍 отправлено');notify();syncChat(false)}}
   function bind(){
-    document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить профиль','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','help':'Помощь и правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game){if(game.dataset.game==='words')inviteWords();else openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':game.dataset.game==='geo'?'GeoGuessr📍':'Числа',game.dataset.game==='geo'?'МАГНИТОГОРСК':'ИГРА ВДВОЁМ')}});
+    document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить профиль','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','rules':'Правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game){if(game.dataset.game==='words')inviteWords();else openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':game.dataset.game==='geo'?'GeoGuessr📍':'Числа',game.dataset.game==='geo'?'МАГНИТОГОРСК':'ИГРА ВДВОЁМ')}});
     $$('[data-close-modal]').forEach(b=>b.onclick=closeModal);
     $('#searchToggle').onclick=toggleSearch;
     $$('[data-setting] button').forEach(b=>b.onclick=()=>updateSetting(b.parentElement.dataset.setting,b.dataset.value));
