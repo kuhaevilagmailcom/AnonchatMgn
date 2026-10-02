@@ -82,36 +82,42 @@ def test_config_defaults(monkeypatch=None) -> None:
 
 
 def test_levels_progress() -> None:
-    """Уровни достижимы без сотен тысяч сообщений."""
+    """Новая линейка рангов остаётся достижимой и непрерывной."""
     first = rank_for(0)
-    assert first.index == 1 and first.title == "Новичок"
-    assert first.progress == 0.0 and first.to_next == 25 and first.next_title == "Общительный"
+    assert first.index == 1 and first.title == "Вася"
+    assert first.progress == 0.0 and first.to_next == 20 and first.next_title == "Типок"
 
-    bronze = rank_for(25)
-    assert bronze.title == "Общительный" and bronze.progress == 0.0
-    assert bronze.to_next == 75 and bronze.next_title == "Знакомый"
+    tipok = rank_for(20)
+    assert tipok.title == "Типок" and tipok.progress == 0.0
+    assert tipok.to_next == 30 and tipok.next_title == "Чел"
 
-    mid = rank_for(60)
-    assert mid.title == "Общительный" and 0.4 < mid.progress < 0.6
-    assert len(mid.bar) == 8 and mid.bar.startswith("▰▰▰▰▱")
+    mid = rank_for(35)
+    assert mid.title == "Типок" and 0.45 < mid.progress < 0.55
+    assert len(mid.bar) == 8 and mid.bar.startswith("▰▰▰▰")
 
-    silver = rank_for(100)
-    assert silver.title == "Знакомый"
-    gold = rank_for(350)
-    assert gold.title == "Свой"
-    vip = rank_for(1_000)
-    assert vip.title == "Легенда" and not vip.is_max
-    assert vip.to_next == 1_500 and vip.next_title == "Ветеран"
-    assert rank_for(2_500).title == "Ветеран"
-    assert rank_for(5_000).title == "Элита"
-    titan = rank_for(10_000)
-    assert titan.title == "Титан" and titan.is_max and titan.to_next is None
+    assert rank_for(50).title == "Чел"
+    assert rank_for(100).title == "Бро"
+    assert rank_for(180).title == "Братик"
+    assert rank_for(300).title == "Свой"
+    assert rank_for(500).title == "Родной"
+    assert rank_for(750).title == "Красавчик"
+    assert rank_for(1_000).title == "Мужик"
+    assert rank_for(1_400).title == "Боссик"
+    assert rank_for(1_900).title == "Авторитетик"
+    assert rank_for(2_500).title == "Легендарочка"
+    assert rank_for(3_500).title == "Батя"
+    assert rank_for(5_000).title == "Дед"
+    assert rank_for(7_500).title == "Главный"
+    assert rank_for(10_000).title == "Легенда"
+    assert rank_for(15_000).title == "Святой"
+
+    final = rank_for(25_000)
+    assert final.title == "Бессмертный" and final.is_max and final.to_next is None
     assert rank_for(99_999_999).index == len(RANKS)
 
-    # человекочитаемые числа с неразрывными пробелами
     assert rank_for(15_000).pretty(12345) == "12 345"
-    assert "1 000" in rank_for(1_000).label
-    assert rank_for(0).name.endswith("Новичок")
+    assert "1 400" in rank_for(1_400).label
+    assert rank_for(0).name.endswith("Вася")
 
 
 # --------------------------------------------------------------------------------- matching
@@ -321,8 +327,8 @@ def test_database() -> None:
         assert row["district"] == "Правобережный"
 
         assert await db.award_xp(10, 70) == 70
-        assert rank_for(70).title == "Общительный"
-        assert rank_for(1_000).title == "Легенда"
+        assert rank_for(70).title == "Чел"
+        assert rank_for(1_000).title == "Мужик"
 
         await db.ensure_user(11, "friend", "Друг")
         assert await db.award_referral(11, 10, 50) is True
