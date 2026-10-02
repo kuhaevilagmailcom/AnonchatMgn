@@ -69,7 +69,9 @@ async def support_amount(message: Message, ctx: Ctx, state: FSMContext) -> None:
     )
 
 
-def _valid_payload(query: PreCheckoutQuery, cfg: Config) -> bool:
+def _valid_payload(
+    query: PreCheckoutQuery, cfg: Config | None = None
+) -> bool:
     parts = (query.invoice_payload or "").split(":")
     if not parts:
         return False
@@ -89,6 +91,8 @@ def _valid_payload(query: PreCheckoutQuery, cfg: Config) -> bool:
         )
 
     if parts[0] == "anonplus":
+        if cfg is None:
+            return False
         if len(parts) != 5 or not parts[4]:
             return False
         try:
