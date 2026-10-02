@@ -2149,17 +2149,9 @@ class Database:
         self._top_cache.clear()
 
     async def adjust_anon_plus(self, user_id: int, days: int) -> int:
+        """Совместимый админ-метод: любое положительное значение включает Plus навсегда, 0/минус выключает."""
         await self._ensure_row(int(user_id))
-        row = await self.get_user(int(user_id))
-        current = int(row["premium_until"] or 0) if row else 0
-        if int(days) == 0:
-            premium_until = 0
-        elif int(days) > 0:
-            premium_until = max(now(), current) + int(days) * 86_400
-        else:
-            premium_until = max(0, current + int(days) * 86_400)
-            if premium_until <= now():
-                premium_until = 0
+        premium_until = ANON_PLUS_LIFETIME_UNTIL if int(days) > 0 else 0
         await self.db.execute(
             "UPDATE users SET premium_until=? WHERE user_id=?",
             (premium_until, int(user_id)),
