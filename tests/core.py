@@ -1146,7 +1146,8 @@ def test_keyboard_styles_and_icons() -> None:
     assert "Поддержать проект" not in texts_of(K.menu_keyboard("free"))
     assert "Поддержать проект" in texts_of(K.settings_keyboard(False, "", "Ник"))
     assert "Обратная связь" not in texts_of(K.settings_keyboard(False, "", "Ник"))
-    assert "Обратная связь" in texts_of(K.profile_keyboard())
+    assert "Обратная связь" not in texts_of(K.profile_keyboard())
+    assert "Обратная связь" in texts_of(K.menu_keyboard("free"))
     assert "Помощь" not in texts_of(K.menu_keyboard("free"))
 
 
