@@ -630,18 +630,68 @@ body[data-theme="mono"]{--surface:#0d0d0d;--surface-2:#171717;--surface-3:#222;-
 .top-me strong{font-size:22px;color:#e78bc1}
 .top-me b{font-size:12px}
 
+.event-list{
+  display:grid;
+  grid-auto-rows:max-content;
+  gap:9px;
+  align-content:start;
+}
 .event{
-  width:100%;border:1px solid #1f1b1e;border-radius:14px;background:#0d0b0d;
-  padding:11px;display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:10px;align-items:center;text-align:left
+  width:100%;
+  min-width:0;
+  min-height:64px;
+  height:auto;
+  margin:0;
+  border:1px solid #1f1b1e;
+  border-radius:14px;
+  background:#0d0b0d;
+  padding:11px 12px;
+  display:grid;
+  grid-template-columns:36px minmax(0,1fr) 15px;
+  gap:10px;
+  align-items:start;
+  text-align:left;
+  overflow:visible;
 }
 .event.unread{background:#171016;border-color:#35232f}
-.event>span{width:36px;height:36px;border-radius:11px;background:#181418;display:grid;place-items:center;color:#c77aa9}
+.event>span{
+  width:36px;height:36px;min-width:36px;border-radius:11px;background:#181418;
+  display:grid;place-items:center;color:#c77aa9;align-self:start
+}
 .event>span svg{width:18px;height:18px}
-.event>div{display:grid;gap:2px}
-.event strong{font-size:11px}
-.event p{margin:0;font-size:9px;color:#8b8388;line-height:1.35}
-.event small{font-size:8px;color:#5f595d}
-.event>svg{width:15px;height:15px;color:#5d565b}
+.event>div{
+  min-width:0;
+  display:grid;
+  grid-auto-rows:max-content;
+  gap:4px;
+  align-content:start;
+}
+.event strong,
+.event p,
+.event small{
+  display:block;
+  min-width:0;
+  max-width:100%;
+  white-space:normal;
+  overflow:visible;
+  text-overflow:clip;
+  overflow-wrap:anywhere;
+  word-break:normal;
+}
+.event strong{font-size:12px;line-height:1.35}
+.event p{margin:0;font-size:10px;color:#8b8388;line-height:1.45}
+.event small{font-size:9px;line-height:1.25;color:#5f595d}
+.event>svg{
+  width:15px;height:15px;color:#5d565b;align-self:center;justify-self:end
+}
+.event:not(:has(>svg)){grid-template-columns:36px minmax(0,1fr)}
+@media(max-width:360px){
+  .event{padding:10px;grid-template-columns:32px minmax(0,1fr) 14px;gap:8px}
+  .event:not(:has(>svg)){grid-template-columns:32px minmax(0,1fr)}
+  .event>span{width:32px;height:32px;min-width:32px}
+  .event strong{font-size:11px}
+  .event p{font-size:9px;line-height:1.45}
+}
 
 @media(max-width:360px){
   .achievement-grid{grid-template-columns:1fr}
@@ -749,11 +799,15 @@ html,body{max-width:100%;overflow-x:hidden}
 .active-game>header>span{min-width:0}
 .active-game-body{
   width:100%;
-  max-height:min(52dvh,420px);
+  min-width:0;
+  min-height:0;
+  max-height:min(58dvh,460px);
   overflow-y:auto;
   overflow-x:hidden;
   overscroll-behavior:contain;
   scrollbar-width:none;
+  grid-auto-rows:max-content;
+  align-content:start;
 }
 .active-game-body::-webkit-scrollbar{display:none}
 .geo-active>*{min-width:0;max-width:100%}
@@ -785,17 +839,17 @@ html,body{max-width:100%;overflow-x:hidden}
 .geo-round-choice{grid-template-columns:repeat(3,minmax(0,1fr))}
 .geo-round-choice button{min-width:0;width:100%;padding-left:4px;padding-right:4px}
 @media(max-width:370px){
-  .active-game-body{max-height:46dvh;padding:10px;gap:8px}
-  .geo-game-photo{max-height:145px}
+  .active-game-body{max-height:54dvh;padding:10px;gap:9px}
+  .geo-game-photo{max-height:150px}
   .geo-instructions{padding:10px}
-  .geo-instructions strong{font-size:12px}
-  .geo-instructions p{font-size:11px}
-  .geo-warning{font-size:10px}
+  .geo-instructions strong{font-size:12px;line-height:1.35}
+  .geo-instructions p{font-size:11px;line-height:1.5}
+  .geo-warning{font-size:10px;line-height:1.45}
   .geo-round-choice button small{font-size:9px}
 }
 @media(max-height:650px){
-  .active-game-body{max-height:42dvh}
-  .geo-game-photo{max-height:130px}
+  .active-game-body{max-height:50dvh}
+  .geo-game-photo{max-height:135px}
 }
 
 /* ------------------------------ Anon+ */
@@ -823,3 +877,72 @@ body[data-theme="mono"] .anon-plus-mark{color:#000}
 .premium-blur-block{filter:blur(7px);opacity:.48;pointer-events:none;user-select:none}
 .premium-overlay-button{position:sticky;bottom:16px;width:100%;min-height:50px;margin-top:-64px;border-radius:13px;background:var(--accent);color:#fff;font-weight:750}
 body[data-theme="mono"] .premium-overlay-button{color:#000}
+
+/* notification + GeoGuessr overlap fixes */
+.page[data-page="events"]{min-width:0}
+.page[data-page="events"] .filter{position:relative;z-index:1}
+.page[data-page="events"] .event-list{position:relative;z-index:0;min-width:0}
+.geo-intro,.geo-rules,.geo-safety,.geo-round-choice,
+.geo-active,.geo-live-head,.geo-instructions,.geo-warning,.geo-stars-hint{
+  position:relative;
+  height:auto;
+}
+.geo-intro{display:block}
+.geo-intro>p{font-size:13px;line-height:1.55}
+.geo-rules{
+  grid-auto-rows:max-content;
+  align-content:start;
+}
+.geo-rules span{
+  display:block;
+  min-height:0;
+  height:auto;
+  line-height:1.45;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+.geo-safety{
+  display:block;
+  min-height:0;
+  height:auto;
+  line-height:1.55;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+.geo-round-choice{
+  align-items:stretch;
+  grid-auto-rows:minmax(68px,auto);
+}
+.geo-round-choice button{
+  min-height:68px;
+  height:auto;
+  padding:10px 6px;
+  line-height:1.2;
+}
+.geo-active{
+  grid-auto-rows:max-content;
+  align-content:start;
+}
+.geo-live-head{
+  min-height:44px;
+  flex-wrap:wrap;
+  row-gap:4px;
+}
+.geo-instructions,
+.geo-warning,
+.geo-stars-hint,
+.geo-result,
+.game-wait,
+.game-finished{
+  min-height:0;
+  height:auto;
+  line-height:1.45;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+.geo-instructions strong{line-height:1.4}
+.geo-instructions p{line-height:1.55}
+@media(max-width:340px){
+  .geo-round-choice{grid-template-columns:1fr}
+  .geo-round-choice button{min-height:54px}
+}
