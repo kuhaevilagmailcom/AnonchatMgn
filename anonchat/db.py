@@ -60,6 +60,9 @@ CREATE TABLE IF NOT EXISTS users (
     ban_reason       TEXT    NOT NULL DEFAULT '',
     mute_until       INTEGER NOT NULL DEFAULT 0,
     premium_until    INTEGER NOT NULL DEFAULT 0,
+    anon_plus_theme   TEXT    NOT NULL DEFAULT 'pink',
+    anon_plus_emoji   TEXT    NOT NULL DEFAULT '',
+    anon_plus_show_nick INTEGER NOT NULL DEFAULT 0,
     support_stars    INTEGER NOT NULL DEFAULT 0,
     profile_deleted  INTEGER NOT NULL DEFAULT 0
 );
@@ -362,6 +365,8 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("looking_for", "ALTER TABLE users ADD COLUMN looking_for TEXT NOT NULL DEFAULT ''"),
     ("premium_until", "ALTER TABLE users ADD COLUMN premium_until INTEGER NOT NULL DEFAULT 0"),
     ("anon_plus_theme", "ALTER TABLE users ADD COLUMN anon_plus_theme TEXT NOT NULL DEFAULT 'pink'"),
+    ("anon_plus_emoji", "ALTER TABLE users ADD COLUMN anon_plus_emoji TEXT NOT NULL DEFAULT ''"),
+    ("anon_plus_show_nick", "ALTER TABLE users ADD COLUMN anon_plus_show_nick INTEGER NOT NULL DEFAULT 0"),
     ("support_stars", "ALTER TABLE users ADD COLUMN support_stars INTEGER NOT NULL DEFAULT 0"),
     ("profile_deleted", "ALTER TABLE users ADD COLUMN profile_deleted INTEGER NOT NULL DEFAULT 0"),
 )
@@ -2101,6 +2106,27 @@ class Database:
         )
         await self.db.commit()
 
+    async def set_anon_plus_identity(
+        self, user_id: int, *, emoji: str | None = None,
+        show_nick: bool | None = None,
+    ) -> None:
+        sets: list[str] = []
+        values: list[Any] = []
+        if emoji is not None:
+            sets.append("anon_plus_emoji=?")
+            values.append(str(emoji)[:24])
+        if show_nick is not None:
+            sets.append("anon_plus_show_nick=?")
+            values.append(1 if show_nick else 0)
+        if not sets:
+            return
+        values.append(int(user_id))
+        await self.db.execute(
+            f"UPDATE users SET {', '.join(sets)} WHERE user_id=?", values
+        )
+        await self.db.commit()
+        self._top_cache.clear()
+
     async def adjust_anon_plus(self, user_id: int, days: int) -> int:
         await self._ensure_row(int(user_id))
         row = await self.get_user(int(user_id))
@@ -2639,6 +2665,7 @@ class Database:
             start = referral_day_start() - (max(1, days) - 1) * 86_400
             rows = await self._fetchall(
                 """SELECT u.user_id, u.nickname, u.support_stars,
+                          u.premium_until, u.anon_plus_emoji,
                           SUM(a.xp_earned) AS xp,
                           SUM(a.dialogs) AS dialogs,
                           SUM(a.messages) AS messages
@@ -2989,7 +3016,8 @@ class Database:
     async def top(self, limit: int = 10) -> list[aiosqlite.Row]:
         """Активность с упором на диалоги и оценки; спам в одном чате быстро упирается в лимит."""
         return await self._fetchall(
-            """SELECT user_id, nickname, messages, xp, dialogs, good_ratings, support_stars
+            """SELECT user_id, nickname, messages, xp, dialogs, good_ratings,
+                      support_stars, premium_until, anon_plus_emoji
                FROM users WHERE banned = 0
                ORDER BY xp DESC, dialogs DESC, messages DESC LIMIT ?""",
             (limit,),
@@ -3314,7 +3342,8 @@ class Database:
                 """UPDATE users SET username=NULL, first_name='Удалённый пользователь', nickname='',
                    nick_key='', age=0, xp=0, messages=0, dialogs=0, good_ratings=0,
                    bad_ratings=0, reports_sent=0, district='', gender='', looking_for='', same_district=0,
-                   about='', last_seen=0, premium_until=0, support_stars=0,
+                   about='', last_seen=0, premium_until=0, anon_plus_theme='pink',
+                   anon_plus_emoji='', anon_plus_show_nick=0, support_stars=0,
                    profile_deleted=1 WHERE user_id=?""",
                 (user_id,),
             )
