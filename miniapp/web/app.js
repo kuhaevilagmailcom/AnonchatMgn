@@ -205,7 +205,7 @@ if (typeof window === 'undefined') {
     $$('[data-avatar]').forEach(el=>{if(state.user.photo_url){el.src=state.user.photo_url;el.hidden=false}else{el.removeAttribute('src');el.hidden=true}});
     $$('[data-flame]').forEach((el,i)=>el.classList.toggle('on',i<Math.min(7,state.stats.streak)));
     $$('[data-setting]').forEach(group=>$$('button',group).forEach(b=>b.classList.toggle('active',String(b.dataset.value)===String(state.user[group.dataset.setting]||''))));
-    $('[data-profile-emoji]').forEach(el=>{const glyph=state.anonPlus?.active?(state.anonPlus.emoji_glyph||''):'';el.textContent=glyph;el.hidden=!glyph});
+    $$('[data-profile-emoji]').forEach(el=>{const glyph=state.anonPlus?.active?(state.anonPlus.emoji_glyph||''):'';el.textContent=glyph;el.hidden=!glyph});
     const premiumStats=$('#anonPlusStats');if(premiumStats)premiumStats.classList.toggle('locked',!state.anonPlus?.active);
     applyTheme();renderSearch();renderEvents();
   }
@@ -581,7 +581,7 @@ if (typeof window === 'undefined') {
     `;
     $('#anonPlusStars').onclick=buyAnonPlusStars;
     if($('#anonPlusSbp')&&!$('#anonPlusSbp').disabled)$('#anonPlusSbp').onclick=buyAnonPlusSbp;
-    $('[data-plus-theme]',body).forEach(b=>b.onclick=()=>setAnonPlusTheme(b.dataset.plusTheme));
+    $$('[data-plus-theme]',body).forEach(b=>b.onclick=()=>setAnonPlusTheme(b.dataset.plusTheme));
     if($('#anonPlusShowNick'))$('#anonPlusShowNick').onclick=toggleAnonPlusShowNick;
   }
   async function setAnonPlusTheme(theme){
