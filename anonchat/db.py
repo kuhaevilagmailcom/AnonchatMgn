@@ -3000,12 +3000,23 @@ class Database:
         return [int(r["user_id"]) for r in rows]
 
 
-    async def broadcast_ids(self, limit: int = 100000) -> list[int]:
-        """Все незаблокированные пользователи для админской массовой рассылки."""
-        rows = await self._fetchall(
-            "SELECT user_id FROM users WHERE banned = 0 ORDER BY last_seen DESC LIMIT ?",
-            (max(1, min(int(limit), 100000)),),
-        )
+    async def broadcast_ids(
+        self, limit: int = 100000, *, exclude_anon_plus: bool = False
+    ) -> list[int]:
+        """Получатели массовой рассылки. Рекламу можно исключить для Анон Plus."""
+        limit = max(1, min(int(limit), 100000))
+        if exclude_anon_plus:
+            rows = await self._fetchall(
+                """SELECT user_id FROM users
+                   WHERE banned = 0 AND premium_until <= ?
+                   ORDER BY last_seen DESC LIMIT ?""",
+                (now(), limit),
+            )
+        else:
+            rows = await self._fetchall(
+                "SELECT user_id FROM users WHERE banned = 0 ORDER BY last_seen DESC LIMIT ?",
+                (limit,),
+            )
         return [int(r["user_id"]) for r in rows]
 
     async def stats(self) -> dict[str, Any]:
