@@ -18,6 +18,7 @@ from ..actions import Ctx, show_profile
 from ..config import Config
 from ..db import Database
 from ..payments import RollyPayError, create_payment, get_payment
+from ..pack import PROFILE_BADGES
 
 router = Router(name="support")
 
@@ -49,6 +50,8 @@ async def show_anon_plus(ctx: Ctx, *, edit: bool = True) -> None:
           "Длительность разговора, сообщения, игры и заработанные звёзды.\n\n"
           "<b>4. Отображение ника</b>\n"
           "Можно добровольно включить показ своего ника собеседнику. По умолчанию он скрыт.\n\n"
+          "<b>5. Без рекламы</b>\n"
+          "Рекламные рассылки в боте не будут приходить.\n\n"
         + f"<b>Навсегда · {ctx.cfg.anon_plus_price_rub} ₽ или "
           f"{ctx.cfg.anon_plus_price_stars} ⭐</b>"
     )
@@ -83,6 +86,51 @@ async def cb_anon_plus_show_nick(
     ctx.me = await db.get_user(ctx.user_id)
     await ctx.ack("Ник будет виден" if enabled else "Ник снова скрыт")
     await show_profile(ctx)
+
+
+@router.callback_query(F.data == K.CB_ANONPLUS_EMOJI)
+async def cb_anon_plus_emoji(
+    event: CallbackQuery, ctx: Ctx, db: Database
+) -> None:
+    row = await db.get_user(ctx.user_id)
+    if not _plus_active(row):
+        await ctx.ack("Эмодзи доступен только с Анон Plus", alert=True)
+        await show_anon_plus(ctx)
+        return
+    current = str(row["anon_plus_emoji"] or "").strip().lower()
+    if not current and (
+        int(row["support_stars"] or 0) > 0 or int(row["support_rub"] or 0) > 0
+    ):
+        current = "diamond"
+    await ctx.ack()
+    await ctx.edit(
+        "✨ <b>Эмодзи рядом с ником</b>\n\n"
+        "Выбери один эмодзи. Новый вариант заменит предыдущий — второй значок не добавится.",
+        K.anon_plus_emoji_keyboard(current),
+    )
+
+
+@router.callback_query(F.data.startswith(K.CB_ANONPLUS_EMOJI_SET_PREFIX))
+async def cb_anon_plus_emoji_set(
+    event: CallbackQuery, ctx: Ctx, db: Database
+) -> None:
+    row = await db.get_user(ctx.user_id)
+    if not _plus_active(row):
+        await ctx.ack("Эмодзи доступен только с Анон Plus", alert=True)
+        await show_anon_plus(ctx)
+        return
+    key = (event.data or "")[len(K.CB_ANONPLUS_EMOJI_SET_PREFIX):].strip().lower()
+    if key not in PROFILE_BADGES:
+        await ctx.ack("Неизвестный эмодзи", alert=True)
+        return
+    await db.set_anon_plus_identity(ctx.user_id, emoji=key)
+    ctx.me = await db.get_user(ctx.user_id)
+    await ctx.ack(f"Выбран {PROFILE_BADGES[key]}")
+    await ctx.edit(
+        "✨ <b>Эмодзи рядом с ником</b>\n\n"
+        "Выбранный эмодзи уже заменил предыдущий.",
+        K.anon_plus_emoji_keyboard(key),
+    )
 
 
 @router.callback_query(F.data == K.CB_ANONPLUS_STARS)
