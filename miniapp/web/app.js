@@ -605,7 +605,7 @@ if (typeof window === 'undefined') {
     if($('#anonPlusStars'))$('#anonPlusStars').onclick=buyAnonPlusStars;
     if($('#anonPlusSbp')&&!$('#anonPlusSbp').disabled)$('#anonPlusSbp').onclick=buyAnonPlusSbp;
     if($('#anonPlusBenefitsToggle'))$('#anonPlusBenefitsToggle').onclick=()=>{anonPlusBenefitsOpen=!anonPlusBenefitsOpen;renderAnonPlus(body);haptic()};
-    $('[data-plus-theme]',body).forEach(b=>b.onclick=()=>setAnonPlusTheme(b.dataset.plusTheme));
+    $$('[data-plus-theme]',body).forEach(b=>b.onclick=()=>setAnonPlusTheme(b.dataset.plusTheme));
     if($('#anonPlusShowNick'))$('#anonPlusShowNick').onclick=toggleAnonPlusShowNick;
   }
   async function setAnonPlusTheme(theme){
