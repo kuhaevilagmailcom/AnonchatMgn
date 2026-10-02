@@ -597,6 +597,38 @@ async def show_rules(ctx: Ctx) -> None:
     await ctx.render_screen("06_rules.png", texts.RULES, back_menu_keyboard())
 
 
+def _anon_plus_active(row) -> bool:
+    return bool(row and int(row["premium_until"] or 0) > int(time.time()))
+
+
+def _anon_plus_badge(pack: EmojiPack | None, row) -> str:
+    if not _anon_plus_active(row):
+        return ""
+    key = str(row["anon_plus_emoji"] or "").strip()
+    return pack.profile_badge(key) if pack and key else ""
+
+
+async def _shared_identity(
+    db: Database | None, pack: EmojiPack | None, user_id: int
+) -> str:
+    if db is None:
+        return ""
+    row = await db.get_user(int(user_id))
+    if not _anon_plus_active(row) or not bool(row["anon_plus_show_nick"]):
+        return ""
+    nick = nicklib.display(
+        row["nickname"], int(user_id), int(row["support_stars"] or 0)
+    )
+    badge = _anon_plus_badge(pack, row)
+    return f"<b>{texts.esc(nick)}</b>{(' ' + badge) if badge else ''}"
+
+
+def _match_text(identity: str) -> str:
+    if not identity:
+        return texts.MATCHED
+    return f"{texts.MATCHED}\n\n👤 Собеседник: {identity}"
+
+
 async def show_top(ctx: Ctx, period: str = "week") -> None:
     if await ctx.dialog_locked():
         return
@@ -613,8 +645,10 @@ async def show_top(ctx: Ctx, period: str = "week") -> None:
     else:
         for i, row in enumerate(rows, start=1):
             place = ctx.pack.top_flag(i) or f"<code>{i}</code>"
+            badge = _anon_plus_badge(ctx.pack, row)
             lines.append(
                 f"{place} <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id']), row['support_stars']))}</b>"
+                f"{(' ' + badge) if badge else ''}"
                 f" · <b>{int(row['xp'] or 0)} ⭐</b>"
             )
     lines += ["", "<i>Ники участники придумывают сами.</i>"]
@@ -714,8 +748,9 @@ async def show_profile(ctx: Ctx) -> None:
     invited, referral_xp = await ctx.db.referral_stats(ctx.user_id)
     messages = int(me["messages"])
     rank = rank_for(messages)
+    badge = _anon_plus_badge(ctx.pack, me)
     lines = [
-        f"<b>{texts.esc(ctx.nick)}</b>",
+        f"<b>{texts.esc(ctx.nick)}</b>{(' ' + badge) if badge else ''}",
         f"{rank.emoji} {texts.esc(rank.title)}",
         "",
         f"Очки: <b>{int(me['xp'])} ⭐</b>",
@@ -758,6 +793,8 @@ async def show_profile(ctx: Ctx) -> None:
         profile_keyboard(
             subscription_claimed=subscription_claimed,
             subscription_reward=ctx.cfg.subscription_reward,
+            anon_plus_active=_anon_plus_active(me),
+            anon_plus_show_nick=bool(me["anon_plus_show_nick"]),
         ),
     )
 
@@ -791,15 +828,19 @@ async def set_nick(ctx: Ctx, raw: str) -> tuple[bool, str]:
 
 # --------------------------------------------------------------------- пары
 async def announce_pair(ctx: Ctx, user_id: int, partner_id: int) -> bool:
-    """Сообщаем о найденной паре без ника, очков и других идентификаторов собеседника."""
+    """Сообщаем о паре; ник виден только если владелец сам включил Anonymous Plus-опцию."""
     found_kb = chat_keyboard()
+    identity_user = await _shared_identity(ctx.db, ctx.pack, user_id)
+    identity_partner = await _shared_identity(ctx.db, ctx.pack, partner_id)
     result = await send_screen_to(
-        ctx.bot, partner_id, "03_found.png", texts.MATCHED, found_kb, ctx.pack, ctx.db
+        ctx.bot, partner_id, "03_found.png",
+        _match_text(identity_user), found_kb, ctx.pack, ctx.db
     )
     if result is DeliveryResult.UNAVAILABLE:
         return False
     own_result = await send_screen_to(
-        ctx.bot, user_id, "03_found.png", texts.MATCHED, found_kb, ctx.pack, ctx.db
+        ctx.bot, user_id, "03_found.png",
+        _match_text(identity_partner), found_kb, ctx.pack, ctx.db
     )
     if own_result is DeliveryResult.UNAVAILABLE:
         ctx.mm.forget(user_id)
@@ -824,19 +865,21 @@ async def announce_pairs(
     pack: EmojiPack | None = None,
     db: Database | None = None,
 ) -> int:
-    """Разослать «собеседник найден» без раскрытия публичного ника внутри чата."""
+    """Разослать «собеседник найден»; ник раскрывается только по добровольной Plus-настройке."""
     kb = menu_keyboard()
     made = 0
     for a, b in pairs:
+        identity_a = await _shared_identity(db, pack, a)
+        identity_b = await _shared_identity(db, pack, b)
         result_b = await send_screen_to(
-            bot, b, "03_found.png", texts.MATCHED, chat_keyboard(), pack, db,
+            bot, b, "03_found.png", _match_text(identity_a), chat_keyboard(), pack, db,
         )
         if result_b is DeliveryResult.UNAVAILABLE:
             mm.forget(b)
             await send_to(bot, a, texts.PARTNER_LEFT, kb, pack)
             continue
         result_a = await send_screen_to(
-            bot, a, "03_found.png", texts.MATCHED, chat_keyboard(), pack, db,
+            bot, a, "03_found.png", _match_text(identity_b), chat_keyboard(), pack, db,
         )
         if result_a is DeliveryResult.UNAVAILABLE:
             mm.forget(a)
