@@ -59,6 +59,7 @@ if (typeof window === 'undefined') {
   let realtime = null;
   let realtimeConnected = false;
   let resultShownFor = 0;
+  let anonPlusBenefitsOpen = false;
   const chat = {latest:0,startedAt:0,sent:0,received:0,timer:null,geoTimer:null,seen:new Set(),stickersLoaded:false,recording:false,recorder:null,stream:null,chunks:[],recordTimer:null,mediaCache:new Map(),game:null,gameHoldUntil:0,reply:null};
   const CHAT_EMOJIS = ['😀','😃','😄','😁','😂','🤣','🥹','😊','🙂','😉','😍','😘','😎','🤨','😐','😴','😭','😡','🤬','🥰','🤍','❤️','🩷','🔥','⭐','✨','💀','🤝','👍','👎','🙏','💬','👀','🤡','😈','💯','🎉','🥳','😏','🙃','😌','🤔','😳','🫠','😅','🤝','💋','🫶'];
   const svg = n => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[n] || paths['circle-help']}</svg>`;
@@ -356,7 +357,7 @@ if (typeof window === 'undefined') {
     if(page==='chat'){syncChat(true);startChatSync()}else stopChatSync();
     try{if(tgAtLeast('6.1'))page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}
   }
-  function openModal(kind,title,eyebrow='АНОН МГН'){$('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML='<div class="loading"><i class="spinner"></i>Загрузка…</div>';$('#modal').hidden=false;document.body.style.overflow='hidden';state.modal=kind;try{if(tgAtLeast('6.1'))tg.BackButton.show()}catch(_){};haptic();renderModal(kind)}
+  function openModal(kind,title,eyebrow='АНОН МГН'){if(kind==='anon-plus')anonPlusBenefitsOpen=false;$('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML='<div class="loading"><i class="spinner"></i>Загрузка…</div>';$('#modal').hidden=false;document.body.style.overflow='hidden';state.modal=kind;try{if(tgAtLeast('6.1'))tg.BackButton.show()}catch(_){};haptic();renderModal(kind)}
   function closeModal(){$('#modal').hidden=true;document.body.style.overflow='';state.modal=null;try{if(tgAtLeast('6.1'))state.page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}}
   function panel(title,text){return `<section class="panel"><h3>${title}</h3><p>${text}</p></section>`}
   async function loadHomeQuest(){
@@ -575,24 +576,36 @@ if (typeof window === 'undefined') {
   async function renderAnonPlus(body){
     const p=state.anonPlus||{};
     body.innerHTML=`
-      <section class="anon-plus-hero">
+      <section class="anon-plus-hero compact">
         <span class="anon-plus-mark">💎</span>
-        <div><small>АНОН МГН</small><h3>Анон Plus</h3><p>${p.active?'<b>Активирован навсегда</b>':'Дополнительные функции профиля и расширенная статистика.'}</p></div>
+        <div><small>АНОН МГН</small><h3>Анон Plus</h3><p>${p.active?'<b>Активирован навсегда</b>':'Один раз — и навсегда.'}</p></div>
       </section>
-      <div class="anon-plus-features">
+
+      <div class="anon-plus-price compact">
+        <span><small>Доступ</small><strong>Навсегда</strong></span>
+        <b>${p.price_stars||25} ★ <i>или</i> ${p.price_rub||50} ₽</b>
+      </div>
+
+      ${p.active?'':`<div class="payment-grid compact"><button class="action accent" id="anonPlusStars">Купить за ${p.price_stars||25} ★</button><button class="action" id="anonPlusSbp" ${p.sbp_enabled?'':'disabled'}>${p.sbp_enabled?`Оплатить ${p.price_rub||50} ₽ по СБП`:'СБП недоступна'}</button></div>`}
+
+      <button class="anon-plus-benefits-toggle ${anonPlusBenefitsOpen?'open':''}" id="anonPlusBenefitsToggle" type="button" aria-expanded="${anonPlusBenefitsOpen?'true':'false'}">
+        <span><strong>Что входит в Анон Plus</strong><small>${anonPlusBenefitsOpen?'Нажми, чтобы свернуть':'Нажми, чтобы посмотреть преимущества'}</small></span>
+        <i>${svg('chevron-right')}</i>
+      </button>
+      <div class="anon-plus-features ${anonPlusBenefitsOpen?'open':''}">
         <article><b>Темы Mini App</b><span>Меняй оформление приложения под себя.</span></article>
         <article><b>Расширенная статистика</b><span>Активность за сегодня и за всё время: сообщения, диалоги, игры и оценки.</span></article>
         <article><b>Статистика после диалога</b><span>Длительность разговора, сообщения, игры и заработанные звёзды.</span></article>
         <article><b>Отображение ника</b><span>По желанию другие пользователи в диалоге увидят ник, указанный в профиле.</span></article>
         <article><b>Без рекламы</b><span>Рекламные рассылки в боте не будут приходить.</span></article>
       </div>
-      <div class="anon-plus-price"><strong>Навсегда</strong><span>${p.price_rub||50} ₽ · ${p.price_stars||25} ★</span></div>
-      ${p.active?'':`<div class="payment-grid"><button class="action accent" id="anonPlusStars">Купить за ${p.price_stars||25} ★</button><button class="action" id="anonPlusSbp" ${p.sbp_enabled?'':'disabled'}>${p.sbp_enabled?`Оплатить ${p.price_rub||50} ₽ по СБП`:'СБП не настроена'}</button></div>`}
+
       ${p.active?`<div class="setting"><div><strong>Тема</strong><small>применяется сразу</small></div><div class="theme-picker">${[['pink','Розовая'],['blue','Синяя'],['violet','Фиолетовая'],['green','Зелёная'],['orange','Оранжевая'],['mono','Ч/Б']].map(([v,t])=>`<button data-plus-theme="${v}" class="${(p.theme||'pink')===v?'active':''}">${t}</button>`).join('')}</div></div><button class="anon-plus-identity-toggle ${p.show_nick?'active':''}" id="anonPlusShowNick"><span><strong>Показывать мой ник в диалогах</strong><small>${p.show_nick?'Собеседник видит твой ник':'Ник остаётся скрытым'}</small></span><b>${p.show_nick?'ВКЛ':'ВЫКЛ'}</b></button>`:''}
     `;
     if($('#anonPlusStars'))$('#anonPlusStars').onclick=buyAnonPlusStars;
     if($('#anonPlusSbp')&&!$('#anonPlusSbp').disabled)$('#anonPlusSbp').onclick=buyAnonPlusSbp;
-    $$('[data-plus-theme]',body).forEach(b=>b.onclick=()=>setAnonPlusTheme(b.dataset.plusTheme));
+    if($('#anonPlusBenefitsToggle'))$('#anonPlusBenefitsToggle').onclick=()=>{anonPlusBenefitsOpen=!anonPlusBenefitsOpen;renderAnonPlus(body);haptic()};
+    $('[data-plus-theme]',body).forEach(b=>b.onclick=()=>setAnonPlusTheme(b.dataset.plusTheme));
     if($('#anonPlusShowNick'))$('#anonPlusShowNick').onclick=toggleAnonPlusShowNick;
   }
   async function setAnonPlusTheme(theme){
@@ -739,7 +752,7 @@ if (typeof window === 'undefined') {
   function renderGameInvite(event,list){
     const data=event.data||{},key=gameKey(data);
     const card=document.createElement('div');card.className=`game-invite ${event.mine?'mine':''}`;card.dataset.gameKey=key;
-    const icon=document.createElement('div');icon.className='game-invite-icon';icon.textContent=(event.text||'🎮').split(' ')[0]||'🎮';
+    const icon=document.createElement('div');icon.className='game-invite-icon';icon.textContent=({geo:'📍',battle:'⚔️',numbers:'🔢',words:'🗣️'}[String(data.game_type||'')]||'🎮');
     const copy=document.createElement('div');copy.className='game-invite-copy';
     const title=document.createElement('strong');title.textContent=(event.text||'Игра').replace(/^[^\p{L}\p{N}]+/u,'').trim()||'Игра';
     const sub=document.createElement('small');sub.textContent=data.subtitle||'Игра с собеседником';
