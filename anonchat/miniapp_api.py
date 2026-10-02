@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import io
 import html
@@ -12,6 +13,7 @@ import os
 import random
 import secrets
 import time
+from decimal import Decimal, InvalidOperation
 from collections import defaultdict, deque
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit
@@ -37,6 +39,7 @@ from .runtime_state import online_count as presence_online_count
 from .runtime_state import touch as presence_touch
 from .safety import contains_contact
 from .monitoring import enqueue_chat_monitor_sent
+from .payments import RollyPayError, create_payment, get_payment
 from .miniapp_features import (
     REPORT_REASONS,
     achievement_items,
@@ -51,6 +54,9 @@ from .miniapp_features import (
 SUBSCRIPTION_REWARD_KEY = "channel_subscription_v1"
 SUPPORT_MIN_STARS = 1
 SUPPORT_MAX_STARS = 10_000
+SUPPORT_MIN_RUB = 10
+SUPPORT_MAX_RUB = 100_000
+ANON_PLUS_THEMES = {"pink", "blue", "violet", "green", "orange", "mono"}
 
 
 def _subscription_chat_id(raw: str) -> int | str | None:
@@ -145,6 +151,7 @@ class MiniAppServer:
         self._brand_sticker_file_id = ""
         self._brand_sticker_bytes: bytes | None = None
         self._http_hits: dict[tuple[str, str], deque[float]] = defaultdict(deque)
+        self._sbp_task: asyncio.Task | None = None
         self._ffmpeg_sem = asyncio.Semaphore(
             max(1, int(os.getenv("MINIAPP_FFMPEG_CONCURRENCY", "2")))
         )
@@ -222,8 +229,12 @@ class MiniAppServer:
             group, limit, window = "voice", 12, 60.0
         elif path == "/api/miniapp/feedback":
             group, limit, window = "feedback", 5, 600.0
-        elif path == "/api/miniapp/support/invoice":
-            group, limit, window = "invoice", 10, 60.0
+        elif (
+            path == "/api/miniapp/support/invoice"
+            or path.startswith("/api/miniapp/anon-plus/")
+            or path.startswith("/api/miniapp/payments/sbp")
+        ):
+            group, limit, window = "invoice", 12, 60.0
         elif path.startswith("/api/miniapp/chat/"):
             group, limit, window = "chat", max(30, int(self.cfg.inchat_rate_limit)), 60.0
         elif path.startswith("/api/miniapp/games/") or path.startswith("/api/miniapp/search/"):
@@ -264,6 +275,7 @@ class MiniAppServer:
             "district": str(row["district"] or ""),
             "gender": str(row["gender"] or ""),
             "looking_for": str(row["looking_for"] or ""),
+            "anon_plus_theme": str(row["anon_plus_theme"] or "pink"),
         }
 
     async def _stats(self, user_id: int, row=None) -> dict:
@@ -317,6 +329,19 @@ class MiniAppServer:
                 "referral": {"invited": invited, "earned": earned},
                 "referral_url": f"https://t.me/{bot_username}?start=ref_{uid}",
                 "bot_url": f"https://t.me/{bot_username}",
+                "anon_plus": {
+                    "active": int(row["premium_until"] or 0) > int(time.time()),
+                    "until": int(row["premium_until"] or 0),
+                    "days": int(self.cfg.anon_plus_days),
+                    "price_stars": int(self.cfg.anon_plus_price_stars),
+                    "price_rub": int(self.cfg.anon_plus_price_rub),
+                    "sbp_enabled": bool(self.cfg.rollypay_enabled),
+                    "theme": (
+                        str(row["anon_plus_theme"] or "pink")
+                        if int(row["premium_until"] or 0) > int(time.time())
+                        else "pink"
+                    ),
+                },
                 "notifications": await self._notifications(uid),
             }
         )
@@ -1716,6 +1741,236 @@ class MiniAppServer:
             }
         )
 
+
+    async def anon_plus_invoice(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        stars = int(self.cfg.anon_plus_price_stars)
+        days = int(self.cfg.anon_plus_days)
+        payload = f"anonplus:{uid}:{stars}:{days}:{secrets.token_hex(8)}"
+        try:
+            invoice_url = await self.bot.create_invoice_link(
+                title="Anon+",
+                description=f"Anon+ на {days} дней: темы и расширенная статистика",
+                payload=payload,
+                currency="XTR",
+                prices=[LabeledPrice(label=f"Anon+ · {days} дней", amount=stars)],
+            )
+        except TelegramAPIError as exc:
+            raise _json_error(
+                503, "Не удалось создать счёт Telegram Stars"
+            ) from exc
+        return web.json_response(
+            {"ok": True, "invoice_url": invoice_url, "stars": stars, "days": days}
+        )
+
+    async def anon_plus_theme(self, request: web.Request) -> web.Response:
+        uid, _, row = await self._auth(request)
+        if int(row["premium_until"] or 0) <= int(time.time()):
+            raise _json_error(403, "Тема доступна с Anon+")
+        data = await request.json()
+        theme = str(data.get("theme") or "").strip().lower()
+        if theme not in ANON_PLUS_THEMES:
+            raise _json_error(400, "Неизвестная тема")
+        await self.db.set_anon_plus_theme(uid, theme)
+        return web.json_response({"ok": True, "theme": theme})
+
+    async def sbp_create(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        if not self.cfg.rollypay_enabled:
+            raise _json_error(503, "СБП временно недоступна")
+
+        data = await request.json()
+        kind = str(data.get("kind") or "").strip().lower()
+        if kind == "anonplus":
+            amount = int(self.cfg.anon_plus_price_rub)
+            premium_days = int(self.cfg.anon_plus_days)
+            description = f"АНОН МГН · Anon+ на {premium_days} дней"
+        elif kind == "support":
+            try:
+                amount = int(data.get("amount_rub", 0) or 0)
+            except (TypeError, ValueError) as exc:
+                raise _json_error(400, "Укажи сумму поддержки") from exc
+            if not SUPPORT_MIN_RUB <= amount <= SUPPORT_MAX_RUB:
+                raise _json_error(
+                    400,
+                    f"Можно отправить от {SUPPORT_MIN_RUB} до {SUPPORT_MAX_RUB} ₽",
+                )
+            premium_days = 0
+            description = "АНОН МГН · Поддержка проекта"
+        else:
+            raise _json_error(400, "Неизвестный тип платежа")
+
+        order_id = f"anon-{kind}-{uid}-{secrets.token_hex(6)}"
+        local_id = ""
+        try:
+            local_id = await self.db.create_sbp_order(
+                order_id=order_id,
+                user_id=uid,
+                kind=kind,
+                amount_rub=amount,
+                premium_days=premium_days,
+            )
+            payment = await create_payment(
+                self.cfg,
+                order_id=order_id,
+                amount=Decimal(amount),
+                description=description,
+                user_id=uid,
+            )
+            payment_id = str(payment["payment_id"])
+            pay_url = str(payment["pay_url"])
+            await self.db.attach_sbp_provider_payment(
+                local_id, payment_id, pay_url
+            )
+        except (RollyPayError, KeyError, ValueError) as exc:
+            if local_id:
+                try:
+                    await self.db.set_sbp_status(local_id, "create_failed")
+                except Exception:
+                    pass
+            raise _json_error(503, "Не удалось создать платёж СБП") from exc
+
+        return web.json_response(
+            {
+                "ok": True,
+                "payment_id": payment_id,
+                "pay_url": pay_url,
+                "amount_rub": amount,
+                "kind": kind,
+            }
+        )
+
+    @staticmethod
+    def _sbp_remote_matches(
+        local: dict, remote: dict, payment_id: str
+    ) -> bool:
+        try:
+            remote_amount = Decimal(str(remote.get("amount")))
+        except (InvalidOperation, ValueError):
+            remote_amount = Decimal("-1")
+        remote_currency = str(
+            remote.get("currency")
+            or remote.get("payment_currency")
+            or ""
+        ).upper()
+        return (
+            str(remote.get("payment_id") or "") == str(payment_id)
+            and str(remote.get("order_id") or "") == str(local["order_id"])
+            and remote_currency == "RUB"
+            and remote_amount.is_finite()
+            and remote_amount == Decimal(int(local["amount_rub"]))
+        )
+
+    async def _settle_sbp(self, local: dict, payment_id: str) -> dict:
+        settled = await self.db.settle_sbp_payment(payment_id)
+        if settled.get("fresh"):
+            uid = int(settled["user_id"])
+            try:
+                if settled["kind"] == "anonplus":
+                    until = time.strftime(
+                        "%d.%m.%Y",
+                        time.localtime(int(settled["premium_until"])),
+                    )
+                    await self.bot.send_message(
+                        uid,
+                        "💎 <b>Anon+ активирован</b>\n\n"
+                        f"Доступ активен до <b>{until}</b>. "
+                        "Темы и расширенная статистика уже доступны в Mini App.",
+                    )
+                else:
+                    await self.bot.send_message(
+                        uid,
+                        "💖 <b>Спасибо за поддержку АНОН МГН!</b>\n\n"
+                        f"Платёж по СБП на "
+                        f"<b>{int(settled.get('amount_rub', 0))} ₽</b> получен.",
+                    )
+            except TelegramAPIError:
+                pass
+        return settled
+
+    async def sbp_check(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        payment_id = str(
+            request.match_info.get("payment_id") or ""
+        ).strip()
+        if not payment_id or len(payment_id) > 200:
+            raise _json_error(400, "Некорректный платёж")
+
+        local = await self.db.get_sbp_payment(payment_id)
+        if not local or int(local["user_id"]) != uid:
+            raise _json_error(404, "Платёж не найден")
+
+        if str(local["status"]).lower() == "paid":
+            row = await self.db.get_user(uid)
+            return web.json_response(
+                {
+                    "status": "paid",
+                    "kind": str(local["kind"]),
+                    "anon_plus_until": (
+                        int(row["premium_until"] or 0) if row else 0
+                    ),
+                }
+            )
+
+        try:
+            remote = await get_payment(self.cfg, payment_id)
+        except RollyPayError as exc:
+            raise _json_error(503, "Не удалось проверить платёж") from exc
+
+        if not self._sbp_remote_matches(local, remote, payment_id):
+            raise _json_error(409, "Данные платежа не совпали")
+
+        status = str(remote.get("status") or "").lower()
+        if status == "paid":
+            settled = await self._settle_sbp(local, payment_id)
+            return web.json_response(
+                {
+                    "status": "paid",
+                    "kind": str(local["kind"]),
+                    "anon_plus_until": int(
+                        settled.get("premium_until", 0)
+                    ),
+                }
+            )
+        if status in {
+            "created", "pending", "processing", "awaiting_payment"
+        }:
+            await self.db.set_sbp_status(payment_id, status)
+        return web.json_response(
+            {"status": status or "pending", "kind": str(local["kind"])}
+        )
+
+    async def _sbp_reconcile_loop(self) -> None:
+        while True:
+            try:
+                await asyncio.sleep(30)
+                if not self.cfg.rollypay_enabled:
+                    continue
+                for local in await self.db.list_pending_sbp_payments(60):
+                    payment_id = str(local.get("payment_id") or "")
+                    if not payment_id or payment_id.startswith("creating:"):
+                        continue
+                    try:
+                        remote = await get_payment(self.cfg, payment_id)
+                    except RollyPayError:
+                        continue
+                    if not self._sbp_remote_matches(
+                        local, remote, payment_id
+                    ):
+                        continue
+                    status = str(remote.get("status") or "").lower()
+                    if status == "paid":
+                        await self._settle_sbp(local, payment_id)
+                    elif status in {
+                        "created", "pending", "processing",
+                        "awaiting_payment",
+                    }:
+                        await self.db.set_sbp_status(payment_id, status)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                await asyncio.sleep(5)
+
     async def game_battle(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
         partner = self.mm.partner(uid)
@@ -2532,6 +2787,12 @@ class MiniAppServer:
         app.router.add_post("/api/miniapp/poll/vote", self.poll_vote)
         app.router.add_post("/api/miniapp/feedback", self.feedback)
         app.router.add_post("/api/miniapp/support/invoice", self.support_invoice)
+        app.router.add_post("/api/miniapp/anon-plus/invoice", self.anon_plus_invoice)
+        app.router.add_post("/api/miniapp/anon-plus/theme", self.anon_plus_theme)
+        app.router.add_post("/api/miniapp/payments/sbp", self.sbp_create)
+        app.router.add_get(
+            "/api/miniapp/payments/sbp/{payment_id}", self.sbp_check
+        )
         app.router.add_post("/api/miniapp/games/battle/invite", self.game_battle)
         app.router.add_post("/api/miniapp/games/numbers/invite", self.game_numbers)
         app.router.add_post("/api/miniapp/games/geo/invite", self.game_geo)
@@ -2559,8 +2820,18 @@ class MiniAppServer:
         port = int(os.getenv("PORT", os.getenv("MINIAPP_PORT", "3000")))
         self.site = web.TCPSite(self.runner, host=host, port=port)
         await self.site.start()
+        if self._sbp_task is None:
+            self._sbp_task = asyncio.create_task(
+                self._sbp_reconcile_loop(),
+                name="anon-mgn-sbp-reconcile",
+            )
 
     async def stop(self) -> None:
+        if self._sbp_task is not None:
+            self._sbp_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._sbp_task
+            self._sbp_task = None
         if self.runner is not None:
             await self.runner.cleanup()
             self.runner = None
