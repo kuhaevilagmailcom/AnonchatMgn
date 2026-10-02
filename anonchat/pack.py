@@ -76,6 +76,8 @@ class EmojiPack:
         # символ -> (id, чем его показывать внутри тега)
         self._map: dict[str, tuple[str, str]] = {}
         self._progress_bar: list[tuple[str, str]] = []
+        self._progress_filled: tuple[str, str] | None = None
+        self._progress_empty: tuple[str, str] | None = None
         self._top_flags: dict[int, tuple[str, str]] = {}
         self._profile_badges: dict[str, tuple[str, str]] = {
             "diamond": (ICONS.get("bonus", ""), PROFILE_BADGES["diamond"]),
@@ -86,7 +88,9 @@ class EmojiPack:
                 self._map.setdefault(glyph, (emoji_id, canonical))
 
     async def load_progress_bar(self, bot, name: str = "progressBarEmoji") -> int:
-        """Загружает отдельный custom-emoji набор только для прогресс-бара профиля."""
+        """Загружает progressBarEmoji и находит зелёный/серый сегменты."""
+        self._progress_filled = None
+        self._progress_empty = None
         try:
             sticker_set = await bot.get_sticker_set(name=name)
         except Exception:
@@ -103,19 +107,32 @@ class EmojiPack:
         for sticker in getattr(sticker_set, "stickers", ()) or ():
             custom_id = str(getattr(sticker, "custom_emoji_id", "") or "")
             glyph = str(getattr(sticker, "emoji", "") or "").strip()
-            if custom_id and glyph:
-                items.append((custom_id, glyph))
+            if not custom_id or not glyph:
+                continue
+            items.append((custom_id, glyph))
+            key = _emoji_key(glyph)
+            if self._progress_filled is None and key in {"🟩", "✅", "☑", "✔"}:
+                self._progress_filled = (custom_id, glyph)
+            if self._progress_empty is None and key in {"⬜", "◻", "▫", "◽"}:
+                self._progress_empty = (custom_id, glyph)
+
         self._progress_bar = items
         return len(items)
 
-    def progress_bar(self, progress: float) -> str:
-        """Возвращает один emoji состояния прогресса из progressBarEmoji."""
-        if not self.enabled or not self._progress_bar:
-            return ""
+    @staticmethod
+    def _custom_emoji(item: tuple[str, str] | None, fallback: str) -> str:
+        if item and item[0]:
+            return f'<tg-emoji emoji-id="{item[0]}">{item[1]}</tg-emoji>'
+        return fallback
+
+    def progress_bar(self, progress: float, width: int = 8) -> str:
+        """Ровный сегментный бар: зелёное заполнено, серое осталось."""
         value = min(1.0, max(0.0, float(progress or 0.0)))
-        index = min(len(self._progress_bar) - 1, round(value * (len(self._progress_bar) - 1)))
-        emoji_id, glyph = self._progress_bar[index]
-        return f'<tg-emoji emoji-id="{emoji_id}">{glyph}</tg-emoji>'
+        width = max(4, min(int(width), 12))
+        filled = max(0, min(width, round(value * width)))
+        on = self._custom_emoji(self._progress_filled, "🟩")
+        off = self._custom_emoji(self._progress_empty, "◻️")
+        return on * filled + off * (width - filled)
 
     async def load_top_flags(self, bot, name: str = "FestiveFlags") -> int:
         """FestiveFlags для топа: используем только фиксированные ID мест 1–10."""
