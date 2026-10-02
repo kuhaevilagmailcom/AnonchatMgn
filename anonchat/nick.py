@@ -55,6 +55,4 @@ def display(
 ) -> str:
     nick = normalize(row_nickname or "")
     value = nick or auto_nick(user_id)
-    if is_supporter(support_stars):
-        return f"{value} 💎"
     return value
