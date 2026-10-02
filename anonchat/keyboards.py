@@ -327,7 +327,7 @@ def settings_keyboard(
     _button(b, f"Берег: {district or 'не выбран'}", callback_data="cfg:district:ask", icon="geo")
     _button(b, "Возраст", callback_data="cfg:age:ask", icon="stars")
     _button(b, "Онлайн", callback_data=CB_ONLINE, icon="view")
-    _button(b, "Поддержать", callback_data=CB_SUPPORT, icon="stars", style="success")
+    _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
     _button(b, "Удалить профиль", callback_data="cfg:forget:ask", icon="delete", style="danger")
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
     b.adjust(1, 2, 2, 2, 1, 1)
