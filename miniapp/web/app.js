@@ -205,7 +205,7 @@ if (typeof window === 'undefined') {
     $$('[data-avatar]').forEach(el=>{if(state.user.photo_url){el.src=state.user.photo_url;el.hidden=false}else{el.removeAttribute('src');el.hidden=true}});
     $$('[data-flame]').forEach((el,i)=>el.classList.toggle('on',i<Math.min(7,state.stats.streak)));
     $$('[data-setting]').forEach(group=>$$('button',group).forEach(b=>b.classList.toggle('active',String(b.dataset.value)===String(state.user[group.dataset.setting]||''))));
-    $('[data-profile-emoji]').forEach(el=>{const glyph=state.user.badge_glyph||'';el.textContent=glyph;el.hidden=!glyph});
+    $$('[data-profile-emoji]').forEach(el=>{const glyph=state.user.badge_glyph||'';el.textContent=glyph;el.hidden=!glyph});
     const premiumStats=$('#anonPlusStats');if(premiumStats)premiumStats.classList.toggle('locked',!state.anonPlus?.active);
     applyTheme();renderSearch();renderEvents();
   }
@@ -413,7 +413,7 @@ if (typeof window === 'undefined') {
       body.innerHTML=`<section class="dialog-result-card locked-result"><div class="result-plus-lock"><strong>Статистика после диалога доступна с Анон Plus</strong><small>Длительность, сообщения, игры и заработанные звёзды</small><button class="action accent" id="resultPlus">Открыть Анон Plus</button></div></section>
       ${result.rated?'<div class="rated-done">✓ Оценка уже учтена</div>':`<section class="rate-block"><small>Как прошёл разговор?</small><div><button data-rate="1">👍 Норм</button><button data-rate="0">👎 Не зашло</button></div></section>`}
       <div class="modal-actions one"><button class="action" id="resultNext">Найти собеседника</button></div>`;
-      $('[data-rate]',body).forEach(btn=>btn.onclick=()=>rateDialog(btn.dataset.rate==='1',body));
+      $$('[data-rate]',body).forEach(btn=>btn.onclick=()=>rateDialog(btn.dataset.rate==='1',body));
       $('#resultPlus').onclick=()=>openModal('anon-plus','Анон Plus','ПОДПИСКА');
       $('#resultNext').onclick=()=>{closeModal();go(state.status==='paired'?'chat':'search')};
       return;
