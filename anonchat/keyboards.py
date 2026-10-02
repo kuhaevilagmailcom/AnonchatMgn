@@ -30,6 +30,9 @@ CB_HELP = "act:help"
 CB_RULES = "act:rules"
 CB_TOP = "act:top"
 CB_SUPPORT = "act:support"
+CB_SUPPORT_STARS = "act:support:stars"
+CB_SUPPORT_RUB = "act:support:rub"
+CB_SUPPORT_SBP_CHECK_PREFIX = "act:support:sbpcheck:"
 CB_CONTINUE = "onboard:continue"
 CB_NICK = "cfg:nick:ask"
 CB_GAMES = "game:menu"
@@ -112,7 +115,8 @@ def menu_keyboard(
     if poll_active:
         _button(b, "Опрос", callback_data=CB_POLL, icon="ticket", style="primary")
     _button(b, "Правила", callback_data=CB_RULES, icon="ticket")
-    rows = [1, 1, 2, 2] if not poll_active else [1, 1, 2, 2, 1]
+    _button(b, "Обратная связь", callback_data=CB_FEEDBACK, icon="support")
+    rows = [1, 1, 2, 2, 1] if not poll_active else [1, 1, 2, 2, 2]
     if admin:
         _button(b, "Панель модератора", callback_data=CB_ADMIN_PANEL, icon="bonus", style="primary")
         rows.append(1)
@@ -159,7 +163,7 @@ def profile_keyboard(
         )
 
     _button(
-        b, "Anonymous Plus", callback_data=CB_ANONPLUS,
+        b, "Анон Plus", callback_data=CB_ANONPLUS,
         icon="bonus", style="primary",
     )
     if anon_plus_active:
@@ -171,11 +175,9 @@ def profile_keyboard(
             style="success" if anon_plus_show_nick else "",
         )
 
-    _button(b, "Изменить ник", callback_data=CB_NICK, icon="edit")
-    _button(b, "Обратная связь", callback_data=CB_FEEDBACK, icon="support")
     _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
     _button(b, "Назад", callback_data=CB_MENU, icon="home")
-    b.adjust(2, 2, 1, 1, 1, 2, 2, 1)
+    b.adjust(2, 2, 1, 1, 1, 2, 1)
     return b.as_markup()
 
 
@@ -197,16 +199,40 @@ def anonymous_plus_keyboard(
             icon="check", style="primary",
         )
     else:
-        _button(
-            b, f"{'Продлить' if active else 'Купить'} за {int(price_stars)} ⭐",
-            callback_data=CB_ANONPLUS_STARS, icon="stars", style="success",
-        )
-        if sbp_enabled:
+        if not active:
             _button(
-                b, f"{'Продлить' if active else 'Купить'} за {int(price_rub)} ₽",
-                callback_data=CB_ANONPLUS_SBP, icon="money", style="primary",
+                b, f"Купить за {int(price_stars)} ⭐",
+                callback_data=CB_ANONPLUS_STARS, icon="stars", style="success",
             )
+            if sbp_enabled:
+                _button(
+                    b, f"Купить за {int(price_rub)} ₽",
+                    callback_data=CB_ANONPLUS_SBP, icon="money", style="primary",
+                )
     _button(b, "Назад в профиль", callback_data=CB_PROFILE, icon="home")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def support_method_keyboard(*, sbp_enabled: bool) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Telegram Stars", callback_data=CB_SUPPORT_STARS, icon="stars", style="success")
+    if sbp_enabled:
+        _button(b, "Рубли · СБП", callback_data=CB_SUPPORT_RUB, icon="money", style="primary")
+    _button(b, "Назад", callback_data=CB_MENU, icon="home")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def support_sbp_keyboard(payment_id: str, pay_url: str, amount_rub: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, f"Оплатить {int(amount_rub)} ₽", url=pay_url, icon="money", style="success")
+    _button(
+        b, "Проверить оплату",
+        callback_data=f"{CB_SUPPORT_SBP_CHECK_PREFIX}{payment_id}",
+        icon="check", style="primary",
+    )
+    _button(b, "В меню", callback_data=CB_MENU, icon="home")
     b.adjust(1)
     return b.as_markup()
 
