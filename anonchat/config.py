@@ -130,8 +130,8 @@ class Config:
 
     # Anon+ / payments
     anon_plus_days: int = 30
-    anon_plus_price_rub: int = 99
-    anon_plus_price_stars: int = 99
+    anon_plus_price_rub: int = 50
+    anon_plus_price_stars: int = 25
     rollypay_api_base: str = "https://api.rollypay.io"
     rollypay_terminal_id: str = ""
     rollypay_api_key: str = ""
