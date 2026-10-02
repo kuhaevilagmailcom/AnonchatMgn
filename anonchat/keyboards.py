@@ -46,6 +46,11 @@ CB_ONLINE = "cfg:online"
 CB_POLL = "poll:open"
 CB_SUBSCRIBE_REWARD = "profile:subscribe"
 CB_SUBSCRIBE_CHECK = "profile:subscribe:check"
+CB_ANONPLUS = "profile:anonplus"
+CB_ANONPLUS_STARS = "profile:anonplus:stars"
+CB_ANONPLUS_SBP = "profile:anonplus:sbp"
+CB_ANONPLUS_SHOW_NICK = "profile:anonplus:show_nick"
+CB_ANONPLUS_SBP_CHECK_PREFIX = "profile:anonplus:sbpcheck:"
 
 MINIAPP_PUBLIC_URL = "https://t.me/AnonChatMgn_Bot/anonmgn"
 
@@ -136,7 +141,11 @@ def chat_keyboard() -> InlineKeyboardMarkup:
 
 
 def profile_keyboard(
-    referral_url: str = "", subscription_claimed: bool = False, subscription_reward: int = 100
+    referral_url: str = "",
+    subscription_claimed: bool = False,
+    subscription_reward: int = 100,
+    anon_plus_active: bool = False,
+    anon_plus_show_nick: bool = False,
 ) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "Моя активность", callback_data=CB_ACTIVITY, icon="stats")
@@ -144,23 +153,61 @@ def profile_keyboard(
     _button(b, "Квесты дня", callback_data=CB_QUESTS, icon="ticket")
     _button(b, "Реферальная ссылка", callback_data=CB_REFERRAL, icon="gift")
 
-    # После успешного получения награды кнопку больше не показываем вообще.
-    # Флаг берётся из БД через reward_claimed(), поэтому отписка и повторная
-    # подписка не возвращают кнопку и не позволяют получить награду второй раз.
     if not subscription_claimed:
         _button(
             b, f"{int(subscription_reward)} ⭐️ за подписку",
             callback_data=CB_SUBSCRIBE_REWARD, icon="stars", style="success"
         )
 
+    _button(
+        b, "Anonymous Plus", callback_data=CB_ANONPLUS,
+        icon="bonus", style="primary",
+    )
+    if anon_plus_active:
+        _button(
+            b,
+            f"Показывать мой ник · {'ВКЛ' if anon_plus_show_nick else 'ВЫКЛ'}",
+            callback_data=CB_ANONPLUS_SHOW_NICK,
+            icon="view",
+            style="success" if anon_plus_show_nick else "",
+        )
+
     _button(b, "Изменить ник", callback_data=CB_NICK, icon="edit")
     _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
     _button(b, "Назад", callback_data=CB_MENU, icon="home")
+    b.adjust(2, 2, 1, 1, 1, 2, 1)
+    return b.as_markup()
 
-    if subscription_claimed:
-        b.adjust(2, 2, 2, 1)
+
+def anonymous_plus_keyboard(
+    *,
+    active: bool,
+    price_stars: int,
+    price_rub: int,
+    sbp_enabled: bool,
+    payment_id: str = "",
+    pay_url: str = "",
+) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    if payment_id and pay_url:
+        _button(b, f"Оплатить {int(price_rub)} ₽", url=pay_url, icon="money", style="success")
+        _button(
+            b, "Проверить оплату",
+            callback_data=f"{CB_ANONPLUS_SBP_CHECK_PREFIX}{payment_id}",
+            icon="check", style="primary",
+        )
     else:
-        b.adjust(2, 2, 1, 2, 1)
+        _button(
+            b, f"{'Продлить' if active else 'Купить'} за {int(price_stars)} ⭐",
+            callback_data=CB_ANONPLUS_STARS, icon="stars", style="success",
+        )
+        if sbp_enabled:
+            _button(
+                b, f"{'Продлить' if active else 'Купить'} за {int(price_rub)} ₽",
+                callback_data=CB_ANONPLUS_SBP, icon="money", style="primary",
+            )
+    _button(b, "Назад в профиль", callback_data=CB_PROFILE, icon="home")
+    b.adjust(1)
     return b.as_markup()
 
 
