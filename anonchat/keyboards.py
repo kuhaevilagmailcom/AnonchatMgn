@@ -590,6 +590,7 @@ CB_PANEL_UNBAN = "adm:panel:unban"
 CB_PANEL_BAN_LIST = "adm:panel:ban_list"
 CB_PANEL_USERS = "adm:panel:users"
 CB_PANEL_POINTS = "adm:panel:points"
+CB_PANEL_ANONPLUS = "adm:panel:anonplus"
 CB_PANEL_ADMINS = "adm:panel:admins"
 CB_PANEL_MONITOR = "adm:panel:monitor"
 CB_PANEL_ANON_MONITOR = "adm:panel:anon_monitor"
@@ -641,6 +642,11 @@ def admin_panel_keyboard(
         _button(b, "Бан-лист", callback_data=CB_PANEL_BAN_LIST, icon="delete")
     if "points" in permissions:
         _button(b, "Выдать / снять очки", callback_data=CB_PANEL_POINTS, icon="stars")
+    if "users" in permissions:
+        _button(
+            b, "Anon+ по ID", callback_data=CB_PANEL_ANONPLUS,
+            icon="bonus", style="primary",
+        )
     if owner:
         _button(
             b, f"Множитель: x{int(xp_multiplier)}",
