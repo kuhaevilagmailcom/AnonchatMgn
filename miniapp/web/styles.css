@@ -855,8 +855,7 @@ html,body{max-width:100%;overflow-x:hidden}
 /* ------------------------------ Anon+ */
 .profile-name-line{display:flex!important;align-items:center;gap:7px;min-width:0}
 .profile-name-line>strong{min-width:0}
-.anon-plus-badge{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:7px;background:var(--accent);color:#fff;font-style:normal;font-size:14px;font-weight:900;line-height:1;flex:0 0 20px}
-body[data-theme="mono"] .anon-plus-badge{color:#000}
+.profile-emoji{display:inline-flex;align-items:center;justify-content:center;font-style:normal;font-size:19px;line-height:1;flex:0 0 auto}
 .profile-stats-wrap{position:relative;border-bottom:1px solid var(--line)}
 .profile-stats-wrap .profile-stats{border-bottom:0}
 .profile-stats-wrap.locked .profile-stats{filter:blur(7px);opacity:.52;user-select:none;pointer-events:none}
@@ -946,3 +945,18 @@ body[data-theme="mono"] .premium-overlay-button{color:#000}
   .geo-round-choice{grid-template-columns:1fr}
   .geo-round-choice button{min-height:54px}
 }
+
+/* Anonymous Plus identity */
+.profile-emoji-picker{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.profile-emoji-picker button{min-height:46px;border-radius:12px;background:var(--surface);border:1px solid var(--line);font-size:20px}
+.profile-emoji-picker button:first-child{grid-column:span 2;font-size:10px;color:var(--muted)}
+.profile-emoji-picker button.active{border-color:var(--accent);background:var(--surface-2);box-shadow:inset 0 0 0 1px var(--accent)}
+.top-user-emoji{font-style:normal;font-size:14px;vertical-align:-1px}
+.anon-plus-identity-toggle{width:100%;margin-top:16px;min-height:62px;padding:12px 13px;border-radius:13px;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left}
+.anon-plus-identity-toggle>span{min-width:0;display:grid;gap:3px}
+.anon-plus-identity-toggle strong{font-size:12px}
+.anon-plus-identity-toggle small{font-size:10px;color:var(--muted);line-height:1.35}
+.anon-plus-identity-toggle>b{font-size:10px;color:var(--muted);white-space:nowrap}
+.anon-plus-identity-toggle.active{border-color:var(--accent);background:var(--surface-2)}
+.anon-plus-identity-toggle.active>b{color:var(--accent)}
+@media(max-width:350px){.profile-emoji-picker{grid-template-columns:repeat(3,minmax(0,1fr))}.profile-emoji-picker button:first-child{grid-column:span 3}}
