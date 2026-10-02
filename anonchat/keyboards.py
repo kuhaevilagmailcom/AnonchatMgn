@@ -112,8 +112,7 @@ def menu_keyboard(
     if poll_active:
         _button(b, "Опрос", callback_data=CB_POLL, icon="ticket", style="primary")
     _button(b, "Правила", callback_data=CB_RULES, icon="ticket")
-    _button(b, "Помощь", callback_data=CB_HELP, icon="support")
-    rows = [1, 1, 2, 2, 1] if not poll_active else [1, 1, 2, 2, 2]
+    rows = [1, 1, 2, 2] if not poll_active else [1, 1, 2, 2, 1]
     if admin:
         _button(b, "Панель модератора", callback_data=CB_ADMIN_PANEL, icon="bonus", style="primary")
         rows.append(1)
@@ -173,9 +172,10 @@ def profile_keyboard(
         )
 
     _button(b, "Изменить ник", callback_data=CB_NICK, icon="edit")
+    _button(b, "Обратная связь", callback_data=CB_FEEDBACK, icon="support")
     _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
     _button(b, "Назад", callback_data=CB_MENU, icon="home")
-    b.adjust(2, 2, 1, 1, 1, 2, 1)
+    b.adjust(2, 2, 1, 1, 1, 2, 2, 1)
     return b.as_markup()
 
 
@@ -326,12 +326,11 @@ def settings_keyboard(
     _button(b, f"Ищу: {looking_label}", callback_data="cfg:looking:ask")
     _button(b, f"Берег: {district or 'не выбран'}", callback_data="cfg:district:ask", icon="geo")
     _button(b, "Возраст", callback_data="cfg:age:ask", icon="stars")
-    _button(b, "Онлайн сейчас", callback_data=CB_ONLINE, icon="view")
-    _button(b, "Обратная связь", callback_data=CB_FEEDBACK, icon="support")
-    _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
+    _button(b, "Онлайн", callback_data=CB_ONLINE, icon="view")
+    _button(b, "Поддержать", callback_data=CB_SUPPORT, icon="stars", style="success")
     _button(b, "Удалить профиль", callback_data="cfg:forget:ask", icon="delete", style="danger")
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
-    b.adjust(1, 1, 1, 1, 1, 1, 1, 1, 1, 1)
+    b.adjust(1, 2, 2, 2, 1, 1)
     return b.as_markup()
 
 
