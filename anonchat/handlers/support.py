@@ -542,7 +542,7 @@ async def successful_payment(
                 days,
             )
         except ValueError:
-            await ctx.reply("Не удалось активировать Anon+. Напиши в поддержку.")
+            await ctx.reply("Не удалось активировать Анон Plus. Напиши в поддержку.")
             return
 
         if not created:
