@@ -602,10 +602,14 @@ def _anon_plus_active(row) -> bool:
 
 
 def _anon_plus_badge(pack: EmojiPack | None, row) -> str:
-    if not _anon_plus_active(row):
+    if not row or pack is None:
         return ""
     key = str(row["anon_plus_emoji"] or "").strip()
-    return pack.profile_badge(key) if pack and key else ""
+    if _anon_plus_active(row) and key:
+        return pack.profile_badge(key)
+    if int(row["support_stars"] or 0) > 0 or int(row["support_rub"] or 0) > 0:
+        return pack.profile_badge("diamond")
+    return ""
 
 
 async def _shared_identity(
@@ -671,22 +675,24 @@ async def show_referral(ctx: Ctx) -> None:
 async def show_activity(ctx: Ctx) -> None:
     if await ctx.dialog_locked():
         return
-    today = await ctx.db.activity_totals(ctx.user_id, 1)
-    week = await ctx.db.activity_totals(ctx.user_id, 7)
-    month = await ctx.db.activity_totals(ctx.user_id, 30)
-    engagement = await ctx.db.engagement_state(ctx.user_id)
     me = await ctx.db.get_user(ctx.user_id)
+    if not _anon_plus_active(me):
+        await ctx.render_screen(
+            "04_profile.png",
+            "📊 <b>Моя активность</b>\n\n"
+            "<blockquote>Статистика за сегодня и за всё время доступна с <b>Анон Plus</b>.</blockquote>",
+            profile_section_keyboard(),
+        )
+        return
+    today = await ctx.db.activity_totals(ctx.user_id, 1)
+    engagement = await ctx.db.engagement_state(ctx.user_id)
     body = (
-        "📊 <b>Моя активность</b>\n\n"
+        "📊 <b>Моя активность · Анон Plus</b>\n\n"
         f"<b>Сегодня</b>\n"
-        f"Диалогов: {today.get('dialogs', 0)} · сообщений: {today.get('messages', 0)} · игр: {today.get('games', 0)}\n\n"
-        f"<b>За 7 дней</b>\n"
-        f"Диалогов: {week.get('dialogs', 0)} · сообщений: {week.get('messages', 0)} · игр: {week.get('games', 0)}\n\n"
-        f"<b>За 30 дней</b>\n"
-        f"Диалогов: {month.get('dialogs', 0)} · сообщений: {month.get('messages', 0)} · игр: {month.get('games', 0)}\n\n"
-        f"<b>Всего</b>\n"
-        f"Диалогов: {int(engagement['dialogs_total'] or 0)} · сообщений: {int(me['messages'] or 0) if me else 0}\n"
-        f"Хороших оценок: {int(me['good_ratings'] or 0) if me else 0} · игр: {int(engagement['games_total'] or 0)}"
+        f"Диалогов: <b>{today.get('dialogs', 0)}</b> · сообщений: <b>{today.get('messages', 0)}</b> · игр: <b>{today.get('games', 0)}</b>\n\n"
+        f"<b>За всё время</b>\n"
+        f"Диалогов: <b>{int(engagement['dialogs_total'] or 0)}</b> · сообщений: <b>{int(me['messages'] or 0)}</b>\n"
+        f"Хороших оценок: <b>{int(me['good_ratings'] or 0)}</b> · игр: <b>{int(engagement['games_total'] or 0)}</b>"
     )
     await ctx.render_screen("04_profile.png", body, profile_section_keyboard())
 
@@ -758,9 +764,16 @@ async def show_profile(ctx: Ctx) -> None:
         "</blockquote>",
         "",
         f"⭐ Очки: <b>{int(me['xp'])}</b>",
-        f"💬 Сообщения: <b>{messages}</b> · Диалоги: <b>{me['dialogs']}</b>",
-        f"👍 Хорошие оценки: <b>{me['good_ratings']}</b> · 👎 <b>{me['bad_ratings']}</b>",
     ]
+    if _anon_plus_active(me):
+        lines += [
+            f"💬 Сообщения: <b>{messages}</b> · Диалоги: <b>{me['dialogs']}</b>",
+            f"👍 Хорошие оценки: <b>{me['good_ratings']}</b> · 👎 <b>{me['bad_ratings']}</b>",
+        ]
+    else:
+        lines += [
+            "💬 <i>Сообщения и диалоги видны с <b>Анон Plus</b></i>",
+        ]
     if not rank.is_max:
         progress_bar = ctx.pack.progress_bar(rank.progress)
         lines += [
@@ -789,8 +802,13 @@ async def show_profile(ctx: Ctx) -> None:
         "Делись ссылкой — тебе смогут отправлять сообщения полностью анонимно.",
         f"🔗 <code>{ask_link}</code>",
     ]
-    if nicklib.is_supporter(me["support_stars"]):
-        lines += ["", f"💎 Поддержал проект: {int(me['support_stars'])} ⭐"]
+    if int(me["support_stars"] or 0) > 0 or int(me["support_rub"] or 0) > 0:
+        parts = []
+        if int(me["support_stars"] or 0) > 0:
+            parts.append(f"{int(me['support_stars'])} ⭐")
+        if int(me["support_rub"] or 0) > 0:
+            parts.append(f"{int(me['support_rub'])} ₽")
+        lines += ["", f"💎 Поддержал проект: {' · '.join(parts)}"]
     subscription_claimed = await ctx.db.reward_claimed(
         ctx.user_id, "channel_subscription_v1"
     )
@@ -993,14 +1011,16 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
     ctx.mm.remember_rating([ctx.user_id, partner], match_id)
     my_summary = _dialog_summary_text(summary, ctx.user_id, earned_xp.get(ctx.user_id, 0))
     partner_summary = _dialog_summary_text(summary, partner, earned_xp.get(partner, 0))
+    my_row = await ctx.db.get_user(ctx.user_id)
+    partner_row = await ctx.db.get_user(partner)
 
     await send_to(
         ctx.bot, partner,
-        f"{notify_partner}\n\n{partner_summary}",
+        f"{notify_partner}{('\\n\\n' + partner_summary) if _anon_plus_active(partner_row) else ''}",
         menu_keyboard(), ctx.pack,
     )
     await ctx.reply(
-        f"{note}\n\n{my_summary}",
+        f"{note}{('\\n\\n' + my_summary) if _anon_plus_active(my_row) else ''}",
         markup=rating_keyboard(),
     )
     await send_to(ctx.bot, partner, texts.RATING_ASK, rating_keyboard(), ctx.pack)
