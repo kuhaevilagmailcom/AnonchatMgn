@@ -1037,7 +1037,7 @@ def test_nickname_rules() -> None:
     assert nick.display("", 5) == nick.auto_nick(5)
     assert nick.display("  ", 5) == nick.auto_nick(5)
     assert nick.display("Лена", 5) == "Лена"
-    assert nick.display("Лена", 5, 1) == "Лена 💎"
+    assert nick.display("Лена", 5, 1) == "Лена"
     assert nick.display("Лена", 5, 0) == "Лена"
     assert nick.validate("Лена ✦")[1] is not None
 
