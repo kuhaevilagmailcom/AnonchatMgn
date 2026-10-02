@@ -129,7 +129,7 @@ class Config:
     miniapp_url: str = "https://bot-1789383103-4489-furadev.bothost.tech"
 
     # Anon+ / payments
-    anon_plus_days: int = 30
+    anon_plus_days: int = 0
     anon_plus_price_rub: int = 50
     anon_plus_price_stars: int = 25
     rollypay_api_base: str = "https://api.rollypay.io"
@@ -187,7 +187,7 @@ class Config:
             miniapp_url=env(
                 "MINIAPP_URL", cls._default("miniapp_url")
             ).strip().rstrip("/"),
-            anon_plus_days=max(1, int(env("ANON_PLUS_DAYS", str(cls._default("anon_plus_days"))))),
+            anon_plus_days=max(0, int(env("ANON_PLUS_DAYS", str(cls._default("anon_plus_days"))))),
             anon_plus_price_rub=max(1, int(env("ANON_PLUS_PRICE_RUB", str(cls._default("anon_plus_price_rub"))))),
             anon_plus_price_stars=max(1, int(env("ANON_PLUS_PRICE_STARS", str(cls._default("anon_plus_price_stars"))))),
             rollypay_api_base=env("ROLLYPAY_API_BASE", cls._default("rollypay_api_base")).strip().rstrip("/"),
