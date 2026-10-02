@@ -816,7 +816,9 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     session.clear()
     await press(A, "act:support")
-    check("количество звёзд" in session.last_to(A), "поддержка спрашивает количество звёзд")
+    check("Выбери способ поддержки" in session.last_to(A), "поддержка предлагает способ оплаты")
+    await press(A, "act:support:stars")
+    check("звёзд" in session.last_to(A), "поддержка Stars спрашивает количество звёзд")
     await send(A, "25")
     invoice = next((item for item in reversed(session.outbox) if item["method"] == "sendInvoice"), None)
     check(
