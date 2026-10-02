@@ -200,6 +200,9 @@ async def main() -> None:  # pragma: no cover
         top_flags_count = await pack.load_top_flags(bot)
         if top_flags_count:
             log.info("FestiveFlags: загружено %s эмодзи для топа", top_flags_count)
+        profile_badges_count = await pack.load_profile_badges(bot)
+        if profile_badges_count:
+            log.info("NewsEmoji: загружено %s эмодзи Anonymous Plus", profile_badges_count)
         me = await bot.get_me()
         log.info("Анонимный чат %s запущен: @%s (id=%s)", cfg.city_short, me.username, me.id)
         await notify_admins_restart(bot, cfg, database)
