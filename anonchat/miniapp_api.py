@@ -40,6 +40,7 @@ from .runtime_state import touch as presence_touch
 from .safety import contains_contact
 from .monitoring import enqueue_chat_monitor_sent
 from .payments import RollyPayError, create_payment, get_payment
+from .pack import PROFILE_BADGES
 from .miniapp_features import (
     REPORT_REASONS,
     achievement_items,
@@ -276,6 +277,7 @@ class MiniAppServer:
             "gender": str(row["gender"] or ""),
             "looking_for": str(row["looking_for"] or ""),
             "anon_plus_theme": str(row["anon_plus_theme"] or "pink"),
+            "anon_plus_emoji": str(row["anon_plus_emoji"] or ""),
         }
 
     async def _stats(self, user_id: int, row=None) -> dict:
@@ -341,6 +343,19 @@ class MiniAppServer:
                         if int(row["premium_until"] or 0) > int(time.time())
                         else "pink"
                     ),
+                    "emoji": (
+                        str(row["anon_plus_emoji"] or "")
+                        if int(row["premium_until"] or 0) > int(time.time())
+                        else ""
+                    ),
+                    "emoji_glyph": (
+                        self.pack.profile_badge_glyph(str(row["anon_plus_emoji"] or ""))
+                        if int(row["premium_until"] or 0) > int(time.time())
+                        else ""
+                    ),
+                    "show_nick": bool(row["anon_plus_show_nick"])
+                    if int(row["premium_until"] or 0) > int(time.time())
+                    else False,
                 },
                 "notifications": await self._notifications(uid),
             }
@@ -580,6 +595,24 @@ class MiniAppServer:
             self._chat_event_json(item, uid)
             for item in live_chat.events(uid, after=after, limit=100)
         ]
+        peer = None
+        if status == "paired" and partner is not None:
+            partner_row = await self.db.get_user(partner)
+            if (
+                partner_row is not None
+                and int(partner_row["premium_until"] or 0) > int(time.time())
+                and bool(partner_row["anon_plus_show_nick"])
+            ):
+                peer = {
+                    "nick": nicklib.display(
+                        partner_row["nickname"],
+                        int(partner),
+                        int(partner_row["support_stars"] or 0),
+                    ),
+                    "emoji": self.pack.profile_badge_glyph(
+                        str(partner_row["anon_plus_emoji"] or "")
+                    ),
+                }
         return web.json_response(
             {
                 "status": status,
@@ -589,6 +622,7 @@ class MiniAppServer:
                 "events": events,
                 "latest": live_chat.latest_seq(uid),
                 "game": await self._game_state_payload(uid, partner),
+                "peer": peer,
             }
         )
 
@@ -1621,6 +1655,13 @@ class MiniAppServer:
                         ),
                         "stars": int(row["xp"] or 0),
                         "rank": rank_for(int(row["messages"] or 0)).title,
+                        "emoji": (
+                            self.pack.profile_badge_glyph(
+                                str(row["anon_plus_emoji"] or "")
+                            )
+                            if int(row["premium_until"] or 0) > int(time.time())
+                            else ""
+                        ),
                         "me": int(row["user_id"]) == uid,
                     }
                     for place, row in enumerate(rows, 1)
@@ -1773,6 +1814,36 @@ class MiniAppServer:
             raise _json_error(400, "Неизвестная тема")
         await self.db.set_anon_plus_theme(uid, theme)
         return web.json_response({"ok": True, "theme": theme})
+
+    async def anon_plus_identity(self, request: web.Request) -> web.Response:
+        uid, _, row = await self._auth(request)
+        if int(row["premium_until"] or 0) <= int(time.time()):
+            raise _json_error(403, "Настройка доступна с Anonymous Plus")
+        data = await request.json()
+        emoji = data.get("emoji")
+        show_nick = data.get("show_nick")
+        kwargs = {}
+        if emoji is not None:
+            emoji = str(emoji or "").strip().lower()
+            if emoji and emoji not in PROFILE_BADGES:
+                raise _json_error(400, "Неизвестный премиум-эмодзи")
+            kwargs["emoji"] = emoji
+        if show_nick is not None:
+            kwargs["show_nick"] = bool(show_nick)
+        if not kwargs:
+            raise _json_error(400, "Нет изменений")
+        await self.db.set_anon_plus_identity(uid, **kwargs)
+        updated = await self.db.get_user(uid)
+        return web.json_response(
+            {
+                "ok": True,
+                "emoji": str(updated["anon_plus_emoji"] or ""),
+                "emoji_glyph": self.pack.profile_badge_glyph(
+                    str(updated["anon_plus_emoji"] or "")
+                ),
+                "show_nick": bool(updated["anon_plus_show_nick"]),
+            }
+        )
 
     async def sbp_create(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
@@ -2789,6 +2860,7 @@ class MiniAppServer:
         app.router.add_post("/api/miniapp/support/invoice", self.support_invoice)
         app.router.add_post("/api/miniapp/anon-plus/invoice", self.anon_plus_invoice)
         app.router.add_post("/api/miniapp/anon-plus/theme", self.anon_plus_theme)
+        app.router.add_post("/api/miniapp/anon-plus/identity", self.anon_plus_identity)
         app.router.add_post("/api/miniapp/payments/sbp", self.sbp_create)
         app.router.add_get(
             "/api/miniapp/payments/sbp/{payment_id}", self.sbp_check
