@@ -14,7 +14,7 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from .pack import ICONS
+from .pack import ICONS, PROFILE_BADGES
 
 # callback_data
 CB_CONNECT = "act:connect"
@@ -53,6 +53,8 @@ CB_ANONPLUS = "profile:anonplus"
 CB_ANONPLUS_STARS = "profile:anonplus:stars"
 CB_ANONPLUS_SBP = "profile:anonplus:sbp"
 CB_ANONPLUS_SHOW_NICK = "profile:anonplus:show_nick"
+CB_ANONPLUS_EMOJI = "profile:anonplus:emoji"
+CB_ANONPLUS_EMOJI_SET_PREFIX = "profile:anonplus:emoji:set:"
 CB_ANONPLUS_SBP_CHECK_PREFIX = "profile:anonplus:sbpcheck:"
 
 MINIAPP_PUBLIC_URL = "https://t.me/AnonChatMgn_Bot/anonmgn"
@@ -174,6 +176,11 @@ def profile_keyboard(
             icon="view",
             style="success" if anon_plus_show_nick else "",
         )
+        _button(
+            b, "Эмодзи рядом с ником",
+            callback_data=CB_ANONPLUS_EMOJI,
+            icon="bonus",
+        )
 
     _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
     _button(b, "Назад", callback_data=CB_MENU, icon="home")
@@ -209,8 +216,29 @@ def anonymous_plus_keyboard(
                     b, f"Купить за {int(price_rub)} ₽",
                     callback_data=CB_ANONPLUS_SBP, icon="money", style="primary",
                 )
+    if active:
+        _button(
+            b, "Эмодзи рядом с ником",
+            callback_data=CB_ANONPLUS_EMOJI,
+            icon="bonus",
+        )
     _button(b, "Назад в профиль", callback_data=CB_PROFILE, icon="home")
     b.adjust(1)
+    return b.as_markup()
+
+
+def anon_plus_emoji_keyboard(current: str = "") -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    current = str(current or "").strip().lower()
+    for key in ("diamond", "star", "fire", "bolt", "siren", "music"):
+        glyph = PROFILE_BADGES.get(key, "")
+        label = f"✓ {glyph}" if key == current else glyph
+        _button(
+            b, label or key,
+            callback_data=f"{CB_ANONPLUS_EMOJI_SET_PREFIX}{key}",
+        )
+    _button(b, "Назад к Анон Plus", callback_data=CB_ANONPLUS, icon="home")
+    b.adjust(3, 3, 1)
     return b.as_markup()
 
 
@@ -655,6 +683,8 @@ CB_PANEL_BC = "adm:panel:broadcast"
 CB_PANEL_BC_SIMPLE = "adm:panel:broadcast:simple"
 CB_PANEL_BC_SEND = "adm:panel:broadcast:send"
 CB_PANEL_BC_CHANNEL = "adm:panel:broadcast:channel"
+CB_PANEL_BC_PLUS = "adm:panel:broadcast:anonplus"
+CB_PANEL_BC_PLUS_SEND = "adm:panel:broadcast:anonplus:send"
 CB_PANEL_MUTE = "adm:panel:mute"
 CB_PANEL_MUTE_LIST = "adm:panel:mute_list"
 CB_PANEL_BAN = "adm:panel:ban"
@@ -704,6 +734,7 @@ def admin_panel_keyboard(
         _button(b, "Все пользователи", callback_data=CB_PANEL_USERS, icon="profile")
     if "broadcast" in permissions:
         _button(b, "Рассылка", callback_data=CB_PANEL_BC_SIMPLE, icon="support", style="primary")
+        _button(b, "Рассылка Анон Plus", callback_data=CB_PANEL_BC_PLUS, icon="bonus", style="primary")
         _button(b, "Реклама MGN VPN", callback_data=CB_PANEL_BC, icon="support")
     if "mute" in permissions:
         _button(b, "Мут по id", callback_data=CB_PANEL_MUTE, icon="settings", style="primary")
@@ -819,6 +850,27 @@ def panel_back_keyboard() -> InlineKeyboardMarkup:
 def panel_cancel_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="check")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def broadcast_anon_plus_keyboard() -> InlineKeyboardMarkup:
+    """Кнопка под промо-рассылкой Анон Plus."""
+    b = InlineKeyboardBuilder()
+    _button(b, "Анон Plus", callback_data=CB_ANONPLUS, icon="bonus", style="primary")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def broadcast_anon_plus_preview_keyboard() -> InlineKeyboardMarkup:
+    """Предпросмотр промо Анон Plus перед отправкой пользователям."""
+    b = InlineKeyboardBuilder()
+    _button(b, "Анон Plus", callback_data=CB_ANONPLUS, icon="bonus", style="primary")
+    _button(
+        b, "Отправить всем без Анон Plus",
+        callback_data=CB_PANEL_BC_PLUS_SEND, icon="check", style="success",
+    )
+    _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="delete", style="danger")
     b.adjust(1)
     return b.as_markup()
 
