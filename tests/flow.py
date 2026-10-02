@@ -1212,8 +1212,10 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     closed_battle = await db.get_battle(int(active_battle["id"]))
     check(closed_battle is None, "/stop удаляет активную игру из SQLite")
     dialog_results = session.texts_to(A)
-    check(any("сообщений" in text and "2 игры · +" in text for text in dialog_results),
-          "после диалога показывается компактный итог разговора")
+    check(not any("2 игры · +" in text for text in dialog_results),
+          "бесплатному пользователю статистика после диалога скрыта")
+    check(any("Диалог закрыт" in text for text in dialog_results),
+          "после диалога остаётся обычное уведомление и возможность оценить")
     session.clear()
     check(B not in await db.excluded_partners(A, recent_seconds=0),
           "вечной блокировки собеседника больше нет")
