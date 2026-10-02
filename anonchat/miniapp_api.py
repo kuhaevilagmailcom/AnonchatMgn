@@ -277,7 +277,7 @@ class MiniAppServer:
             ),
             "badge_glyph": self.pack.profile_badge_glyph(badge_key),
             "photo_url": user.get("photo_url") or "",
-            "rank": rank.title,
+            "rank": rank.name,
             "stars": int(row["xp"] or 0),
             "age": int(row["age"] or 0),
             "district": str(row["district"] or ""),
