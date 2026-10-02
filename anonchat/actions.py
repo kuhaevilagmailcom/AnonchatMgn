@@ -759,9 +759,9 @@ async def show_profile(ctx: Ctx) -> None:
         "👤 <b>Твой профиль</b>",
         "",
         "<blockquote>"
-        f"<b>{texts.esc(ctx.nick)}</b>{(' ' + badge) if badge else ''}\n"
-        f"<i>{rank.emoji} {texts.esc(rank.title)}</i>"
+        f"<b>{texts.esc(ctx.nick)}</b>{(' ' + badge) if badge else ''}"
         "</blockquote>",
+        f"<i>{rank.emoji} {texts.esc(rank.title)}</i>",
         "",
         f"⭐ Очки: <b>{int(me['xp'])}</b>",
     ]
