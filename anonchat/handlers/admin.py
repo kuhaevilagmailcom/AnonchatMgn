@@ -455,6 +455,52 @@ async def do_broadcast_message(ctx: Ctx, db: Database, message: Message) -> str:
     return texts.PANEL_BC_DONE.format(sent=sent, total=len(ids))
 
 
+async def do_simple_broadcast(
+    ctx: Ctx,
+    db: Database,
+    body: str,
+    action: str,
+    photo_file_id: str = "",
+    entities: list[MessageEntity] | None = None,
+) -> str:
+    """Обычная рассылка: текст, опциональное фото и кнопка действия внутри бота."""
+    ids = await db.broadcast_ids()
+    await ctx.reply(texts.PANEL_BC_PROGRESS.format(total=len(ids)))
+    sent = 0
+    markup = K.broadcast_simple_user_keyboard(action)
+    for uid in ids:
+        try:
+            if photo_file_id:
+                await ctx.bot.send_photo(
+                    chat_id=uid,
+                    photo=photo_file_id,
+                    caption=body,
+                    caption_entities=entities or None,
+                    parse_mode=None,
+                    reply_markup=markup,
+                )
+            else:
+                await ctx.bot.send_message(
+                    chat_id=uid,
+                    text=body,
+                    entities=entities or None,
+                    parse_mode=None,
+                    reply_markup=markup,
+                )
+            sent += 1
+        except TelegramAPIError:
+            pass
+        await asyncio.sleep(0.05)
+    failed = max(0, len(ids) - sent)
+    return (
+        f"✅ Рассылка завершена. Доставлено: <b>{sent}</b> из <b>{len(ids)}</b>. "
+        f"Не доставлено: <b>{failed}</b>."
+    )
+
+
+_SIMPLE_BROADCAST_ACTIONS = {"feedback", "menu", "connect", "profile", "none"}
+
+
 async def do_ad_broadcast(
     ctx: Ctx,
     db: Database,
@@ -822,6 +868,107 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         await ctx.ack("У тебя нет права на рассылку", alert=True)
         return
 
+    if data == K.CB_PANEL_BC_SIMPLE_SEND:
+        draft = await state.get_data()
+        body = str(draft.get("bc_text") or "")
+        photo_file_id = str(draft.get("bc_photo") or "")
+        action = str(draft.get("bc_action") or "")
+        entities = [
+            MessageEntity.model_validate(item)
+            for item in (draft.get("bc_entities") or [])
+            if isinstance(item, dict)
+        ]
+        if (
+            draft.get("adm") != "bc_simple_ready"
+            or not body.strip()
+            or action not in _SIMPLE_BROADCAST_ACTIONS
+        ):
+            await ctx.ack("Черновик рассылки устарел. Создай его заново.", alert=True)
+            await state.clear()
+            return
+        await state.update_data(adm="bc_simple_sending")
+        await ctx.ack("Рассылка запущена")
+        if event.message is not None:
+            try:
+                await event.message.edit_reply_markup(
+                    reply_markup=K.broadcast_simple_user_keyboard(action)
+                )
+            except TelegramAPIError:
+                pass
+        result = await do_simple_broadcast(
+            ctx, db, body, action, photo_file_id, entities
+        )
+        await state.clear()
+        await ctx.reply(result)
+        await panel_screen(ctx, db, mm, edit=False)
+        return
+
+    if data.startswith(K.CB_PANEL_BC_SIMPLE_BUTTON_PREFIX):
+        action = data[len(K.CB_PANEL_BC_SIMPLE_BUTTON_PREFIX):]
+        if action not in _SIMPLE_BROADCAST_ACTIONS:
+            await ctx.ack("Кнопка устарела", alert=True)
+            return
+        draft = await state.get_data()
+        body = str(draft.get("bc_text") or "")
+        photo_file_id = str(draft.get("bc_photo") or "")
+        entities = [
+            MessageEntity.model_validate(item)
+            for item in (draft.get("bc_entities") or [])
+            if isinstance(item, dict)
+        ]
+        if draft.get("adm") != "bc_simple_button" or not body.strip():
+            await ctx.ack("Черновик рассылки устарел. Создай его заново.", alert=True)
+            await state.clear()
+            return
+        await state.update_data(adm="bc_simple_ready", bc_action=action)
+        await ctx.ack()
+        preview_markup = K.broadcast_simple_preview_keyboard(action)
+        if photo_file_id:
+            await ctx.bot.send_photo(
+                chat_id=ctx.user_id,
+                photo=photo_file_id,
+                caption=body,
+                caption_entities=entities or None,
+                parse_mode=None,
+                reply_markup=preview_markup,
+            )
+        else:
+            await ctx.bot.send_message(
+                chat_id=ctx.user_id,
+                text=body,
+                entities=entities or None,
+                parse_mode=None,
+                reply_markup=preview_markup,
+            )
+        await ctx.reply(
+            "👆 <b>Предпросмотр готов.</b> Проверь текст, картинку и кнопку. "
+            "Если всё верно — нажми «Отправить всем».",
+            K.panel_cancel_keyboard(),
+        )
+        return
+
+    if data == K.CB_PANEL_BC_SIMPLE_PHOTO:
+        await state.set_state(AdminStates.await_input)
+        await state.set_data({"adm": "bc_simple_image", "bc_photo": ""})
+        await ctx.edit(
+            "📣 <b>Рассылка · картинка</b>\n\n"
+            "Отправь картинку <b>как фото</b>. После этого бот попросит текст.",
+            K.panel_cancel_keyboard(),
+        )
+        await ctx.ack()
+        return
+
+    if data == K.CB_PANEL_BC_SIMPLE_NO_PHOTO:
+        await state.set_state(AdminStates.await_input)
+        await state.set_data({"adm": "bc_simple_text", "bc_photo": ""})
+        await ctx.edit(
+            "📣 <b>Рассылка · без картинки</b>\n\n"
+            "Отправь текст рассылки одним сообщением. Максимум 4000 символов.",
+            K.panel_cancel_keyboard(),
+        )
+        await ctx.ack()
+        return
+
     if data == K.CB_PANEL_BC_PLUS_SEND:
         draft = await state.get_data()
         photo_file_id = str(draft.get("bc_photo") or "")
@@ -920,12 +1067,13 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
 
     if data == K.CB_PANEL_BC_SIMPLE:
         await state.set_state(AdminStates.await_input)
-        await state.set_data({"adm": "bc"})
+        await state.set_data({"adm": "bc_simple_media"})
         await ctx.edit(
             "📣 <b>Рассылка</b>\n\n"
-            "Отправь одно сообщение, которое нужно разослать активным пользователям. "
-            "Можно текст, фото, видео или другое поддерживаемое сообщение.",
-            K.panel_cancel_keyboard(),
+            "Выбери формат рассылки. Картинка необязательна — дальше добавишь текст "
+            "и выберешь кнопку: «Обратная связь», «Главное меню», "
+            "«Найти собеседника» или «Профиль».",
+            K.broadcast_simple_media_keyboard(),
         )
         await ctx.ack()
         return
@@ -1198,6 +1346,50 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
             f"ID сообщения: <code>{published.message_id}</code>."
         )
         await panel_screen(ctx, db, mm, edit=False)
+        return
+
+    if what == "bc_simple_image":
+        if not message.photo:
+            await ctx.reply(
+                "Нужна именно <b>картинка как фото</b>.",
+                K.panel_cancel_keyboard(),
+            )
+            return
+        photo_file_id = message.photo[-1].file_id
+        await state.update_data(adm="bc_simple_text", bc_photo=photo_file_id)
+        await ctx.reply(
+            "📣 <b>Рассылка · текст</b>\n\n"
+            "Теперь отправь текст одним сообщением. С картинкой — максимум 900 символов.",
+            K.panel_cancel_keyboard(),
+        )
+        return
+
+    if what == "bc_simple_text":
+        body_text = message.text if message.text is not None else (message.caption or "")
+        if not body_text.strip():
+            await ctx.reply("Текст не может быть пустым.")
+            return
+        draft = await state.get_data()
+        photo_file_id = str(draft.get("bc_photo") or "")
+        max_len = 900 if photo_file_id else 4000
+        if len(body_text) > max_len:
+            await ctx.reply(f"Текст слишком длинный. Максимум {max_len} символов.")
+            return
+        source_entities = message.entities if message.text is not None else message.caption_entities
+        serialized_entities = [
+            entity.model_dump(mode="json", exclude_none=True)
+            for entity in (source_entities or [])
+        ]
+        await state.update_data(
+            adm="bc_simple_button",
+            bc_text=body_text,
+            bc_entities=serialized_entities,
+        )
+        await ctx.reply(
+            "🔘 <b>Кнопка под рассылкой</b>\n\n"
+            "Выбери, куда она должна вести. Можно также отправить рассылку без кнопки.",
+            K.broadcast_simple_action_keyboard(),
+        )
         return
 
     if what == "bc_plus_image":
