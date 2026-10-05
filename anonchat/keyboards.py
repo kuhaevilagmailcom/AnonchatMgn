@@ -681,6 +681,10 @@ CB_PANEL_QUEUE = "adm:panel:queue"
 CB_PANEL_FIND = "adm:panel:find"
 CB_PANEL_BC = "adm:panel:broadcast"
 CB_PANEL_BC_SIMPLE = "adm:panel:broadcast:simple"
+CB_PANEL_BC_SIMPLE_PHOTO = "adm:panel:broadcast:simple:photo"
+CB_PANEL_BC_SIMPLE_NO_PHOTO = "adm:panel:broadcast:simple:no_photo"
+CB_PANEL_BC_SIMPLE_BUTTON_PREFIX = "adm:panel:broadcast:simple:button:"
+CB_PANEL_BC_SIMPLE_SEND = "adm:panel:broadcast:simple:send"
 CB_PANEL_BC_SEND = "adm:panel:broadcast:send"
 CB_PANEL_BC_CHANNEL = "adm:panel:broadcast:channel"
 CB_PANEL_BC_PLUS = "adm:panel:broadcast:anonplus"
@@ -850,6 +854,77 @@ def panel_back_keyboard() -> InlineKeyboardMarkup:
 def panel_cancel_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="check")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def broadcast_simple_media_keyboard() -> InlineKeyboardMarkup:
+    """Выбор: будет ли у обычной рассылки картинка."""
+    b = InlineKeyboardBuilder()
+    _button(
+        b, "С картинкой", callback_data=CB_PANEL_BC_SIMPLE_PHOTO,
+        icon="view", style="primary",
+    )
+    _button(
+        b, "Без картинки", callback_data=CB_PANEL_BC_SIMPLE_NO_PHOTO,
+        icon="next",
+    )
+    _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="delete", style="danger")
+    b.adjust(2, 1)
+    return b.as_markup()
+
+
+_BROADCAST_SIMPLE_ACTIONS: dict[str, tuple[str, str, str, str]] = {
+    "feedback": ("Обратная связь", CB_FEEDBACK, "support", "primary"),
+    "menu": ("Главное меню", CB_MENU, "home", ""),
+    "connect": ("Найти собеседника", CB_CONNECT, "view", "success"),
+    "profile": ("Профиль", CB_PROFILE, "profile", "primary"),
+}
+
+
+def broadcast_simple_action_keyboard() -> InlineKeyboardMarkup:
+    """Какое действие будет выполнять кнопка под обычной рассылкой."""
+    b = InlineKeyboardBuilder()
+    for action, (label, _callback, icon, style) in _BROADCAST_SIMPLE_ACTIONS.items():
+        _button(
+            b, label,
+            callback_data=f"{CB_PANEL_BC_SIMPLE_BUTTON_PREFIX}{action}",
+            icon=icon, style=style,
+        )
+    _button(
+        b, "Без кнопки",
+        callback_data=f"{CB_PANEL_BC_SIMPLE_BUTTON_PREFIX}none",
+        icon="check",
+    )
+    _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="delete", style="danger")
+    b.adjust(2, 2, 1, 1)
+    return b.as_markup()
+
+
+def broadcast_simple_user_keyboard(action: str) -> InlineKeyboardMarkup | None:
+    """Кнопка, которую увидит пользователь под обычной рассылкой."""
+    item = _BROADCAST_SIMPLE_ACTIONS.get(str(action))
+    if item is None:
+        return None
+    label, callback_data, icon, style = item
+    b = InlineKeyboardBuilder()
+    _button(b, label, callback_data=callback_data, icon=icon, style=style)
+    b.adjust(1)
+    return b.as_markup()
+
+
+def broadcast_simple_preview_keyboard(action: str) -> InlineKeyboardMarkup:
+    """Предпросмотр обычной рассылки + служебные кнопки отправки."""
+    b = InlineKeyboardBuilder()
+    item = _BROADCAST_SIMPLE_ACTIONS.get(str(action))
+    if item is not None:
+        label, callback_data, icon, style = item
+        _button(b, label, callback_data=callback_data, icon=icon, style=style)
+    _button(
+        b, "Отправить всем",
+        callback_data=CB_PANEL_BC_SIMPLE_SEND, icon="check", style="success",
+    )
+    _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="delete", style="danger")
     b.adjust(1)
     return b.as_markup()
 
