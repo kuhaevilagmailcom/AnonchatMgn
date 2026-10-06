@@ -57,7 +57,7 @@ CB_ANONPLUS_EMOJI = "profile:anonplus:emoji"
 CB_ANONPLUS_EMOJI_SET_PREFIX = "profile:anonplus:emoji:set:"
 CB_ANONPLUS_SBP_CHECK_PREFIX = "profile:anonplus:sbpcheck:"
 
-MINIAPP_PUBLIC_URL = "https://t.me/AnonChatMgn_Bot/anonmgn"
+MINIAPP_PUBLIC_URL = "https://t.me/AnonChatMgn_Bot/anonmgn?startapp=ui_icons_31"
 
 
 #: Bot API принимает только эти три цвета кнопки («warning» отвергает — проверено живьём)
