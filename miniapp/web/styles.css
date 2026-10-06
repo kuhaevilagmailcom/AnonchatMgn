@@ -1046,3 +1046,57 @@ body[data-theme="mono"] .premium-overlay-button{color:#000}
 .result-plus-lock strong{font-size:15px;line-height:1.4}
 .result-plus-lock small{font-size:11px;color:var(--muted);line-height:1.45}
 .result-plus-lock .action{margin-top:7px}
+
+
+/* Hugeicons: unified stroke-rounded icon system */
+[data-icon]{
+  display:inline-grid;
+  place-items:center;
+  flex:0 0 auto;
+  line-height:1;
+  vertical-align:middle;
+}
+[data-icon]>.hgi{
+  display:block;
+  width:1em;
+  height:1em;
+  font-size:20px;
+  line-height:1;
+  color:inherit;
+  font-style:normal;
+  font-weight:400;
+  text-rendering:geometricPrecision;
+  -webkit-font-smoothing:antialiased;
+}
+.offline [data-icon]>.hgi{font-size:15px}
+.icon-btn [data-icon]>.hgi{font-size:22px}
+.topbar .icon-btn[data-open="settings"] [data-icon]>.hgi{font-size:20px}
+.profile-card>[data-icon]>.hgi{font-size:20px}
+.primary [data-icon]>.hgi{font-size:20px}
+.row-icon>.hgi{font-size:24px}
+.row>[data-icon]>.hgi{font-size:18px;color:#77777c}
+.radar [data-icon]>.hgi{font-size:22px}
+.hint [data-icon]>.hgi{font-size:15px;color:var(--green)}
+.game-art>.hgi{font-size:28px}
+.game-card b [data-icon]>.hgi{font-size:14px}
+.event>span>.hgi{font-size:18px}
+.soft [data-icon]>.hgi{font-size:13px}
+.profile-stats [data-icon]>.hgi{display:none}
+.streak-card>[data-icon]>.hgi{font-size:17px;color:var(--muted)}
+.menu button>[data-icon]:first-child>.hgi{font-size:21px;color:#e3e3e5}
+.menu button>[data-icon]:last-child>.hgi{font-size:17px;color:var(--muted-2)}
+.bottom-nav [data-icon]>.hgi{font-size:21px}
+.bottom-nav button.active [data-icon]>.hgi{color:var(--accent)}
+.copy-box button [data-icon]>.hgi{font-size:18px;margin:auto}
+.reward [data-icon]>.hgi{font-size:18px}
+.chat-back [data-icon]>.hgi{font-size:25px}
+.composer-btn [data-icon]>.hgi{font-size:21px}
+.send-btn [data-icon]>.hgi{font-size:19px}
+.chat-top-actions .chat-action [data-icon]>.hgi{font-size:17px}
+.chat-top-actions #chatStop [data-icon]>.hgi{font-size:16px}
+.reply-preview button [data-icon]>.hgi{font-size:15px}
+.event>[data-icon]>.hgi{font-size:15px;color:#5d565b}
+.page[data-page="home"] .row-icon>.hgi{font-size:23px}
+.anon-plus-benefits-toggle>i[data-icon]>.hgi{font-size:16px;transition:transform .18s var(--ease)}
+.anon-plus-benefits-toggle.open>i[data-icon]>.hgi{transform:rotate(90deg);color:var(--text)}
+.profile-feedback-card [data-icon]>.hgi{font-size:20px}
