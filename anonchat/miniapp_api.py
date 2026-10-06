@@ -2847,8 +2847,10 @@ class MiniAppServer:
         response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self' https://telegram.org; "
-            "style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; "
-            "connect-src 'self'; frame-ancestors https://web.telegram.org https://*.telegram.org"
+            "style-src 'self' 'unsafe-inline' https://use.hugeicons.com; "
+            "font-src 'self' https://use.hugeicons.com data:; "
+            "img-src 'self' https: data:; connect-src 'self'; "
+            "frame-ancestors https://web.telegram.org https://*.telegram.org"
         )
         if origin and origin_allowed:
             response.headers["Access-Control-Allow-Origin"] = origin
