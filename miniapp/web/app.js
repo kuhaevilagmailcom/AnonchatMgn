@@ -33,20 +33,42 @@ if (typeof window === 'undefined') {
   const tgAtLeast = version => Boolean(tg && (!tg.isVersionAtLeast || tg.isVersionAtLeast(version)));
   const apiBase = (window.ANON_MGN_API_BASE || $('meta[name="api-base"]')?.content || '').replace(/\/$/, '');
   // Game icon metaphors follow the 24x24 / 2px Tabler Icons system.
-  const paths = {
-    'settings':'<path d="M12.2 2h-.4a2 2 0 0 0-2 2v.2a2 2 0 0 1-1 1.7l-.4.2a2 2 0 0 1-2 0l-.2-.1a2 2 0 0 0-2.7.7l-.2.4a2 2 0 0 0 .7 2.7l.2.1a2 2 0 0 1 1 1.7v.5a2 2 0 0 1-1 1.7l-.2.1a2 2 0 0 0-.7 2.7l.2.4a2 2 0 0 0 2.7.7l.2-.1a2 2 0 0 1 2 0l.4.2a2 2 0 0 1 1 1.7v.2a2 2 0 0 0 2 2h.4a2 2 0 0 0 2-2v-.2a2 2 0 0 1 1-1.7l.4-.2a2 2 0 0 1 2 0l.2.1a2 2 0 0 0 2.7-.7l.2-.4a2 2 0 0 0-.7-2.7l-.2-.1a2 2 0 0 1-1-1.7v-.5a2 2 0 0 1 1-1.7l.2-.1a2 2 0 0 0 .7-2.7l-.2-.4a2 2 0 0 0-2.7-.7l-.2.1a2 2 0 0 1-2 0l-.4-.2a2 2 0 0 1-1-1.7V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
-    'chevron-right':'<path d="m9 18 6-6-6-6"/>','chevron-left':'<path d="m15 18-6-6 6-6"/>','arrow-right':'<path d="M5 12h14M13 6l6 6-6 6"/>','x':'<path d="m6 6 12 12M18 6 6 18"/>',
-    'paperclip':'<path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 1 1-2.8-2.8l8.5-8.5"/>',
-    'smile':'<circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/>',
-    'mic':'<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/>',
-    'send':'<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
-    'skip-forward':'<path d="m5 4 10 8-10 8Z"/><path d="M19 5v14"/>',
-    'square':'<rect x="5" y="5" width="14" height="14" rx="3"/>',
-    'crown':'<path d="m3 7 4.5 4L12 4l4.5 7L21 7l-2 11H5Z"/><path d="M5 18h14"/>',
-    'messages-circle':'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M8 12h.01M12 12h.01M16 12h.01"/>','message-circle':'<path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/>','messages-square':'<path d="M14 17H5l-3 3V7a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v6a4 4 0 0 1-4 4Z"/><path d="M18 9h1a3 3 0 0 1 3 3v9l-3-2h-5"/>',
-    'search':'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>','house':'<path d="m3 11 9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1Z"/>','gamepad-2':'<path d="M12 5h3.5a5 5 0 0 1 0 10H10l-4.015 4.227a2.3 2.3 0 0 1-3.923-2.035l1.634-8.173A5 5 0 0 1 8.6 5H12"/><path d="m14 15 4.07 4.284a2.3 2.3 0 0 0 3.925-2.023l-1.6-8.232M8 9v2M7 10h2M14 10h2"/>','bell':'<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>','user-round':'<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
-    'target':'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>','shield-check':'<path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3Z"/><path d="m9 12 2 2 4-4"/>','swords':'<path d="M21 3v5l-11 9-4 4-3-3 4-4 9-11h5M5 13l6 6M14.32 17.32 18 21l3-3-3.365-3.365M10 5.5 8 3H3v5l3 2.5"/>','hash':'<path d="M5 9h14M4 15h14M10 3 8 21M16 3l-2 18"/>',
-    'pencil':'<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>','thumbs-up':'<path d="M7 10v12H3V10h4ZM7 20h10.5a2 2 0 0 0 2-1.6l1.4-7A2 2 0 0 0 19 9h-5l1-4a2 2 0 0 0-2-2l-6 7"/>','chart':'<path d="M3 3v18h18M7 16v2M12 12v6M17 7v11"/>','trophy':'<path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0ZM7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3"/>','link':'<path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/>','sliders':'<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>','mail':'<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>','circle-help':'<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.8 1c0 2-3 2-3 4M12 18h.01"/>','wifi-off':'<path d="m1 1 22 22M8.5 8.5A9 9 0 0 1 21 9M3 9a14 14 0 0 1 2.5-1.7M5 13a10 10 0 0 1 7-2.6M19 13a10 10 0 0 0-2.1-1.4M8.5 16.5a5 5 0 0 1 7 0M12 20h.01"/>','copy':'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>','gift':'<rect x="3" y="8" width="18" height="13" rx="2"/><path d="M12 8v13M3 12h18M7.5 8C5 8 4 6.8 4 5.5S5 3 6.5 3C9 3 12 8 12 8M16.5 8C19 8 20 6.8 20 5.5S19 3 17.5 3C15 3 12 8 12 8"/>'
+  const hugeIconNames = {
+    'settings':'settings-01',
+    'chevron-right':'arrow-right-01',
+    'chevron-left':'arrow-left-01',
+    'arrow-right':'arrow-right-02',
+    'x':'cancel-01',
+    'paperclip':'attachment-01',
+    'smile':'smile',
+    'mic':'mic-01',
+    'send':'sent',
+    'skip-forward':'next',
+    'square':'stop',
+    'crown':'crown',
+    'messages-circle':'message-01',
+    'message-circle':'message-01',
+    'messages-square':'message-01',
+    'search':'search-01',
+    'house':'home-01',
+    'gamepad-2':'game-controller-03',
+    'bell':'notification-02',
+    'user-round':'user',
+    'target':'target-01',
+    'shield-check':'shield-02',
+    'swords':'sword-01',
+    'hash':'hashtag',
+    'pencil':'edit-02',
+    'thumbs-up':'thumbs-up',
+    'chart':'analytics-01',
+    'trophy':'crown',
+    'link':'link-01',
+    'sliders':'filter-horizontal',
+    'mail':'mail-01',
+    'circle-help':'help-circle',
+    'wifi-off':'wifi-disconnected-01',
+    'copy':'copy-01',
+    'gift':'gift'
   };
   const state = {page:'home', modal:null, status:'free', position:null, user:{nick:'Аноним',rank:'👤 Вася',stars:0,age:0,district:'',gender:'',looking_for:'',photo_url:'',anon_plus_theme:'pink',badge_glyph:''},stats:{online:0,chatting:0,searching:0,dialogs:0,messages:0,ratings:0,games:0,battle_games:0,number_games:0,streak:0,best_streak:0,quest_current:0,quest_target:20},referral:{invited:0,earned:0},referral_url:'',bot_url:'',events:[],subscription:null,anonPlus:{active:false,until:0,days:0,price_stars:25,price_rub:50,sbp_enabled:false,theme:'pink',emoji:'',emoji_glyph:'',show_nick:false}};
   let statusRequestSeq = 0;
@@ -62,7 +84,7 @@ if (typeof window === 'undefined') {
   let anonPlusBenefitsOpen = false;
   const chat = {latest:0,startedAt:0,sent:0,received:0,timer:null,geoTimer:null,seen:new Set(),stickersLoaded:false,recording:false,recorder:null,stream:null,chunks:[],recordTimer:null,mediaCache:new Map(),game:null,gameHoldUntil:0,reply:null};
   const CHAT_EMOJIS = ['😀','😃','😄','😁','😂','🤣','🥹','😊','🙂','😉','😍','😘','😎','🤨','😐','😴','😭','😡','🤬','🥰','🤍','❤️','🩷','🔥','⭐','✨','💀','🤝','👍','👎','🙏','💬','👀','🤡','😈','💯','🎉','🥳','😏','🙃','😌','🤔','😳','🫠','😅','🤝','💋','🫶'];
-  const svg = n => `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[n] || paths['circle-help']}</svg>`;
+  const svg = n => `<i class="hgi hgi-stroke hgi-${hugeIconNames[n] || hugeIconNames['circle-help']}" aria-hidden="true"></i>`;
   function icons(root=document){$$('[data-icon]',root).forEach(el=>{el.innerHTML=svg(el.dataset.icon)})}
   function esc(v=''){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
   function haptic(type='light'){try{if(tgAtLeast('6.1'))tg.HapticFeedback?.impactOccurred(type)}catch(_){}}
