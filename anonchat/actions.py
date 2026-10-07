@@ -949,6 +949,7 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
     live_chat.clear_pair(ctx.user_id, partner)
 
     counts: dict[int, int] = summary.get("counts", {}) or {}
+    bonus_xp: dict[int, int] = summary.get("bonus_xp", {}) or {}
     mine = int(counts.get(ctx.user_id, 0))
     theirs = int(counts.get(partner, 0))
     started = int(summary.get("started_at", time.time()))
@@ -961,11 +962,14 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
     cap = ctx.cfg.xp_message_cap
     earned_xp: dict[int, int] = {}
     for uid, sent in ((ctx.user_id, mine), (partner, theirs)):
-        base_gain = (
+        message_gain = (
             min(sent, cap) * ctx.cfg.xp_per_message
-            + (ctx.cfg.xp_per_dialog if live else 0)
+            + int(bonus_xp.get(uid, 0))
         )
-        gain = await ctx.db.effective_xp_reward(base_gain)
+        dialog_gain = await ctx.db.effective_xp_reward(
+            ctx.cfg.xp_per_dialog if live else 0
+        )
+        gain = message_gain + dialog_gain
         if gain:
             await ctx.db.award_xp(uid, gain, commit=False)
         if sent:
