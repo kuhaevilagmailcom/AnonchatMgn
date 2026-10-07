@@ -408,6 +408,14 @@ def referral_day_start(timestamp: int | None = None) -> int:
     return ((value + REFERRAL_TIMEZONE_OFFSET) // 86_400) * 86_400 - REFERRAL_TIMEZONE_OFFSET
 
 
+def week_period_start(timestamp: int | None = None) -> int:
+    """Понедельник 00:00 текущей недели по Магнитогорску (UTC+5)."""
+    day = referral_day_start(timestamp)
+    local_midnight = day + REFERRAL_TIMEZONE_OFFSET
+    weekday = time.gmtime(local_midnight).tm_wday  # Monday == 0
+    return day - weekday * 86_400
+
+
 def number_reward_day_start(timestamp: int | None = None) -> int:
     return referral_day_start(timestamp)
 
@@ -2609,7 +2617,11 @@ class Database:
         if days <= 0:
             rows = await self.top(limit)
         else:
-            start = referral_day_start() - (max(1, days) - 1) * 86_400
+            start = (
+                week_period_start()
+                if days == 7
+                else referral_day_start() - (max(1, days) - 1) * 86_400
+            )
             rows = await self._fetchall(
                 """SELECT u.user_id, u.nickname, u.support_stars,
                           u.premium_until, u.anon_plus_emoji, u.support_rub,
@@ -2652,7 +2664,11 @@ class Database:
             )
             top10 = await self.top(10)
         else:
-            start = referral_day_start() - (max(1, days) - 1) * 86_400
+            start = (
+                week_period_start()
+                if days == 7
+                else referral_day_start() - (max(1, days) - 1) * 86_400
+            )
             mine = await self._fetchone(
                 """SELECT COALESCE(SUM(xp_earned),0) xp,
                           COALESCE(SUM(dialogs),0) dialogs,
