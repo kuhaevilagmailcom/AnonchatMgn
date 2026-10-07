@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from anonchat.db import Database, number_reward_day_start, referral_day_start, week_period_start  # noqa: E402
+from anonchat.db import Database, month_period_start, number_reward_day_start, referral_day_start, week_period_start  # noqa: E402
 from anonchat.levels import RANKS, rank_for  # noqa: E402
 from anonchat.matching import Matchmaker  # noqa: E402
 
@@ -1447,6 +1447,31 @@ def test_weekly_top_starts_on_monday() -> None:
             await db.close()
 
     asyncio.run(scenario())
+
+
+def test_monthly_top_starts_on_first_day() -> None:
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "monthly-top.db"
+        db = await Database(path).start()
+        try:
+            await db.ensure_user(921, "old_month", "Old")
+            await db.ensure_user(922, "this_month", "Current")
+            month_start = month_period_start()
+            await db.activity_add(921, timestamp=month_start - 1, xp_earned=1500)
+            await db.activity_add(922, timestamp=month_start, xp_earned=120)
+
+            month = await db.top_period(30, 10)
+            ids = [int(row["user_id"]) for row in month]
+            assert 922 in ids
+            assert 921 not in ids, "в месячный топ не должны попадать очки прошлого месяца"
+
+            old_position = await db.top_position_period(921, 30)
+            assert old_position["stars"] == 0
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
 
 
 def test_period_top_backfills_legacy_xp_once() -> None:
