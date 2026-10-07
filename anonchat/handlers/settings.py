@@ -487,6 +487,7 @@ async def cb_subscription_check(event: CallbackQuery, ctx: Ctx, db: Database) ->
         await ctx.ack("Сначала подпишись на канал", alert=True)
         return
 
+    effective_amount = await db.effective_xp_reward(amount)
     claimed = await db.claim_one_time_reward(
         ctx.user_id, SUBSCRIPTION_REWARD_KEY, amount
     )
@@ -495,7 +496,7 @@ async def cb_subscription_check(event: CallbackQuery, ctx: Ctx, db: Database) ->
         return
 
     ctx.me = await db.get_user(ctx.user_id)
-    await ctx.ack(f"+{amount} ⭐️")
+    await ctx.ack(f"+{effective_amount} ⭐️")
     await show_profile(ctx)
 
 
