@@ -165,8 +165,9 @@ def _chat_header(pack, sender: Any, sender_id: int, partner: Any, partner_id: in
     chat_icon = pack.admin_icon("chat") if pack is not None else "💬"
     user_icon = pack.admin_icon("user") if pack is not None else "👤"
     return (
-        f"{chat_icon} <b>Активный чат</b>\n"
-        f"{user_icon} {_identity(sender, sender_id)} → {_identity(partner, partner_id)}"
+        f"{chat_icon} <b>Активный чат</b>\n\n"
+        f"{user_icon} <b>От:</b> {_identity(sender, sender_id)}\n"
+        f"<b>Кому:</b> {_identity(partner, partner_id)}"
     )
 
 
