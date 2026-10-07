@@ -40,7 +40,6 @@ from .runtime_state import touch as presence_touch
 from .safety import contains_contact
 from .monitoring import enqueue_chat_monitor_sent
 from .payments import RollyPayError, create_payment, get_payment
-from .pack import PROFILE_BADGES
 from .miniapp_features import (
     REPORT_REASONS,
     achievement_items,
@@ -57,7 +56,6 @@ SUPPORT_MIN_STARS = 1
 SUPPORT_MAX_STARS = 10_000
 SUPPORT_MIN_RUB = 1
 SUPPORT_MAX_RUB = 1_000_000_000
-ANON_PLUS_THEMES = {"pink", "blue", "violet", "green", "orange", "mono"}
 
 
 def _subscription_chat_id(raw: str) -> int | str | None:
@@ -264,18 +262,11 @@ class MiniAppServer:
 
     def _profile_json(self, row, user: dict) -> dict:
         rank = rank_for(int(row["messages"] or 0))
-        plus_active = int(row["premium_until"] or 0) > int(time.time())
-        badge_key = str(row["anon_plus_emoji"] or "").strip() if plus_active else ""
-        if not badge_key and (
-            int(row["support_stars"] or 0) > 0 or int(row["support_rub"] or 0) > 0
-        ):
-            badge_key = "diamond"
         return {
             "id": int(row["user_id"]),
             "nick": nicklib.display(
                 row["nickname"], int(row["user_id"]), int(row["support_stars"] or 0)
             ),
-            "badge_glyph": self.pack.profile_badge_glyph(badge_key),
             "photo_url": user.get("photo_url") or "",
             "rank": rank.name,
             "stars": int(row["xp"] or 0),
@@ -283,34 +274,26 @@ class MiniAppServer:
             "district": str(row["district"] or ""),
             "gender": str(row["gender"] or ""),
             "looking_for": str(row["looking_for"] or ""),
-            "anon_plus_theme": str(row["anon_plus_theme"] or "pink"),
-            "anon_plus_emoji": str(row["anon_plus_emoji"] or ""),
         }
 
     async def _stats(self, user_id: int, row=None) -> dict:
         row = row or await self.db.get_user(user_id)
         today = await self.db.activity_totals(user_id, 1)
         engagement = await self.db.engagement_state(user_id)
-        plus_active = bool(
-            row and int(row["premium_until"] or 0) > int(time.time())
-        )
         return {
             "online": presence_online_count(),
             "chatting": self.mm.online_pairs() * 2,
             "searching": self.mm.queue_size(),
-            # Расширенные цифры вообще не отдаём бесплатному клиенту.
-            "dialogs": int(row["dialogs"] or 0) if plus_active else 0,
-            "messages": int(row["messages"] or 0) if plus_active else 0,
-            "ratings": int(row["good_ratings"] or 0) if plus_active else 0,
-            "games": int(engagement["games_total"] or 0) if plus_active else 0,
-            "battle_games": int(engagement["battle_games_total"] or 0) if plus_active else 0,
-            "number_games": int(engagement["number_games_total"] or 0) if plus_active else 0,
-            # Серии и дневной квест остаются базовыми функциями.
+            "dialogs": int(row["dialogs"] or 0),
+            "messages": int(row["messages"] or 0),
+            "ratings": int(row["good_ratings"] or 0),
+            "games": int(engagement["games_total"] or 0),
+            "battle_games": int(engagement["battle_games_total"] or 0),
+            "number_games": int(engagement["number_games_total"] or 0),
             "streak": int(engagement["current_streak"] or 0),
             "best_streak": int(engagement["best_streak"] or 0),
             "quest_current": int(today.get("messages", 0)),
             "quest_target": 20,
-            "premium_locked": not plus_active,
         }
 
     def _status_payload(self, user_id: int) -> dict:
@@ -344,33 +327,6 @@ class MiniAppServer:
                 "referral": {"invited": invited, "earned": earned},
                 "referral_url": f"https://t.me/{bot_username}?start=ref_{uid}",
                 "bot_url": f"https://t.me/{bot_username}",
-                "anon_plus": {
-                    "active": int(row["premium_until"] or 0) > int(time.time()),
-                    "until": int(row["premium_until"] or 0),
-                    "days": 0,
-                    "lifetime": True,
-                    "price_stars": int(self.cfg.anon_plus_price_stars),
-                    "price_rub": int(self.cfg.anon_plus_price_rub),
-                    "sbp_enabled": bool(self.cfg.rollypay_enabled),
-                    "theme": (
-                        str(row["anon_plus_theme"] or "pink")
-                        if int(row["premium_until"] or 0) > int(time.time())
-                        else "pink"
-                    ),
-                    "emoji": (
-                        str(row["anon_plus_emoji"] or "")
-                        if int(row["premium_until"] or 0) > int(time.time())
-                        else ""
-                    ),
-                    "emoji_glyph": (
-                        self.pack.profile_badge_glyph(str(row["anon_plus_emoji"] or ""))
-                        if int(row["premium_until"] or 0) > int(time.time())
-                        else ""
-                    ),
-                    "show_nick": bool(row["anon_plus_show_nick"])
-                    if int(row["premium_until"] or 0) > int(time.time())
-                    else False,
-                },
                 "notifications": await self._notifications(uid),
             }
         )
@@ -610,29 +566,6 @@ class MiniAppServer:
             for item in live_chat.events(uid, after=after, limit=100)
         ]
         peer = None
-        if status == "paired" and partner is not None:
-            partner_row = await self.db.get_user(partner)
-            if (
-                partner_row is not None
-                and int(partner_row["premium_until"] or 0) > int(time.time())
-                and bool(partner_row["anon_plus_show_nick"])
-            ):
-                peer = {
-                    "nick": nicklib.display(
-                        partner_row["nickname"],
-                        int(partner),
-                        int(partner_row["support_stars"] or 0),
-                    ),
-                    "emoji": self.pack.profile_badge_glyph(
-                        str(partner_row["anon_plus_emoji"] or "")
-                        or (
-                            "diamond"
-                            if int(partner_row["support_stars"] or 0) > 0
-                            or int(partner_row["support_rub"] or 0) > 0
-                            else ""
-                        )
-                    ),
-                }
         return web.json_response(
             {
                 "status": status,
@@ -1229,20 +1162,14 @@ class MiniAppServer:
         partner_summary = _dialog_summary_text(
             summary, partner, earned_xp.get(partner, 0)
         )
-        my_row = await self.db.get_user(uid)
-        partner_row = await self.db.get_user(partner)
-        my_plus = bool(my_row and int(my_row["premium_until"] or 0) > int(time.time()))
-        partner_plus = bool(
-            partner_row and int(partner_row["premium_until"] or 0) > int(time.time())
-        )
         await self._push_event(
             uid, "dialog", "Диалог завершён",
-            my_summary if my_plus else "Статистика разговора доступна с Анон Plus.",
+            my_summary,
             icon="message-circle", action="dialog:result",
         )
         await self._push_event(
             partner, "dialog", "Диалог завершён",
-            partner_summary if partner_plus else "Статистика разговора доступна с Анон Plus.",
+            partner_summary,
             icon="message-circle", action="dialog:result",
         )
         partner_note = texts.PARTNER_SKIPPED if next_chat else texts.PARTNER_LEFT
@@ -1250,14 +1177,14 @@ class MiniAppServer:
         await send_to(
             self.bot,
             partner,
-            f"{partner_note}{('\\n\\n' + partner_summary) if partner_plus else ''}",
+            f"{partner_note}\n\n{partner_summary}",
             K.menu_keyboard(),
             self.pack,
         )
         await send_to(
             self.bot,
             uid,
-            f"{my_note}{('\\n\\n' + my_summary) if my_plus else ''}",
+            f"{my_note}\n\n{my_summary}",
             K.rating_keyboard(),
             self.pack,
         )
@@ -1364,14 +1291,8 @@ class MiniAppServer:
         return web.json_response(self._status_payload(uid))
 
     async def chat_result(self, request: web.Request) -> web.Response:
-        uid, _, row = await self._auth(request)
+        uid, _, _ = await self._auth(request)
         result = dialog_result_payload(await self.db.dialog_result(uid))
-        if result and int(row["premium_until"] or 0) <= int(time.time()):
-            result = {
-                "match_id": result.get("match_id"),
-                "rated": bool(result.get("rated")),
-                "locked": True,
-            }
         return web.json_response({"result": result})
 
     async def chat_rate(self, request: web.Request) -> web.Response:
@@ -1636,8 +1557,6 @@ class MiniAppServer:
 
     async def activity(self, request: web.Request) -> web.Response:
         uid, _, row = await self._auth(request)
-        if int(row["premium_until"] or 0) <= int(time.time()):
-            raise _json_error(403, "Моя активность доступна с Анон Plus")
         engagement = await self.db.engagement_state(uid)
         result = {
             "today": await self.db.activity_totals(uid, 1),
@@ -1827,119 +1746,42 @@ class MiniAppServer:
         )
 
 
-    async def anon_plus_invoice(self, request: web.Request) -> web.Response:
-        uid, _, row = await self._auth(request)
-        if int(row["premium_until"] or 0) > int(time.time()):
-            raise _json_error(409, "Анон Plus уже активирован навсегда")
-        stars = int(self.cfg.anon_plus_price_stars)
-        payload = f"anonplus:{uid}:{stars}:0:{secrets.token_hex(8)}"
-        try:
-            invoice_url = await self.bot.create_invoice_link(
-                title="Анон Plus",
-                description="Анон Plus навсегда: темы, расширенная статистика и дополнительные функции профиля.",
-                payload=payload,
-                currency="XTR",
-                prices=[LabeledPrice(label="Анон Plus · навсегда", amount=stars)],
-            )
-        except TelegramAPIError as exc:
-            raise _json_error(
-                503, "Не удалось создать счёт Telegram Stars"
-            ) from exc
-        return web.json_response(
-            {"ok": True, "invoice_url": invoice_url, "stars": stars, "lifetime": True}
-        )
-
-    async def anon_plus_theme(self, request: web.Request) -> web.Response:
-        uid, _, row = await self._auth(request)
-        if int(row["premium_until"] or 0) <= int(time.time()):
-            raise _json_error(403, "Тема доступна с Анон Plus")
-        data = await request.json()
-        theme = str(data.get("theme") or "").strip().lower()
-        if theme not in ANON_PLUS_THEMES:
-            raise _json_error(400, "Неизвестная тема")
-        await self.db.set_anon_plus_theme(uid, theme)
-        return web.json_response({"ok": True, "theme": theme})
-
-    async def anon_plus_identity(self, request: web.Request) -> web.Response:
-        uid, _, row = await self._auth(request)
-        if int(row["premium_until"] or 0) <= int(time.time()):
-            raise _json_error(403, "Настройка доступна с Анон Plus")
-        data = await request.json()
-        emoji = data.get("emoji")
-        show_nick = data.get("show_nick")
-        kwargs = {}
-        if emoji is not None:
-            emoji = str(emoji or "").strip().lower()
-            if emoji and emoji not in PROFILE_BADGES:
-                raise _json_error(400, "Неизвестный премиум-эмодзи")
-            kwargs["emoji"] = emoji
-        if show_nick is not None:
-            kwargs["show_nick"] = bool(show_nick)
-        if not kwargs:
-            raise _json_error(400, "Нет изменений")
-        await self.db.set_anon_plus_identity(uid, **kwargs)
-        updated = await self.db.get_user(uid)
-        return web.json_response(
-            {
-                "ok": True,
-                "emoji": str(updated["anon_plus_emoji"] or ""),
-                "emoji_glyph": self.pack.profile_badge_glyph(
-                    str(updated["anon_plus_emoji"] or "")
-                ),
-                "show_nick": bool(updated["anon_plus_show_nick"]),
-            }
-        )
-
     async def sbp_create(self, request: web.Request) -> web.Response:
-        uid, _, row = await self._auth(request)
+        uid, _, _ = await self._auth(request)
         if not self.cfg.rollypay_enabled:
             raise _json_error(503, "СБП временно недоступна")
 
         data = await request.json()
         kind = str(data.get("kind") or "").strip().lower()
-        if kind == "anonplus":
-            if int(row["premium_until"] or 0) > int(time.time()):
-                raise _json_error(409, "Анон Plus уже активирован навсегда")
-            amount = int(self.cfg.anon_plus_price_rub)
-            premium_days = 0
-            description = "АНОН МГН · Анон Plus навсегда"
-        elif kind == "support":
-            try:
-                amount = int(data.get("amount_rub", 0) or 0)
-            except (TypeError, ValueError) as exc:
-                raise _json_error(400, "Укажи сумму поддержки") from exc
-            if not SUPPORT_MIN_RUB <= amount <= SUPPORT_MAX_RUB:
-                raise _json_error(
-                    400,
-                    "Минимальная сумма поддержки — 1 ₽",
-                )
-            premium_days = 0
-            description = "АНОН МГН · Поддержка проекта"
-        else:
+        if kind != "support":
             raise _json_error(400, "Неизвестный тип платежа")
+        try:
+            amount = int(data.get("amount_rub", 0) or 0)
+        except (TypeError, ValueError) as exc:
+            raise _json_error(400, "Укажи сумму поддержки") from exc
+        if not SUPPORT_MIN_RUB <= amount <= SUPPORT_MAX_RUB:
+            raise _json_error(400, "Минимальная сумма поддержки — 1 ₽")
 
-        order_id = f"anon-{kind}-{uid}-{secrets.token_hex(6)}"
+        order_id = f"anon-support-{uid}-{secrets.token_hex(6)}"
         local_id = ""
         try:
             local_id = await self.db.create_sbp_order(
                 order_id=order_id,
                 user_id=uid,
-                kind=kind,
+                kind="support",
                 amount_rub=amount,
-                premium_days=premium_days,
+                premium_days=0,
             )
             payment = await create_payment(
                 self.cfg,
                 order_id=order_id,
                 amount=Decimal(amount),
-                description=description,
+                description="АНОН МГН · Поддержка проекта",
                 user_id=uid,
             )
             payment_id = str(payment["payment_id"])
             pay_url = str(payment["pay_url"])
-            await self.db.attach_sbp_provider_payment(
-                local_id, payment_id, pay_url
-            )
+            await self.db.attach_sbp_provider_payment(local_id, payment_id, pay_url)
         except (RollyPayError, KeyError, ValueError) as exc:
             if local_id:
                 try:
@@ -1954,7 +1796,7 @@ class MiniAppServer:
                 "payment_id": payment_id,
                 "pay_url": pay_url,
                 "amount_rub": amount,
-                "kind": kind,
+                "kind": "support",
             }
         )
 
@@ -1980,51 +1822,38 @@ class MiniAppServer:
         )
 
     async def _settle_sbp(self, local: dict, payment_id: str) -> dict:
+        if str(local.get("kind") or "") != "support":
+            return {"fresh": False, "kind": str(local.get("kind") or "")}
         settled = await self.db.settle_sbp_payment(payment_id)
         if settled.get("fresh"):
             uid = int(settled["user_id"])
             try:
-                if settled["kind"] == "anonplus":
-                    await self.bot.send_message(
-                        uid,
-                        "💎 <b>Анон Plus активирован</b>\n\n"
-                        "<b>Доступ выдан навсегда.</b> "
-                        "Темы и расширенная статистика уже доступны в Mini App.",
-                    )
-                else:
-                    await self.bot.send_message(
-                        uid,
-                        "💖 <b>Спасибо за поддержку АНОН МГН!</b>\n\n"
-                        f"Платёж по СБП на "
-                        f"<b>{int(settled.get('amount_rub', 0))} ₽</b> получен.",
-                    )
+                await self.bot.send_message(
+                    uid,
+                    "💖 <b>Спасибо за поддержку АНОН МГН!</b>\n\n"
+                    f"Платёж по СБП на "
+                    f"<b>{int(settled.get('amount_rub', 0))} ₽</b> получен.",
+                )
             except TelegramAPIError:
                 pass
         return settled
 
     async def sbp_check(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
-        payment_id = str(
-            request.match_info.get("payment_id") or ""
-        ).strip()
+        payment_id = str(request.match_info.get("payment_id") or "").strip()
         if not payment_id or len(payment_id) > 200:
             raise _json_error(400, "Некорректный платёж")
 
         local = await self.db.get_sbp_payment(payment_id)
-        if not local or int(local["user_id"]) != uid:
+        if (
+            not local
+            or int(local["user_id"]) != uid
+            or str(local["kind"]) != "support"
+        ):
             raise _json_error(404, "Платёж не найден")
 
         if str(local["status"]).lower() == "paid":
-            row = await self.db.get_user(uid)
-            return web.json_response(
-                {
-                    "status": "paid",
-                    "kind": str(local["kind"]),
-                    "anon_plus_until": (
-                        int(row["premium_until"] or 0) if row else 0
-                    ),
-                }
-            )
+            return web.json_response({"status": "paid", "kind": "support"})
 
         try:
             remote = await get_payment(self.cfg, payment_id)
@@ -2036,23 +1865,11 @@ class MiniAppServer:
 
         status = str(remote.get("status") or "").lower()
         if status == "paid":
-            settled = await self._settle_sbp(local, payment_id)
-            return web.json_response(
-                {
-                    "status": "paid",
-                    "kind": str(local["kind"]),
-                    "anon_plus_until": int(
-                        settled.get("premium_until", 0)
-                    ),
-                }
-            )
-        if status in {
-            "created", "pending", "processing", "awaiting_payment"
-        }:
+            await self._settle_sbp(local, payment_id)
+            return web.json_response({"status": "paid", "kind": "support"})
+        if status in {"created", "pending", "processing", "awaiting_payment"}:
             await self.db.set_sbp_status(payment_id, status)
-        return web.json_response(
-            {"status": status or "pending", "kind": str(local["kind"])}
-        )
+        return web.json_response({"status": status or "pending", "kind": "support"})
 
     async def _sbp_reconcile_loop(self) -> None:
         while True:
@@ -2061,6 +1878,8 @@ class MiniAppServer:
                 if not self.cfg.rollypay_enabled:
                     continue
                 for local in await self.db.list_pending_sbp_payments(60):
+                    if str(local.get("kind") or "") != "support":
+                        continue
                     payment_id = str(local.get("payment_id") or "")
                     if not payment_id or payment_id.startswith("creating:"):
                         continue
@@ -2901,9 +2720,6 @@ class MiniAppServer:
         app.router.add_post("/api/miniapp/poll/vote", self.poll_vote)
         app.router.add_post("/api/miniapp/feedback", self.feedback)
         app.router.add_post("/api/miniapp/support/invoice", self.support_invoice)
-        app.router.add_post("/api/miniapp/anon-plus/invoice", self.anon_plus_invoice)
-        app.router.add_post("/api/miniapp/anon-plus/theme", self.anon_plus_theme)
-        app.router.add_post("/api/miniapp/anon-plus/identity", self.anon_plus_identity)
         app.router.add_post("/api/miniapp/payments/sbp", self.sbp_create)
         app.router.add_get(
             "/api/miniapp/payments/sbp/{payment_id}", self.sbp_check
