@@ -345,8 +345,11 @@ if (typeof window === 'undefined') {
     const mine=$('#topMe');
     if(mine&&data?.my){
       const until=data.ends_at?new Date(data.ends_at*1000).toLocaleDateString('ru-RU',{day:'numeric',month:'long'}):'';
+      const periodHint=topPeriod==='week'
+        ?' · розыгрыш до 11 октября · 20:00'
+        :(until?` · до ${until}`:'');
       mine.hidden=false;
-      mine.innerHTML=`<span><small>ТВОЁ МЕСТО</small><strong>#${data.my.place||'—'}</strong></span><span><b>${Number(data.my.stars||0).toLocaleString('ru-RU')} ★</b><small>${data.my.place>10&&data.my.to_top10?`${data.my.to_top10} ★ до топ-10`:'Ты в топ-10'}${until?` · до ${until}`:''}</small></span>`;
+      mine.innerHTML=`<span><small>ТВОЁ МЕСТО</small><strong>#${data.my.place||'—'}</strong></span><span><b>${Number(data.my.stars||0).toLocaleString('ru-RU')} ★</b><small>${data.my.place>10&&data.my.to_top10?`${data.my.to_top10} ★ до топ-10`:'Ты в топ-10'}${periodHint}</small></span>`;
     }else if(mine)mine.hidden=true;
   }
 
