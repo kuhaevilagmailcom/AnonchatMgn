@@ -81,13 +81,14 @@ async def collect_progress_notifications(db, user_id: int) -> list[str]:
     for key, title, field, target, reward in ACHIEVEMENTS:
         if totals.get(field, 0) < target:
             continue
+        effective_reward = await db.effective_xp_reward(reward)
         if await db.unlock_achievement(user_id, key, reward):
-            notices.append(f"🏆 <b>Достижение выполнено</b>\n{title}\n+<b>{reward} ⭐</b>")
+            notices.append(f"🏆 <b>Достижение выполнено</b>\n{title}\n+<b>{effective_reward} ⭐</b>")
             await db.add_miniapp_event(
                 user_id,
                 "achievement",
                 "Достижение выполнено",
-                f"{title} · +{reward} ⭐",
+                f"{title} · +{effective_reward} ⭐",
                 icon="trophy",
                 action="profile:achievements",
             )
@@ -97,13 +98,14 @@ async def collect_progress_notifications(db, user_id: int) -> list[str]:
     for quest in quests_for(user_id, today):
         if progress_value(activity, quest) < quest.target:
             continue
+        effective_reward = await db.effective_xp_reward(quest.reward)
         if await db.claim_daily_quest(user_id, today, quest.key, quest.reward):
-            notices.append(f"✅ <b>Квест выполнен</b>\n{quest.title}\n+<b>{quest.reward} ⭐</b>")
+            notices.append(f"✅ <b>Квест выполнен</b>\n{quest.title}\n+<b>{effective_reward} ⭐</b>")
             await db.add_miniapp_event(
                 user_id,
                 "quest",
                 "Квест выполнен",
-                f"{quest.title} · +{quest.reward} ⭐",
+                f"{quest.title} · +{effective_reward} ⭐",
                 icon="target",
                 action="profile:quests",
             )
@@ -114,11 +116,12 @@ async def format_quests(db, user_id: int) -> str:
     activity = await db.activity_totals(user_id, 1)
     claimed = await db.daily_quest_claimed(user_id, day)
     lines = ["📋 <b>Квесты дня</b>", ""]
+    multiplier = await db.xp_multiplier()
     for quest in quests_for(user_id, day):
         current = min(progress_value(activity, quest), quest.target)
         done = quest.key in claimed
         mark = "✅" if done else "▫️"
         lines.append(
-            f"{mark} {quest.title} · <b>{current}/{quest.target}</b> · {quest.reward} ⭐"
+            f"{mark} {quest.title} · <b>{current}/{quest.target}</b> · {quest.reward * multiplier} ⭐"
         )
     return "\n".join(lines)
