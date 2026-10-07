@@ -54,6 +54,22 @@ PACK: dict[str, tuple[str, str, tuple[str, ...]]] = {
 #: имя -> id, для кнопок (icon_custom_emoji_id)
 ICONS: dict[str, str] = {name: emoji_id for name, (emoji_id, _, _) in PACK.items()}
 
+# Отдельный набор для служебных уведомлений модерации:
+# https://t.me/addemoji/TgAndroidIcons
+ADMIN_ICON_PACK_NAME = "TgAndroidIcons"
+ADMIN_ICON_ALIASES: dict[str, tuple[str, ...]] = {
+    "chat": ("💬", "👀", "👁️"),
+    "spam": ("🚨", "⚠️", "❗"),
+    "user": ("👤", "🙋", "🙂"),
+    "repeat": ("🔁", "🔄", "♻️"),
+}
+ADMIN_ICON_FALLBACKS: dict[str, str] = {
+    "chat": "💬",
+    "spam": "🚨",
+    "user": "👤",
+    "repeat": "🔁",
+}
+
 #: Anonymous Plus: пользователь выбирает один знак рядом с ником.
 PROFILE_BADGES: dict[str, str] = {
     "diamond": "💎",
@@ -79,6 +95,7 @@ class EmojiPack:
         self._progress_filled: tuple[str, str] | None = None
         self._progress_empty: tuple[str, str] | None = None
         self._top_flags: dict[int, tuple[str, str]] = {}
+        self._admin_icons: dict[str, tuple[str, str]] = {}
         self._profile_badges: dict[str, tuple[str, str]] = {
             "diamond": (ICONS.get("bonus", ""), PROFILE_BADGES["diamond"]),
             "star": (ICONS.get("stars", ""), PROFILE_BADGES["star"]),
@@ -86,6 +103,46 @@ class EmojiPack:
         for _name, (emoji_id, canonical, aliases) in PACK.items():
             for glyph in (canonical, *aliases):
                 self._map.setdefault(glyph, (emoji_id, canonical))
+
+    async def load_admin_icons(
+        self, bot, name: str = ADMIN_ICON_PACK_NAME
+    ) -> int:
+        """Подгружает TgAndroidIcons только для служебных уведомлений админов."""
+        self._admin_icons = {}
+        try:
+            sticker_set = await bot.get_sticker_set(name=name)
+        except Exception:
+            return 0
+
+        sticker_type = getattr(sticker_set, "sticker_type", "")
+        sticker_type = getattr(sticker_type, "value", sticker_type)
+        if sticker_type and str(sticker_type) != "custom_emoji":
+            return 0
+
+        by_glyph: dict[str, tuple[str, str]] = {}
+        for sticker in getattr(sticker_set, "stickers", ()) or ():
+            custom_id = str(getattr(sticker, "custom_emoji_id", "") or "")
+            glyph = str(getattr(sticker, "emoji", "") or "").strip()
+            if not custom_id or not glyph:
+                continue
+            by_glyph.setdefault(_emoji_key(glyph), (custom_id, glyph))
+
+        for key, aliases in ADMIN_ICON_ALIASES.items():
+            for glyph in aliases:
+                item = by_glyph.get(_emoji_key(glyph))
+                if item:
+                    self._admin_icons[key] = item
+                    break
+        return len(self._admin_icons)
+
+    def admin_icon(self, key: str) -> str:
+        """Custom emoji из TgAndroidIcons с обычным emoji-fallback."""
+        name = str(key or "").strip().lower()
+        fallback = ADMIN_ICON_FALLBACKS.get(name, "💬")
+        item = self._admin_icons.get(name)
+        if self.enabled and item and item[0]:
+            return f'<tg-emoji emoji-id="{item[0]}">{item[1]}</tg-emoji>'
+        return fallback
 
     async def load_progress_bar(self, bot, name: str = "progressBarEmoji") -> int:
         """Загружает progressBarEmoji и находит зелёный/серый сегменты."""
