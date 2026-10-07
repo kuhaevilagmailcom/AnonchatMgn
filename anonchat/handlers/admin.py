@@ -91,29 +91,29 @@ async def notify_reporter_about_action(
     )
 
 
-APPROVED_REPORT_REWARD = 10
+REPORT_ACTION_REWARD = 10
 
 
-async def approve_report_reward(
+async def reward_reporter_for_action(
     ctx: Ctx,
     report,
     report_id: int,
     action_text: str,
 ) -> int:
-    """Награждает автора подтверждённой жалобы ровно один раз."""
+    """Награждает автора жалобы, только если по ней применён мут или бан."""
     reporter_id = int(report["reporter_id"])
     if reporter_id <= 0:
         return 0
-    reward = await ctx.db.effective_xp_reward(APPROVED_REPORT_REWARD)
+    reward = await ctx.db.effective_xp_reward(REPORT_ACTION_REWARD)
     claimed = await ctx.db.claim_one_time_reward(
         reporter_id,
         f"approved_report:{int(report_id)}",
-        APPROVED_REPORT_REWARD,
+        REPORT_ACTION_REWARD,
     )
     if not claimed:
         reward = 0
     reward_line = (
-        f"\n\n🎁 Жалоба одобрена · +<b>{reward} ⭐</b>."
+        f"\n\n🎁 За принятые меры · +<b>{reward} ⭐</b>."
         if reward > 0
         else ""
     )
@@ -685,10 +685,10 @@ async def cmd_resolve(message: Message, ctx: Ctx, db: Database) -> None:
             ctx,
             report,
             report_id,
-            "❌ Жалоба отклонена: нарушение не подтверждено.",
+            "ℹ️ Жалоба закрыта без применения мер.",
         )
     await ctx.reply(
-        "🚩 Жалоба отклонена."
+        "🚩 Жалоба закрыта без мер."
         if ok
         else "Не нашёл открытую жалобу с таким номером."
     )
@@ -1646,7 +1646,6 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         return  # adm:panel:* живёт в своём хендлере выше
     action, raw_id = parts[1], parts[2]
     required = {
-        "approve": "reports",
         "done": "reports",
         "who": "users",
         "mute": "mute",
@@ -1661,21 +1660,6 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         return
     target = int(report["target_id"])
 
-    if action == "approve":
-        resolved = await db.resolve_report(int(raw_id), ctx.user_id)
-        if resolved:
-            reward = await approve_report_reward(
-                ctx,
-                report,
-                int(raw_id),
-                "✅ Модерация подтвердила нарушение.",
-            )
-            await ctx.ack(f"Одобрено · +{reward} ⭐")
-        else:
-            await ctx.ack("Жалоба уже закрыта", alert=True)
-        await clear_kb(event)
-        return
-
     if action == "done":
         resolved = await db.resolve_report(int(raw_id), ctx.user_id)
         if resolved:
@@ -1683,9 +1667,9 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
                 ctx,
                 report,
                 int(raw_id),
-                "❌ Жалоба отклонена: нарушение не подтверждено.",
+                "ℹ️ Жалоба закрыта без применения мер.",
             )
-        await ctx.ack("Отклонено")
+        await ctx.ack("Закрыто")
         await clear_kb(event)
         return
 
@@ -1702,11 +1686,11 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         await do_mute(ctx, db, mm, cfg, target, 60)
         resolved = await db.resolve_report(int(raw_id), ctx.user_id)
         if resolved:
-            await approve_report_reward(
+            await reward_reporter_for_action(
                 ctx,
                 report,
                 int(raw_id),
-                "🔇 Жалоба подтверждена: пользователю выдан мут на 60 минут.",
+                "🔇 По вашей жалобе пользователю выдан мут на 60 минут.",
             )
         await ctx.ack("Мут на 60 мин")
         await clear_kb(event)
@@ -1716,11 +1700,11 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         await do_ban(ctx, db, mm, cfg, target, f"жалоба #{raw_id}: {report['reason']}")
         resolved = await db.resolve_report(int(raw_id), ctx.user_id)
         if resolved:
-            await approve_report_reward(
+            await reward_reporter_for_action(
                 ctx,
                 report,
                 int(raw_id),
-                "⛔ Жалоба подтверждена: пользователь заблокирован.",
+                "⛔ По вашей жалобе пользователь заблокирован.",
             )
         await ctx.ack("Забанен")
         await clear_kb(event)
