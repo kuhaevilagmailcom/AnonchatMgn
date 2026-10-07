@@ -467,9 +467,9 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
         "за подтверждённую жалобу автор получает 10 звёзд с x2/x3",
     )
     check(
-        "Жалоба одобрена" in session.last_to(A)
+        "За принятые меры" in session.last_to(A)
         and str(10 * report_multiplier) in session.last_to(A),
-        "автор видит награду за одобренную жалобу",
+        "автор видит награду, когда по жалобе выдан мут",
     )
     await press(A, "act:stop")
 
