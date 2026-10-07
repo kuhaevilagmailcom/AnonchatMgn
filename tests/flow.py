@@ -454,12 +454,23 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
           and "Найти собеседника" not in report_labels,
           "после жалобы остаётся меню текущего диалога")
 
-    # 10. админ мутит нарушителя и закрывает жалобу
+    # 10. админ подтверждает жалобу мутом: автор получает 10 ⭐ базово.
+    xp_before_report_reward = int((await db.get_user(A))["xp"])
     session.clear()
     await press(ADMIN, f"adm:mute:{reports[0]['id']}")
     check(await db.is_restricted(C) == "muted", "по кнопке нарушитель ушёл в мут")
     check(await db.list_reports("new") == [], "жалоба закрыта")
     check(mm.status(C) == "free", "мут расцепил пару")
+    report_multiplier = await db.xp_multiplier()
+    check(
+        int((await db.get_user(A))["xp"]) == xp_before_report_reward + 10 * report_multiplier,
+        "за подтверждённую жалобу автор получает 10 звёзд с x2/x3",
+    )
+    check(
+        "Жалоба одобрена" in session.last_to(A)
+        and str(10 * report_multiplier) in session.last_to(A),
+        "автор видит награду за одобренную жалобу",
+    )
     await press(A, "act:stop")
 
     # 11. следующий собеседник
