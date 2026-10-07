@@ -70,7 +70,7 @@ if (typeof window === 'undefined') {
     "gift":"<path d=\"M4 11V15C4 18.2998 4 19.9497 5.02513 20.9749C6.05025 22 7.70017 22 11 22H13C16.2998 22 17.9497 22 18.9749 20.9749C20 19.9497 20 18.2998 20 15V11\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n<path d=\"M3 9C3 8.25231 3 7.87846 3.20096 7.6C3.33261 7.41758 3.52197 7.26609 3.75 7.16077C4.09808 7 4.56538 7 5.5 7H18.5C19.4346 7 19.9019 7 20.25 7.16077C20.478 7.26609 20.6674 7.41758 20.799 7.6C21 7.87846 21 8.25231 21 9C21 9.74769 21 10.1215 20.799 10.4C20.6674 10.5824 20.478 10.7339 20.25 10.8392C19.9019 11 19.4346 11 18.5 11H5.5C4.56538 11 4.09808 11 3.75 10.8392C3.52197 10.7339 3.33261 10.5824 3.20096 10.4C3 10.1215 3 9.74769 3 9Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\"/>\n<path d=\"M6 3.78571C6 2.79949 6.79949 2 7.78571 2H8.14286C10.2731 2 12 3.7269 12 5.85714V7H9.21429C7.43908 7 6 5.56091 6 3.78571Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\"/>\n<path d=\"M18 3.78571C18 2.79949 17.2005 2 16.2143 2H15.8571C13.7269 2 12 3.7269 12 5.85714V7H14.7857C16.5609 7 18 5.56091 18 3.78571Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\"/>\n<path d=\"M12 11L12 22\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>",
     "trophy":"<path d=\"M5 21H19\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n<path d=\"M12.125 12.75H12M12.25 12.75C12.25 12.8881 12.1381 13 12 13C11.8619 13 11.75 12.8881 11.75 12.75C11.75 12.6119 11.8619 12.5 12 12.5C12.1381 12.5 12.25 12.6119 12.25 12.75Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n<path d=\"M14.9152 7.61089L13.8078 5.38179C13.019 3.79393 12.6246 3 12 3C11.3754 3 10.981 3.79393 10.1922 5.38179L9.08483 7.61089C8.58107 8.62494 8.32919 9.13197 7.87976 9.24608C7.8485 9.25401 7.81689 9.26043 7.78503 9.26533C7.32682 9.3357 6.89919 8.96678 6.04393 8.22895C4.0124 6.47635 2.99663 5.60004 2.38034 5.94899C2.34045 5.97157 2.30213 5.99686 2.26565 6.02467C1.70197 6.45439 2.09541 7.74136 2.88229 10.3153L4.04783 14.1279C4.47098 15.5121 4.68255 16.2042 5.21787 16.6021C5.75318 17 6.47261 17 7.91147 17L16.0886 16.9999C17.5274 16.9999 18.2468 16.9999 18.7821 16.602C19.3175 16.2041 19.529 15.512 19.9522 14.1279L21.1177 10.3153C21.9046 7.74137 22.298 6.4544 21.7344 6.02468C21.6979 5.99687 21.6595 5.97158 21.6197 5.94899C21.0034 5.60006 19.9876 6.47636 17.9561 8.22896C17.1008 8.96679 16.6732 9.3357 16.215 9.26533C16.1831 9.26043 16.1515 9.25401 16.1202 9.24607C15.6708 9.13197 15.4189 8.62494 14.9152 7.61089Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
   };
-  const state = {page:'home', modal:null, status:'free', position:null, user:{nick:'Аноним',rank:'👤 Вася',stars:0,age:0,district:'',gender:'',looking_for:'',photo_url:'',anon_plus_theme:'pink',badge_glyph:''},stats:{online:0,chatting:0,searching:0,dialogs:0,messages:0,ratings:0,games:0,battle_games:0,number_games:0,streak:0,best_streak:0,quest_current:0,quest_target:20},referral:{invited:0,earned:0},referral_url:'',bot_url:'',events:[],subscription:null,anonPlus:{active:false,until:0,days:0,price_stars:25,price_rub:50,sbp_enabled:false,theme:'pink',emoji:'',emoji_glyph:'',show_nick:false}};
+  const state = {page:'home', modal:null, status:'free', position:null, user:{nick:'Аноним',rank:'👤 Вася',stars:0,age:0,district:'',gender:'',looking_for:'',photo_url:''},stats:{online:0,chatting:0,searching:0,dialogs:0,messages:0,ratings:0,games:0,battle_games:0,number_games:0,streak:0,best_streak:0,quest_current:0,quest_target:20},referral:{invited:0,earned:0},referral_url:'',bot_url:'',events:[],subscription:null};
   let statusRequestSeq = 0;
   let statusAppliedSeq = 0;
   let statusTimer = null;
@@ -81,7 +81,6 @@ if (typeof window === 'undefined') {
   let realtime = null;
   let realtimeConnected = false;
   let resultShownFor = 0;
-  let anonPlusBenefitsOpen = false;
   const chat = {latest:0,startedAt:0,sent:0,received:0,timer:null,geoTimer:null,seen:new Set(),stickersLoaded:false,recording:false,recorder:null,stream:null,chunks:[],recordTimer:null,mediaCache:new Map(),game:null,gameHoldUntil:0,reply:null};
   const CHAT_EMOJIS = ['😀','😃','😄','😁','😂','🤣','🥹','😊','🙂','😉','😍','😘','😎','🤨','😐','😴','😭','😡','🤬','🥰','🤍','❤️','🩷','🔥','⭐','✨','💀','🤝','👍','👎','🙏','💬','👀','🤡','😈','💯','🎉','🥳','😏','🙃','😌','🤔','😳','🫠','😅','🤝','💋','🫶'];
   const svg = n => `<svg viewBox="0 0 24 24" aria-hidden="true">${hugeIconSvg[n] || hugeIconSvg['message-circle']}</svg>`;
@@ -208,13 +207,7 @@ if (typeof window === 'undefined') {
   }
   function demo(){Object.assign(state.user,{nick:'Аноним-4821',rank:'Завсегдатай',stars:1250,age:17,district:'Правый берег',gender:'m',looking_for:'f'});Object.assign(state.stats,{online:34,chatting:22,searching:12,dialogs:682,messages:8884,ratings:128,games:43,battle_games:31,number_games:12,streak:7,best_streak:23,quest_current:14});state.referral={invited:8,earned:400};state.referral_url='https://t.me/AnonChatMgn_Bot?start=ref_demo';state.bot_url='https://t.me/AnonChatMgn_Bot';state.subscription={claimed:false,amount:100,url:'https://t.me/anonmgn'};state.events=[{id:'demo1',type:'personal',icon:'message-circle',title:'Диалог активен',text:'Собеседник найден. Возвращайся в чат.',time:'сейчас',unread:true},{id:'demo2',type:'games',icon:'gamepad-2',title:'Новая игра',text:'Можно пригласить собеседника в Битву мнений или Числа.',time:'сегодня',unread:false}]}
   function setAll(key,value){$$(`[data-${key}]`).forEach(el=>el.textContent=value)}
-  function applyTheme(){
-    const theme=state.anonPlus?.active?(state.anonPlus.theme||state.user.anon_plus_theme||'pink'):'pink';
-    document.body.dataset.theme=theme;
-  }
-  function premiumDate(ts){
-    return ts?new Date(Number(ts)*1000).toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric'}):'';
-  }
+  function applyTheme(){document.body.dataset.theme='pink'}
   function render(){
     setAll('nick',state.user.nick);setAll('rank',state.user.rank);setAll('stars',state.user.stars);
     setAll('online',state.stats.online);setAll('chatting',state.stats.chatting);setAll('searching',state.stats.searching);
@@ -228,8 +221,6 @@ if (typeof window === 'undefined') {
     $$('[data-avatar]').forEach(el=>{if(state.user.photo_url){el.src=state.user.photo_url;el.hidden=false}else{el.removeAttribute('src');el.hidden=true}});
     $$('[data-flame]').forEach((el,i)=>el.classList.toggle('on',i<Math.min(7,state.stats.streak)));
     $$('[data-setting]').forEach(group=>$$('button',group).forEach(b=>b.classList.toggle('active',String(b.dataset.value)===String(state.user[group.dataset.setting]||''))));
-    $$('[data-profile-emoji]').forEach(el=>{const glyph=state.user.badge_glyph||'';el.textContent=glyph;el.hidden=!glyph});
-    const premiumStats=$('#anonPlusStats');if(premiumStats)premiumStats.classList.toggle('locked',!state.anonPlus?.active);
     applyTheme();renderSearch();renderEvents();
   }
   function renderSearch(){
@@ -357,7 +348,6 @@ if (typeof window === 'undefined') {
     if(data){
       state.user={...state.user,...data.user};state.stats={...state.stats,...data.stats};
       state.referral=data.referral||state.referral;state.referral_url=data.referral_url||'';state.bot_url=data.bot_url||'';
-      state.anonPlus={...state.anonPlus,...(data.anon_plus||{})};
       state.events=data.notifications||[];applyStatusSnapshot(data,seq);
       await Promise.all([loadHomePoll(),loadHomeQuest()]);
       return;
@@ -379,7 +369,7 @@ if (typeof window === 'undefined') {
     if(page==='chat'){syncChat(true);startChatSync()}else stopChatSync();
     try{if(tgAtLeast('6.1'))page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}
   }
-  function openModal(kind,title,eyebrow='АНОН МГН'){if(kind==='anon-plus')anonPlusBenefitsOpen=false;$('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML='<div class="loading"><i class="spinner"></i>Загрузка…</div>';$('#modal').hidden=false;document.body.style.overflow='hidden';state.modal=kind;try{if(tgAtLeast('6.1'))tg.BackButton.show()}catch(_){};haptic();renderModal(kind)}
+  function openModal(kind,title,eyebrow='АНОН МГН'){$('#modalTitle').textContent=title;$('#modalEyebrow').textContent=eyebrow;$('#modalBody').innerHTML='<div class="loading"><i class="spinner"></i>Загрузка…</div>';$('#modal').hidden=false;document.body.style.overflow='hidden';state.modal=kind;try{if(tgAtLeast('6.1'))tg.BackButton.show()}catch(_){};haptic();renderModal(kind)}
   function closeModal(){$('#modal').hidden=true;document.body.style.overflow='';state.modal=null;try{if(tgAtLeast('6.1'))state.page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}}
   function panel(title,text){return `<section class="panel"><h3>${title}</h3><p>${text}</p></section>`}
   async function loadHomeQuest(){
@@ -433,11 +423,11 @@ if (typeof window === 'undefined') {
     if(state.modal!=='dialog-result'){openModal('dialog-result','Итог разговора','ДИАЛОГ ЗАВЕРШЁН');return}
     const body=$('#modalBody');
     if(result.locked){
-      body.innerHTML=`<section class="dialog-result-card locked-result"><div class="result-plus-lock"><strong>Статистика после диалога доступна с Анон Plus</strong><small>Длительность, сообщения, игры и заработанные звёзды</small><button class="action accent" id="resultPlus">Открыть Анон Plus</button></div></section>
+      body.innerHTML=`<section class="dialog-result-card locked-result"><div class="result-plus-lock"><strong>Статистика после диалога доступна с </strong><small>Длительность, сообщения, игры и заработанные звёзды</small><button class="action accent" id="resultPlus">Открыть </button></div></section>
       ${result.rated?'<div class="rated-done">✓ Оценка уже учтена</div>':`<section class="rate-block"><small>Как прошёл разговор?</small><div><button data-rate="1">👍 Норм</button><button data-rate="0">👎 Не зашло</button></div></section>`}
       <div class="modal-actions one"><button class="action" id="resultNext">Найти собеседника</button></div>`;
       $$('[data-rate]',body).forEach(btn=>btn.onclick=()=>rateDialog(btn.dataset.rate==='1',body));
-      $('#resultPlus').onclick=()=>openModal('anon-plus','Анон Plus','ПОДПИСКА');
+      $('#resultPlus').onclick=()=>openModal('anon-plus','','ПОДПИСКА');
       $('#resultNext').onclick=()=>{closeModal();go(state.status==='paired'?'chat':'search')};
       return;
     }
@@ -492,31 +482,22 @@ if (typeof window === 'undefined') {
       body.innerHTML=`<div class="achievement-head"><strong>${data?.unlocked||0}/${data?.total||items.length}</strong><span>получено</span></div><div class="achievement-grid">${items.map(a=>`<article class="${a.unlocked?'unlocked':'locked'}"><span>${a.unlocked?'🏆':'🔒'}</span><strong>${esc(a.title)}</strong><small>${a.unlocked?'Выполнено':`${a.current}/${a.target}`} · ${a.reward} ★</small></article>`).join('')}</div>`;return;
     }
     if(kind==='edit-profile'){
-      const badges=[['','Без эмодзи'],['diamond','💎'],['star','⭐️'],['fire','🔥'],['bolt','⚡️'],['siren','🚨'],['music','🎵']];
-      const picker=state.anonPlus?.active?`<div class="setting profile-emoji-setting"><div><strong>Эмодзи рядом с ником</strong><small>Анон Plus</small></div><div class="profile-emoji-picker">${badges.map(([key,label])=>`<button type="button" data-edit-emoji="${key}" class="${(state.anonPlus.emoji||'')===key?'active':''}">${label}</button>`).join('')}</div></div>`:'';
-      body.innerHTML=`${panel('Профиль','Измени ник. С Анон Plus можно также выбрать эмодзи рядом с ним.')}<div class="form-field"><label>Новый ник · 2–24 символа</label><input id="nick" maxlength="24" value="${esc(state.user.nick.replace(/^@/,''))}" placeholder="Аноним"></div>${picker}<div class="modal-actions"><button class="action" data-close-modal>Отмена</button><button class="action accent" id="saveNick">Сохранить</button></div>`;
-      $$('[data-edit-emoji]',body).forEach(btn=>btn.onclick=()=>{$$('[data-edit-emoji]',body).forEach(x=>x.classList.remove('active'));btn.classList.add('active')});
+      body.innerHTML=`${panel('Профиль','Измени ник, который отображается в профиле и топе.')}<div class="form-field"><label>Новый ник · 2–24 символа</label><input id="nick" maxlength="24" value="${esc(state.user.nick.replace(/^@/,''))}" placeholder="Аноним"></div><div class="modal-actions"><button class="action" data-close-modal>Отмена</button><button class="action accent" id="saveNick">Сохранить</button></div>`;
       $('#saveNick').onclick=saveNick;bindClose(body);return
     }
     if(kind==='quests'){const d=await safe('/api/miniapp/quests',{},null);const items=d?.items||[];body.innerHTML=items.length?items.map(q=>`<article class="quest ${q.claimed?'claimed':''}"><div><strong>${esc(q.title)}</strong><b>${q.claimed?'Получено':`${q.current}/${q.target}`}</b></div><p>${q.claimed?`+${q.reward} ★ уже начислено`:q.done?'Награда начислится автоматически':`Награда: ${q.reward} ★`}</p><i class="progress"><i style="width:${Math.min(100,q.current/Math.max(1,q.target)*100)}%"></i></i></article>`).join(''):'<div class="empty">Сегодня заданий нет.</div>';return}
     if(kind==='streak'){const d=await safe('/api/miniapp/streak',{},null);if(d){state.stats.streak=d.current;state.stats.best_streak=d.best;render()}body.innerHTML=`${panel('Текущая серия',`<b>${state.stats.streak} дней</b> подряд. Серия не ограничена семью днями.`)}<div class="flame-grid">${Array.from({length:7},(_,i)=>`<i class="${i<Math.min(7,state.stats.streak)?'on':''}"></i>`).join('')}</div>${panel('Личный рекорд',`${state.stats.best_streak} дней. Активным считается день, когда ты общался в боте.`)}`;return}
     if(kind==='activity'){
-      if(!state.anonPlus?.active){
-        body.innerHTML=`${panel('Моя активность','Статистика за сегодня и за всё время доступна с <b>Анон Plus</b>.')}<div class="modal-actions one"><button class="action accent" id="activityPlus">Открыть Анон Plus</button></div>`;
-        $('#activityPlus').onclick=()=>openModal('anon-plus','Анон Plus','ПОДПИСКА');
-        return;
-      }
       const d=await safe('/api/miniapp/activity',{},null)||{today:{},all:{}};
       body.innerHTML=['today','all'].map((k,i)=>`<section class="panel"><h3>${['Сегодня','За всё время'][i]}</h3><div class="kv-grid"><div class="kv"><small>Диалоги</small><strong>${d[k]?.dialogs||0}</strong></div><div class="kv"><small>Сообщения</small><strong>${d[k]?.messages||0}</strong></div><div class="kv"><small>Игры</small><strong>${d[k]?.games||0}</strong></div><div class="kv"><small>Хорошие оценки</small><strong>${d[k]?.good_ratings||0}</strong></div></div></section>`).join('');
       return
     }
     if(kind==='top'){const d=await safe('/api/miniapp/top',{},null);const items=d?.items||(!tg?.initData?[{place:1,nick:'Аноним-4821',rank:'Завсегдатай',stars:1380},{place:2,nick:'northwind',rank:'Свой человек',stars:1240},{place:3,nick:'Аноним-1520',rank:'Собеседник',stars:1110}]:[]);body.innerHTML=items.length?`<div class="top-list">${items.map(x=>`<div class="top-item"><i>${x.place}</i><span><strong>${esc(x.nick)}</strong><small>${esc(x.rank||'')}</small></span><b>${x.stars||0} ★</b></div>`).join('')}</div>`:'<div class="empty">В топе пока никого.</div>';return}
     if(kind==='referral'){body.innerHTML=`${panel('Твои приглашения',`Приглашено: <b>${state.referral.invited}</b> · Получено: <b>${state.referral.earned} ★</b>`)}<div class="copy-box"><input id="refLink" readonly value="${esc(state.referral_url)}"><button id="copyRef" aria-label="Скопировать">${svg('copy')}</button></div><p class="hint">Друг должен впервые запустить бота по этой ссылке.</p>`;$('#copyRef').onclick=copyReferral;return}
-    if(kind==='anon-plus'){await renderAnonPlus(body);return}
     if(kind==='settings'){await settings(body);return}
     if(kind==='feedback'){body.innerHTML=`${panel('Напиши команде','Сообщение уйдёт всем администраторам бота.')}<div class="form-field"><label>Сообщение · до 1000 символов</label><textarea id="feedback" maxlength="1000" placeholder="Что случилось или что можно улучшить?"></textarea></div><div class="modal-actions one"><button class="action accent" id="sendFeedback">Отправить</button></div>`;$('#sendFeedback').onclick=sendFeedback;return}
     if(kind==='rules'){
-      body.innerHTML=`<section class="rules-card"><h3>Правила АНОН МГН</h3><blockquote><b>1. Уважай собеседника</b><p>Без травли, угроз и оскорблений.</p><b>2. Не распространяй личные данные</b><p>Не отправляй чужие номера, адреса и другую приватную информацию.</p><b>3. Без спама и неподходящего контента</b><p>Не засоряй чат рекламой и материалами 18+.</p><b>4. Анонимность — по умолчанию</b><p>Telegram ID и username не показываются. Анон Plus позволяет добровольно показать только выбранный ник.</p><b>5. Нарушения — через жалобу</b><p>Модерация получает только нужный контекст для разбора.</p></blockquote><i>Общайся нормально — и всё будет нормально.</i></section>`;return}
+      body.innerHTML=`<section class="rules-card"><h3>Правила АНОН МГН</h3><blockquote><b>1. Уважай собеседника</b><p>Без травли, угроз и оскорблений.</p><b>2. Не распространяй личные данные</b><p>Не отправляй чужие номера, адреса и другую приватную информацию.</p><b>3. Без спама и неподходящего контента</b><p>Не засоряй чат рекламой и материалами 18+.</p><b>4. Анонимность — по умолчанию</b><p>Telegram ID, username и ник собеседника не раскрываются.</p><b>5. Нарушения — через жалобу</b><p>Модерация получает только нужный контекст для разбора.</p></blockquote><i>Общайся нормально — и всё будет нормально.</i></section>`;return}
     if(kind==='chat-games'){
       body.innerHTML=`
         <div class="chat-game-picker">
@@ -560,7 +541,7 @@ if (typeof window === 'undefined') {
   }
   async function settings(body){
     const sub=await safe('/api/miniapp/subscription',{},null)||(!tg?.initData?state.subscription:null);state.subscription=sub;
-    const themeBlock=state.anonPlus?.active?`<div class="setting"><div><strong>Тема Анон Plus</strong><small>меняет акцент и поверхности</small></div><div class="theme-picker">${[['pink','Розовая'],['blue','Синяя'],['violet','Фиолетовая'],['green','Зелёная'],['orange','Оранжевая'],['mono','Ч/Б']].map(([v,t])=>`<button data-theme-choice="${v}" class="${(state.anonPlus.theme||'pink')===v?'active':''}">${t}</button>`).join('')}</div></div>`:`<section class="panel reward"><span>💎</span><span><strong>Анон Plus</strong><small>Темы и расширенная статистика</small></span><button data-open-plus>Открыть</button></section>`;
+    const themeBlock=state.anonPlus?.active?`<div class="setting"><div><strong>Тема </strong><small>меняет акцент и поверхности</small></div><div class="theme-picker">${[['pink','Розовая'],['blue','Синяя'],['violet','Фиолетовая'],['green','Зелёная'],['orange','Оранжевая'],['mono','Ч/Б']].map(([v,t])=>`<button data-theme-choice="${v}" class="${(state.anonPlus.theme||'pink')===v?'active':''}">${t}</button>`).join('')}</div></div>`:`<section class="panel reward"><span>💎</span><span><strong></strong><small>Темы и расширенная статистика</small></span><button data-open-plus>Открыть</button></section>`;
     body.innerHTML=`<div class="setting"><div><strong>Твой пол</strong><small>необязательно</small></div><div class="segments" id="gender"><button data-value="m">Парень</button><button data-value="f">Девушка</button><button data-value="">Не указывать</button></div></div><div class="setting"><div><strong>Кого ищешь</strong><small>предпочтение</small></div><div class="segments" id="looking"><button data-value="m">Парня</button><button data-value="f">Девушку</button><button data-value="">Неважно</button></div></div><div class="setting"><div><strong>Твой берег</strong><small>необязательно</small></div><select id="district"><option value="">Любой</option><option value="Правый берег">Правый берег</option><option value="Левый берег">Левый берег</option></select></div><div class="setting"><div><strong>Возраст</strong><small>необязательно · 13–20</small></div><input id="age" type="number" inputmode="numeric" min="13" max="20" placeholder="Не указан"></div>${themeBlock}${sub&&!sub.claimed?`<section class="panel reward"><span>${svg('gift')}</span><span><strong>${sub.amount} ★ за подписку</strong><small>Одноразовая награда</small></span><button id="subscribe">Получить</button></section>`:''}<section class="panel reward"><span>${svg('gift')}</span><span><strong>Поддержать проект</strong><small>Telegram Stars или СБП</small></span><button id="support">Поддержать</button></section><div class="modal-actions"><button class="action" id="resetSettings">Сбросить</button><button class="action accent" id="saveSettings">Сохранить</button></div><div class="modal-actions one"><button class="action danger" id="forget">Удалить профиль</button></div>`;
     $('#district').value=state.user.district||'';$('#age').value=state.user.age||'';
     $$('#gender button').forEach(b=>b.classList.toggle('active',b.dataset.value===(state.user.gender||'')));
@@ -568,110 +549,29 @@ if (typeof window === 'undefined') {
     $$('#gender button,#looking button').forEach(b=>b.onclick=()=>{$$('button',b.parentElement).forEach(x=>x.classList.remove('active'));b.classList.add('active')});
     $('#saveSettings').onclick=saveSettings;$('#resetSettings').onclick=resetSettings;$('#forget').onclick=confirmForget;$('#support').onclick=openSupport;
     if($('#subscribe'))$('#subscribe').onclick=claimSubscription;
-    if($('[data-open-plus]'))$('[data-open-plus]').onclick=()=>{closeModal();openModal('anon-plus','Анон Plus','ПОДПИСКА')};
+    if($('[data-open-plus]'))$('[data-open-plus]').onclick=()=>{closeModal();openModal('anon-plus','','ПОДПИСКА')};
     $$('[data-theme-choice]',body).forEach(b=>b.onclick=()=>setAnonPlusTheme(b.dataset.themeChoice));
   }
   function bindClose(root=document){$$('[data-close-modal]',root).forEach(b=>b.onclick=closeModal)}
   async function saveNick(){
-    const nick=$('#nick').value.trim();
-    if(nick.length<2)return toast('Минимум 2 символа');
-    const r=await safe('/api/miniapp/profile/nick',{method:'POST',body:JSON.stringify({nick})},null);
-    if(!r&&tg?.initData)return;
-    state.user.nick=r?.nick||nick;
-    if(state.anonPlus?.active){
-      const emoji=$('[data-edit-emoji].active')?.dataset.editEmoji??state.anonPlus.emoji??'';
-      const identity=await safe('/api/miniapp/anon-plus/identity',{method:'POST',body:JSON.stringify({emoji})},null);
-      if(identity){
-        state.anonPlus.emoji=identity.emoji||'';
-        state.anonPlus.emoji_glyph=identity.emoji_glyph||'';
-        state.user.badge_glyph=identity.emoji_glyph||state.user.badge_glyph||'';
-        state.anonPlus.show_nick=!!identity.show_nick;
-      }
-    }
-    render();closeModal();toast('Профиль сохранён');notify()
+    const input=$('#nick');
+    if(!input)return;
+    const value=input.value.trim();
+    const r=await safe('/api/miniapp/profile/nick',{method:'POST',body:JSON.stringify({nick:value})},null);
+    if(!r)return;
+    state.user.nick=r.nick||value;
+    render();
+    closeModal();
+    toast('Ник сохранён');
+    notify();
   }
   async function saveSettings(){const payload={age:+($('#age').value||0),district:$('#district').value,gender:$('#gender .active')?.dataset.value||'',looking_for:$('#looking .active')?.dataset.value||'',same_district:0};const r=await safe('/api/miniapp/settings',{method:'POST',body:JSON.stringify(payload)},null);if(r||!tg?.initData){state.user={...state.user,...payload,...(r?.user||{})};render();closeModal();toast('Настройки сохранены');notify()}}
   async function resetSettings(){const r=await safe('/api/miniapp/settings/reset',{method:'POST',body:'{}'},null);if(r||!tg?.initData){Object.assign(state.user,{age:0,district:'',gender:'',looking_for:''});render();settings($('#modalBody'));toast('Настройки сброшены')}}
   function confirmForget(){const body=$('#modalBody');body.innerHTML=`${panel('Удалить профиль?','Ник, звёзды, статистика и настройки будут удалены без возможности восстановления.')}<div class="modal-actions"><button class="action" id="cancelForget">Отмена</button><button class="action danger" id="doForget">Удалить</button></div>`;$('#cancelForget').onclick=()=>settings(body);$('#doForget').onclick=forgetProfile}
   async function forgetProfile(){const r=await safe('/api/miniapp/profile/forget',{method:'POST',body:'{}'},null);if(r){notify();try{tg?.close()}catch(_){location.reload()}}}
   async function claimSubscription(){if(!state.subscription)return;try{tg?.openTelegramLink?.(state.subscription.url)}catch(_){};toast('Подпишись и нажми ещё раз для проверки');const b=$('#subscribe');if(b){b.textContent='Проверить';b.onclick=async()=>{const r=await safe('/api/miniapp/subscription/claim',{method:'POST',body:'{}'},null);if(r){state.user.stars=r.stars;render();settings($('#modalBody'));toast(`+${r.amount} ★`);notify()}}}}
-  async function renderAnonPlus(body){
-    const p=state.anonPlus||{};
-    body.innerHTML=`
-      <section class="anon-plus-hero compact">
-        <span class="anon-plus-mark">💎</span>
-        <div><small>АНОН МГН</small><h3>Анон Plus</h3><p>${p.active?'<b>Активирован навсегда</b>':'Один раз — и навсегда.'}</p></div>
-      </section>
-
-      <div class="anon-plus-price compact">
-        <span><small>Доступ</small><strong>Навсегда</strong></span>
-        <b>${p.price_stars||25} ★ <i>или</i> ${p.price_rub||50} ₽</b>
-      </div>
-
-      ${p.active?'':`<div class="payment-grid compact"><button class="action accent" id="anonPlusStars">Купить за ${p.price_stars||25} ★</button><button class="action" id="anonPlusSbp" ${p.sbp_enabled?'':'disabled'}>${p.sbp_enabled?`Оплатить ${p.price_rub||50} ₽ по СБП`:'СБП недоступна'}</button></div>`}
-
-      <button class="anon-plus-benefits-toggle ${anonPlusBenefitsOpen?'open':''}" id="anonPlusBenefitsToggle" type="button" aria-expanded="${anonPlusBenefitsOpen?'true':'false'}">
-        <span><strong>Что входит в Анон Plus</strong><small>${anonPlusBenefitsOpen?'Нажми, чтобы свернуть':'Нажми, чтобы посмотреть преимущества'}</small></span>
-        <i>${svg('chevron-right')}</i>
-      </button>
-      <div class="anon-plus-features ${anonPlusBenefitsOpen?'open':''}">
-        <article><b>Темы Mini App</b><span>Меняй оформление приложения под себя.</span></article>
-        <article><b>Расширенная статистика</b><span>Активность за сегодня и за всё время: сообщения, диалоги, игры и оценки.</span></article>
-        <article><b>Статистика после диалога</b><span>Длительность разговора, сообщения, игры и заработанные звёзды.</span></article>
-        <article><b>Отображение ника</b><span>По желанию другие пользователи в диалоге увидят ник, указанный в профиле.</span></article>
-        <article><b>Без рекламы</b><span>Рекламные рассылки в боте не будут приходить.</span></article>
-      </div>
-
-      ${p.active?`<div class="setting"><div><strong>Тема</strong><small>применяется сразу</small></div><div class="theme-picker">${[['pink','Розовая'],['blue','Синяя'],['violet','Фиолетовая'],['green','Зелёная'],['orange','Оранжевая'],['mono','Ч/Б']].map(([v,t])=>`<button data-plus-theme="${v}" class="${(p.theme||'pink')===v?'active':''}">${t}</button>`).join('')}</div></div><button class="anon-plus-identity-toggle ${p.show_nick?'active':''}" id="anonPlusShowNick"><span><strong>Показывать мой ник в диалогах</strong><small>${p.show_nick?'Собеседник видит твой ник':'Ник остаётся скрытым'}</small></span><b>${p.show_nick?'ВКЛ':'ВЫКЛ'}</b></button>`:''}
-    `;
-    if($('#anonPlusStars'))$('#anonPlusStars').onclick=buyAnonPlusStars;
-    if($('#anonPlusSbp')&&!$('#anonPlusSbp').disabled)$('#anonPlusSbp').onclick=buyAnonPlusSbp;
-    if($('#anonPlusBenefitsToggle'))$('#anonPlusBenefitsToggle').onclick=()=>{anonPlusBenefitsOpen=!anonPlusBenefitsOpen;renderAnonPlus(body);haptic()};
-    $$('[data-plus-theme]',body).forEach(b=>b.onclick=()=>setAnonPlusTheme(b.dataset.plusTheme));
-    if($('#anonPlusShowNick'))$('#anonPlusShowNick').onclick=toggleAnonPlusShowNick;
-  }
-  async function setAnonPlusTheme(theme){
-    if(!state.anonPlus?.active)return openModal('anon-plus','Анон Plus','ПОДПИСКА');
-    const r=await safe('/api/miniapp/anon-plus/theme',{method:'POST',body:JSON.stringify({theme})},null);
-    if(r?.theme){
-      state.anonPlus.theme=r.theme;state.user.anon_plus_theme=r.theme;render();
-      if(state.modal==='anon-plus')renderAnonPlus($('#modalBody'));else if(state.modal==='settings')settings($('#modalBody'));
-      toast('Тема применена');haptic();
-    }
-  }
-  async function toggleAnonPlusShowNick(){
-    if(!state.anonPlus?.active)return;
-    const r=await safe('/api/miniapp/anon-plus/identity',{method:'POST',body:JSON.stringify({show_nick:!state.anonPlus.show_nick})},null);
-    if(!r)return;
-    state.anonPlus.show_nick=!!r.show_nick;
-    state.anonPlus.emoji=r.emoji||state.anonPlus.emoji||'';
-    state.anonPlus.emoji_glyph=r.emoji_glyph||state.anonPlus.emoji_glyph||'';
-    renderAnonPlus($('#modalBody'));render();
-    toast(state.anonPlus.show_nick?'Ник будет виден собеседнику':'Ник скрыт');
-  }
-  async function buyAnonPlusStars(){
-    if(!tg?.initData)return toast('Оплата доступна внутри Telegram');
-    const b=$('#anonPlusStars');if(b){b.disabled=true;b.textContent='Создаём счёт…'}
-    const invoice=await safe('/api/miniapp/anon-plus/invoice',{method:'POST',body:'{}'},null);
-    if(!invoice?.invoice_url){if(b){b.disabled=false;b.textContent='Купить за Stars'};return}
-    const finish=async status=>{
-      if(status==='paid'||status==='pending'){
-        toast(status==='paid'?'Анон Plus активируется…':'Платёж обрабатывается…');
-        setTimeout(async()=>{await load();if(state.modal==='anon-plus')renderAnonPlus($('#modalBody'))},1800);
-      }else{
-        if(status==='cancelled')toast('Оплата отменена');else if(status==='failed')toast('Оплата не прошла');
-        if(b){b.disabled=false;b.textContent=`Купить за ${state.anonPlus.price_stars||25} ★`}
-      }
-    };
-    try{if(typeof tg?.openInvoice==='function')tg.openInvoice(invoice.invoice_url,finish);else tg?.openTelegramLink?.(invoice.invoice_url)}catch(_){toast('Не удалось открыть оплату')}
-  }
   function openPaymentUrl(url){
     try{if(typeof tg?.openLink==='function')tg.openLink(url);else window.open(url,'_blank','noopener')}catch(_){location.href=url}
-  }
-  async function buyAnonPlusSbp(){
-    const p=await safe('/api/miniapp/payments/sbp',{method:'POST',body:JSON.stringify({kind:'anonplus'})},null);
-    if(!p?.payment_id)return;
-    showSbpWaiting(p,'anon-plus');openPaymentUrl(p.pay_url);pollSbp(p.payment_id,'anon-plus');
   }
   function openSupport(){
     const body=$('#modalBody');
@@ -707,8 +607,8 @@ if (typeof window === 'undefined') {
     if(!d)return false;
     if(d.status==='paid'){
       if(sbpPollTimer){clearTimeout(sbpPollTimer);sbpPollTimer=null}
-      await load();notify();toast(kind==='anon-plus'?'Анон Plus активирован':'Спасибо за поддержку!');
-      if(kind==='anon-plus')openModal('anon-plus','Анон Plus','ПОДПИСКА');else closeModal();
+      await load();notify();toast(kind==='anon-plus'?' активирован':'Спасибо за поддержку!');
+      if(kind==='anon-plus')openModal('anon-plus','','ПОДПИСКА');else closeModal();
       return true;
     }
     const el=$('#sbpState');if(el)el.textContent='Платёж пока не подтверждён';
