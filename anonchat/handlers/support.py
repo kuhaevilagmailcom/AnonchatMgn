@@ -257,95 +257,45 @@ async def successful_payment(
         return
 
     parts = (payment.invoice_payload or "").split(":")
-    if not parts:
+    if len(parts) != 4 or parts[0] != "support" or not parts[3]:
         await ctx.reply(texts.SUPPORT_PAYMENT_ERROR)
         return
 
-    if parts[0] == "support":
-        if len(parts) != 4 or not parts[3]:
-            await ctx.reply(texts.SUPPORT_PAYMENT_ERROR)
-            return
-        try:
-            payload_user = int(parts[1])
-            value = int(parts[2])
-        except ValueError:
-            await ctx.reply(texts.SUPPORT_PAYMENT_ERROR)
-            return
-        if not (
-            payload_user == ctx.user_id
-            and value == payment.total_amount
-            and MIN_STARS <= value <= MAX_STARS
-        ):
-            await ctx.reply(texts.SUPPORT_PAYMENT_ERROR)
-            return
+    try:
+        payload_user = int(parts[1])
+        value = int(parts[2])
+    except ValueError:
+        await ctx.reply(texts.SUPPORT_PAYMENT_ERROR)
+        return
 
-        created, support_total = await db.record_payment(
-            ctx.user_id,
-            "support",
-            payment.total_amount,
-            payment.telegram_payment_charge_id,
-            payment.provider_payment_charge_id,
-            payment.invoice_payload,
-        )
-        if not created:
-            await ctx.reply(
-                "Этот платёж уже учтён.",
-                K.menu_keyboard(ctx.mm.status(ctx.user_id)),
-            )
-            return
-        ctx.me = await db.get_user(ctx.user_id)
+    if not (
+        payload_user == ctx.user_id
+        and value == payment.total_amount
+        and MIN_STARS <= value <= MAX_STARS
+    ):
+        await ctx.reply(texts.SUPPORT_PAYMENT_ERROR)
+        return
+
+    created, support_total = await db.record_payment(
+        ctx.user_id,
+        "support",
+        payment.total_amount,
+        payment.telegram_payment_charge_id,
+        payment.provider_payment_charge_id,
+        payment.invoice_payload,
+    )
+    if not created:
         await ctx.reply(
-            texts.SUPPORT_THANKS.format(
-                stars=payment.total_amount, total=support_total
-            ),
+            "Этот платёж уже учтён.",
             K.menu_keyboard(ctx.mm.status(ctx.user_id)),
         )
         return
 
-    await ctx.reply(texts.SUPPORT_PAYMENT_ERROR)
-            return
-        try:
-            payload_user = int(parts[1])
-            value = int(parts[2])
-            days = int(parts[3])
-        except ValueError:
-            await ctx.reply(texts.SUPPORT_PAYMENT_ERROR)
-            return
-        if not (
-            payload_user == ctx.user_id
-            and value == payment.total_amount == int(cfg.anon_plus_price_stars)
-            and days == 0
-        ):
-            await ctx.reply(texts.SUPPORT_PAYMENT_ERROR)
-            return
+    ctx.me = await db.get_user(ctx.user_id)
+    await ctx.reply(
+        texts.SUPPORT_THANKS.format(
+            stars=payment.total_amount, total=support_total
+        ),
+        K.menu_keyboard(ctx.mm.status(ctx.user_id)),
+    )
 
-        try:
-            created, premium_until = await db.record_anon_plus_payment(
-                ctx.user_id,
-                payment.total_amount,
-                payment.telegram_payment_charge_id,
-                payment.provider_payment_charge_id,
-                payment.invoice_payload,
-                days,
-            )
-        except ValueError:
-            await ctx.reply("Не удалось активировать Анон Plus. Напиши в поддержку.")
-            return
-
-        if not created:
-            await ctx.reply(
-                "Этот платёж уже учтён.",
-                K.menu_keyboard(ctx.mm.status(ctx.user_id)),
-            )
-            return
-
-        ctx.me = await db.get_user(ctx.user_id)
-        await ctx.reply(
-            "💎 <b>Анон Plus активирован</b>\n\n"
-            "<b>Доступ выдан навсегда.</b>\n\n"
-            "Темы и расширенная статистика уже доступны в Mini App.",
-            K.menu_keyboard(ctx.mm.status(ctx.user_id)),
-        )
-        return
-
-    await ctx.reply(texts.SUPPORT_PAYMENT_ERROR)
