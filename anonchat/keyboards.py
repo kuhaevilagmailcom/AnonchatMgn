@@ -575,9 +575,8 @@ def admin_report_keyboard(
     if "users" in permissions:
         _button(b, "Профиль нарушителя", callback_data=f"adm:who:{report_id}", icon="profile")
     if "reports" in permissions:
-        _button(b, "Одобрить · +10 ⭐", callback_data=f"adm:approve:{report_id}", icon="check", style="success")
-        _button(b, "Отклонить", callback_data=f"adm:done:{report_id}", icon="delete")
-    b.adjust(2, 1, 1, 1)
+        _button(b, "Закрыть без мер", callback_data=f"adm:done:{report_id}", icon="check")
+    b.adjust(2, 1, 1)
     return b.as_markup()
 
 
