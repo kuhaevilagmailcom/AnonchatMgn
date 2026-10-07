@@ -935,7 +935,6 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
     live_chat.clear_pair(ctx.user_id, partner)
 
     counts: dict[int, int] = summary.get("counts", {}) or {}
-    bonus_xp: dict[int, int] = summary.get("bonus_xp", {}) or {}
     mine = int(counts.get(ctx.user_id, 0))
     theirs = int(counts.get(partner, 0))
     started = int(summary.get("started_at", time.time()))
@@ -948,11 +947,11 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
     cap = ctx.cfg.xp_message_cap
     earned_xp: dict[int, int] = {}
     for uid, sent in ((ctx.user_id, mine), (partner, theirs)):
-        gain = (
+        base_gain = (
             min(sent, cap) * ctx.cfg.xp_per_message
-            + int(bonus_xp.get(uid, 0))
             + (ctx.cfg.xp_per_dialog if live else 0)
         )
+        gain = await ctx.db.effective_xp_reward(base_gain)
         if gain:
             await ctx.db.award_xp(uid, gain, commit=False)
         if sent:
@@ -1076,10 +1075,11 @@ async def apply_rating(ctx: Ctx, positive: bool) -> None:
         return
     await ctx.db.activity_add(ctx.user_id, ratings_given=1)
     if positive:
-        await ctx.db.award_xp(partner, ctx.cfg.xp_good_rating)
+        reward = await ctx.db.effective_xp_reward(ctx.cfg.xp_good_rating)
+        await ctx.db.award_xp(partner, reward)
         await ctx.db.activity_add(partner, good_ratings=1)
         await ctx.ack("Спасибо")
-        result_text = texts.RATING_DONE_GOOD.format(xp=ctx.cfg.xp_good_rating)
+        result_text = texts.RATING_DONE_GOOD.format(xp=reward)
     else:
         await ctx.ack("Записал")
         result_text = texts.RATING_DONE_BAD
