@@ -1081,24 +1081,32 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
           and "раунд 1/3" in session.last_to(B).lower(),
           "после согласия начинается первый раунд")
 
-    # 1-й раунд: точное совпадение 5 и 5 = +25 каждому.
+    game_multiplier = await db.xp_multiplier()
+
+    # 1-й раунд: точное совпадение = 15 ⭐ базово.
     await press(A, f"game:num:set:{number_id}:0:5")
     await press(A, f"game:num:submit:{number_id}:0:5")
     await press(B, f"game:num:set:{number_id}:0:5")
     await press(B, f"game:num:submit:{number_id}:0:5")
-    check("Точное совпадение" in session.last_to(A) and "25" in session.last_to(A),
-          "точное совпадение начисляет 25 звёзд в диапазоне 1–10")
+    check(
+        "Точное совпадение" in session.last_to(A)
+        and str(15 * game_multiplier) in session.last_to(A),
+        "точное совпадение начисляет 15 звёзд базово в диапазоне 1–10",
+    )
 
     await press(A, f"game:num:next:{number_id}:0")
     check("раунд 2/3" in session.last_to(B).lower(), "игра переходит ко второму раунду")
 
-    # 2-й раунд: разница ровно 1 = половина награды, то есть 12 целых ⭐.
+    # 2-й раунд: разница ровно 1 = половина награды, то есть 7 ⭐ базово.
     await press(A, f"game:num:set:{number_id}:1:4")
     await press(A, f"game:num:submit:{number_id}:1:4")
     await press(B, f"game:num:set:{number_id}:1:5")
     await press(B, f"game:num:submit:{number_id}:1:5")
-    check("Почти совпало" in session.last_to(A) and "12" in session.last_to(A),
-          "разница в один даёт половину целой награды")
+    check(
+        "Почти совпало" in session.last_to(A)
+        and str(7 * game_multiplier) in session.last_to(A),
+        "разница в один даёт половину награды",
+    )
 
     await press(B, f"game:num:next:{number_id}:1")
     check("раунд 3/3" in session.last_to(A).lower(), "игра переходит к третьему раунду")
@@ -1109,16 +1117,23 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await press(B, f"game:num:set:{number_id}:2:9")
     await press(B, f"game:num:submit:{number_id}:2:9")
     number_texts = session.texts_to(A)
-    check(any("Игра окончена" in text and "37" in text for text in number_texts),
-          "после трёх раундов показан общий заработок")
+    number_total = 22 * game_multiplier
+    check(
+        any("Игра окончена" in text and str(number_total) in text for text in number_texts),
+        "после трёх раундов показан общий заработок",
+    )
     check(await db.number_for_pair(A, B) is None,
           "завершённая игра Числа не хранится как история")
-    check(await db.number_daily_reward(A) == number_reward_a_before + 37
-          and await db.number_daily_reward(B) == number_reward_b_before + 37,
-          "награды Чисел начисляются обоим игрокам")
-    check(int((await db.get_user(A))["xp"]) >= xp_a_before + 37
-          and int((await db.get_user(B))["xp"]) >= xp_b_before + 37,
-          "дополнительные достижения не уменьшают награду Чисел")
+    check(
+        await db.number_daily_reward(A) == number_reward_a_before + number_total
+        and await db.number_daily_reward(B) == number_reward_b_before + number_total,
+        "награды Чисел начисляются обоим игрокам без лимита",
+    )
+    check(
+        int((await db.get_user(A))["xp"]) >= xp_a_before + number_total
+        and int((await db.get_user(B))["xp"]) >= xp_b_before + number_total,
+        "дополнительные достижения не уменьшают награду Чисел",
+    )
 
     await press(ADMIN, "adm:panel:monitor")
     session.clear()
@@ -1310,6 +1325,12 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     await send(A, "/top")
     check("Топ · Неделя" in session.last_to(A), "топ по умолчанию открывается за неделю")
+    check(
+        "Розыгрыш NFT" in session.last_to(A)
+        and "На данный момент выигрывает:" in session.last_to(A)
+        and "11 октября 2026 · 20:00" in session.last_to(A),
+        "недельный топ показывает текущего лидера NFT-розыгрыша",
+    )
     await press(A, "top:month")
     check("Топ · Месяц" in session.last_to(A), "топ переключается на месяц")
     await press(A, "top:all")
