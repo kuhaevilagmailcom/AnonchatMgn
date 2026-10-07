@@ -70,7 +70,7 @@ if (typeof window === 'undefined') {
     "gift":"<path d=\"M4 11V15C4 18.2998 4 19.9497 5.02513 20.9749C6.05025 22 7.70017 22 11 22H13C16.2998 22 17.9497 22 18.9749 20.9749C20 19.9497 20 18.2998 20 15V11\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n<path d=\"M3 9C3 8.25231 3 7.87846 3.20096 7.6C3.33261 7.41758 3.52197 7.26609 3.75 7.16077C4.09808 7 4.56538 7 5.5 7H18.5C19.4346 7 19.9019 7 20.25 7.16077C20.478 7.26609 20.6674 7.41758 20.799 7.6C21 7.87846 21 8.25231 21 9C21 9.74769 21 10.1215 20.799 10.4C20.6674 10.5824 20.478 10.7339 20.25 10.8392C19.9019 11 19.4346 11 18.5 11H5.5C4.56538 11 4.09808 11 3.75 10.8392C3.52197 10.7339 3.33261 10.5824 3.20096 10.4C3 10.1215 3 9.74769 3 9Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\"/>\n<path d=\"M6 3.78571C6 2.79949 6.79949 2 7.78571 2H8.14286C10.2731 2 12 3.7269 12 5.85714V7H9.21429C7.43908 7 6 5.56091 6 3.78571Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\"/>\n<path d=\"M18 3.78571C18 2.79949 17.2005 2 16.2143 2H15.8571C13.7269 2 12 3.7269 12 5.85714V7H14.7857C16.5609 7 18 5.56091 18 3.78571Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\"/>\n<path d=\"M12 11L12 22\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>",
     "trophy":"<path d=\"M5 21H19\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n<path d=\"M12.125 12.75H12M12.25 12.75C12.25 12.8881 12.1381 13 12 13C11.8619 13 11.75 12.8881 11.75 12.75C11.75 12.6119 11.8619 12.5 12 12.5C12.1381 12.5 12.25 12.6119 12.25 12.75Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n<path d=\"M14.9152 7.61089L13.8078 5.38179C13.019 3.79393 12.6246 3 12 3C11.3754 3 10.981 3.79393 10.1922 5.38179L9.08483 7.61089C8.58107 8.62494 8.32919 9.13197 7.87976 9.24608C7.8485 9.25401 7.81689 9.26043 7.78503 9.26533C7.32682 9.3357 6.89919 8.96678 6.04393 8.22895C4.0124 6.47635 2.99663 5.60004 2.38034 5.94899C2.34045 5.97157 2.30213 5.99686 2.26565 6.02467C1.70197 6.45439 2.09541 7.74136 2.88229 10.3153L4.04783 14.1279C4.47098 15.5121 4.68255 16.2042 5.21787 16.6021C5.75318 17 6.47261 17 7.91147 17L16.0886 16.9999C17.5274 16.9999 18.2468 16.9999 18.7821 16.602C19.3175 16.2041 19.529 15.512 19.9522 14.1279L21.1177 10.3153C21.9046 7.74137 22.298 6.4544 21.7344 6.02468C21.6979 5.99687 21.6595 5.97158 21.6197 5.94899C21.0034 5.60006 19.9876 6.47636 17.9561 8.22896C17.1008 8.96679 16.6732 9.3357 16.215 9.26533C16.1831 9.26043 16.1515 9.25401 16.1202 9.24607C15.6708 9.13197 15.4189 8.62494 14.9152 7.61089Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
   };
-  const state = {page:'home', modal:null, status:'free', position:null, user:{nick:'Аноним',rank:'👤 Вася',stars:0,age:0,district:'',gender:'',looking_for:'',photo_url:''},stats:{online:0,chatting:0,searching:0,dialogs:0,messages:0,ratings:0,games:0,battle_games:0,number_games:0,streak:0,best_streak:0,quest_current:0,quest_target:20},referral:{invited:0,earned:0},referral_url:'',bot_url:'',events:[],subscription:null};
+  const state = {page:'home', modal:null, status:'free', position:null, user:{nick:'Аноним',rank:'👤 Вася',stars:0,age:0,district:'',gender:'',looking_for:'',photo_url:'',theme:'pink'},stats:{online:0,chatting:0,searching:0,dialogs:0,messages:0,ratings:0,games:0,battle_games:0,number_games:0,streak:0,best_streak:0,quest_current:0,quest_target:20},referral:{invited:0,earned:0},referral_url:'',bot_url:'',events:[],subscription:null};
   let statusRequestSeq = 0;
   let statusAppliedSeq = 0;
   let statusTimer = null;
@@ -207,7 +207,7 @@ if (typeof window === 'undefined') {
   }
   function demo(){Object.assign(state.user,{nick:'Аноним-4821',rank:'Завсегдатай',stars:1250,age:17,district:'Правый берег',gender:'m',looking_for:'f'});Object.assign(state.stats,{online:34,chatting:22,searching:12,dialogs:682,messages:8884,ratings:128,games:43,battle_games:31,number_games:12,streak:7,best_streak:23,quest_current:14});state.referral={invited:8,earned:400};state.referral_url='https://t.me/AnonChatMgn_Bot?start=ref_demo';state.bot_url='https://t.me/AnonChatMgn_Bot';state.subscription={claimed:false,amount:100,url:'https://t.me/anonmgn'};state.events=[{id:'demo1',type:'personal',icon:'message-circle',title:'Диалог активен',text:'Собеседник найден. Возвращайся в чат.',time:'сейчас',unread:true},{id:'demo2',type:'games',icon:'gamepad-2',title:'Новая игра',text:'Можно пригласить собеседника в Битву мнений или Числа.',time:'сегодня',unread:false}]}
   function setAll(key,value){$$(`[data-${key}]`).forEach(el=>el.textContent=value)}
-  function applyTheme(){document.body.dataset.theme='pink'}
+  function applyTheme(){const theme=state.user.theme||localStorage.getItem('anon_mgn_theme')||'pink';state.user.theme=theme;document.body.dataset.theme=theme}
   function render(){
     setAll('nick',state.user.nick);setAll('rank',state.user.rank);setAll('stars',state.user.stars);
     setAll('online',state.stats.online);setAll('chatting',state.stats.chatting);setAll('searching',state.stats.searching);
@@ -422,15 +422,6 @@ if (typeof window === 'undefined') {
     resultShownFor=Number(result.match_id);
     if(state.modal!=='dialog-result'){openModal('dialog-result','Итог разговора','ДИАЛОГ ЗАВЕРШЁН');return}
     const body=$('#modalBody');
-    if(result.locked){
-      body.innerHTML=`<section class="dialog-result-card locked-result"><div class="result-plus-lock"><strong>Статистика после диалога доступна с </strong><small>Длительность, сообщения, игры и заработанные звёзды</small><button class="action accent" id="resultPlus">Открыть </button></div></section>
-      ${result.rated?'<div class="rated-done">✓ Оценка уже учтена</div>':`<section class="rate-block"><small>Как прошёл разговор?</small><div><button data-rate="1">👍 Норм</button><button data-rate="0">👎 Не зашло</button></div></section>`}
-      <div class="modal-actions one"><button class="action" id="resultNext">Найти собеседника</button></div>`;
-      $$('[data-rate]',body).forEach(btn=>btn.onclick=()=>rateDialog(btn.dataset.rate==='1',body));
-      $('#resultPlus').onclick=()=>openModal('anon-plus','','ПОДПИСКА');
-      $('#resultNext').onclick=()=>{closeModal();go(state.status==='paired'?'chat':'search')};
-      return;
-    }
     body.innerHTML=`<section class="dialog-result-card">
       <div class="result-duration"><small>Диалог длился</small><strong>${formatDuration(result.duration)}</strong></div>
       <div class="result-grid">
@@ -541,7 +532,7 @@ if (typeof window === 'undefined') {
   }
   async function settings(body){
     const sub=await safe('/api/miniapp/subscription',{},null)||(!tg?.initData?state.subscription:null);state.subscription=sub;
-    const themeBlock=state.anonPlus?.active?`<div class="setting"><div><strong>Тема </strong><small>меняет акцент и поверхности</small></div><div class="theme-picker">${[['pink','Розовая'],['blue','Синяя'],['violet','Фиолетовая'],['green','Зелёная'],['orange','Оранжевая'],['mono','Ч/Б']].map(([v,t])=>`<button data-theme-choice="${v}" class="${(state.anonPlus.theme||'pink')===v?'active':''}">${t}</button>`).join('')}</div></div>`:`<section class="panel reward"><span>💎</span><span><strong></strong><small>Темы и расширенная статистика</small></span><button data-open-plus>Открыть</button></section>`;
+    const themeBlock=`<div class="setting"><div><strong>Тема</strong><small>меняет акцент и поверхности</small></div><div class="theme-picker">${[['pink','Розовая'],['blue','Синяя'],['violet','Фиолетовая'],['green','Зелёная'],['orange','Оранжевая'],['mono','Ч/Б']].map(([v,t])=>`<button data-theme-choice="${v}" class="${(state.user.theme||'pink')===v?'active':''}">${t}</button>`).join('')}</div></div>`;
     body.innerHTML=`<div class="setting"><div><strong>Твой пол</strong><small>необязательно</small></div><div class="segments" id="gender"><button data-value="m">Парень</button><button data-value="f">Девушка</button><button data-value="">Не указывать</button></div></div><div class="setting"><div><strong>Кого ищешь</strong><small>предпочтение</small></div><div class="segments" id="looking"><button data-value="m">Парня</button><button data-value="f">Девушку</button><button data-value="">Неважно</button></div></div><div class="setting"><div><strong>Твой берег</strong><small>необязательно</small></div><select id="district"><option value="">Любой</option><option value="Правый берег">Правый берег</option><option value="Левый берег">Левый берег</option></select></div><div class="setting"><div><strong>Возраст</strong><small>необязательно · 13–20</small></div><input id="age" type="number" inputmode="numeric" min="13" max="20" placeholder="Не указан"></div>${themeBlock}${sub&&!sub.claimed?`<section class="panel reward"><span>${svg('gift')}</span><span><strong>${sub.amount} ★ за подписку</strong><small>Одноразовая награда</small></span><button id="subscribe">Получить</button></section>`:''}<section class="panel reward"><span>${svg('gift')}</span><span><strong>Поддержать проект</strong><small>Telegram Stars или СБП</small></span><button id="support">Поддержать</button></section><div class="modal-actions"><button class="action" id="resetSettings">Сбросить</button><button class="action accent" id="saveSettings">Сохранить</button></div><div class="modal-actions one"><button class="action danger" id="forget">Удалить профиль</button></div>`;
     $('#district').value=state.user.district||'';$('#age').value=state.user.age||'';
     $$('#gender button').forEach(b=>b.classList.toggle('active',b.dataset.value===(state.user.gender||'')));
@@ -549,8 +540,16 @@ if (typeof window === 'undefined') {
     $$('#gender button,#looking button').forEach(b=>b.onclick=()=>{$$('button',b.parentElement).forEach(x=>x.classList.remove('active'));b.classList.add('active')});
     $('#saveSettings').onclick=saveSettings;$('#resetSettings').onclick=resetSettings;$('#forget').onclick=confirmForget;$('#support').onclick=openSupport;
     if($('#subscribe'))$('#subscribe').onclick=claimSubscription;
-    if($('[data-open-plus]'))$('[data-open-plus]').onclick=()=>{closeModal();openModal('anon-plus','','ПОДПИСКА')};
-    $$('[data-theme-choice]',body).forEach(b=>b.onclick=()=>setAnonPlusTheme(b.dataset.themeChoice));
+    $('[data-theme-choice]',body).forEach(b=>b.onclick=()=>setTheme(b.dataset.themeChoice,body));
+  }
+  function setTheme(theme,body){
+    const allowed=new Set(['pink','blue','violet','green','orange','mono']);
+    if(!allowed.has(theme))return;
+    state.user.theme=theme;
+    localStorage.setItem('anon_mgn_theme',theme);
+    applyTheme();
+    if(body)settings(body);
+    haptic();
   }
   function bindClose(root=document){$$('[data-close-modal]',root).forEach(b=>b.onclick=closeModal)}
   async function saveNick(){
@@ -607,8 +606,7 @@ if (typeof window === 'undefined') {
     if(!d)return false;
     if(d.status==='paid'){
       if(sbpPollTimer){clearTimeout(sbpPollTimer);sbpPollTimer=null}
-      await load();notify();toast(kind==='anon-plus'?' активирован':'Спасибо за поддержку!');
-      if(kind==='anon-plus')openModal('anon-plus','','ПОДПИСКА');else closeModal();
+      await load();notify();toast('Спасибо за поддержку!');closeModal();
       return true;
     }
     const el=$('#sbpState');if(el)el.textContent='Платёж пока не подтверждён';
