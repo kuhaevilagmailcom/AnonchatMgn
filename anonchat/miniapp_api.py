@@ -603,6 +603,12 @@ class MiniAppServer:
     async def _after_chat_message(
         self, uid: int, partner: int, sent_count: int, *, text: str = ""
     ) -> None:
+        multiplier = await self.db.xp_multiplier()
+        if multiplier > 1 and sent_count <= max(0, int(self.cfg.xp_message_cap)):
+            self.mm.add_bonus_xp(
+                uid,
+                (multiplier - 1) * max(0, int(self.cfg.xp_per_message)),
+            )
         if text:
             self.mm.record_text(uid, text)
             guessed = WG.resolve_guess(uid, partner, text)
@@ -1066,6 +1072,7 @@ class MiniAppServer:
         live_chat.clear_pair(uid, partner)
 
         counts = summary.get("counts", {}) or {}
+        bonus_xp = summary.get("bonus_xp", {}) or {}
         mine = int(counts.get(uid, 0))
         theirs = int(counts.get(partner, 0))
         started = int(summary.get("started_at", time.time()))
@@ -1082,11 +1089,14 @@ class MiniAppServer:
         )
         earned_xp: dict[int, int] = {}
         for player_id, sent_count in ((uid, mine), (partner, theirs)):
-            base_gain = (
+            message_gain = (
                 min(sent_count, self.cfg.xp_message_cap) * self.cfg.xp_per_message
-                + (self.cfg.xp_per_dialog if live else 0)
+                + int(bonus_xp.get(player_id, 0))
             )
-            gain = await self.db.effective_xp_reward(base_gain)
+            dialog_gain = await self.db.effective_xp_reward(
+                self.cfg.xp_per_dialog if live else 0
+            )
+            gain = message_gain + dialog_gain
             if gain:
                 await self.db.award_xp(player_id, gain, commit=False)
             if sent_count:
