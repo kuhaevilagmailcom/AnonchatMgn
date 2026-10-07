@@ -200,6 +200,12 @@ async def main() -> None:  # pragma: no cover
         top_flags_count = await pack.load_top_flags(bot)
         if top_flags_count:
             log.info("FestiveFlags: загружено %s эмодзи для топа", top_flags_count)
+        admin_icons_count = await pack.load_admin_icons(bot)
+        if admin_icons_count:
+            log.info(
+                "TgAndroidIcons: загружено %s иконок для модерации",
+                admin_icons_count,
+            )
         me = await bot.get_me()
         log.info("Анонимный чат %s запущен: @%s (id=%s)", cfg.city_short, me.username, me.id)
         await notify_admins_restart(bot, cfg, database)
