@@ -395,9 +395,9 @@ def feedback_admin_keyboard(user_id: int) -> InlineKeyboardMarkup:
 
 def number_range_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    _button(b, "1–10 · 25 ⭐", callback_data="game:numbers:range:10", style="primary")
-    _button(b, "1–100 · 50 ⭐", callback_data="game:numbers:range:100", style="primary")
-    _button(b, "1–1000 · 100 ⭐", callback_data="game:numbers:range:1000", style="success")
+    _button(b, "1–10 · 15 ⭐", callback_data="game:numbers:range:10", style="primary")
+    _button(b, "1–100 · 25 ⭐", callback_data="game:numbers:range:100", style="primary")
+    _button(b, "1–1000 · 50 ⭐", callback_data="game:numbers:range:1000", style="success")
     _button(b, "Назад", callback_data=CB_GAMES, icon="home")
     b.adjust(1, 1, 1, 1)
     return b.as_markup()
