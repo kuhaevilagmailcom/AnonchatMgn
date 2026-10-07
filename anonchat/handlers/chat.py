@@ -246,6 +246,14 @@ async def relay_to_partner(
                         await send_to(ctx.bot, uid, notice, pack=ctx.pack)
                 WG.remove(guessed.game_id)
 
+    # Фиксируем x2/x3 в момент отправки сообщения.
+    multiplier = await ctx.db.xp_multiplier()
+    if multiplier > 1 and _sent <= max(0, int(cfg.xp_message_cap)):
+        mm.add_bonus_xp(
+            ctx.user_id,
+            (multiplier - 1) * max(0, int(cfg.xp_per_message)),
+        )
+
     if message.text:
         mm.record_text(ctx.user_id, message.text)
     await enqueue_chat_monitor(message, ctx, partner)
