@@ -13,7 +13,7 @@ from typing import Any
 from .texts import esc
 
 WORD_ROUNDS = 5
-WORD_REWARD = 3
+WORD_REWARD = 6
 
 WORDS: tuple[str, ...] = tuple(dict.fromkeys("""
 автобус аквариум апельсин библиотека будильник велосипед вулкан гитара гром дельфин
