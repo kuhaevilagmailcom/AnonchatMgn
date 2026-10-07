@@ -323,11 +323,12 @@ async def cmd_start(
         raw_referrer = parts[1][4:]
         if raw_referrer.isdigit():
             referrer_id = int(raw_referrer)
+            effective_reward = await ctx.db.effective_xp_reward(REFERRAL_XP)
             if await ctx.db.award_referral(ctx.user_id, referrer_id, REFERRAL_XP):
                 await send_to(
                     ctx.bot,
                     referrer_id,
-                    f"🎁 По твоей ссылке пришёл новый пользователь · +{REFERRAL_XP} ⭐",
+                    f"🎁 По твоей ссылке пришёл новый пользователь · +{effective_reward} ⭐",
                     pack=ctx.pack,
                 )
     if ctx.is_admin:
