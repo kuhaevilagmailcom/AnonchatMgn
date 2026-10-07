@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from anonchat.db import Database, number_reward_day_start, referral_day_start  # noqa: E402
+from anonchat.db import Database, number_reward_day_start, referral_day_start, week_period_start  # noqa: E402
 from anonchat.levels import RANKS, rank_for  # noqa: E402
 from anonchat.matching import Matchmaker  # noqa: E402
 
@@ -1419,6 +1419,30 @@ def test_engagement_activity_streak_achievements_and_quests() -> None:
             await db.forget_user(501)
             assert await db._fetchone("SELECT 1 FROM daily_activity WHERE user_id=501") is None
             assert await db._fetchone("SELECT 1 FROM user_engagement WHERE user_id=501") is None
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
+def test_weekly_top_starts_on_monday() -> None:
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "weekly-top.db"
+        db = await Database(path).start()
+        try:
+            await db.ensure_user(911, "old_week", "Old")
+            await db.ensure_user(912, "this_week", "Current")
+            monday = week_period_start()
+            await db.activity_add(911, timestamp=monday - 1, xp_earned=1000)
+            await db.activity_add(912, timestamp=monday, xp_earned=100)
+
+            week = await db.top_period(7, 10)
+            ids = [int(row["user_id"]) for row in week]
+            assert 912 in ids
+            assert 911 not in ids, "в недельный топ не должны попадать очки до понедельника"
+
+            old_position = await db.top_position_period(911, 7)
+            assert old_position["stars"] == 0
         finally:
             await db.close()
 
