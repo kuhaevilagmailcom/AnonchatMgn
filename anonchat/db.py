@@ -416,6 +416,14 @@ def week_period_start(timestamp: int | None = None) -> int:
     return day - weekday * 86_400
 
 
+def month_period_start(timestamp: int | None = None) -> int:
+    """Первое число текущего месяца 00:00 по Магнитогорску (UTC+5)."""
+    day = referral_day_start(timestamp)
+    local_midnight = day + REFERRAL_TIMEZONE_OFFSET
+    month_day = time.gmtime(local_midnight).tm_mday
+    return day - (month_day - 1) * 86_400
+
+
 def number_reward_day_start(timestamp: int | None = None) -> int:
     return referral_day_start(timestamp)
 
@@ -2620,6 +2628,8 @@ class Database:
             start = (
                 week_period_start()
                 if days == 7
+                else month_period_start()
+                if days == 30
                 else referral_day_start() - (max(1, days) - 1) * 86_400
             )
             rows = await self._fetchall(
@@ -2667,6 +2677,8 @@ class Database:
             start = (
                 week_period_start()
                 if days == 7
+                else month_period_start()
+                if days == 30
                 else referral_day_start() - (max(1, days) - 1) * 86_400
             )
             mine = await self._fetchone(
