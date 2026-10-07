@@ -1418,7 +1418,7 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
 
     required = {
         "find": "users", "ban": "ban", "unban": "ban", "mute": "mute",
-        "bc": "broadcast", "points": "points", "anonplus": "users",
+        "bc": "broadcast", "points": "points",
     }.get(what)
     if required and not ctx.can(required):
         await ctx.reply("У тебя нет этого права.")
