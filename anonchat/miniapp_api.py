@@ -230,7 +230,6 @@ class MiniAppServer:
             group, limit, window = "feedback", 5, 600.0
         elif (
             path == "/api/miniapp/support/invoice"
-            or path.startswith("/api/miniapp/anon-plus/")
             or path.startswith("/api/miniapp/payments/sbp")
         ):
             group, limit, window = "invoice", 12, 60.0
@@ -1612,19 +1611,6 @@ class MiniAppServer:
                         ),
                         "stars": int(row["xp"] or 0),
                         "rank": rank_for(int(row["messages"] or 0)).title,
-                        "emoji": self.pack.profile_badge_glyph(
-                            (
-                                str(row["anon_plus_emoji"] or "")
-                                if int(row["premium_until"] or 0) > int(time.time())
-                                and str(row["anon_plus_emoji"] or "")
-                                else (
-                                    "diamond"
-                                    if int(row["support_stars"] or 0) > 0
-                                    or int(row["support_rub"] or 0) > 0
-                                    else ""
-                                )
-                            )
-                        ),
                         "me": int(row["user_id"]) == uid,
                     }
                     for place, row in enumerate(rows, 1)
