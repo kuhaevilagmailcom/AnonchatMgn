@@ -20,7 +20,6 @@ from ..db import Database
 from ..matching import Matchmaker
 from ..engagement import collect_progress_notifications
 from ..number_game import (
-    NUMBER_DAILY_REWARD_LIMIT,
     NUMBER_NEAR_DIFFS,
     NUMBER_REWARDS,
     NUMBER_ROUNDS,
@@ -150,16 +149,11 @@ async def _send_geo_result(
 def _number_prompt(row: Any) -> str:
     round_index = int(row["question_index"])
     range_max = int(row["range_max"])
-    reward_note = (
-        f"Награды активны · лимит <b>{NUMBER_DAILY_REWARD_LIMIT} ⭐</b> в сутки."
-        if int(row["reward_awarded"] or 0)
-        else "С этим собеседником награда уже использована — игра идёт без ⭐."
-    )
     return (
         f"🔢 <b>Числа · раунд {round_index + 1}/{NUMBER_ROUNDS}</b>\n\n"
         f"Выбери число от <b>1</b> до <b>{range_max}</b>.\n"
         "Собеседник увидит его только после своего выбора.\n"
-        f"{reward_note}"
+        "⭐ Награды начисляются без дневного лимита."
     )
 
 
@@ -185,23 +179,10 @@ async def _send_number_result(
     answer_b = int(row["answer_b"])
     diff = abs(answer_a - answer_b)
     raw_reward = number_reward(int(row["range_max"]), answer_a, answer_b)
-    reward_enabled = bool(int(row["reward_awarded"] or 0))
 
     def reward_line(actual: int) -> str:
         if raw_reward <= 0:
             return "В этом раунде без награды."
-        if not reward_enabled:
-            return "С этой парой награда уже использована · +<b>0 ⭐</b>."
-        if actual <= 0:
-            return (
-                f"Дневной лимит <b>{NUMBER_DAILY_REWARD_LIMIT} ⭐</b> достигнут · "
-                "+<b>0 ⭐</b>."
-            )
-        if actual < raw_reward:
-            return (
-                f"+<b>{actual} ⭐</b> · сработал дневной лимит "
-                f"{NUMBER_DAILY_REWARD_LIMIT} ⭐."
-            )
         return f"+<b>{actual} ⭐</b>."
 
     if diff == 0:
@@ -268,9 +249,9 @@ async def _send_question(ctx: Ctx, row: Any) -> None:
         await send_to(ctx.bot, user_id, body, markup, ctx.pack)
 
 
-def _final_text(matches: int, total: int) -> str:
-    reward = "\n🎁 Каждому начислено <b>25 ⭐</b>." if matches == total else ""
-    return f"⚔️ <b>Битва окончена</b>\nСовпадений: <b>{matches}/{total}</b>.{reward}"
+def _final_text(matches: int, total: int, reward: int = 25) -> str:
+    reward_line = f"\n🎁 Каждому начислено <b>{reward} ⭐</b>." if matches == total else ""
+    return f"⚔️ <b>Битва окончена</b>\nСовпадений: <b>{matches}/{total}</b>.{reward_line}"
 
 
 async def _send_round_result(ctx: Ctx, row: Any) -> None:
@@ -296,7 +277,8 @@ async def _send_round_result(ctx: Ctx, row: Any) -> None:
             f"Собеседник: <b>{texts.esc(question.option(answer_a))}</b>"
         )
     if row["status"] == "finished":
-        final = _final_text(int(row["matches"]), _total(row))
+        reward = await ctx.db.effective_xp_reward(25)
+        final = _final_text(int(row["matches"]), _total(row), reward)
         markup = K.battle_end_keyboard()
         body_a = f"{body_a}\n\n{final}"
         body_b = f"{body_b}\n\n{final}"
@@ -421,14 +403,13 @@ async def cb_number_range(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         await ctx.ack("Сначала заверши игру «Объясни слово»", alert=True)
         return
 
-    reward_available = await db.number_pair_reward_available(ctx.user_id, partner)
     game, created = await db.create_number_invite(ctx.user_id, partner, range_max)
     if not created:
         await ctx.ack("У вас уже есть активная игра", alert=True)
         return
 
-    base = NUMBER_REWARDS[range_max]
-    near = base // 2
+    base = await db.effective_xp_reward(NUMBER_REWARDS[range_max])
+    near = await db.effective_xp_reward(NUMBER_REWARDS[range_max] // 2)
     near_diff = NUMBER_NEAR_DIFFS[range_max]
     result = await send_to(
         ctx.bot,
@@ -437,11 +418,7 @@ async def cb_number_range(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         f"Диапазон: <b>1–{range_max}</b> · раундов: <b>{NUMBER_ROUNDS}</b>\n"
         f"Точное совпадение: <b>{base} ⭐</b> · "
         f"разница до {near_diff}: <b>{near} ⭐</b>\n"
-        + (
-            f"Награды доступны · дневной лимит {NUMBER_DAILY_REWARD_LIMIT} ⭐."
-            if reward_available
-            else "Вы уже играли вместе — эта игра будет без награды."
-        ),
+        "Награды без дневного лимита.",
         K.number_invite_keyboard(int(game["id"])),
         ctx.pack,
     )
@@ -724,11 +701,10 @@ async def cb_geo_rounds(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         await ctx.ack("У вас уже есть активная игра", alert=True)
         return
 
-    reward_available = await db.geo_pair_reward_available(ctx.user_id, partner)
+    max_geo_reward = await db.effective_xp_reward(10)
     reward_text = (
-        "⭐ Чем точнее метка, тем больше награда — <b>до 10 ⭐ за раунд</b>."
-        if reward_available
-        else "⭐ Сегодня с этой парой награда уже использована — игра будет без начисления ⭐."
+        f"⭐ Чем точнее метка, тем больше награда — <b>до {max_geo_reward} ⭐ за раунд</b>. "
+        "Без дневного лимита."
     )
     result = await send_to(
         ctx.bot,
