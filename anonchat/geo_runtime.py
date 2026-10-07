@@ -52,7 +52,7 @@ def round_caption(row: Any, place: GQ.GeoPlace) -> str:
     total = max(1, int(row["total_questions"] or GQ.GEO_ROUNDS))
     reward_enabled = bool(int(row["reward_awarded"] or 0))
     reward_line = (
-        f"⭐ <b>За точность — до 10 ⭐</b> · дневной лимит {GQ.GEO_DAILY_REWARD_LIMIT} ⭐"
+        "⭐ <b>За точность — до 10 ⭐ базово</b> · без дневного лимита · x2/x3 применяется"
         if reward_enabled
         else "⭐ Сегодня с этим собеседником раунд идёт без начисления ⭐"
     )
