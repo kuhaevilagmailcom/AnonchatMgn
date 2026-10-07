@@ -332,7 +332,16 @@ if (typeof window === 'undefined') {
     const seq=++topRequestSeq;
     const data=await safe(`/api/miniapp/top?period=${topPeriod}&_=${Date.now()}`,{},null);
     if(seq!==topRequestSeq)return;
-    renderTopPage(data?.items||topFallback(topPeriod));
+    const items=data?.items||topFallback(topPeriod);
+    renderTopPage(items);
+    const nft=$('#nftLeader');
+    if(nft){
+      const leader=items[0];
+      if(topPeriod==='week'&&leader){
+        nft.hidden=false;
+        nft.innerHTML=`<small>РОЗЫГРЫШ NFT</small><strong>Сейчас выигрывает: ${esc(leader.nick)}</strong><span>Конец розыгрыша · 11 октября 2026 в 20:00</span>`;
+      }else nft.hidden=true;
+    }
     const mine=$('#topMe');
     if(mine&&data?.my){
       const until=data.ends_at?new Date(data.ends_at*1000).toLocaleDateString('ru-RU',{day:'numeric',month:'long'}):'';
