@@ -1511,6 +1511,47 @@ def test_word_game_rewards_are_unlimited() -> None:
 
 
 
+def test_x3_applies_to_star_rewards() -> None:
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "x3-rewards.db"
+        db = await Database(path).start()
+        try:
+            user_a, user_b, invitee = 981001, 981002, 981003
+            await db.ensure_user(user_a, "x3_a", "A")
+            await db.ensure_user(user_b, "x3_b", "B")
+            await db.ensure_user(invitee, "x3_invitee", "Invitee")
+            assert await db.set_xp_multiplier(3) == 3
+            assert await db.effective_xp_reward(6) == 18
+            assert await db.effective_xp_reward(25) == 75
+
+            assert await db.award_word_guess(user_a, user_b) == 18
+            assert await db.claim_one_time_reward(user_a, "x3_once", 10) is True
+            assert await db.unlock_achievement(user_a, "x3_achievement", 5) is True
+            day = referral_day_start()
+            assert await db.claim_daily_quest(user_a, day, "x3_quest", 4) is True
+            assert await db.award_referral(invitee, user_a, 50) is True
+
+            number, created = await db.create_number_invite(user_a, user_b, 10)
+            assert created
+            number_id = int(number["id"])
+            assert await db.accept_number(number_id, user_b) is not None
+            assert (await db.answer_number(number_id, user_a, 0, 5))[0] == "waiting"
+            state, _, reward_a, reward_b = await db.answer_number(
+                number_id, user_b, 0, 5
+            )
+            assert state == "resolved"
+            assert (reward_a, reward_b) == (45, 45)
+            await db.cancel_battle(number_id)
+
+            # 18 + 30 + 15 + 12 + 150 + 45 = 270.
+            assert int((await db.get_user(user_a))["xp"]) == 270
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
+
+
 def test_miniapp_init_data_signature() -> None:
     import hashlib
     import hmac
