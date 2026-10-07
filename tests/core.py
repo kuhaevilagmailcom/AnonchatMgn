@@ -213,6 +213,31 @@ def test_matchmaker_never_pairs_user_with_self() -> None:
         raise AssertionError("self-pair must be rejected")
 
 
+def test_admin_spam_detector_repeat_and_burst() -> None:
+    from anonchat import monitoring
+
+    monitoring._SPAM_EVENTS.clear()
+    monitoring._SPAM_ALERT_UNTIL.clear()
+
+    assert monitoring._register_spam_message(1, "купи это", now_mono=1.0) is None
+    assert monitoring._register_spam_message(1, "КУПИ ЭТО!", now_mono=2.0) is None
+    repeated = monitoring._register_spam_message(1, "купи это", now_mono=3.0)
+    assert repeated is not None
+    assert "повтор" in repeated[0]
+    assert len(repeated[1]) == 3
+
+    monitoring._SPAM_EVENTS.clear()
+    monitoring._SPAM_ALERT_UNTIL.clear()
+    result = None
+    for index in range(8):
+        result = monitoring._register_spam_message(
+            2, f"сообщение {index}", now_mono=float(index)
+        )
+    assert result is not None
+    assert "слишком частые" in result[0]
+    assert len(result[1]) == 4
+
+
 def test_miniapp_chat_all_message_types_have_monitoring() -> None:
     source = (
         Path(__file__).resolve().parents[1] / "anonchat" / "miniapp_api.py"
