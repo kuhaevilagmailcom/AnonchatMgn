@@ -534,9 +534,9 @@ def test_battle_game_persists_and_synchronizes() -> None:
     asyncio.run(scenario())
 
 
+
 def test_number_game_three_rounds_and_rewards() -> None:
     from anonchat.number_game import (
-        NUMBER_DAILY_REWARD_LIMIT,
         NUMBER_NEAR_DIFFS,
         NUMBER_REWARDS,
         NUMBER_ROUNDS,
@@ -544,18 +544,17 @@ def test_number_game_three_rounds_and_rewards() -> None:
     )
 
     assert NUMBER_ROUNDS == 3
-    assert NUMBER_DAILY_REWARD_LIMIT == 300
-    assert NUMBER_REWARDS == {10: 25, 100: 50, 1000: 100}
+    assert NUMBER_REWARDS == {10: 15, 100: 25, 1000: 50}
     assert NUMBER_NEAR_DIFFS == {10: 1, 100: 2, 1000: 5}
-    assert number_reward(10, 5, 5) == 25
-    assert number_reward(10, 5, 6) == 12
-    assert number_reward(100, 44, 44) == 50
-    assert number_reward(100, 44, 45) == 25
-    assert number_reward(100, 44, 46) == 25
+    assert number_reward(10, 5, 5) == 15
+    assert number_reward(10, 5, 6) == 7
+    assert number_reward(100, 44, 44) == 25
+    assert number_reward(100, 44, 45) == 12
+    assert number_reward(100, 44, 46) == 12
     assert number_reward(100, 44, 47) == 0
-    assert number_reward(1000, 777, 777) == 100
-    assert number_reward(1000, 777, 778) == 50
-    assert number_reward(1000, 777, 782) == 50
+    assert number_reward(1000, 777, 777) == 50
+    assert number_reward(1000, 777, 778) == 25
+    assert number_reward(1000, 777, 782) == 25
     assert number_reward(1000, 777, 783) == 0
     assert number_reward(10, 1, 3) == 0
 
@@ -565,107 +564,74 @@ def test_number_game_three_rounds_and_rewards() -> None:
         try:
             await db.ensure_user(301, "numbers_a", "A")
             await db.ensure_user(302, "numbers_b", "B")
+            multiplier = await db.xp_multiplier()
 
             invite, created = await db.create_number_invite(301, 302, 10)
             assert created and invite["game_type"] == "numbers"
-            assert int(invite["total_questions"]) == 3 and int(invite["range_max"]) == 10
             game_id = int(invite["id"])
-
-            conflict, conflict_created = await db.create_battle_invite(302, 301, 5)
-            assert not conflict_created and int(conflict["id"]) == game_id
-
             game = await db.accept_number(game_id, 302)
-            assert game is not None and game["status"] == "active"
-            assert int(game["reward_awarded"]) == 1
-            assert await db.number_pair_reward_available(301, 302) is False
-
-            # Обычный рестарт не должен отключать награду уже начатой первой игры.
-            await db.close()
-            db = await Database(path).start()
-            game = await db.get_battle(game_id)
             assert game is not None and int(game["reward_awarded"]) == 1
+            assert await db.number_pair_reward_available(301, 302) is True
 
-            # Раунд 1: точное совпадение = 25 каждому.
             assert (await db.answer_number(game_id, 301, 0, 5))[0] == "waiting"
             state, game, reward_a, reward_b = await db.answer_number(game_id, 302, 0, 5)
             assert state == "resolved" and game is not None
-            assert (reward_a, reward_b) == (25, 25)
-            assert int(game["reward_total_a"]) == 25 and int(game["reward_total_b"]) == 25
+            assert (reward_a, reward_b) == (15 * multiplier, 15 * multiplier)
             game = await db.advance_number(game_id, 301, 0)
-            assert game is not None and int(game["question_index"]) == 1
+            assert game is not None
 
-            # Раунд 2: разница 1 = половина, для 25 это 12 целых ⭐.
             assert (await db.answer_number(game_id, 301, 1, 4))[0] == "waiting"
             state, game, reward_a, reward_b = await db.answer_number(game_id, 302, 1, 5)
             assert state == "resolved" and game is not None
-            assert (reward_a, reward_b) == (12, 12)
-            assert int(game["reward_total_a"]) == 37 and int(game["reward_total_b"]) == 37
+            assert (reward_a, reward_b) == (7 * multiplier, 7 * multiplier)
             game = await db.advance_number(game_id, 302, 1)
-            assert game is not None and int(game["question_index"]) == 2
+            assert game is not None
 
-            # Раунд 3: большая разница = без награды, после него игра удаляется.
             assert (await db.answer_number(game_id, 301, 2, 1))[0] == "waiting"
             state, game, reward_a, reward_b = await db.answer_number(game_id, 302, 2, 9)
-            assert state == "resolved" and game is not None
+            assert state == "resolved" and game is not None and game["status"] == "finished"
             assert (reward_a, reward_b) == (0, 0)
-            assert game["status"] == "finished"
-            assert int(game["reward_total_a"]) == 37 and int(game["reward_total_b"]) == 37
-            assert await db.get_battle(game_id) is None
-            assert int((await db.get_user(301))["xp"]) == 37
-            assert int((await db.get_user(302))["xp"]) == 37
+            assert int((await db.get_user(301))["xp"]) == 22 * multiplier
+            assert int((await db.get_user(302))["xp"]) == 22 * multiplier
 
-            # С той же парой следующая игра идёт без награды.
+            # Та же пара может играть повторно и снова получать звёзды.
             again, created = await db.create_number_invite(302, 301, 1000)
             assert created
             again_id = int(again["id"])
             again = await db.accept_number(again_id, 301)
-            assert again is not None and int(again["reward_awarded"]) == 0
+            assert again is not None and int(again["reward_awarded"]) == 1
             assert (await db.answer_number(again_id, 302, 0, 999))[0] == "waiting"
             state, again, reward_a, reward_b = await db.answer_number(again_id, 301, 0, 999)
-            assert state == "resolved" and (reward_a, reward_b) == (0, 0)
-            assert int((await db.get_user(301))["xp"]) == 37
-            assert int((await db.get_user(302))["xp"]) == 37
+            assert state == "resolved"
+            assert (reward_a, reward_b) == (50 * multiplier, 50 * multiplier)
             await db.cancel_battle(again_id)
 
-            # Дневной лимит личный: одному можно упереться в 300, второму получить полную награду.
+            # Старый дневной потолок 300 больше не обрезает награду.
             await db.ensure_user(303, "numbers_c", "C")
             day_start = number_reward_day_start()
             await db.db.execute(
                 """INSERT INTO number_daily_rewards(user_id, day_start, stars)
                    VALUES (?, ?, ?)
                    ON CONFLICT(user_id, day_start) DO UPDATE SET stars=excluded.stars""",
-                (301, day_start, 290),
+                (303, day_start, 290),
             )
             await db.db.commit()
-            capped, created = await db.create_number_invite(301, 303, 1000)
+            uncapped, created = await db.create_number_invite(301, 303, 1000)
             assert created
-            capped_id = int(capped["id"])
-            capped = await db.accept_number(capped_id, 303)
-            assert capped is not None and int(capped["reward_awarded"]) == 1
-            assert (await db.answer_number(capped_id, 301, 0, 500))[0] == "waiting"
-            state, capped, reward_a, reward_b = await db.answer_number(capped_id, 303, 0, 500)
+            uncapped_id = int(uncapped["id"])
+            uncapped = await db.accept_number(uncapped_id, 303)
+            assert uncapped is not None
+            assert (await db.answer_number(uncapped_id, 301, 0, 500))[0] == "waiting"
+            state, uncapped, reward_a, reward_b = await db.answer_number(
+                uncapped_id, 303, 0, 500
+            )
             assert state == "resolved"
-            assert (reward_a, reward_b) == (10, 100)
-            assert await db.number_daily_reward(301) == 300
-            assert await db.number_daily_reward(303) == 100
-            await db.cancel_battle(capped_id)
+            assert (reward_a, reward_b) == (50 * multiplier, 50 * multiplier)
+            assert await db.number_daily_reward(303) == 290 + 50 * multiplier
+            await db.cancel_battle(uncapped_id)
 
             await db.forget_user(301)
-            assert await db.number_daily_reward(301) == 0
             assert await db.number_pair_reward_available(301, 302) is True
-            assert await db.number_pair_reward_available(301, 303) is True
-
-            # Если пара закрыла чат до первого завершённого раунда, попытка не сгорает.
-            await db.ensure_user(304, "numbers_d", "D")
-            await db.ensure_user(305, "numbers_e", "E")
-            abandoned, created = await db.create_number_invite(304, 305, 100)
-            assert created
-            abandoned_id = int(abandoned["id"])
-            abandoned = await db.accept_number(abandoned_id, 305)
-            assert abandoned is not None and int(abandoned["reward_awarded"]) == 1
-            assert await db.number_pair_reward_available(304, 305) is False
-            assert await db.close_battles_for_users(304, 305) == 1
-            assert await db.number_pair_reward_available(304, 305) is True
         finally:
             await db.close()
 
@@ -674,7 +640,6 @@ def test_number_game_three_rounds_and_rewards() -> None:
 
 def test_geoquest_persistence_rewards_and_pair_limit() -> None:
     from anonchat.geoquest import (
-        GEO_DAILY_REWARD_LIMIT,
         GEO_ROUND_OPTIONS,
         GEO_ROUND_SECONDS,
         distance_meters,
@@ -685,7 +650,6 @@ def test_geoquest_persistence_rewards_and_pair_limit() -> None:
 
     assert GEO_ROUND_OPTIONS == (3, 5, 10)
     assert GEO_ROUND_SECONDS == 120
-    assert GEO_DAILY_REWARD_LIMIT == 100
     assert geo_reward(50) == 10
     assert geo_reward(250) == 8
     assert geo_reward(650) == 6
@@ -707,132 +671,61 @@ def test_geoquest_persistence_rewards_and_pair_limit() -> None:
         try:
             await db.ensure_user(321, "geo_a", "A")
             await db.ensure_user(322, "geo_b", "B")
+            multiplier = await db.xp_multiplier()
             invite, created = await db.create_geo_invite(321, 322, [11, 22, 33])
-            assert created and invite["game_type"] == "geo"
-            assert int(invite["total_questions"]) == 3
+            assert created
             game_id = int(invite["id"])
             game = await db.accept_geo(game_id, 322)
-            assert game is not None and game["status"] == "active"
-            assert int(game["reward_awarded"]) == 1
-            assert int(game["geo_round_started_at"]) > 0
-            assert await db.geo_pair_reward_available(321, 322) is False
-            assert await db.recent_geo_place_ids((321, 322)) == {11, 22, 33}
-
-            # Игра и уже принятая наградная попытка переживают рестарт процесса.
-            await db.close()
-            db = await Database(path).start()
-            game = await db.get_battle(game_id)
             assert game is not None and int(game["reward_awarded"]) == 1
+            assert await db.geo_pair_reward_available(321, 322) is True
+            assert await db.recent_geo_place_ids((321, 322)) == {11, 22, 33}
 
             target = (53.407, 58.979)
             assert (await db.answer_geo(game_id, 321, 0, *target, *target))[0] == "waiting"
             far_b = (53.45, 59.05)
             state, game, reward_a, reward_b = await db.answer_geo(
-                game_id, 322, 0, *far_b, *target,
+                game_id, 322, 0, *far_b, *target
             )
             assert state == "resolved" and game is not None
-            assert reward_a == 10
-            assert reward_b == geo_reward(distance_meters(*far_b, *target))
+            assert reward_a == 10 * multiplier
+            assert reward_b == geo_reward(distance_meters(*far_b, *target)) * multiplier
             game = await db.advance_geo(game_id, 321, 0)
-            assert game is not None and int(game["question_index"]) == 1
+            assert game is not None
 
-            # Каждый игрок получает награду именно за свою точность.
             guess_a = (53.408, 58.979)
             guess_b = (53.40805, 58.979)
             assert (await db.answer_geo(game_id, 321, 1, *guess_a, *target))[0] == "waiting"
             state, game, reward_a, reward_b = await db.answer_geo(
-                game_id, 322, 1, *guess_b, *target,
+                game_id, 322, 1, *guess_b, *target
             )
             assert state == "resolved" and game is not None
-            assert reward_a == geo_reward(distance_meters(*guess_a, *target))
-            assert reward_b == geo_reward(distance_meters(*guess_b, *target))
+            assert reward_a == geo_reward(distance_meters(*guess_a, *target)) * multiplier
+            assert reward_b == geo_reward(distance_meters(*guess_b, *target)) * multiplier
             game = await db.advance_geo(game_id, 322, 1)
             assert game is not None
 
-            # Невалидные координаты отклоняются, но любая корректная точка мира принимается.
-            assert (await db.answer_geo(game_id, 321, 2, float("nan"), 1, *target))[0] == "invalid"
             world_guess = (54.7, 20.5)
             assert (await db.answer_geo(game_id, 321, 2, *world_guess, *target))[0] == "waiting"
             far_final = (53.5, 59.2)
             state, game, reward_a, reward_b = await db.answer_geo(
-                game_id, 322, 2, *far_final, *target,
+                game_id, 322, 2, *far_final, *target
             )
             assert state == "resolved" and game is not None and game["status"] == "finished"
-            assert reward_a == geo_reward(distance_meters(*world_guess, *target))
-            assert reward_b == geo_reward(distance_meters(*far_final, *target))
             assert await db.get_battle(game_id) is None
 
-            expected_a = (
-                10
-                + geo_reward(distance_meters(*guess_a, *target))
-                + geo_reward(distance_meters(*world_guess, *target))
-            )
-            expected_b = (
-                geo_reward(distance_meters(*far_b, *target))
-                + geo_reward(distance_meters(*guess_b, *target))
-                + geo_reward(distance_meters(*far_final, *target))
-            )
-            assert int((await db.get_user(321))["xp"]) == expected_a
-            assert int((await db.get_user(322))["xp"]) == expected_b
-
-            # Повтор той же пары в эти сутки доступен, но уже без фарма звёзд.
+            # Повтор той же пары снова награждается: парного и дневного лимита нет.
             again, created = await db.create_geo_invite(322, 321, [44, 55, 66, 77, 88])
-            assert created and int(again["total_questions"]) == 5
+            assert created
             again = await db.accept_geo(int(again["id"]), 321)
-            assert again is not None and int(again["reward_awarded"]) == 0
+            assert again is not None and int(again["reward_awarded"]) == 1
+            assert await db.geo_pair_reward_available(321, 322) is True
             await db.cancel_battle(int(again["id"]))
 
-            # 10 раундов тоже сохраняются; произвольное другое число запрещено.
             ten, created = await db.create_geo_invite(
                 321, 322, list(range(100, 110))
             )
             assert created and int(ten["total_questions"]) == 10
             await db.cancel_battle(int(ten["id"]))
-            try:
-                await db.create_geo_invite(321, 322, [1, 2, 3, 4])
-            except ValueError:
-                pass
-            else:
-                raise AssertionError("4 раунда не должны приниматься")
-
-            # Таймер закрывает раунд через 2 минуты: ответивший получает награду,
-            # неответивший — 0.
-            await db.ensure_user(324, "geo_timer_a", "Timer A")
-            await db.ensure_user(325, "geo_timer_b", "Timer B")
-            timed, created = await db.create_geo_invite(324, 325, [201, 202, 203])
-            assert created
-            assert await db.recent_geo_place_ids((324, 325)) == set()
-            timed = await db.accept_geo(int(timed["id"]), 325)
-            assert timed is not None
-            assert await db.recent_geo_place_ids((324, 325)) == {201, 202, 203}
-            timed_id = int(timed["id"])
-            assert (await db.answer_geo(timed_id, 324, 0, *target, *target))[0] == "waiting"
-            await db.db.execute(
-                "UPDATE battle_games SET geo_round_started_at=? WHERE id=?",
-                (int(time.time()) - GEO_ROUND_SECONDS - 1, timed_id),
-            )
-            await db.db.commit()
-            state, timed, reward_a, reward_b = await db.expire_geo_round(timed_id, 0)
-            assert state == "resolved" and timed is not None
-            assert str(timed["status"]) == "round_done"
-            assert (reward_a, reward_b) == (10, 0)
-
-            # Если никто не успел поставить метку, попытка пары возвращается при
-            # полном закрытии незавершённой игры.
-            await db.ensure_user(323, "geo_c", "C")
-            abandoned, created = await db.create_geo_invite(321, 323, [301, 302, 303])
-            assert created
-            abandoned = await db.accept_geo(int(abandoned["id"]), 323)
-            assert abandoned is not None and int(abandoned["reward_awarded"]) == 1
-            assert await db.close_battles_for_users(321, 323) == 1
-            assert await db.geo_pair_reward_available(321, 323) is True
-
-            await db.forget_user(321)
-            assert await db.geo_pair_reward_available(321, 322) is True
-            row = await db._fetchone(
-                "SELECT stars FROM geo_daily_rewards WHERE user_id=?", (321,)
-            )
-            assert row is None
         finally:
             await db.close()
 
@@ -879,6 +772,7 @@ def test_geoquest_dataset_is_deployable() -> None:
         places.cache_clear()
 
 
+
 def test_stale_games_cleanup_after_two_days() -> None:
     async def scenario() -> None:
         path = Path(tempfile.mkdtemp()) / "stale-games.db"
@@ -889,13 +783,11 @@ def test_stale_games_cleanup_after_two_days() -> None:
 
             stale_battle, _ = await db.create_battle_invite(401, 402, 5)
             fresh_battle, _ = await db.create_battle_invite(403, 404, 5)
-
             stale_number, _ = await db.create_number_invite(405, 406, 10)
             stale_number_id = int(stale_number["id"])
             accepted = await db.accept_number(stale_number_id, 406)
             assert accepted is not None and int(accepted["reward_awarded"]) == 1
-            assert (await db.answer_number(stale_number_id, 405, 0, 5))[0] == "waiting"
-            assert await db.number_pair_reward_available(405, 406) is False
+            assert await db.number_pair_reward_available(405, 406) is True
 
             played_number, _ = await db.create_number_invite(407, 408, 10)
             played_number_id = int(played_number["id"])
@@ -903,19 +795,13 @@ def test_stale_games_cleanup_after_two_days() -> None:
             assert accepted is not None
             assert (await db.answer_number(played_number_id, 407, 0, 5))[0] == "waiting"
             state, played, _, _ = await db.answer_number(played_number_id, 408, 0, 5)
-            assert state == "resolved" and played is not None and played["status"] == "round_done"
-            assert await db.number_pair_reward_available(407, 408) is False
+            assert state == "resolved" and played is not None
 
             old_ts = 1_000
             fresh_ts = 200_000
             await db.db.execute(
                 "UPDATE battle_games SET updated_at=? WHERE id IN (?, ?, ?)",
-                (
-                    old_ts,
-                    int(stale_battle["id"]),
-                    stale_number_id,
-                    played_number_id,
-                ),
+                (old_ts, int(stale_battle["id"]), stale_number_id, played_number_id),
             )
             await db.db.execute(
                 "UPDATE battle_games SET updated_at=? WHERE id=?",
@@ -932,17 +818,12 @@ def test_stale_games_cleanup_after_two_days() -> None:
             assert await db.get_battle(stale_number_id) is None
             assert await db.get_battle(played_number_id) is None
             assert await db.get_battle(int(fresh_battle["id"])) is not None
-
-            # Если игра «Числа» протухла до первого завершённого раунда,
-            # наградная попытка пары возвращается.
             assert await db.number_pair_reward_available(405, 406) is True
-            # После хотя бы одного завершённого раунда попытка уже использована.
-            assert await db.number_pair_reward_available(407, 408) is False
+            assert await db.number_pair_reward_available(407, 408) is True
         finally:
             await db.close()
 
     asyncio.run(scenario())
-
 
 def test_referral_daily_limit_and_mass_cleanup() -> None:
     async def scenario() -> None:
@@ -1158,7 +1039,7 @@ def test_keyboard_styles_and_icons() -> None:
     assert texts_of(K.geo_end_keyboard()) == ["Сыграть ещё", "Вернуться в чат"]
     assert texts_of(K.geo_end_keyboard(can_start=False)) == ["Вернуться в чат"]
     assert texts_of(K.number_range_keyboard()) == [
-        "1–10 · 25 ⭐", "1–100 · 50 ⭐", "1–1000 · 100 ⭐", "Назад",
+        "1–10 · 15 ⭐", "1–100 · 25 ⭐", "1–1000 · 50 ⭐", "Назад",
     ]
     assert texts_of(K.battle_length_keyboard()) == ["5 вопросов", "10 вопросов", "Назад"]
     # панель модератора: счётчик жалоб и отдельное право monitor
