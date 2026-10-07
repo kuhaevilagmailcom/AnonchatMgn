@@ -104,11 +104,6 @@ async def stats_text(db: Database, mm: Matchmaker, cfg: Config) -> str:
         f"✉️ Сообщений переслано: <b>{s['messages']}</b>\n"
         f"⏳ В очереди: <b>{mm.queue_size()}</b> · в парах: <b>{mm.online_pairs()}</b>\n"
         f"🚩 Открытых жалоб: <b>{s['open_reports']}</b>\n\n"
-        f"💎 Анон Plus активно: <b>{pay['anonplus_active']}</b>\n"
-        f"⭐ Анон Plus Stars: <b>{pay['anonplus_stars_count']}</b> · "
-        f"{pay['anonplus_stars_total']} ★\n"
-        f"💳 Анон Plus СБП: <b>{pay['anonplus_sbp_count']}</b> · "
-        f"{pay['anonplus_sbp_total']} ₽\n"
         f"💖 Донаты Stars: <b>{pay['support_stars_count']}</b> · "
         f"{pay['support_stars_total']} ★\n"
         f"💖 Донаты СБП: <b>{pay['support_sbp_count']}</b> · "
@@ -207,12 +202,6 @@ async def who_text(db: Database, uid: int) -> str | None:
     if row is None:
         return None
     rank = rank_for(int(row["messages"]))
-    premium_until = int(row["premium_until"] or 0)
-    premium_line = (
-        "💎 Анон Plus: <b>навсегда</b>\n"
-        if premium_until > int(time.time())
-        else "💎 Анон Plus: выключен\n"
-    )
     return (
         f"👤 <code>{uid}</code> · 🙋 "
         f"<b>{texts.esc(nicklib.display(row['nickname'], uid, row['support_stars']))}</b>\n"
@@ -221,7 +210,6 @@ async def who_text(db: Database, uid: int) -> str | None:
         f"💬 диалогов: {row['dialogs']} · 👍 {row['good_ratings']} · 👎 {row['bad_ratings']}\n"
         f"🚩 жалоб: {row['reports_received']} · {texts.esc(row['district'] or 'район не указан')}\n"
         f"💎 Поддержка: {int(row['support_stars'])} ⭐\n"
-        f"{premium_line}"
         f"в чате с {time.strftime('%d.%m.%Y', time.localtime(row['created_at']))}"
         + ("\n⛔ в бане" if row["banned"] else "")
     )
@@ -510,7 +498,7 @@ async def do_ad_broadcast(
     caption_entities: list[MessageEntity] | None = None,
 ) -> str:
     """Рекламная рассылка: фото + текст + URL-кнопка всем незаблокированным."""
-    ids = await db.broadcast_ids(exclude_anon_plus=True)
+    ids = await db.broadcast_ids()
     await ctx.reply(texts.PANEL_BC_PROGRESS.format(total=len(ids)))
     sent = 0
     for uid in ids:
