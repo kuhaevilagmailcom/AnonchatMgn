@@ -23,11 +23,7 @@ from .number_game import (
     number_reward,
 )
 from .permissions import ALL_ADMIN_PERMISSIONS, serialize_permissions
-from .word_game import (
-    WORD_DAILY_REWARD_LIMIT,
-    WORD_PAIR_DAILY_REWARD_LIMIT,
-    WORD_REWARD,
-)
+from .word_game import WORD_REWARD
 from .geoquest import (
     GEO_DAILY_REWARD_LIMIT,
     GEO_ROUND_OPTIONS,
@@ -1676,45 +1672,15 @@ class Database:
     async def award_word_guess(
         self, user_id: int, partner_id: int, requested: int = WORD_REWARD
     ) -> int:
-        """+3 ⭐ за угадывание с маленькими дневными лимитами против накрутки."""
+        """Начисляет награду за каждое угадывание без дневных и парных лимитов."""
         user_id = int(user_id)
         partner_id = int(partner_id)
         requested = max(0, int(requested))
         if not user_id or not partner_id or user_id == partner_id or requested <= 0:
             return 0
 
-        day = referral_day_start()
-        async with self._word_reward_lock:
-            pair_row = await self._fetchone(
-                """SELECT stars FROM word_game_rewards
-                   WHERE user_id=? AND partner_id=? AND day_start=?""",
-                (user_id, partner_id, day),
-            )
-            pair_total = int(pair_row["stars"] or 0) if pair_row else 0
-            global_row = await self._fetchone(
-                """SELECT COALESCE(SUM(stars), 0) AS stars
-                   FROM word_game_rewards WHERE user_id=? AND day_start=?""",
-                (user_id, day),
-            )
-            global_total = int(global_row["stars"] or 0) if global_row else 0
-            awarded = min(
-                requested,
-                max(0, WORD_PAIR_DAILY_REWARD_LIMIT - pair_total),
-                max(0, WORD_DAILY_REWARD_LIMIT - global_total),
-            )
-            if awarded <= 0:
-                return 0
-
-            await self.db.execute(
-                """INSERT INTO word_game_rewards(user_id, partner_id, day_start, stars)
-                   VALUES (?, ?, ?, ?)
-                   ON CONFLICT(user_id, partner_id, day_start)
-                   DO UPDATE SET stars=stars+excluded.stars""",
-                (user_id, partner_id, day, awarded),
-            )
-            await self.award_xp(user_id, awarded, commit=False)
-            await self.db.commit()
-            return awarded
+        await self.award_xp(user_id, requested)
+        return requested
 
     async def nickname_taken(self, nickname: str, except_user_id: int = 0) -> int | None:
         """Ник должен быть уникальным — иначе топ превращается в «Аноним, Аноним, Аноним».
