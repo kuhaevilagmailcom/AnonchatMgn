@@ -1071,3 +1071,17 @@ body[data-theme="mono"] .premium-overlay-button{color:#000}
 
 /* Home CTA: obsolete decorative icon must never escape generic data-icon styles. */
 .hero-icon{display:none!important}
+
+/* Weekly NFT giveaway leader */
+.nft-leader{
+  margin:10px 0 12px;
+  padding:15px 16px;
+  display:grid;
+  gap:5px;
+  border:1px solid rgba(229,122,198,.22);
+  background:rgba(229,122,198,.07);
+}
+.nft-leader[hidden]{display:none!important}
+.nft-leader small{font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--accent)}
+.nft-leader strong{font-size:15px;line-height:1.25}
+.nft-leader span{font-size:11px;color:var(--muted)}
