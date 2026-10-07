@@ -34,7 +34,7 @@ from .actions import DeliveryResult, _dialog_summary_text, announce_pairs, break
 from .levels import rank_for
 from .battle_questions import get_question, questions
 from .engagement import collect_progress_notifications
-from .number_game import NUMBER_DAILY_REWARD_LIMIT, NUMBER_NEAR_DIFFS, NUMBER_REWARDS, NUMBER_ROUNDS
+from .number_game import NUMBER_NEAR_DIFFS, NUMBER_REWARDS, NUMBER_ROUNDS
 from .runtime_state import online_count as presence_online_count
 from .runtime_state import touch as presence_touch
 from .safety import contains_contact
@@ -603,12 +603,6 @@ class MiniAppServer:
     async def _after_chat_message(
         self, uid: int, partner: int, sent_count: int, *, text: str = ""
     ) -> None:
-        multiplier = await self.db.xp_multiplier()
-        if multiplier > 1 and sent_count <= max(0, int(self.cfg.xp_message_cap)):
-            self.mm.add_bonus_xp(
-                uid,
-                (multiplier - 1) * max(0, int(self.cfg.xp_per_message)),
-            )
         if text:
             self.mm.record_text(uid, text)
             guessed = WG.resolve_guess(uid, partner, text)
@@ -1072,7 +1066,6 @@ class MiniAppServer:
         live_chat.clear_pair(uid, partner)
 
         counts = summary.get("counts", {}) or {}
-        bonus_xp = summary.get("bonus_xp", {}) or {}
         mine = int(counts.get(uid, 0))
         theirs = int(counts.get(partner, 0))
         started = int(summary.get("started_at", time.time()))
@@ -1089,11 +1082,11 @@ class MiniAppServer:
         )
         earned_xp: dict[int, int] = {}
         for player_id, sent_count in ((uid, mine), (partner, theirs)):
-            gain = (
+            base_gain = (
                 min(sent_count, self.cfg.xp_message_cap) * self.cfg.xp_per_message
-                + int(bonus_xp.get(player_id, 0))
                 + (self.cfg.xp_per_dialog if live else 0)
             )
+            gain = await self.db.effective_xp_reward(base_gain)
             if gain:
                 await self.db.award_xp(player_id, gain, commit=False)
             if sent_count:
@@ -1306,7 +1299,7 @@ class MiniAppServer:
         await self.db.activity_add(uid, ratings_given=1)
         reward = 0
         if value:
-            reward = max(0, int(self.cfg.xp_good_rating))
+            reward = await self.db.effective_xp_reward(self.cfg.xp_good_rating)
             if reward:
                 await self.db.award_xp(partner, reward)
             await self.db.activity_add(partner, good_ratings=1)
@@ -1938,12 +1931,11 @@ class MiniAppServer:
             raise _json_error(400, "Можно выбрать 1–10, 1–100 или 1–1000")
         if await self.db.game_for_pair(uid, partner) is not None:
             raise _json_error(409, "У вас уже есть активная игра")
-        reward_available = await self.db.number_pair_reward_available(uid, partner)
         game, created = await self.db.create_number_invite(uid, partner, range_max)
         if not created:
             raise _json_error(409, "Предложение уже создано")
-        reward = NUMBER_REWARDS[range_max]
-        near = reward // 2
+        reward = await self.db.effective_xp_reward(NUMBER_REWARDS[range_max])
+        near = await self.db.effective_xp_reward(NUMBER_REWARDS[range_max] // 2)
         result = await send_to(
             self.bot,
             partner,
@@ -1951,10 +1943,7 @@ class MiniAppServer:
             f"Диапазон: <b>1–{range_max}</b> · раундов: <b>{NUMBER_ROUNDS}</b>\n"
             f"Точное совпадение: <b>{reward} ⭐</b> · "
             f"разница до {NUMBER_NEAR_DIFFS[range_max]}: <b>{near} ⭐</b>\n"
-            + (
-                f"Награды доступны · дневной лимит {NUMBER_DAILY_REWARD_LIMIT} ⭐."
-                if reward_available else "Вы уже играли вместе — эта игра будет без награды."
-            ),
+            "Награды без дневного лимита.",
             K.number_invite_keyboard(int(game["id"])),
             self.pack,
         )
@@ -1996,19 +1985,15 @@ class MiniAppServer:
         game, created = await self.db.create_geo_invite(uid, partner, place_ids)
         if not created:
             raise _json_error(409, "Предложение уже создано")
-        reward_available = await self.db.geo_pair_reward_available(uid, partner)
         result = await send_to(
             self.bot,
             partner,
             "🗺 <b>ТЕБЯ ЗОВУТ В GeoGuessr📍</b>\n\n"
             f"🎮 Раундов: <b>{total}</b>\n"
             "⏱ На каждый раунд: <b>2 минуты</b>\n"
-            + (
-                "⭐ Чем точнее метка, тем больше награда — <b>до 10 ⭐ за раунд</b>.\n"
-                if reward_available
-                else "⭐ Сегодня эта пара играет без начисления ⭐.\n"
-            )
-            + "\n📍 Ответ: <b>📎 Скрепка → Геопозиция → выбрать любую точку "
+            f"⭐ Чем точнее метка, тем больше награда — <b>до {await self.db.effective_xp_reward(10)} ⭐ за раунд</b>.\n"
+            "Награды без дневного лимита."
+            + "\n\n📍 Ответ: <b>📎 Скрепка → Геопозиция → выбрать любую точку "
             "на карте → отправить.</b>\n"
             "🌍 Игра принимает метку в любой точке карты.",
             K.geo_invite_keyboard(int(game["id"])),
@@ -2521,11 +2506,12 @@ class MiniAppServer:
         if not _member_is_subscribed(member):
             raise _json_error(403, "Сначала подпишись на канал")
         amount = max(1, int(self.cfg.subscription_reward))
+        effective_amount = await self.db.effective_xp_reward(amount)
         if not await self.db.claim_one_time_reward(uid, SUBSCRIPTION_REWARD_KEY, amount):
             raise _json_error(409, "Эта награда уже получена")
         row = await self.db.get_user(uid)
         return web.json_response(
-            {"ok": True, "amount": amount, "stars": int(row["xp"] or 0) if row else 0}
+            {"ok": True, "amount": effective_amount, "stars": int(row["xp"] or 0) if row else 0}
         )
 
     async def forget(self, request: web.Request) -> web.Response:
