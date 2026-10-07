@@ -91,6 +91,41 @@ async def notify_reporter_about_action(
     )
 
 
+APPROVED_REPORT_REWARD = 10
+
+
+async def approve_report_reward(
+    ctx: Ctx,
+    report,
+    report_id: int,
+    action_text: str,
+) -> int:
+    """Награждает автора подтверждённой жалобы ровно один раз."""
+    reporter_id = int(report["reporter_id"])
+    if reporter_id <= 0:
+        return 0
+    reward = await ctx.db.effective_xp_reward(APPROVED_REPORT_REWARD)
+    claimed = await ctx.db.claim_one_time_reward(
+        reporter_id,
+        f"approved_report:{int(report_id)}",
+        APPROVED_REPORT_REWARD,
+    )
+    if not claimed:
+        reward = 0
+    reward_line = (
+        f"\n\n🎁 Жалоба одобрена · +<b>{reward} ⭐</b>."
+        if reward > 0
+        else ""
+    )
+    await notify_reporter_about_action(
+        ctx,
+        report,
+        report_id,
+        f"{action_text}{reward_line}",
+    )
+    return reward
+
+
 # ---------------------------------------------------------------------------------- тексты экранов
 async def stats_text(db: Database, mm: Matchmaker, cfg: Config) -> str:
     s = await db.stats()
@@ -650,9 +685,13 @@ async def cmd_resolve(message: Message, ctx: Ctx, db: Database) -> None:
             ctx,
             report,
             report_id,
-            "✅ Администратор рассмотрел жалобу и закрыл её без наказания.",
+            "❌ Жалоба отклонена: нарушение не подтверждено.",
         )
-    await ctx.reply("🚩 Жалоба закрыта." if ok else "Не нашёл открытую жалобу с таким номером.")
+    await ctx.reply(
+        "🚩 Жалоба отклонена."
+        if ok
+        else "Не нашёл открытую жалобу с таким номером."
+    )
 
 
 @router.message(Command("ban"))
@@ -1606,7 +1645,13 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
     if len(parts) != 3 or not parts[2].isdigit():
         return  # adm:panel:* живёт в своём хендлере выше
     action, raw_id = parts[1], parts[2]
-    required = {"done": "reports", "who": "users", "mute": "mute", "ban": "ban"}.get(action)
+    required = {
+        "approve": "reports",
+        "done": "reports",
+        "who": "users",
+        "mute": "mute",
+        "ban": "ban",
+    }.get(action)
     if required and not ctx.can(required):
         await ctx.ack("У тебя нет этого права", alert=True)
         return
@@ -1616,6 +1661,21 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         return
     target = int(report["target_id"])
 
+    if action == "approve":
+        resolved = await db.resolve_report(int(raw_id), ctx.user_id)
+        if resolved:
+            reward = await approve_report_reward(
+                ctx,
+                report,
+                int(raw_id),
+                "✅ Модерация подтвердила нарушение.",
+            )
+            await ctx.ack(f"Одобрено · +{reward} ⭐")
+        else:
+            await ctx.ack("Жалоба уже закрыта", alert=True)
+        await clear_kb(event)
+        return
+
     if action == "done":
         resolved = await db.resolve_report(int(raw_id), ctx.user_id)
         if resolved:
@@ -1623,9 +1683,9 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
                 ctx,
                 report,
                 int(raw_id),
-                "✅ Администратор рассмотрел жалобу и закрыл её без наказания.",
+                "❌ Жалоба отклонена: нарушение не подтверждено.",
             )
-        await ctx.ack("Закрыто")
+        await ctx.ack("Отклонено")
         await clear_kb(event)
         return
 
@@ -1642,11 +1702,11 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         await do_mute(ctx, db, mm, cfg, target, 60)
         resolved = await db.resolve_report(int(raw_id), ctx.user_id)
         if resolved:
-            await notify_reporter_about_action(
+            await approve_report_reward(
                 ctx,
                 report,
                 int(raw_id),
-                "🔇 По жалобе приняты меры: пользователю выдан мут на 60 минут.",
+                "🔇 Жалоба подтверждена: пользователю выдан мут на 60 минут.",
             )
         await ctx.ack("Мут на 60 мин")
         await clear_kb(event)
@@ -1656,11 +1716,11 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         await do_ban(ctx, db, mm, cfg, target, f"жалоба #{raw_id}: {report['reason']}")
         resolved = await db.resolve_report(int(raw_id), ctx.user_id)
         if resolved:
-            await notify_reporter_about_action(
+            await approve_report_reward(
                 ctx,
                 report,
                 int(raw_id),
-                "⛔ По жалобе приняты меры: пользователь заблокирован.",
+                "⛔ Жалоба подтверждена: пользователь заблокирован.",
             )
         await ctx.ack("Забанен")
         await clear_kb(event)
