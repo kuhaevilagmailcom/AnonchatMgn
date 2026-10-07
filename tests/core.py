@@ -1042,8 +1042,8 @@ def test_keyboard_styles_and_icons() -> None:
         "1–10 · 15 ⭐", "1–100 · 25 ⭐", "1–1000 · 50 ⭐", "Назад",
     ]
     report_buttons = texts_of(K.admin_report_keyboard(77))
-    assert "Одобрить · +10 ⭐" in report_buttons
-    assert "Отклонить" in report_buttons
+    assert "Одобрить · +10 ⭐" not in report_buttons
+    assert "Закрыть без мер" in report_buttons
     assert texts_of(K.battle_length_keyboard()) == ["5 вопросов", "10 вопросов", "Назад"]
     # панель модератора: счётчик жалоб и отдельное право monitor
     panel = texts_of(K.admin_panel_keyboard(2, {"reports", "mute"}))
