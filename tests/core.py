@@ -1594,9 +1594,8 @@ def test_relay_state_reply_and_cleanup() -> None:
 
 
 def test_word_game_word_pool() -> None:
-    from anonchat.word_game import WORDS, WORD_DAILY_REWARD_LIMIT, WordGame, role_text
+    from anonchat.word_game import WORDS, WordGame, role_text
 
-    assert WORD_DAILY_REWARD_LIMIT == 300
     assert len(WORDS) >= 500
     assert len(WORDS) == len(set(WORDS))
     assert {"магнитка", "могну", "магнитогорск", "черемша"} <= set(WORDS)
@@ -1609,6 +1608,26 @@ def test_word_game_word_pool() -> None:
     )
     assert "<blockquote><tg-spoiler><b>" in secret
     assert "слово &lt;тест&gt;" in secret and "слово <тест>" not in secret
+
+
+def test_word_game_rewards_are_unlimited() -> None:
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "word-unlimited.db"
+        db = await Database(path).start()
+        try:
+            await db.ensure_user(980001, "word_a", "A")
+            await db.ensure_user(980002, "word_b", "B")
+
+            # Раньше один вызов обрезался парным лимитом до 6 ⭐,
+            # а общий заработок за сутки — до 300 ⭐.
+            assert await db.award_word_guess(980001, 980002, 500) == 500
+            assert await db.award_word_guess(980001, 980002, 500) == 500
+            assert int((await db.get_user(980001))["xp"]) == 1000
+        finally:
+            await db.close()
+
+    asyncio.run(scenario())
+
 
 
 def test_miniapp_init_data_signature() -> None:
