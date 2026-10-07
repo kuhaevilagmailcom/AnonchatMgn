@@ -630,6 +630,20 @@ async def show_top(ctx: Ctx, period: str = "week") -> None:
                 f"{place} <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id']), row['support_stars']))}</b>"
                 f" · <b>{int(row['xp'] or 0)} ⭐</b>"
             )
+    if period == "week" and rows:
+        leader = texts.esc(
+            nicklib.display(
+                rows[0]["nickname"],
+                int(rows[0]["user_id"]),
+                rows[0]["support_stars"],
+            )
+        )
+        lines += [
+            "",
+            "🎁 <b>Розыгрыш NFT</b>",
+            f"На данный момент выигрывает: <b>{leader}</b>",
+            "⏳ Конец розыгрыша: <b>11 октября 2026 · 20:00</b>",
+        ]
     lines += ["", "<i>Ники участники придумывают сами.</i>"]
     await ctx.render_screen("08_top.png", "\n".join(lines), top_keyboard(period))
 
