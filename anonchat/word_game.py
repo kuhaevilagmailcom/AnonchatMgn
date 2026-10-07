@@ -1,4 +1,4 @@
-"""Игра «Объясни слово»: состояние живёт только в RAM, награды ограничивает БД."""
+"""Игра «Объясни слово»: состояние игры и награды за угадывания."""
 
 from __future__ import annotations
 
@@ -14,8 +14,6 @@ from .texts import esc
 
 WORD_ROUNDS = 5
 WORD_REWARD = 3
-WORD_PAIR_DAILY_REWARD_LIMIT = 6
-WORD_DAILY_REWARD_LIMIT = 300
 
 WORDS: tuple[str, ...] = tuple(dict.fromkeys("""
 автобус аквариум апельсин библиотека будильник велосипед вулкан гитара гром дельфин
