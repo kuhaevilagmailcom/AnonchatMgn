@@ -597,34 +597,11 @@ async def show_rules(ctx: Ctx) -> None:
     await ctx.render_screen("06_rules.png", texts.RULES, back_menu_keyboard())
 
 
-def _anon_plus_active(row) -> bool:
-    return bool(row and int(row["premium_until"] or 0) > int(time.time()))
-
-
-def _anon_plus_badge(pack: EmojiPack | None, row) -> str:
-    if not row or pack is None:
-        return ""
-    key = str(row["anon_plus_emoji"] or "").strip()
-    if _anon_plus_active(row) and key:
-        return pack.profile_badge(key)
-    if int(row["support_stars"] or 0) > 0 or int(row["support_rub"] or 0) > 0:
-        return pack.profile_badge("diamond")
-    return ""
-
-
 async def _shared_identity(
     db: Database | None, pack: EmojiPack | None, user_id: int
 ) -> str:
-    if db is None:
-        return ""
-    row = await db.get_user(int(user_id))
-    if not _anon_plus_active(row) or not bool(row["anon_plus_show_nick"]):
-        return ""
-    nick = nicklib.display(
-        row["nickname"], int(user_id), int(row["support_stars"] or 0)
-    )
-    badge = _anon_plus_badge(pack, row)
-    return f"<b>{texts.esc(nick)}</b>{(' ' + badge) if badge else ''}"
+    # АНОН МГН снова полностью анонимный: ник и значки собеседнику не раскрываем.
+    return ""
 
 
 def _match_text(identity: str) -> str:
@@ -649,10 +626,8 @@ async def show_top(ctx: Ctx, period: str = "week") -> None:
     else:
         for i, row in enumerate(rows, start=1):
             place = ctx.pack.top_flag(i) or f"<code>{i}</code>"
-            badge = _anon_plus_badge(ctx.pack, row)
             lines.append(
                 f"{place} <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id']), row['support_stars']))}</b>"
-                f"{(' ' + badge) if badge else ''}"
                 f" · <b>{int(row['xp'] or 0)} ⭐</b>"
             )
     lines += ["", "<i>Ники участники придумывают сами.</i>"]
@@ -676,18 +651,10 @@ async def show_activity(ctx: Ctx) -> None:
     if await ctx.dialog_locked():
         return
     me = await ctx.db.get_user(ctx.user_id)
-    if not _anon_plus_active(me):
-        await ctx.render_screen(
-            "04_profile.png",
-            "📊 <b>Моя активность</b>\n\n"
-            "<blockquote>Статистика за сегодня и за всё время доступна с <b>Анон Plus</b>.</blockquote>",
-            profile_section_keyboard(),
-        )
-        return
     today = await ctx.db.activity_totals(ctx.user_id, 1)
     engagement = await ctx.db.engagement_state(ctx.user_id)
     body = (
-        "📊 <b>Моя активность · Анон Plus</b>\n\n"
+        "📊 <b>Моя активность</b>\n\n"
         f"<b>Сегодня</b>\n"
         f"Диалогов: <b>{today.get('dialogs', 0)}</b> · сообщений: <b>{today.get('messages', 0)}</b> · игр: <b>{today.get('games', 0)}</b>\n\n"
         f"<b>За всё время</b>\n"
@@ -695,7 +662,6 @@ async def show_activity(ctx: Ctx) -> None:
         f"Хороших оценок: <b>{int(me['good_ratings'] or 0)}</b> · игр: <b>{int(engagement['games_total'] or 0)}</b>"
     )
     await ctx.render_screen("04_profile.png", body, profile_section_keyboard())
-
 
 async def show_streak(ctx: Ctx) -> None:
     if await ctx.dialog_locked():
@@ -818,8 +784,6 @@ async def show_profile(ctx: Ctx) -> None:
         profile_keyboard(
             subscription_claimed=subscription_claimed,
             subscription_reward=ctx.cfg.subscription_reward,
-            anon_plus_active=_anon_plus_active(me),
-            anon_plus_show_nick=bool(me["anon_plus_show_nick"]),
         ),
     )
 
@@ -853,7 +817,7 @@ async def set_nick(ctx: Ctx, raw: str) -> tuple[bool, str]:
 
 # --------------------------------------------------------------------- пары
 async def announce_pair(ctx: Ctx, user_id: int, partner_id: int) -> bool:
-    """Сообщаем о паре; ник виден только если владелец сам включил Анон Plus-опцию."""
+    """Сообщаем о паре без раскрытия личности собеседников."""
     found_kb = chat_keyboard()
     identity_user = await _shared_identity(ctx.db, ctx.pack, user_id)
     identity_partner = await _shared_identity(ctx.db, ctx.pack, partner_id)
@@ -890,7 +854,7 @@ async def announce_pairs(
     pack: EmojiPack | None = None,
     db: Database | None = None,
 ) -> int:
-    """Разослать «собеседник найден»; ник раскрывается только по добровольной Plus-настройке."""
+    """Разослать «собеседник найден» без раскрытия личности."""
     kb = menu_keyboard()
     made = 0
     for a, b in pairs:
