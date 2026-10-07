@@ -2035,12 +2035,13 @@ class MiniAppServer:
         game, created = WG.create_invite(uid, partner)
         if not created:
             raise _json_error(409, "Предложение уже создано")
+        word_reward = await self.db.effective_xp_reward(WG.WORD_REWARD)
         result = await send_to(
             self.bot,
             partner,
             "🗣 <b>Собеседник предлагает сыграть в «Объясни слово»</b>\n\n"
             f"Раундов: <b>{WG.WORD_ROUNDS}</b>. Один объясняет слово, второй угадывает. "
-            f"За правильное угадывание — до <b>{WG.WORD_REWARD} ⭐</b>.",
+            f"За правильное угадывание — <b>{word_reward} ⭐</b>.",
             K.word_invite_keyboard(game.id),
             self.pack,
         )
@@ -2053,7 +2054,7 @@ class MiniAppServer:
             "words",
             int(game.id),
             "🗣 Объясни слово",
-            f"{WG.WORD_ROUNDS} слов · до {WG.WORD_REWARD} ⭐ за угадывание",
+            f"{WG.WORD_ROUNDS} слов · {word_reward} ⭐ за угадывание",
         )
         return web.json_response({"ok": True, "message": "Приглашение отправлено"})
 
@@ -2343,7 +2344,8 @@ class MiniAppServer:
                             f"Совпадений: <b>{int(game['matches'])}/{int(game['total_questions'])}</b>."
                         )
                         if int(game["matches"]) == int(game["total_questions"]):
-                            body += "\n🎁 Каждому начислено <b>25 ⭐</b>."
+                            battle_reward = await self.db.effective_xp_reward(25)
+                            body += f"\n🎁 Каждому начислено <b>{battle_reward} ⭐</b>."
                     await send_to(self.bot, player_id, body, K.chat_keyboard(), self.pack)
                 if str(game["status"]) == "finished":
                     self.mm.record_game(
