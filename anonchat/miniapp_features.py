@@ -27,6 +27,7 @@ async def quest_items(db, user_id: int) -> list[dict[str, Any]]:
     activity = await db.activity_totals(user_id, 1)
     claimed = await db.daily_quest_claimed(user_id, day)
     items: list[dict[str, Any]] = []
+    multiplier = await db.xp_multiplier()
     for quest in quests_for(user_id, day):
         current = min(progress_value(activity, quest), quest.target)
         items.append(
@@ -35,7 +36,7 @@ async def quest_items(db, user_id: int) -> list[dict[str, Any]]:
                 "title": quest.title,
                 "current": current,
                 "target": quest.target,
-                "reward": quest.reward,
+                "reward": quest.reward * multiplier,
                 "done": current >= quest.target,
                 "claimed": quest.key in claimed,
             }
@@ -61,13 +62,14 @@ async def achievement_items(db, user_id: int) -> list[dict[str, Any]]:
         "number_exact_1000": int(engagement["number_exact_1000"] or 0),
         "current_streak": int(engagement["current_streak"] or 0),
     }
+    multiplier = await db.xp_multiplier()
     return [
         {
             "key": key,
             "title": title,
             "current": min(int(totals.get(field, 0)), int(target)),
             "target": int(target),
-            "reward": int(reward),
+            "reward": int(reward) * multiplier,
             "unlocked": key in unlocked,
         }
         for key, title, field, target, reward in ACHIEVEMENTS
