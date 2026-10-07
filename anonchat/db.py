@@ -17,7 +17,6 @@ import aiosqlite
 ANON_PLUS_LIFETIME_UNTIL = 253402300799
 
 from .number_game import (
-    NUMBER_DAILY_REWARD_LIMIT,
     NUMBER_ROUNDS,
     NUMBER_REWARDS,
     number_reward,
@@ -25,7 +24,6 @@ from .number_game import (
 from .permissions import ALL_ADMIN_PERMISSIONS, serialize_permissions
 from .word_game import WORD_REWARD
 from .geoquest import (
-    GEO_DAILY_REWARD_LIMIT,
     GEO_ROUND_OPTIONS,
     GEO_ROUND_SECONDS,
     geo_reward,
@@ -1024,17 +1022,21 @@ class Database:
         )
         game = await self.get_battle(game_id)
         if resolved.rowcount and game is not None and int(game["reward_awarded"]):
+            reward = await self.effective_xp_reward(25)
             await self.db.execute(
-                "UPDATE users SET xp=xp+25 WHERE user_id IN (?, ?)",
-                (int(game["user_a"]), int(game["user_b"])),
+                "UPDATE users SET xp=xp+? WHERE user_id IN (?, ?)",
+                (reward, int(game["user_a"]), int(game["user_b"])),
             )
             day = referral_day_start()
             await self.db.executemany(
                 """INSERT INTO daily_activity(user_id, day_start, xp_earned)
-                   VALUES (?, ?, 25)
+                   VALUES (?, ?, ?)
                    ON CONFLICT(user_id, day_start)
-                   DO UPDATE SET xp_earned=xp_earned+25""",
-                [(int(game["user_a"]), day), (int(game["user_b"]), day)],
+                   DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
+                [
+                    (int(game["user_a"]), day, reward),
+                    (int(game["user_b"]), day, reward),
+                ],
             )
         if resolved.rowcount and game is not None and str(game["status"]) == "finished":
             await self.db.execute("DELETE FROM battle_games WHERE id = ?", (game_id,))
@@ -1064,12 +1066,7 @@ class Database:
         return await self.get_battle(game_id) if cur.rowcount else None
 
     async def number_pair_reward_available(self, user_a: int, user_b: int) -> bool:
-        low, high = sorted((int(user_a), int(user_b)))
-        row = await self._fetchone(
-            "SELECT 1 FROM number_game_pairs WHERE user_low=? AND user_high=?",
-            (low, high),
-        )
-        return row is None
+        return True
 
     async def number_daily_reward(self, user_id: int, timestamp: int | None = None) -> int:
         row = await self._fetchone(
@@ -1084,14 +1081,7 @@ class Database:
         requested = max(0, int(requested))
         if requested <= 0:
             return 0
-        row = await self._fetchone(
-            "SELECT stars FROM number_daily_rewards WHERE user_id=? AND day_start=?",
-            (int(user_id), int(day_start)),
-        )
-        current = int(row["stars"] or 0) if row else 0
-        awarded = min(requested, max(0, NUMBER_DAILY_REWARD_LIMIT - current))
-        if awarded <= 0:
-            return 0
+        awarded = await self.effective_xp_reward(requested)
         await self.db.execute(
             """INSERT INTO number_daily_rewards(user_id, day_start, stars)
                VALUES (?, ?, ?)
@@ -1150,29 +1140,16 @@ class Database:
             ):
                 return None
 
-            low, high = sorted((int(row["user_a"]), int(row["user_b"])))
-            claimed = await self.db.execute(
-                """INSERT OR IGNORE INTO number_game_pairs(user_low, user_high, consumed_at)
-                   VALUES (?, ?, ?)""",
-                (low, high, now()),
-            )
-            reward_enabled = 1 if claimed.rowcount else 0
-
             cur = await self.db.execute(
                 """UPDATE battle_games
                    SET status='active', question_index=0,
                        answer_a=NULL, answer_b=NULL, matches=0,
-                       reward_awarded=?, reward_total=0,
+                       reward_awarded=1, reward_total=0,
                        reward_total_a=0, reward_total_b=0, updated_at=?
                    WHERE id=? AND game_type='numbers' AND status='invited'
                      AND user_b=? AND inviter_id<>?""",
-                (reward_enabled, now(), game_id, user_id, user_id),
+                (now(), game_id, user_id, user_id),
             )
-            if not cur.rowcount and reward_enabled:
-                await self.db.execute(
-                    "DELETE FROM number_game_pairs WHERE user_low=? AND user_high=?",
-                    (low, high),
-                )
             await self.db.commit()
             return await self.get_battle(game_id) if cur.rowcount else None
 
@@ -1289,13 +1266,7 @@ class Database:
         return await self.get_battle(game_id) if cur.rowcount else None
 
     async def geo_pair_reward_available(self, user_a: int, user_b: int) -> bool:
-        low, high = sorted((int(user_a), int(user_b)))
-        row = await self._fetchone(
-            """SELECT 1 FROM geo_game_pairs
-               WHERE user_low=? AND user_high=? AND day_start=?""",
-            (low, high, referral_day_start()),
-        )
-        return row is None
+        return True
 
     async def recent_geo_place_ids(
         self, user_ids: Sequence[int], limit_per_user: int = 150
@@ -1377,30 +1348,17 @@ class Database:
             ):
                 return None
             low, high = sorted((int(row["user_a"]), int(row["user_b"])))
-            day = referral_day_start()
-            claimed = await self.db.execute(
-                """INSERT OR IGNORE INTO geo_game_pairs(
-                       user_low, user_high, day_start, consumed_at
-                   ) VALUES (?, ?, ?, ?)""",
-                (low, high, day, now()),
-            )
-            reward_enabled = 1 if claimed.rowcount else 0
             cur = await self.db.execute(
                 """UPDATE battle_games
-                   SET status='active', question_index=0, reward_awarded=?,
+                   SET status='active', question_index=0, reward_awarded=1,
                        reward_total=0, reward_total_a=0, reward_total_b=0,
                        geo_lat_a=NULL, geo_lon_a=NULL, geo_lat_b=NULL, geo_lon_b=NULL,
                        geo_distance_a=NULL, geo_distance_b=NULL,
                        geo_round_started_at=?, updated_at=?
                    WHERE id=? AND game_type='geo' AND status='invited'
                      AND user_b=? AND inviter_id<>?""",
-                (reward_enabled, now(), now(), game_id, user_id, user_id),
+                (now(), now(), game_id, user_id, user_id),
             )
-            if not cur.rowcount and reward_enabled:
-                await self.db.execute(
-                    "DELETE FROM geo_game_pairs WHERE user_low=? AND user_high=? AND day_start=?",
-                    (low, high, day),
-                )
             if cur.rowcount:
                 try:
                     place_ids = [int(value) for value in json.loads(row["question_ids"] or "[]")]
@@ -1429,14 +1387,9 @@ class Database:
         self, user_id: int, requested: int, day_start: int
     ) -> int:
         requested = max(0, int(requested))
-        row = await self._fetchone(
-            "SELECT stars FROM geo_daily_rewards WHERE user_id=? AND day_start=?",
-            (int(user_id), int(day_start)),
-        )
-        current = int(row["stars"] or 0) if row else 0
-        awarded = min(requested, max(0, GEO_DAILY_REWARD_LIMIT - current))
-        if awarded <= 0:
+        if requested <= 0:
             return 0
+        awarded = await self.effective_xp_reward(requested)
         await self.db.execute(
             """INSERT INTO geo_daily_rewards(user_id, day_start, stars)
                VALUES (?, ?, ?)
@@ -1454,6 +1407,7 @@ class Database:
                DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
             (int(user_id), int(day_start), awarded),
         )
+        self._top_cache.clear()
         return awarded
 
     async def _resolve_geo_round_unlocked(
@@ -1672,15 +1626,16 @@ class Database:
     async def award_word_guess(
         self, user_id: int, partner_id: int, requested: int = WORD_REWARD
     ) -> int:
-        """Начисляет награду за каждое угадывание без дневных и парных лимитов."""
+        """Награда за каждое угадывание без лимитов, с учётом x2/x3."""
         user_id = int(user_id)
         partner_id = int(partner_id)
         requested = max(0, int(requested))
         if not user_id or not partner_id or user_id == partner_id or requested <= 0:
             return 0
 
-        await self.award_xp(user_id, requested)
-        return requested
+        awarded = await self.effective_xp_reward(requested)
+        await self.award_xp(user_id, awarded)
+        return awarded
 
     async def nickname_taken(self, nickname: str, except_user_id: int = 0) -> int | None:
         """Ник должен быть уникальным — иначе топ превращается в «Аноним, Аноним, Аноним».
@@ -1722,6 +1677,13 @@ class Database:
         vals = [fields[k] for k in keys] + [user_id]
         await self.db.execute(f"UPDATE users SET {sets} WHERE user_id = ?", vals)
         await self.db.commit()
+
+    async def effective_xp_reward(self, amount: int) -> int:
+        """Фактическая награда с учётом активного x1/x2/x3."""
+        base = max(0, int(amount))
+        if base <= 0:
+            return 0
+        return base * await self.xp_multiplier()
 
     async def award_xp(
         self, user_id: int, amount: int, *, column: str | None = None, commit: bool = True
@@ -1770,6 +1732,7 @@ class Database:
         amount = max(0, int(amount))
         if not reward_key or amount <= 0:
             return False
+        amount = await self.effective_xp_reward(amount)
         ts = now()
         cur = await self.db.execute(
             """INSERT OR IGNORE INTO reward_claims(user_id, reward_key, amount, created_at)
@@ -1804,6 +1767,7 @@ class Database:
         if invitee_id == referrer_id:
             return False
         timestamp = now()
+        amount = await self.effective_xp_reward(amount)
         limit = max(1, int(daily_limit))
         async with self._referral_lock:
             cur = await self.db.execute(
@@ -2804,7 +2768,7 @@ class Database:
             if key in unlocked:
                 return False
             unlocked.add(str(key))
-            reward = max(0, int(reward))
+            reward = await self.effective_xp_reward(reward)
             await self.db.execute(
                 "UPDATE user_engagement SET achievements=? WHERE user_id=?",
                 (json.dumps(sorted(unlocked), ensure_ascii=False), int(user_id)),
@@ -2849,7 +2813,7 @@ class Database:
             if quest_key in claimed:
                 return False
             claimed.add(str(quest_key))
-            reward = max(0, int(reward))
+            reward = await self.effective_xp_reward(reward)
             await self.db.execute(
                 """UPDATE user_engagement SET quest_day=?, quest_claimed=?
                     WHERE user_id=?""",
