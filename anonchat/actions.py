@@ -720,26 +720,20 @@ async def show_profile(ctx: Ctx) -> None:
     invited, referral_xp = await ctx.db.referral_stats(ctx.user_id)
     messages = int(me["messages"])
     rank = rank_for(messages)
-    badge = _anon_plus_badge(ctx.pack, me)
     lines = [
         "👤 <b>Твой профиль</b>",
         "",
         "<blockquote>"
-        f"<b>{texts.esc(ctx.nick)}</b>{(' ' + badge) if badge else ''}"
+        f"<b>{texts.esc(ctx.nick)}</b>"
         "</blockquote>",
         f"<i>{rank.emoji} {texts.esc(rank.title)}</i>",
         "",
         f"⭐ Очки: <b>{int(me['xp'])}</b>",
     ]
-    if _anon_plus_active(me):
-        lines += [
-            f"💬 Сообщения: <b>{messages}</b> · Диалоги: <b>{me['dialogs']}</b>",
-            f"👍 Хорошие оценки: <b>{me['good_ratings']}</b> · 👎 <b>{me['bad_ratings']}</b>",
-        ]
-    else:
-        lines += [
-            "💬 <i>Сообщения и диалоги видны с <b>Анон Plus</b></i>",
-        ]
+    lines += [
+        f"💬 Сообщения: <b>{messages}</b> · Диалоги: <b>{me['dialogs']}</b>",
+        f"👍 Хорошие оценки: <b>{me['good_ratings']}</b> · 👎 <b>{me['bad_ratings']}</b>",
+    ]
     if not rank.is_max:
         progress_bar = ctx.pack.progress_bar(rank.progress)
         lines += [
@@ -975,16 +969,13 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
     ctx.mm.remember_rating([ctx.user_id, partner], match_id)
     my_summary = _dialog_summary_text(summary, ctx.user_id, earned_xp.get(ctx.user_id, 0))
     partner_summary = _dialog_summary_text(summary, partner, earned_xp.get(partner, 0))
-    my_row = await ctx.db.get_user(ctx.user_id)
-    partner_row = await ctx.db.get_user(partner)
-
     await send_to(
         ctx.bot, partner,
-        f"{notify_partner}{('\\n\\n' + partner_summary) if _anon_plus_active(partner_row) else ''}",
+        f"{notify_partner}\n\n{partner_summary}",
         menu_keyboard(), ctx.pack,
     )
     await ctx.reply(
-        f"{note}{('\\n\\n' + my_summary) if _anon_plus_active(my_row) else ''}",
+        f"{note}\n\n{my_summary}",
         markup=rating_keyboard(),
     )
     await send_to(ctx.bot, partner, texts.RATING_ASK, rating_keyboard(), ctx.pack)
