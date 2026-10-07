@@ -540,7 +540,7 @@ if (typeof window === 'undefined') {
     $$('#gender button,#looking button').forEach(b=>b.onclick=()=>{$$('button',b.parentElement).forEach(x=>x.classList.remove('active'));b.classList.add('active')});
     $('#saveSettings').onclick=saveSettings;$('#resetSettings').onclick=resetSettings;$('#forget').onclick=confirmForget;$('#support').onclick=openSupport;
     if($('#subscribe'))$('#subscribe').onclick=claimSubscription;
-    $('[data-theme-choice]',body).forEach(b=>b.onclick=()=>setTheme(b.dataset.themeChoice,body));
+    $$('[data-theme-choice]',body).forEach(b=>b.onclick=()=>setTheme(b.dataset.themeChoice,body));
   }
   function setTheme(theme,body){
     const allowed=new Set(['pink','blue','violet','green','orange','mono']);
