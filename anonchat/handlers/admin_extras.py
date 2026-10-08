@@ -16,6 +16,7 @@ from ..db import Database, month_period_start, referral_day_start, week_period_s
 from ..matching import Matchmaker
 from .. import nick as nicklib, texts
 from .. import keyboards as K
+from ..permissions import ALL_ADMIN_PERMISSIONS
 
 router = Router(name="admin_extras")
 TZ = ZoneInfo("Asia/Yekaterinburg")
@@ -172,7 +173,7 @@ async def show_card(
         _button(b,"⛔ Разбан" if user['banned'] else "⛔ Бан",f"ax:b:{uid}")
     if ctx.can('mute'):
         _button(b,"🔇 Снять мут" if int(user['mute_until'])>int(datetime.now(TZ).timestamp()) else "🔇 Мут 60 мин",f"ax:m:{uid}")
-    if ctx.is_owner:
+    if ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS:
         _button(b,"👮 Права",f"ax:perms:{uid}")
     _button(b,"🔄 Обновить",f"ax:u:{uid}:{sort}:{filt}:{page}")
     _button(b,"← К списку",f"ax:l:{sort}:{filt}:{page}")
@@ -453,7 +454,7 @@ async def extras_callback(
             lines += [f"#{r['id']} · {texts.esc(r['reason'])} · {texts.esc(r['status'])}" for r in rows]
             await _screen(ctx,"\n".join(lines),K.panel_back_keyboard())
         elif action=='perms' and len(parts)==3:
-            if not ctx.is_owner:
+            if not (ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS):
                 raise PermissionError
             uid=int(parts[2]);perms=await db.get_admin_permissions(uid,ctx.cfg.admin_ids)
             await _screen(ctx,f"👮 ID <code>{uid}</code>\nПрава: {texts.esc(', '.join(sorted(perms)) or 'нет')}\nИзменить: /adminperms {uid} all",K.panel_back_keyboard())
