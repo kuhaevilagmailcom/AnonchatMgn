@@ -661,7 +661,9 @@ def admin_panel_keyboard(
         _button(b, "Разбан по id", callback_data=CB_PANEL_UNBAN, icon="check")
         _button(b, "Бан-лист", callback_data=CB_PANEL_BAN_LIST, icon="delete")
     if "points" in permissions:
-        _button(b, "Выдать / снять очки", callback_data=CB_PANEL_POINTS, icon="stars")
+        _button(b, "Начисления", callback_data="ax:ledger:0", icon="stars")
+    if "stats" in permissions:
+        _button(b, "Проверка топов", callback_data="ax:t:w", icon="bonus")
     if owner:
         _button(
             b, f"Множитель: x{int(xp_multiplier)}",
@@ -678,6 +680,7 @@ def admin_panel_keyboard(
     if owner:
         _button(b, "Игры пользователей", callback_data=CB_PANEL_GAMES, icon="bonus", style="primary")
     if owner or "monitor" in permissions:
+        _button(b, "Активные чаты", callback_data="ax:chats:0", icon="view")
         _button(
             b,
             f"Чаты: {'ВКЛ' if monitor_enabled else 'ВЫКЛ'}",

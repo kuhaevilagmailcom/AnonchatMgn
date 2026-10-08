@@ -1097,8 +1097,10 @@ class MiniAppServer:
                 self.cfg.xp_per_dialog if live else 0
             )
             gain = message_gain + dialog_gain
-            if gain:
-                await self.db.award_xp(player_id, gain, commit=False)
+            if message_gain:
+                await self.db.award_xp(player_id, message_gain, commit=False, source='message')
+            if dialog_gain:
+                await self.db.award_xp(player_id, dialog_gain, commit=False, source='dialog')
             if sent_count:
                 await self.db.bump(
                     player_id, "messages", sent_count, commit=False
@@ -1311,7 +1313,7 @@ class MiniAppServer:
         if value:
             reward = await self.db.effective_xp_reward(self.cfg.xp_good_rating)
             if reward:
-                await self.db.award_xp(partner, reward)
+                await self.db.award_xp(partner, reward, source='rating')
             await self.db.activity_add(partner, good_ratings=1)
             await self._push_event(
                 partner, "rating", "Хорошая оценка",

@@ -5,6 +5,7 @@ from __future__ import annotations
 from aiogram import Router
 
 from .admin import router as admin_router
+from .admin_extras import router as admin_extras_router
 from .chat import router as chat_router
 from .games import router as games_router
 from .group_geo import router as group_geo_router
@@ -22,6 +23,7 @@ def get_routers() -> list[Router]:
         support_router,   # добровольная поддержка через Telegram Stars
         reports_router,   # /report, FSM комментария жалобы
         games_router,     # игры внутри активного диалога
+        admin_extras_router,  # компактные админские экраны
         admin_router,     # модерация
         polls_router,     # активный опрос дня
         menu_router,      # /start, кнопки меню, оценки

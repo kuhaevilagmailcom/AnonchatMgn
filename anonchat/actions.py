@@ -970,8 +970,10 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
             ctx.cfg.xp_per_dialog if live else 0
         )
         gain = message_gain + dialog_gain
-        if gain:
-            await ctx.db.award_xp(uid, gain, commit=False)
+        if message_gain:
+            await ctx.db.award_xp(uid, message_gain, commit=False, source='message')
+        if dialog_gain:
+            await ctx.db.award_xp(uid, dialog_gain, commit=False, source='dialog')
         if sent:
             await ctx.db.bump(uid, "messages", sent, commit=False)
         await ctx.db.activity_add(
@@ -1094,7 +1096,7 @@ async def apply_rating(ctx: Ctx, positive: bool) -> None:
     await ctx.db.activity_add(ctx.user_id, ratings_given=1)
     if positive:
         reward = await ctx.db.effective_xp_reward(ctx.cfg.xp_good_rating)
-        await ctx.db.award_xp(partner, reward)
+        await ctx.db.award_xp(partner, reward, source='rating')
         await ctx.db.activity_add(partner, good_ratings=1)
         await ctx.ack("Спасибо")
         result_text = texts.RATING_DONE_GOOD.format(xp=reward)

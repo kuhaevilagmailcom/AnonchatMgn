@@ -367,6 +367,12 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("support_stars", "ALTER TABLE users ADD COLUMN support_stars INTEGER NOT NULL DEFAULT 0"),
     ("support_rub", "ALTER TABLE users ADD COLUMN support_rub INTEGER NOT NULL DEFAULT 0"),
     ("profile_deleted", "ALTER TABLE users ADD COLUMN profile_deleted INTEGER NOT NULL DEFAULT 0"),
+    ("xp_source", "ALTER TABLE users ADD COLUMN xp_source TEXT NOT NULL DEFAULT ''"),
+    ("xp_reason", "ALTER TABLE users ADD COLUMN xp_reason TEXT NOT NULL DEFAULT ''"),
+    ("xp_actor_id", "ALTER TABLE users ADD COLUMN xp_actor_id INTEGER NOT NULL DEFAULT 0"),
+    ("xp_reference_type", "ALTER TABLE users ADD COLUMN xp_reference_type TEXT NOT NULL DEFAULT ''"),
+    ("xp_reference_id", "ALTER TABLE users ADD COLUMN xp_reference_id TEXT NOT NULL DEFAULT ''"),
+    ("xp_idempotency_key", "ALTER TABLE users ADD COLUMN xp_idempotency_key TEXT NOT NULL DEFAULT ''"),
 )
 
 _REPORT_MIGRATIONS: tuple[tuple[str, str], ...] = (
@@ -443,8 +449,9 @@ class Database:
         self._engagement_lock = asyncio.Lock()
         self._nickname_lock = asyncio.Lock()
         self._anon_question_lock = asyncio.Lock()
+        self._xp_lock = asyncio.Lock()
         self._admin_permissions_cache: dict[int, tuple[float, frozenset[str]]] = {}
-        self._top_cache: dict[tuple[int, int], tuple[float, list[aiosqlite.Row]]] = {}
+        self._top_cache: dict[tuple[int, ...], tuple[float, list[aiosqlite.Row]]] = {}
         self._xp_multiplier_cache: int | None = None
 
     # ------------------------------------------------------------------ lifecycle
@@ -526,6 +533,7 @@ class Database:
             if name not in cols:
                 await self.db.execute(sql)
                 added = True
+        await self._migrate_xp_ledger()
         async with self.db.execute("PRAGMA table_info(reports)") as cur:
             report_cols = {row[1] for row in await cur.fetchall()}
         for name, sql in _REPORT_MIGRATIONS:
@@ -633,6 +641,233 @@ class Database:
             "UPDATE users SET premium_until=? WHERE premium_until>?",
             (ANON_PLUS_LIFETIME_UNTIL, now()),
         )
+
+    async def _migrate_xp_ledger(self) -> None:
+        """Неразрушающий одноразовый снимок старых балансов и атомарный аудит через SQLite."""
+        await self.db.executescript("""
+            CREATE TABLE IF NOT EXISTS xp_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                amount INTEGER NOT NULL,
+                balance_after INTEGER NOT NULL,
+                source TEXT NOT NULL DEFAULT 'other',
+                reason TEXT NOT NULL DEFAULT '',
+                actor_id INTEGER NOT NULL DEFAULT 0,
+                reference_type TEXT NOT NULL DEFAULT '',
+                reference_id TEXT NOT NULL DEFAULT '',
+                idempotency_key TEXT UNIQUE,
+                created_at INTEGER NOT NULL,
+                metadata TEXT NOT NULL DEFAULT '{}'
+            );
+            CREATE INDEX IF NOT EXISTS idx_xp_transactions_user_time
+                ON xp_transactions(user_id, created_at DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_xp_transactions_period
+                ON xp_transactions(created_at, source, user_id);
+            CREATE INDEX IF NOT EXISTS idx_users_dialogs ON users(dialogs DESC, user_id);
+            CREATE INDEX IF NOT EXISTS idx_users_banned ON users(banned, user_id);
+            CREATE INDEX IF NOT EXISTS idx_users_mute_until ON users(mute_until, user_id);
+            CREATE INDEX IF NOT EXISTS idx_users_support ON users(support_stars, support_rub);
+            CREATE INDEX IF NOT EXISTS idx_users_username ON users(username COLLATE NOCASE);
+            CREATE INDEX IF NOT EXISTS idx_users_nick_key ON users(nick_key);
+        """)
+        # Восстанавливать детализацию прошлых начислений невозможно. Одна стартовая
+        # запись создаётся строго один раз, без изменения пользователей и daily_activity.
+        if await self.get_kv("xp_ledger_baseline_v1") != "1":
+            await self.db.execute(
+                """INSERT INTO xp_transactions(user_id, amount, balance_after, source,
+                                              reason, created_at)
+                   SELECT u.user_id, u.xp, u.xp, 'opening_balance',
+                          'Начальный баланс до введения журнала', ?
+                     FROM users u
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM xp_transactions t WHERE t.user_id=u.user_id
+                    )""",
+                (now(),),
+            )
+            await self.db.execute(
+                "INSERT INTO kv(key, value) VALUES ('xp_ledger_baseline_v1','1') "
+                "ON CONFLICT(key) DO UPDATE SET value='1'"
+            )
+        # Любое изменение users.xp попадает в тот же SQLite statement, включая
+        # старые игровые пути и обновления через отдельное соединение.
+        await self.db.executescript("""
+            CREATE TRIGGER IF NOT EXISTS trg_xp_no_edit
+            BEFORE UPDATE ON xp_transactions
+            BEGIN SELECT RAISE(ABORT, 'XP journal is append-only'); END;
+            CREATE TRIGGER IF NOT EXISTS trg_xp_no_delete
+            BEFORE DELETE ON xp_transactions
+            BEGIN SELECT RAISE(ABORT, 'XP journal is append-only'); END;
+            CREATE TRIGGER IF NOT EXISTS trg_xp_transactions
+            AFTER UPDATE OF xp ON users
+            WHEN NEW.xp <> OLD.xp
+            BEGIN
+                INSERT INTO xp_transactions (
+                    user_id, amount, balance_after, source, reason, actor_id,
+                    reference_type, reference_id, idempotency_key, created_at
+                ) VALUES (
+                    NEW.user_id, NEW.xp - OLD.xp, NEW.xp,
+                    COALESCE(NULLIF(NEW.xp_source, ''), 'other'),
+                    NEW.xp_reason, NEW.xp_actor_id,
+                    NEW.xp_reference_type, NEW.xp_reference_id,
+                    NULLIF(NEW.xp_idempotency_key, ''), CAST(strftime('%s', 'now') AS INTEGER)
+                );
+                UPDATE users SET xp_source='', xp_reason='', xp_actor_id=0,
+                    xp_reference_type='', xp_reference_id='', xp_idempotency_key=''
+                    WHERE user_id=NEW.user_id;
+            END;
+        """)
+
+    async def change_xp(
+        self, user_id: int, amount: int, *, source: str, reason: str,
+        actor_id: int = 0, reference_type: str = '', reference_id: str = '',
+        idempotency_key: str = '',
+    ) -> tuple[int, bool]:
+        """Атомарное изменение баланса. Возвращает (баланс, применено).
+
+        Выделенное соединение + BEGIN IMMEDIATE изолирует несколько конкурентных
+        callback от остальных autocommit-обработчиков общей connection.
+        """
+        uid = int(user_id)
+        delta = int(amount)
+        if uid <= 0 or not delta:
+            raise ValueError("Укажите пользователя и ненулевую сумму")
+        if not str(reason).strip():
+            raise ValueError("Укажите причину")
+        if abs(delta) > 1_000_000_000:
+            raise ValueError("Сумма слишком большая")
+        key = str(idempotency_key or '')
+        if len(key) > 180:
+            raise ValueError("Слишком длинный ключ операции")
+        async with self._xp_lock:
+            async with aiosqlite.connect(self.path, isolation_level=None) as conn:
+                conn.row_factory = aiosqlite.Row
+                await conn.execute("PRAGMA busy_timeout=10000")
+                await conn.execute("BEGIN IMMEDIATE")
+                try:
+                    if key:
+                        async with conn.execute(
+                            "SELECT user_id, balance_after FROM xp_transactions WHERE idempotency_key=?",
+                            (key,),
+                        ) as cur:
+                            previous = await cur.fetchone()
+                        if previous:
+                            if int(previous["user_id"]) != uid:
+                                raise ValueError("Ключ операции принадлежит другому пользователю")
+                            await conn.commit()
+                            return int(previous["balance_after"]), False
+                    async with conn.execute(
+                        "SELECT xp FROM users WHERE user_id=?", (uid,)
+                    ) as cur:
+                        row = await cur.fetchone()
+                    if row is None:
+                        raise ValueError("Пользователь не найден")
+                    before = int(row["xp"] or 0)
+                    after = before + delta
+                    if after < 0:
+                        raise ValueError("Недостаточно очков для списания")
+                    await conn.execute(
+                        """UPDATE users SET xp=?, xp_source=?, xp_reason=?,
+                               xp_actor_id=?, xp_reference_type=?, xp_reference_id=?,
+                               xp_idempotency_key=? WHERE user_id=?""",
+                        (after, str(source), str(reason)[:500], int(actor_id),
+                         str(reference_type), str(reference_id), key, uid),
+                    )
+                    if delta > 0:
+                        await conn.execute(
+                            """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+                               VALUES (?, ?, ?) ON CONFLICT(user_id, day_start)
+                               DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
+                            (uid, referral_day_start(), delta),
+                        )
+                    await conn.commit()
+                    self._top_cache.clear()
+                    return after, True
+                except Exception:
+                    await conn.rollback()
+                    raise
+
+    async def xp_history(
+        self, user_id: int, *, limit: int = 10, offset: int = 0,
+        kind: str = 'all', source: str = '', since: int = 0,
+    ) -> tuple[list[aiosqlite.Row], dict[str, int]]:
+        where = ["user_id=?"]
+        args: list[Any] = [int(user_id)]
+        if kind == 'plus':
+            where.append("amount>0")
+        elif kind == 'minus':
+            where.append("amount<0")
+        if source:
+            where.append("source=?")
+            args.append(str(source))
+        if since:
+            where.append("created_at>=?")
+            args.append(int(since))
+        cond = " AND ".join(where)
+        rows = await self._fetchall(
+            f"SELECT * FROM xp_transactions WHERE {cond} "
+            "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+            (*args, max(1, min(int(limit), 30)), max(0, int(offset))),
+        )
+        summary = await self._fetchone(
+            f"SELECT COUNT(*) AS count, "
+            f"COALESCE(SUM(CASE WHEN amount>0 THEN amount END),0) AS credits, "
+            f"COALESCE(SUM(CASE WHEN amount<0 THEN -amount END),0) AS debits "
+            f"FROM xp_transactions WHERE {cond}",
+            args,
+        )
+        return rows, {k: int(summary[k] or 0) for k in ('count','credits','debits')}
+
+    async def admin_user_list(
+        self, *, limit: int = 12, offset: int = 0, sort: str = 'recent',
+        filter_by: str = 'all', query: str = '', ids: Sequence[int] = (),
+    ) -> tuple[list[aiosqlite.Row], int]:
+        orders = {
+            'recent': 'last_seen DESC, user_id DESC',
+            'new': 'created_at DESC, user_id DESC',
+            'xp': 'xp DESC, user_id ASC',
+            'messages': 'messages DESC, user_id ASC',
+            'dialogs': 'dialogs DESC, user_id ASC',
+        }
+        where: list[str] = []
+        args: list[Any] = []
+        if filter_by == 'active':
+            where.append('last_seen>=?')
+            args.append(now()-600)
+        elif filter_by == 'ban':
+            where.append('banned=1')
+        elif filter_by == 'mute':
+            where.append('mute_until>?')
+            args.append(now())
+        elif filter_by == 'support':
+            where.append('(support_stars>0 OR support_rub>0)')
+        elif filter_by == 'admins':
+            where.append('user_id IN (SELECT user_id FROM admins)')
+        elif filter_by in {'queue','dialog'}:
+            selected = [int(uid) for uid in ids][:500]
+            if not selected:
+                return [], 0
+            where.append('user_id IN ('+','.join('?' for _ in selected)+')')
+            args.extend(selected)
+        if query:
+            value = query.strip().lstrip('@')[:100]
+            if value.isdigit():
+                where.append('(user_id=? OR username LIKE ? OR nickname LIKE ? OR first_name LIKE ?)')
+                args.extend((int(value),f'%{value}%',f'%{value}%',f'%{value}%'))
+            else:
+                value = value.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
+                where.append("(username LIKE ? ESCAPE '\\' OR nickname LIKE ? ESCAPE '\\' "
+                             "OR first_name LIKE ? ESCAPE '\\')")
+                args.extend((f'%{value}%',)*3)
+        condition = (' WHERE ' + ' AND '.join(where)) if where else ''
+        total = await self._fetchone('SELECT COUNT(*) AS c FROM users'+condition, args)
+        rows = await self._fetchall(
+            'SELECT user_id, username, first_name, nickname, xp, support_stars, '
+            'messages, dialogs, last_seen, created_at, banned, mute_until '
+            'FROM users'+condition+' ORDER BY '+orders.get(sort,'last_seen DESC, user_id DESC')+
+            ' LIMIT ? OFFSET ?',
+            (*args, max(1, min(int(limit), 15)), max(0, int(offset))),
+        )
+        return rows, int(total['c'] if total else 0)
 
     async def _backfill_nick_keys(self) -> None:
         """Регистронезависимый ключ ника: LOWER() в SQLite не понимает кириллицу, считаем в Python."""
@@ -1040,7 +1275,7 @@ class Database:
         if resolved.rowcount and game is not None and int(game["reward_awarded"]):
             reward = await self.effective_xp_reward(25)
             await self.db.execute(
-                "UPDATE users SET xp=xp+? WHERE user_id IN (?, ?)",
+                "UPDATE users SET xp=xp+?, xp_source='battle' WHERE user_id IN (?, ?)",
                 (reward, int(game["user_a"]), int(game["user_b"])),
             )
             day = referral_day_start()
@@ -1106,7 +1341,7 @@ class Database:
             (int(user_id), int(day_start), awarded),
         )
         await self.db.execute(
-            "UPDATE users SET xp=xp+? WHERE user_id=?",
+            "UPDATE users SET xp=xp+?, xp_source='numbers' WHERE user_id=?",
             (awarded, int(user_id)),
         )
         await self.db.execute(
@@ -1414,7 +1649,7 @@ class Database:
             (int(user_id), int(day_start), awarded),
         )
         await self.db.execute(
-            "UPDATE users SET xp=xp+? WHERE user_id=?", (awarded, int(user_id))
+            "UPDATE users SET xp=xp+?, xp_source='geoguessr' WHERE user_id=?", (awarded, int(user_id))
         )
         await self.db.execute(
             """INSERT INTO daily_activity(user_id, day_start, xp_earned)
@@ -1650,7 +1885,7 @@ class Database:
             return 0
 
         awarded = await self.effective_xp_reward(requested)
-        await self.award_xp(user_id, awarded)
+        await self.award_xp(user_id, awarded, source='word_game')
         return awarded
 
     async def nickname_taken(self, nickname: str, except_user_id: int = 0) -> int | None:
@@ -1702,7 +1937,8 @@ class Database:
         return base * await self.xp_multiplier()
 
     async def award_xp(
-        self, user_id: int, amount: int, *, column: str | None = None, commit: bool = True
+        self, user_id: int, amount: int, *, column: str | None = None, commit: bool = True,
+        source: str = 'other',
     ) -> int:
         """Начисляем опыт и, опционально, плюсует счётчик (messages/dialogs/good_ratings...)."""
         if column and column in {
@@ -1714,11 +1950,11 @@ class Database:
             "reports_received",
         }:
             await self.db.execute(
-                f"UPDATE users SET xp = xp + ?, {column} = {column} + ? WHERE user_id = ?",
-                (amount, amount, user_id),
+                f"UPDATE users SET xp = xp + ?, xp_source=?, {column} = {column} + ? WHERE user_id = ?",
+                (amount, source, amount, user_id),
             )
         else:
-            await self.db.execute("UPDATE users SET xp = xp + ? WHERE user_id = ?", (amount, user_id))
+            await self.db.execute("UPDATE users SET xp = xp + ?, xp_source=? WHERE user_id = ?", (amount, source, user_id))
         if int(amount) > 0:
             await self.db.execute(
                 """INSERT INTO daily_activity(user_id, day_start, xp_earned)
@@ -1759,8 +1995,10 @@ class Database:
             await self.db.commit()
             return False
         await self.db.execute(
-            "UPDATE users SET xp=xp+? WHERE user_id=?",
-            (amount, int(user_id)),
+            "UPDATE users SET xp=xp+?, xp_source=? WHERE user_id=?",
+            (amount, ('subscription' if reward_key.startswith('channel_subscription') else
+                      'report' if reward_key.startswith('approved_report') else
+                      'one_time_reward'), int(user_id)),
         )
         await self.db.execute(
             """INSERT INTO daily_activity(user_id, day_start, xp_earned)
@@ -1808,7 +2046,7 @@ class Database:
                 await self.db.commit()
                 return False
             await self.db.execute(
-                "UPDATE users SET xp = xp + ? WHERE user_id = ?",
+                "UPDATE users SET xp = xp + ?, xp_source='referral' WHERE user_id = ?",
                 (amount, referrer_id),
             )
             await self.db.execute(
@@ -1864,6 +2102,7 @@ class Database:
         )
         owner = await self.get_user(referrer_id)
         self._top_cache.clear()
+        self._top_cache.clear()
         return {
             "referrer_id": int(referrer_id),
             "referrals": len(rows),
@@ -1913,7 +2152,7 @@ class Database:
 
             referral_xp = sum(int(row["xp_awarded"] or 0) for row in rows)
             await cleanup.execute(
-                "UPDATE users SET xp=MAX(0, xp-?) WHERE user_id=?",
+                "UPDATE users SET xp=MAX(0, xp-?), xp_source='referral_correction' WHERE user_id=?",
                 (referral_xp, referrer_id),
             )
             by_day: dict[int, int] = {}
@@ -2271,6 +2510,7 @@ class Database:
             (int(banned), reason if banned else "", user_id),
         )
         await self.db.commit()
+        self._top_cache.clear()
 
     async def set_mute(self, user_id: int, minutes: int) -> int:
         await self._ensure_row(user_id)
@@ -2591,6 +2831,8 @@ class Database:
         )
         if commit:
             await self.db.commit()
+        if 'xp_earned' in values:
+            self._top_cache.clear()
 
     async def activity_totals(self, user_id: int, days: int) -> dict[str, int]:
         days = max(1, min(int(days), 40))
@@ -2613,96 +2855,92 @@ class Database:
         )
         return {key: int(row[key] or 0) for key in row.keys()} if row else {}
 
+    def _period_start(self, days: int) -> int:
+        return (
+            week_period_start() if days == 7
+            else month_period_start() if days == 30
+            else referral_day_start() - (max(1, days) - 1) * 86_400
+        )
+
+    @staticmethod
+    def _period_scores_sql() -> str:
+        """Единые очки в Telegram и API; списания учитываются отдельно от daily_activity."""
+        return """
+            WITH activity AS (
+                SELECT user_id, SUM(xp_earned) credits, SUM(dialogs) dialogs,
+                       SUM(messages) messages
+                  FROM daily_activity WHERE day_start >= ? GROUP BY user_id
+            ), deductions AS (
+                SELECT user_id, SUM(amount) debits
+                  FROM xp_transactions
+                 WHERE created_at >= ? AND amount < 0 AND source <> 'referral_correction'
+                 GROUP BY user_id
+            ), scores AS (
+                SELECT u.user_id, u.nickname, u.support_stars,
+                       u.premium_until, u.anon_plus_emoji, u.support_rub,
+                       COALESCE(a.credits,0) + COALESCE(d.debits,0) xp,
+                       COALESCE(a.dialogs,0) dialogs,
+                       COALESCE(a.messages,0) messages
+                  FROM users u
+                  LEFT JOIN activity a ON a.user_id=u.user_id
+                  LEFT JOIN deductions d ON d.user_id=u.user_id
+                 WHERE u.banned=0 AND (
+                       COALESCE(a.credits,0)>0 OR COALESCE(a.dialogs,0)>0
+                       OR COALESCE(a.messages,0)>0
+                 )
+            )
+        """
+
     async def top_period(self, days: int, limit: int = 10) -> list[aiosqlite.Row]:
         days = int(days)
         limit = max(1, min(int(limit), 50))
-        key = (days, limit)
+        key = (days, limit, self._period_start(days) if days > 0 else 0)
         cached = self._top_cache.get(key)
         now_mono = time.monotonic()
-        if cached is not None and now_mono - cached[0] < 45:
+        if cached is not None and now_mono - cached[0] < 15:
             return cached[1]
-
         if days <= 0:
             rows = await self.top(limit)
         else:
-            start = (
-                week_period_start()
-                if days == 7
-                else month_period_start()
-                if days == 30
-                else referral_day_start() - (max(1, days) - 1) * 86_400
-            )
+            start = self._period_start(days)
             rows = await self._fetchall(
-                """SELECT u.user_id, u.nickname, u.support_stars,
-                          u.premium_until, u.anon_plus_emoji, u.support_rub,
-                          SUM(a.xp_earned) AS xp,
-                          SUM(a.dialogs) AS dialogs,
-                          SUM(a.messages) AS messages
-                     FROM daily_activity a
-                     JOIN users u ON u.user_id=a.user_id
-                    WHERE a.day_start>=? AND u.banned=0
-                    GROUP BY u.user_id
-                    HAVING SUM(a.xp_earned) > 0 OR SUM(a.dialogs) > 0 OR SUM(a.messages) > 0
-                    ORDER BY SUM(a.xp_earned) DESC, SUM(a.dialogs) DESC, SUM(a.messages) DESC
-                    LIMIT ?""",
-                (start, limit),
+                self._period_scores_sql() +
+                "SELECT * FROM scores ORDER BY xp DESC, dialogs DESC, messages DESC, user_id ASC LIMIT ?",
+                (start, start, limit),
             )
         self._top_cache[key] = (now_mono, rows)
         if len(self._top_cache) > 12:
-            self._top_cache = {
-                k: v for k, v in self._top_cache.items() if now_mono - v[0] < 60
-            }
+            self._top_cache = {k:v for k,v in self._top_cache.items() if now_mono-v[0]<30}
         return rows
 
     async def top_position_period(self, user_id: int, days: int) -> dict[str, int]:
-        days = int(days)
-        if days <= 0:
-            me = await self.get_user(int(user_id))
-            if me is None:
-                return {"place": 0, "stars": 0, "to_top10": 0}
-            stars = int(me["xp"] or 0)
-            above = await self._fetchone(
-                """SELECT COUNT(*) AS c FROM users
-                   WHERE banned=0 AND (
-                     xp>? OR (xp=? AND dialogs>?) OR
-                     (xp=? AND dialogs=? AND messages>?)
-                   )""",
-                (
-                    stars, stars, int(me["dialogs"] or 0),
-                    stars, int(me["dialogs"] or 0), int(me["messages"] or 0),
-                ),
+        uid = int(user_id)
+        if not await self.get_user(uid):
+            return {"place": 0, "stars": 0, "to_top10": 0}
+        if int(days) <= 0:
+            ranked_sql = """
+                SELECT user_id, xp, ROW_NUMBER() OVER (
+                    ORDER BY xp DESC, dialogs DESC, messages DESC, user_id ASC
+                ) AS place FROM users WHERE banned=0
+            """
+            row = await self._fetchone(
+                f"SELECT place,xp FROM ({ranked_sql}) WHERE user_id=?", (uid,),
             )
             top10 = await self.top(10)
         else:
-            start = (
-                week_period_start()
-                if days == 7
-                else month_period_start()
-                if days == 30
-                else referral_day_start() - (max(1, days) - 1) * 86_400
-            )
-            mine = await self._fetchone(
-                """SELECT COALESCE(SUM(xp_earned),0) xp,
-                          COALESCE(SUM(dialogs),0) dialogs,
-                          COALESCE(SUM(messages),0) messages
-                   FROM daily_activity WHERE user_id=? AND day_start>=?""",
-                (int(user_id), start),
-            )
-            stars = int(mine["xp"] or 0) if mine else 0
-            dialogs = int(mine["dialogs"] or 0) if mine else 0
-            messages = int(mine["messages"] or 0) if mine else 0
-            above = await self._fetchone(
-                """SELECT COUNT(*) AS c FROM (
-                     SELECT user_id,SUM(xp_earned) xp,SUM(dialogs) dialogs,SUM(messages) messages
-                     FROM daily_activity WHERE day_start>=?
-                     GROUP BY user_id
-                     HAVING xp>? OR (xp=? AND dialogs>?) OR
-                            (xp=? AND dialogs=? AND messages>?)
-                   )""",
-                (start, stars, stars, dialogs, stars, dialogs, messages),
+            start = self._period_start(int(days))
+            ranked_sql = self._period_scores_sql() + """
+                SELECT user_id, xp, ROW_NUMBER() OVER (
+                    ORDER BY xp DESC, dialogs DESC, messages DESC, user_id ASC
+                ) AS place FROM scores
+            """
+            row = await self._fetchone(
+                f"SELECT place,xp FROM ({ranked_sql}) WHERE user_id=?",
+                (start, start, uid),
             )
             top10 = await self.top_period(days, 10)
-        place = int(above["c"] or 0) + 1 if above else 1
+        place = int(row["place"] or 0) if row else 0
+        stars = int(row["xp"] or 0) if row else 0
         threshold = int(top10[-1]["xp"] or 0) if len(top10) >= 10 else 0
         return {
             "place": place,
@@ -2803,7 +3041,7 @@ class Database:
             )
             if reward:
                 await self.db.execute(
-                    "UPDATE users SET xp=xp+? WHERE user_id=?", (reward, int(user_id))
+                    "UPDATE users SET xp=xp+?, xp_source='achievement' WHERE user_id=?", (reward, int(user_id))
                 )
                 day = referral_day_start()
                 await self.db.execute(
@@ -2849,7 +3087,7 @@ class Database:
             )
             if reward:
                 await self.db.execute(
-                    "UPDATE users SET xp=xp+? WHERE user_id=?", (reward, int(user_id))
+                    "UPDATE users SET xp=xp+?, xp_source='daily_quest' WHERE user_id=?", (reward, int(user_id))
                 )
                 await self.db.execute(
                     """INSERT INTO daily_activity(user_id, day_start, xp_earned)
@@ -2990,7 +3228,23 @@ class Database:
         open_reports = await self._fetchone(
             "SELECT COUNT(*) AS c FROM reports WHERE status = 'new'"
         )
+        active_today = await self._fetchone(
+            "SELECT COUNT(*) AS c FROM users WHERE last_seen>=?", (referral_day_start(),)
+        )
+        banned = await self._fetchone("SELECT COUNT(*) AS c FROM users WHERE banned=1")
+        muted = await self._fetchone(
+            "SELECT COUNT(*) AS c FROM users WHERE mute_until>?", (now(),)
+        )
+        awarded = await self._fetchone(
+            "SELECT COALESCE(SUM(amount),0) AS c FROM xp_transactions "
+            "WHERE amount>0 AND source<>'opening_balance' AND created_at>=?",
+            (referral_day_start(),)
+        )
         return {
+            "active_today": int(active_today["c"]) if active_today else 0,
+            "banned": int(banned["c"]) if banned else 0,
+            "muted": int(muted["c"]) if muted else 0,
+            "xp_today": int(awarded["c"]) if awarded else 0,
             "users": int(total["c"]) if total else 0,
             "new_today": int(today["c"]) if today else 0,
             "active_week": int(week["c"]) if week else 0,
@@ -3005,7 +3259,7 @@ class Database:
             """SELECT user_id, nickname, messages, xp, dialogs, good_ratings,
                       support_stars, support_rub, premium_until, anon_plus_emoji
                FROM users WHERE banned = 0
-               ORDER BY xp DESC, dialogs DESC, messages DESC LIMIT ?""",
+               ORDER BY xp DESC, dialogs DESC, messages DESC, user_id ASC LIMIT ?""",
             (limit,),
         )
 
@@ -3303,7 +3557,7 @@ class Database:
     async def adjust_xp(self, user_id: int, amount: int) -> int:
         await self._ensure_row(user_id)
         await self.db.execute(
-            "UPDATE users SET xp = MAX(0, xp + ?) WHERE user_id = ?", (int(amount), user_id)
+            "UPDATE users SET xp = MAX(0, xp + ?), xp_source='admin_legacy' WHERE user_id = ?", (int(amount), user_id)
         )
         await self.db.commit()
         self._top_cache.clear()
