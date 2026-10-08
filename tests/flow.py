@@ -764,7 +764,28 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await send(D, f"/ban {C} тест")
     check("Нет доступа" in session.last_to(D), "сервер запрещает действие без права ban")
     await send(ADMIN, f"/points {A} +50")
-    check(int((await db.get_user(A))["xp"]) == 50, "владелец выдаёт очки")
+    check(int((await db.get_user(A))["xp"]) == 0,
+          "старая команда не начисляет очки без причины и подтверждения")
+    await send(ADMIN, "/admin")
+    await press(ADMIN, "adm:panel:users")
+    await press(ADMIN, f"ax:u:{A}:r:a:0")
+    await press(ADMIN, f"ax:a:{A}:+")
+    await press(ADMIN, f"ax:v:{A}:50")
+    await send(ADMIN, "тестовая компенсация")
+    confirm = next(
+        button["callback_data"]
+        for item in reversed(session.to(ADMIN))
+        for row in item.get("reply_markup", {}).get("inline_keyboard", [])
+        for button in row if button.get("callback_data", "").startswith("ax:ok:")
+    )
+    check(int((await db.get_user(A))["xp"]) == 0,
+          "сумма и причина без финального подтверждения баланс не меняют")
+    await press(ADMIN, confirm)
+    check(int((await db.get_user(A))["xp"]) == 50,
+          "владелец выдаёт очки через подтверждённую операцию")
+    await press(ADMIN, confirm)
+    check(int((await db.get_user(A))["xp"]) == 50,
+          "повторный callback не дублирует выдачу")
     session.clear()
     await send(ADMIN, "/bc Тест рассылки")
     broadcast = next(item for item in session.to(A) if item.get("text") == "Тест рассылки")
