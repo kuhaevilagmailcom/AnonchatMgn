@@ -44,6 +44,15 @@ def test_admin_miniapp_endpoints() -> None:
         await client.start_server()
         headers=lambda uid:{"X-Telegram-Init-Data":signed(uid)}
         try:
+            home=await client.get("/")
+            assert home.status==200
+            home_html=await home.text()
+            assert "admin.js?v=1" in home_html and "admin.css?v=1" in home_html
+            admin_bundle=await client.get("/admin.js")
+            assert admin_bundle.status==200
+            assert "api('/bootstrap')" in await admin_bundle.text()
+            css=await client.get("/admin.css")
+            assert css.status==200 and ".admin-center" in await css.text()
             for uid in (1001,1002,1003):
                 await db.ensure_user(uid,f"user{uid}",f"User {uid}")
             await db.award_xp(1002,50,source="message")
