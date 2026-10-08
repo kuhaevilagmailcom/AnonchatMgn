@@ -2018,6 +2018,135 @@ def test_miniapp_frontend_hardening_markers() -> None:
     assert "Сессия Telegram устарела" in app_js
 
 
+
+def test_xp_ledger_baseline_trigger_and_restart() -> None:
+    import sqlite3
+    from anonchat.db import SCHEMA
+
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "ledger.db"
+        with sqlite3.connect(path) as conn:
+            conn.executescript(SCHEMA)
+            conn.execute(
+                "INSERT INTO users(user_id, xp, created_at) VALUES (?,?,?)",
+                (84001, 345, referral_day_start()-86400),
+            )
+        db = await Database(path).start()
+        try:
+            rows, summary = await db.xp_history(84001)
+            assert len(rows) == 1 and rows[0]["source"] == "opening_balance"
+            assert rows[0]["balance_after"] == 345
+            assert summary["credits"] == 345
+            await db.award_xp(84001, 15, source="message")
+            rows, _ = await db.xp_history(84001)
+            assert rows[0]["amount"] == 15 and rows[0]["source"] == "message"
+            assert rows[0]["balance_after"] == 360
+            await db.db.execute("UPDATE users SET xp=xp+7 WHERE user_id=84001")
+            rows, _ = await db.xp_history(84001)
+            assert rows[0]["amount"] == 7 and rows[0]["source"] == "other"
+        finally:
+            await db.close()
+        db = await Database(path).start()
+        try:
+            rows, summary = await db.xp_history(84001)
+            assert len(rows) == 3, "рестарт не создаёт дубликат начального баланса"
+            assert summary["credits"] == 367
+            assert int((await db.get_user(84001))["xp"]) == 367
+        finally:
+            await db.close()
+    asyncio.run(scenario())
+
+
+def test_xp_change_idempotent_concurrent_and_negative_guard() -> None:
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "concurrent-ledger.db"
+        db = await Database(path).start()
+        try:
+            await db.ensure_user(84011, "alice", "Alice")
+            results = await asyncio.gather(*[
+                db.change_xp(84011, 100, source="admin_award", reason="тест",
+                             actor_id=999, idempotency_key="once-84011")
+                for _ in range(8)
+            ])
+            assert sum(applied for _, applied in results) == 1
+            assert all(balance == 100 for balance, _ in results)
+            try:
+                await db.change_xp(84011, -101, source="admin_debit",
+                                   reason="тест", actor_id=999)
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("списание не должно уводить баланс в минус")
+            try:
+                await db.change_xp(84011, -10, source="admin_debit", reason="")
+            except ValueError:
+                pass
+            else:
+                raise AssertionError("причина обязательна")
+            balance, applied = await db.change_xp(
+                84011, -40, source="admin_debit", reason="корректировка",
+                actor_id=999, idempotency_key="debit-84011",
+            )
+            assert applied and balance == 60
+            rows, summary = await db.xp_history(84011)
+            assert len(rows) == 2
+            assert rows[0]["actor_id"] == 999 and rows[0]["reason"] == "корректировка"
+            assert summary == {"count": 2, "credits": 100, "debits": 40}
+            totals = await db.activity_totals(84011, 7)
+            assert totals["xp_earned"] == 100
+        finally:
+            await db.close()
+    asyncio.run(scenario())
+
+
+def test_xp_period_top_includes_debits_and_admin_lists() -> None:
+    async def scenario() -> None:
+        path = Path(tempfile.mkdtemp()) / "admin-top.db"
+        db = await Database(path).start()
+        try:
+            for uid, nickname in [(84021,"One"), (84022,"Two"), (84023,"Three")]:
+                await db.ensure_user(uid, f"user{uid}", nickname)
+                await db.set_profile(uid, nickname=nickname)
+            await db.award_xp(84021, 110, source="message")
+            await db.award_xp(84022, 90, source="message")
+            await db.award_xp(84023, 10, source="message")
+            await db.change_xp(84021, -50, source="admin_debit",
+                               reason="корректировка", actor_id=999)
+            for days in (7,30):
+                top=await db.top_period(days)
+                assert [int(row["user_id"]) for row in top][:2] == [84022,84021]
+                assert [int(row["xp"]) for row in top][:2] == [90,60]
+                mine=await db.top_position_period(84021,days)
+                assert mine["place"]==2 and mine["stars"]==60
+            all_time=await db.top_period(0)
+            assert [int(row["xp"]) for row in all_time][:2] == [90,60]
+            rows,total=await db.admin_user_list(sort="xp",limit=2,offset=0)
+            assert total==3 and [int(row["user_id"]) for row in rows]==[84022,84021]
+            rows,total=await db.admin_user_list(sort="xp",limit=2,offset=2)
+            assert total==3 and len(rows)==1
+            rows,total=await db.admin_user_list(query="@user84022")
+            assert total==1 and int(rows[0]["user_id"])==84022
+            rows,total=await db.admin_user_list(query="Two")
+            assert total==1 and int(rows[0]["user_id"])==84022
+            rows,total=await db.admin_user_list(query="84021")
+            assert total==1 and int(rows[0]["user_id"])==84021
+        finally:
+            await db.close()
+    asyncio.run(scenario())
+
+
+def test_xp_period_boundaries_magnitogorsk() -> None:
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    zone=ZoneInfo("Asia/Yekaterinburg")
+    now_value=int(datetime(2026,10,8,18,0,tzinfo=zone).timestamp())
+    week=int(datetime(2026,10,5,0,0,tzinfo=zone).timestamp())
+    month=int(datetime(2026,10,1,0,0,tzinfo=zone).timestamp())
+    assert week_period_start(now_value)==week
+    assert month_period_start(now_value)==month
+    assert week_period_start(week-1)<week
+    assert month_period_start(month-1)<month
+
 def run_all() -> int:  # python -m tests.core
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     for fn in fns:
