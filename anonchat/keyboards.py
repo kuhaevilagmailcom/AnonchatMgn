@@ -661,9 +661,9 @@ def admin_panel_keyboard(
         _button(b, "Разбан по id", callback_data=CB_PANEL_UNBAN, icon="check")
         _button(b, "Бан-лист", callback_data=CB_PANEL_BAN_LIST, icon="delete")
     if "points" in permissions:
-        _button(b, "⭐ Начисления", callback_data=CB_PANEL_POINTS, icon="stars")
+        _button(b, "Начисления", callback_data=CB_PANEL_POINTS, icon="stars")
     if "stats" in permissions:
-        _button(b, "🏆 Проверка топов", callback_data="ax:t:w", icon="bonus")
+        _button(b, "Проверка топов", callback_data="ax:t:w", icon="bonus")
     if owner:
         _button(
             b, f"Множитель: x{int(xp_multiplier)}",
