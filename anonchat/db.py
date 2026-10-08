@@ -451,7 +451,7 @@ class Database:
         self._anon_question_lock = asyncio.Lock()
         self._xp_lock = asyncio.Lock()
         self._admin_permissions_cache: dict[int, tuple[float, frozenset[str]]] = {}
-        self._top_cache: dict[tuple[int, int], tuple[float, list[aiosqlite.Row]]] = {}
+        self._top_cache: dict[tuple[int, ...], tuple[float, list[aiosqlite.Row]]] = {}
         self._xp_multiplier_cache: int | None = None
 
     # ------------------------------------------------------------------ lifecycle
@@ -2865,7 +2865,7 @@ class Database:
             ), deductions AS (
                 SELECT user_id, SUM(amount) debits
                   FROM xp_transactions
-                 WHERE created_at >= ? AND amount < 0
+                 WHERE created_at >= ? AND amount < 0 AND source <> 'referral_correction'
                  GROUP BY user_id
             ), scores AS (
                 SELECT u.user_id, u.nickname, u.support_stars,
