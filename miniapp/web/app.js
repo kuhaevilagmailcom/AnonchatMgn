@@ -70,7 +70,7 @@ if (typeof window === 'undefined') {
     "gift":"<path d=\"M4 11V15C4 18.2998 4 19.9497 5.02513 20.9749C6.05025 22 7.70017 22 11 22H13C16.2998 22 17.9497 22 18.9749 20.9749C20 19.9497 20 18.2998 20 15V11\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n<path d=\"M3 9C3 8.25231 3 7.87846 3.20096 7.6C3.33261 7.41758 3.52197 7.26609 3.75 7.16077C4.09808 7 4.56538 7 5.5 7H18.5C19.4346 7 19.9019 7 20.25 7.16077C20.478 7.26609 20.6674 7.41758 20.799 7.6C21 7.87846 21 8.25231 21 9C21 9.74769 21 10.1215 20.799 10.4C20.6674 10.5824 20.478 10.7339 20.25 10.8392C19.9019 11 19.4346 11 18.5 11H5.5C4.56538 11 4.09808 11 3.75 10.8392C3.52197 10.7339 3.33261 10.5824 3.20096 10.4C3 10.1215 3 9.74769 3 9Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\"/>\n<path d=\"M6 3.78571C6 2.79949 6.79949 2 7.78571 2H8.14286C10.2731 2 12 3.7269 12 5.85714V7H9.21429C7.43908 7 6 5.56091 6 3.78571Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\"/>\n<path d=\"M18 3.78571C18 2.79949 17.2005 2 16.2143 2H15.8571C13.7269 2 12 3.7269 12 5.85714V7H14.7857C16.5609 7 18 5.56091 18 3.78571Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linejoin=\"round\"/>\n<path d=\"M12 11L12 22\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>",
     "trophy":"<path d=\"M5 21H19\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n<path d=\"M12.125 12.75H12M12.25 12.75C12.25 12.8881 12.1381 13 12 13C11.8619 13 11.75 12.8881 11.75 12.75C11.75 12.6119 11.8619 12.5 12 12.5C12.1381 12.5 12.25 12.6119 12.25 12.75Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n<path d=\"M14.9152 7.61089L13.8078 5.38179C13.019 3.79393 12.6246 3 12 3C11.3754 3 10.981 3.79393 10.1922 5.38179L9.08483 7.61089C8.58107 8.62494 8.32919 9.13197 7.87976 9.24608C7.8485 9.25401 7.81689 9.26043 7.78503 9.26533C7.32682 9.3357 6.89919 8.96678 6.04393 8.22895C4.0124 6.47635 2.99663 5.60004 2.38034 5.94899C2.34045 5.97157 2.30213 5.99686 2.26565 6.02467C1.70197 6.45439 2.09541 7.74136 2.88229 10.3153L4.04783 14.1279C4.47098 15.5121 4.68255 16.2042 5.21787 16.6021C5.75318 17 6.47261 17 7.91147 17L16.0886 16.9999C17.5274 16.9999 18.2468 16.9999 18.7821 16.602C19.3175 16.2041 19.529 15.512 19.9522 14.1279L21.1177 10.3153C21.9046 7.74137 22.298 6.4544 21.7344 6.02468C21.6979 5.99687 21.6595 5.97158 21.6197 5.94899C21.0034 5.60006 19.9876 6.47636 17.9561 8.22896C17.1008 8.96679 16.6732 9.3357 16.215 9.26533C16.1831 9.26043 16.1515 9.25401 16.1202 9.24607C15.6708 9.13197 15.4189 8.62494 14.9152 7.61089Z\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>"
   };
-  const state = {page:'home', modal:null, status:'free', position:null, user:{nick:'Аноним',rank:'👤 Вася',stars:0,age:0,district:'',gender:'',looking_for:'',photo_url:'',theme:'pink'},stats:{online:0,chatting:0,searching:0,dialogs:0,messages:0,ratings:0,games:0,battle_games:0,number_games:0,streak:0,best_streak:0,quest_current:0,quest_target:20},referral:{invited:0,earned:0},referral_url:'',bot_url:'',events:[],subscription:null};
+  const state = {page:'home', modal:null, status:'free', position:null, user:{nick:'Аноним',rank:'👤 Вася',stars:0,age:0,district:'',gender:'',looking_for:'',photo_url:'',theme:'pink'},stats:{online:0,chatting:0,searching:0,dialogs:0,messages:0,ratings:0,games:0,battle_games:0,number_games:0,streak:0,best_streak:0,quest_current:0,quest_target:20},referral:{invited:0,earned:0},referral_url:'',bot_url:'',events:[],subscription:null,gameRewards:{earned:0,remaining:500,limit:500};
   let statusRequestSeq = 0;
   let statusAppliedSeq = 0;
   let statusTimer = null;
@@ -212,7 +212,7 @@ if (typeof window === 'undefined') {
     setAll('nick',state.user.nick);setAll('rank',state.user.rank);setAll('stars',state.user.stars);
     setAll('online',state.stats.online);setAll('chatting',state.stats.chatting);setAll('searching',state.stats.searching);
     setAll('dialogs',state.stats.dialogs);setAll('messages',state.stats.messages);setAll('ratings',state.stats.ratings);setAll('games',state.stats.games);
-    setAll('battle-games',state.stats.battle_games);setAll('number-games',state.stats.number_games);setAll('streak',state.stats.streak);
+    setAll('battle-games',state.stats.battle_games);setAll('game-remaining',state.gameRewards.remaining);setAll('streak',state.stats.streak);
     setAll('invited',state.referral.invited);setAll('ref-earned',state.referral.earned);
     setAll('quest-progress-text',`${state.stats.quest_current}/${state.stats.quest_target}`);
     $$('[data-quest-progress]').forEach(el=>el.style.width=`${Math.min(100,state.stats.quest_current/Math.max(1,state.stats.quest_target)*100)}%`);
@@ -360,11 +360,18 @@ if (typeof window === 'undefined') {
     if(data){
       state.user={...state.user,...data.user};state.stats={...state.stats,...data.stats};
       state.referral=data.referral||state.referral;state.referral_url=data.referral_url||'';state.bot_url=data.bot_url||'';
-      state.events=data.notifications||[];applyStatusSnapshot(data,seq);
+      state.events=data.notifications||[];state.gameRewards=data.game_rewards||state.gameRewards;applyStatusSnapshot(data,seq);
       await Promise.all([loadHomePoll(),loadHomeQuest()]);
       return;
     }
     render();
+  }
+  async function loadGameQuota(){
+    if(!tg?.initData)return;
+    try{
+      const data=await request('/api/miniapp/me');
+      if(data?.game_rewards){state.gameRewards=data.game_rewards;setAll('game-remaining',data.game_rewards.remaining)}
+    }catch(_){}
   }
   function go(page){
     if(page==='chat' && state.status!=='paired')page=state.status==='queued'?'search':'home';
@@ -378,6 +385,7 @@ if (typeof window === 'undefined') {
     if(page==='top')loadTopPage(topPeriod);
     if(page==='events')loadNotifications(true);
     if(page==='home'){loadHomePoll();loadHomeQuest()}
+    if(page==='games'&&tg?.initData)loadGameQuota()
     if(page==='chat'){syncChat(true);startChatSync()}else stopChatSync();
     try{if(tgAtLeast('6.1'))page==='home'?tg.BackButton.hide():tg.BackButton.show()}catch(_){}
   }
@@ -506,7 +514,6 @@ if (typeof window === 'undefined') {
         <div class="chat-game-picker">
           <button data-chat-game="words"><span>🗣</span><div><strong>Объясни слово</strong><small>Один объясняет, второй угадывает</small></div></button>
           <button data-chat-game="battle"><span>⚔️</span><div><strong>Битва мнений</strong><small>5 или 10 вопросов</small></div></button>
-          <button data-chat-game="numbers"><span>🔢</span><div><strong>Числа</strong><small>Угадайте одинаковое число</small></div></button>
           <button data-chat-game="geo"><span>🗺</span><div><strong>GeoGuessr📍</strong><small>Угадай место в Магнитогорске</small></div></button>
         </div>`;
       $$('[data-chat-game]',body).forEach(b=>b.onclick=()=>{
@@ -514,12 +521,11 @@ if (typeof window === 'undefined') {
         if(game==='words')inviteWords();
         else if(game==='battle'){closeModal();openModal('battle','Битва мнений','ИГРА ВДВОЁМ')}
         else if(game==='geo'){closeModal();openModal('geo','GeoGuessr📍','МАГНИТОГОРСК')}
-        else{closeModal();openModal('numbers','Числа','ИГРА ВДВОЁМ')}
+        else toast('Эта игра недоступна')
       });
       return;
     }
-    if(kind==='battle'){body.innerHTML=`${panel('Битва мнений','Оба отвечают отдельно. Идеальное совпадение 5/5 или 10/10 даёт каждому 25 ★ базово. В x2/x3 награда умножается.')}<div class="modal-actions"><button class="action" data-battle="5">5 вопросов</button><button class="action accent" data-battle="10">10 вопросов</button></div>`;$$('[data-battle]',body).forEach(b=>b.onclick=()=>inviteBattle(+b.dataset.battle));return}
-    if(kind==='numbers'){body.innerHTML=`${panel('Числа · 3 раунда','Точное совпадение даёт полную награду, близкое — половину. Лимитов по звёздам нет, x2/x3 применяется автоматически.')}<div class="modal-actions one"><button class="action" data-range="10">1–10 · 15 ★</button><button class="action" data-range="100">1–100 · 25 ★</button><button class="action accent" data-range="1000">1–1000 · 50 ★</button></div>`;$$('[data-range]',body).forEach(b=>b.onclick=()=>inviteNumbers(+b.dataset.range));return}
+    if(kind==='battle'){body.innerHTML=`${panel('Битва мнений','Идеальное совпадение 5/5 или 10/10 даёт каждому 25 ★ базово. x2/x3 учитывается, но из всех игр за день начисляется максимум 500 ★.')}<div class="modal-actions"><button class="action" data-battle="5">5 вопросов</button><button class="action accent" data-battle="10">10 вопросов</button></div>`;$$('[data-battle]',body).forEach(b=>b.onclick=()=>inviteBattle(+b.dataset.battle));return}
     if(kind==='geo'){
       body.innerHTML=`
         <section class="geo-intro">
@@ -1173,7 +1179,6 @@ if (typeof window === 'undefined') {
     if(r){closeModal();toast(r.message||'Приглашение отправлено');notify();syncChat(false)}
   }
   async function inviteBattle(total){const r=await safe('/api/miniapp/games/battle/invite',{method:'POST',body:JSON.stringify({total})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify();syncChat(false)}}
-  async function inviteNumbers(range_max){const r=await safe('/api/miniapp/games/numbers/invite',{method:'POST',body:JSON.stringify({range_max})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение отправлено');notify();syncChat(false)}}
   async function inviteGeo(rounds){const r=await safe('/api/miniapp/games/geo/invite',{method:'POST',body:JSON.stringify({rounds})},null);if(r||!tg?.initData){closeModal();toast(r?.message||'Приглашение в GeoGuessr📍 отправлено');notify();syncChat(false)}}
   function bind(){
     document.addEventListener('click',e=>{const nav=e.target.closest('[data-nav]');if(nav)go(nav.dataset.nav);const open=e.target.closest('[data-open]');if(open){const labels={'settings':'Настройки','edit-profile':'Изменить профиль','quests':'Цели дня','streak':'Серия активности','activity':'Моя активность','top':'Топ 10','referral':'Приглашения','feedback':'Обратная связь','rules':'Правила'};openModal(open.dataset.open,labels[open.dataset.open]||'АНОН МГН')}const game=e.target.closest('[data-game]');if(game){if(game.dataset.game==='words')inviteWords();else openModal(game.dataset.game,game.dataset.game==='battle'?'Битва мнений':game.dataset.game==='geo'?'GeoGuessr📍':'Числа',game.dataset.game==='geo'?'МАГНИТОГОРСК':'ИГРА ВДВОЁМ')}});
