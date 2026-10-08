@@ -115,6 +115,36 @@ def test_admin_miniapp_endpoints() -> None:
                           "/api/miniapp/admin/diagnostics","/api/miniapp/admin/sources"):
                 response=await client.get(route,headers=headers(1001))
                 assert response.status==200,(route,await response.text())
+            # New admin-only monitors and owner-managed polls.
+            mm.connect(1002)
+            queue=await client.get("/api/miniapp/admin/queue",headers=headers(1001))
+            assert queue.status==200
+            assert any(int(x["user_id"])==1002 for x in (await queue.json())["items"])
+            poll_input={"action":"create","question":"Как дела?",
+                        "option_a":"Отлично","option_b":"Нормально",
+                        "key":"integration-new-poll-001"}
+            poll_post=await client.post("/api/miniapp/admin/polls",
+                                        headers=headers(1001),json=poll_input)
+            assert poll_post.status==200 and (await poll_post.json())["applied"]
+            poll_view=await client.get("/api/miniapp/admin/polls",headers=headers(1001))
+            assert (await poll_view.json())["active"]["question"]=="Как дела?"
+            poll_close=await client.post("/api/miniapp/admin/polls",
+                         headers=headers(1001),json={"action":"close",
+                                                      "key":"integration-close-poll-002"})
+            assert poll_close.status==200
+            export=await client.get(
+                "/api/miniapp/admin/transactions/export?user_id=1002&period=today",
+                headers=headers(1001),
+            )
+            assert export.status==200
+            csvbody=await export.read()
+            assert csvbody.startswith(bytes((239,187,191)))
+            assert b"admin_award" in csvbody and b"balance_after" in csvbody
+            non_admin_export=await client.get(
+                "/api/miniapp/admin/transactions/export",
+                headers=headers(1002),
+            )
+            assert non_admin_export.status==403
             insecure=await client.post("/api/miniapp/admin/moderate",headers=headers(1002),
                                       json=moderation)
             assert insecure.status==403
