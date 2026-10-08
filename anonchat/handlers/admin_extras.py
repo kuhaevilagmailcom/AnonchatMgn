@@ -257,6 +257,90 @@ async def show_top_check(ctx: Ctx, db: Database, period: str) -> None:
     await _screen(ctx,"\n".join(lines),b.as_markup())
 
 
+
+async def show_global_ledger(ctx: Ctx, db: Database, offset: int = 0) -> None:
+    """Админский журнал без загрузки всего массива транзакций."""
+    if not ctx.can("points"):
+        await ctx.ack("Нет доступа", alert=True)
+        return
+    offset = max(0, min(int(offset), 1000000))
+    rows = await db._fetchall(
+        """SELECT t.*, u.nickname, u.support_stars
+           FROM xp_transactions t
+           JOIN users u ON u.user_id=t.user_id
+          ORDER BY t.id DESC LIMIT 13 OFFSET ?""",
+        (offset,),
+    )
+    shown = rows[:12]
+    lines = ["⭐ <b>Начисления · журнал</b>",
+             f"Операции {offset+1}–{offset+len(shown)}", ""]
+    b = InlineKeyboardBuilder()
+    for r in shown:
+        sign = int(r["amount"])
+        desc = XP_NAMES.get(str(r["source"]), str(r["source"]))
+        lines.append(
+            f"<b>{sign:+} ⭐</b> · {texts.esc(desc)} · {texts.esc(_name(r))}\n"
+            f"ID <code>{r['user_id']}</code> · {_date(r['created_at'])}"
+            + (f" · {texts.esc(str(r['reason'])[:70])}" if r["reason"] else "")
+        )
+        if ctx.can("users"):
+            _button(b, f"ID {r['user_id']} · {sign:+} ⭐", f"ax:u:{r['user_id']}:r:a:0")
+    if not shown:
+        lines.append("Операций ещё нет.")
+    if offset:
+        _button(b, "← Назад", f"ax:ledger:{max(0,offset-12)}")
+    if len(rows) > 12:
+        _button(b, "Дальше →", f"ax:ledger:{offset+12}")
+    if ctx.can("users"):
+        _button(b, "Найти пользователя", "ax:q")
+    _button(b, "В админку", K.CB_PANEL_BACK)
+    b.adjust(*([1]*len(shown)), 2, 1, 1)
+    await _screen(ctx, "\n".join(lines)[:3900], b.as_markup())
+
+
+async def show_active_chats(ctx: Ctx, db: Database, mm: Matchmaker, page: int = 0) -> None:
+    if not ctx.can("monitor"):
+        await ctx.ack("Нет доступа", alert=True)
+        return
+    # Обходим только активные пары matchmaker, не всю таблицу users.
+    pairs = sorted({
+        tuple(sorted((int(uid), int(pair.partner_of(uid)))))
+        for uid, pair in mm._pairs.items()
+    })
+    page = max(0, min(int(page), max(0, (len(pairs)-1)//12)))
+    selected = pairs[page*12:(page+1)*12]
+    user_ids = sorted({uid for pair in selected for uid in pair})
+    user_rows = {}
+    if user_ids:
+        placeholders = ",".join("?" for _ in user_ids)
+        people = await db._fetchall(
+            f"SELECT user_id, nickname, support_stars FROM users WHERE user_id IN ({placeholders})",
+            tuple(user_ids),
+        )
+        user_rows = {int(u["user_id"]): u for u in people}
+    lines = [f"💬 <b>Активные диалоги · {len(pairs)}</b>",
+             f"Страница {page+1}/{max(1,(len(pairs)+11)//12)}", ""]
+    b = InlineKeyboardBuilder()
+    for i, (a,c) in enumerate(selected, 1+12*page):
+        name_a = _name(user_rows[a]) if a in user_rows else str(a)
+        name_c = _name(user_rows[c]) if c in user_rows else str(c)
+        lines.append(f"{i}. {texts.esc(name_a)} ↔ {texts.esc(name_c)}\n"
+                     f"<code>{a}</code> · <code>{c}</code>")
+        if ctx.can("users"):
+            _button(b, f"Карточка {a}", f"ax:u:{a}:r:a:0")
+            _button(b, f"Карточка {c}", f"ax:u:{c}:r:a:0")
+    if not selected:
+        lines.append("Сейчас нет активных диалогов.")
+    if page:
+        _button(b, "← Назад", f"ax:chats:{page-1}")
+    if (page+1)*12 < len(pairs):
+        _button(b, "Вперёд →", f"ax:chats:{page+1}")
+    _button(b, "Обновить", f"ax:chats:{page}")
+    _button(b, "В админку", K.CB_PANEL_BACK)
+    b.adjust(*([2]*len(selected)), 2, 2)
+    await _screen(ctx, "\n".join(lines)[:3900], b.as_markup())
+
+
 async def start_search(ctx: Ctx,state:FSMContext) -> None:
     await state.set_state(ExtraStates.search)
     await _screen(ctx,"🔎 Отправь ID, @username, ник или имя. Для сброса нажми «Отмена».",K.panel_cancel_keyboard())
@@ -342,7 +426,11 @@ async def extras_callback(
     parts=(event.data or '').split(':')
     action=parts[1] if len(parts)>1 else ''
     try:
-        if action == 'l' and len(parts)==5:
+        if action == 'ledger' and len(parts)==3:
+            await show_global_ledger(ctx, db, int(parts[2]))
+        elif action == 'chats' and len(parts)==3:
+            await show_active_chats(ctx, db, mm, int(parts[2]))
+        elif action == 'l' and len(parts)==5:
             await show_users(ctx,db,mm,state,parts[2],parts[3],int(parts[4]))
         elif action == 'q':
             if not ctx.can("users"):
