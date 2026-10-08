@@ -3220,7 +3220,23 @@ class Database:
         open_reports = await self._fetchone(
             "SELECT COUNT(*) AS c FROM reports WHERE status = 'new'"
         )
+        active_today = await self._fetchone(
+            "SELECT COUNT(*) AS c FROM users WHERE last_seen>=?", (referral_day_start(),)
+        )
+        banned = await self._fetchone("SELECT COUNT(*) AS c FROM users WHERE banned=1")
+        muted = await self._fetchone(
+            "SELECT COUNT(*) AS c FROM users WHERE mute_until>?", (now(),)
+        )
+        awarded = await self._fetchone(
+            "SELECT COALESCE(SUM(amount),0) AS c FROM xp_transactions "
+            "WHERE amount>0 AND source<>'opening_balance' AND created_at>=?",
+            (referral_day_start(),)
+        )
         return {
+            "active_today": int(active_today["c"]) if active_today else 0,
+            "banned": int(banned["c"]) if banned else 0,
+            "muted": int(muted["c"]) if muted else 0,
+            "xp_today": int(awarded["c"]) if awarded else 0,
             "users": int(total["c"]) if total else 0,
             "new_today": int(today["c"]) if today else 0,
             "active_week": int(week["c"]) if week else 0,
