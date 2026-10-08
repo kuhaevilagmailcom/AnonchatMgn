@@ -9,13 +9,14 @@
   const fmt = n => Number(n||0).toLocaleString('ru-RU');
   const date = t => t ? new Date(Number(t)*1000).toLocaleString('ru-RU',{timeZone:'Asia/Yekaterinburg',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
   const sourceNames = {opening_balance:'Начальный баланс',message:'Сообщения',dialog:'Диалог',rating:'Оценка',referral:'Реферал',battle:'Битва мнений',numbers:'Числа',word_game:'Объясни слово',geoguessr:'GeoGuessr',achievement:'Достижение',daily_quest:'Задание',subscription:'Подписка',report:'Жалоба',admin_award:'Выдал администратор',admin_debit:'Списал администратор',admin_legacy:'Старое начисление',other:'Другое',one_time_reward:'Разовая награда',referral_correction:'Корректировка реферала'};
-  const labels = {dashboard:'Обзор',users:'Пользователи',user:'Карточка',ledger:'Начисления',rankings:'Топы',reports:'Жалобы',ban:'Бан-лист',mute:'Мут-лист',chats:'Диалоги',games:'Игры',analytics:'Аналитика',admins:'Администраторы',broadcast:'Рассылка',diagnostics:'Диагностика',audit:'Аудит'};
+  const labels = {dashboard:'Обзор',users:'Пользователи',user:'Карточка',ledger:'Начисления',rankings:'Топы',reports:'Жалобы',ban:'Бан-лист',mute:'Мут-лист',chats:'Диалоги',games:'Игры',analytics:'Аналитика',admins:'Администраторы',broadcast:'Рассылка',diagnostics:'Диагностика',audit:'Аудит',queue:'Очередь',polls:'Опрос дня'};
   const sections = [
     ['dashboard','Обзор',null],['users','Пользователи','users'],['ledger','Начисления','points'],
+    ['queue','Очередь','queue'],
     ['rankings','Топы','stats'],['reports','Жалобы','reports'],['ban','Бан-лист','ban'],
     ['mute','Мут-лист','mute'],['chats','Диалоги','monitor'],['games','Игры','monitor'],
     ['analytics','Аналитика','stats'],['broadcast','Рассылка','broadcast'],
-    ['admins','Администраторы','owner'],['audit','Аудит','stats'],
+    ['admins','Администраторы','owner'],['polls','Опрос дня','owner'],['audit','Аудит','stats'],
     ['diagnostics','Диагностика','stats']
   ];
   const opt = (items, current) => items.map(([value,title])=>'<option value="'+escape(value)+'"'+(String(value)===String(current)?' selected':'')+'>'+escape(title)+'</option>').join('');
@@ -23,7 +24,7 @@
   const state = {permissions:[], owner:false, page:'dashboard', back:'users', selectedId:0, query:'',
     sort:'recent',userFilter:'all',usersPage:0,ledgerPage:0,ledgerKind:'all',ledgerPeriod:'today',
     ledgerSource:'',ledgerUser:'',reportsPage:0,reportsStatus:'new',restrictedPage:0,
-    rankingPeriod:'week',chatsPage:0,gamesPage:0,actionsPage:0,
+    rankingPeriod:'week',chatsPage:0,gamesPage:0,queuePage:0,actionsPage:0,
     modal:null,loading:false,nonce:0, broadcastKey:''};
   const can = p => state.owner || state.permissions.includes(p);
   const root=document.createElement('div');
@@ -88,6 +89,8 @@
       else if(state.page==='reports')result=await reports();
       else if(state.page==='ban'||state.page==='mute')result=await restrictions();
       else if(state.page==='chats')result=await chats();
+      else if(state.page==='queue')result=await queue();
+      else if(state.page==='polls')result=await polls();
       else if(state.page==='games')result=await games();
       else if(state.page==='analytics')result=await analytics();
       else if(state.page==='admins')result=await admins();
@@ -177,7 +180,8 @@
         (tx.reference_id?'<br>Ссылка: '+escape(tx.reference_type||'')+' '+escape(tx.reference_id):''),
         'openUser',tx.user_id,tx.source==='opening_balance'?pill('Архив','muted'):''
       )).join(''):placeholder)+'</div>'+
-      pageNav(state.ledgerPage,d.has_more,'ledgerPage');
+      pageNav(state.ledgerPage,d.has_more,'ledgerPage')+
+      '<div class="admin-actions">'+navButton('Экспорт CSV','exportLedger')+'</div>';
   }
   async function rankings(){
     const d=await api('/rankings',{}, {period:state.rankingPeriod});
@@ -214,6 +218,34 @@
       '<div class="admin-list">'+(d.items?.length?d.items.map(i=>'<div class="admin-pair"><span>💬 Пара</span>'+navButton('ID '+i.user_a,'openUser',i.user_a)+
       '<b>↔</b>'+navButton('ID '+i.user_b,'openUser',i.user_b)+'</div>').join(''):placeholder)+'</div>'+
       pageNav(state.chatsPage,state.chatsPage+1<d.pages,'chatsPage');
+  }
+  async function queue(){
+    const d=await api('/queue',{}, {page:state.queuePage});
+    return wrapHeader('Ожидают: '+d.total)+
+      '<div class="admin-list">'+(d.items?.length?d.items.map((q,i)=>row(
+      '№'+(state.queuePage*15+i+1)+' · ID '+q.user_id,
+      'Берег: '+escape(q.district||'любой')+' · пол '+escape(q.gender||'любой')+
+      ' · ищет '+escape(q.looking_for||'любого')+' · ожидает '+Math.floor(q.waiting_seconds/60)+' мин',
+      'openUser',q.user_id)).join(''):placeholder)+'</div>'+
+      pageNav(state.queuePage,state.queuePage+1<d.pages,'queuePage');
+  }
+  async function polls(){
+    const d=await api('/polls'),p=d.active,r=d.results||{};
+    return wrapHeader('Управление голосованиями')+
+      (p?'<div class="admin-report"><strong>'+escape(p.question)+'</strong><p>'+
+      escape(p.option_a)+' · '+fmt(r.a)+' ('+fmt(r.pct_a)+'%)<br>'+
+      escape(p.option_b)+' · '+fmt(r.b)+' ('+fmt(r.pct_b)+'%)</p>'+
+      '<small>Всего голосов: '+fmt(r.total)+'</small>'+
+      navButton('Завершить опрос','closePoll','','danger')+'</div>'+
+      '<div class="admin-subheading">Последние голоса</div><div class="admin-list">'+
+      (d.voters?.length?d.voters.map(v=>row(escape(v.nickname||v.first_name||'Аноним'),
+      'ID '+v.user_id+' · '+(v.choice===0?escape(p.option_a):escape(p.option_b))+' · '+date(v.updated_at),
+      'openUser',v.user_id)).join(''):placeholder)+'</div>':placeholder)+
+      '<div class="admin-subheading">Новый опрос</div><form id="adminPollForm" class="admin-form">'+
+      '<label>Вопрос<input name="question" maxlength="250" required></label>'+
+      '<label>Вариант 1<input name="option_a" maxlength="48" required></label>'+
+      '<label>Вариант 2<input name="option_b" maxlength="48" required></label>'+
+      '<button type="submit" class="admin-primary">Создать опрос</button></form>';
   }
   async function games(){
     const d=await api('/games',{}, {page:state.gamesPage});
@@ -336,9 +368,26 @@
       else if(action==='reportsPage'){state.reportsPage=Number(value);render()}
       else if(action==='restrictedPage'){state.restrictedPage=Number(value);render()}
       else if(action==='chatsPage'){state.chatsPage=Number(value);render()}
+      else if(action==='queuePage'){state.queuePage=Number(value);render()}
       else if(action==='gamesPage'){state.gamesPage=Number(value);render()}
       else if(action==='actionsPage'){state.actionsPage=Number(value);render()}
       else if(action==='backup')await downloadBackup();
+      else if(action==='exportLedger'){
+        const params={period:state.ledgerPeriod,kind:state.ledgerKind,
+          source:state.ledgerSource,user_id:state.ledgerUser};
+        const response=await fetch(url('/transactions/export',params),{
+          headers:{'X-Telegram-Init-Data':tg.initData},cache:'no-store'});
+        if(!response.ok)throw new Error('Экспорт недоступен: '+response.status);
+        const object=URL.createObjectURL(await response.blob());
+        const link=document.createElement('a');link.href=object;
+        link.download='anon_mgn_history.csv';document.body.append(link);link.click();link.remove();
+        setTimeout(()=>URL.revokeObjectURL(object),10000);
+      }
+      else if(action==='closePoll'){
+        if(!confirm('Закрыть текущий опрос?'))return;
+        await post('/polls',{action:'close',key:key(),question:''});
+        toast('Опрос завершён');render();
+      }
       else if(action==='broadcastStatus')await statusBroadcast();
       else if(action==='multiplier'){showModal('<h2>Множитель очков</h2><p class="admin-muted">Устанавливает ручной x1/x2/x3. Автоматический x2 по дням недели действует отдельно.</p><div class="admin-actions">'+[1,2,3].map(n=>navButton('×'+n,'setMultiplier',n)).join('')+'</div>')}
       else if(action==='setMultiplier'){if(!confirm('Установить x'+value+'?'))return;const d=await post('/multiplier',{value:Number(value)});closeModal();toast('Множитель: x'+d.multiplier);render()}
@@ -398,6 +447,14 @@
         if(!Number.isInteger(user_id)||user_id<1)throw new Error('Неверный Telegram ID');
         if(!confirm('Сохранить права для ID '+user_id+'?'))return;
         await post('/admins',{user_id,permissions});closeModal();toast('Права обновлены');render();
+      }else if(id==='adminPollForm'){
+        const question=String(data.get('question')||'').trim(),
+              option_a=String(data.get('option_a')||'').trim(),
+              option_b=String(data.get('option_b')||'').trim();
+        if(!question||!option_a||!option_b)throw new Error('Заполни все поля');
+        if(!confirm('Опубликовать новый опрос? Предыдущий закроется.'))return;
+        await post('/polls',{action:'create',question,option_a,option_b,key:key()});
+        toast('Опрос создан');render();
       }else if(id==='adminBroadcastForm'){
         const message=String(data.get('message')||'').trim(),button_text=String(data.get('button_text')||'').trim(),button_url=String(data.get('button_url')||'').trim();
         if(!message)throw new Error('Напиши текст рассылки');
