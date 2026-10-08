@@ -27,7 +27,6 @@ QUEST_POOL = (
     Quest("game1", "Сыграть одну игру", "games", 1, 25),
     Quest("game2", "Сыграть 2 игры", "games", 2, 50),
     Quest("battle1", "Сыграть в Битву мнений", "battle_games", 1, 25),
-    Quest("numbers1", "Сыграть в Числа", "number_games", 1, 25),
 )
 
 ACHIEVEMENTS = (
@@ -46,7 +45,6 @@ ACHIEVEMENTS = (
     ("game_50", "50 игр", "games_total", 50, 100),
     ("battle_5", "Идеальная Битва мнений 5/5", "battle_perfect_5", 1, 50),
     ("battle_10", "Идеальная Битва мнений 10/10", "battle_perfect_10", 1, 100),
-    ("number_1000", "Точное совпадение в Числах 1–1000", "number_exact_1000", 1, 100),
     ("streak_3", "Серия 3 дня", "current_streak", 3, 25),
     ("streak_7", "Серия 7 дней", "current_streak", 7, 50),
     ("streak_14", "Серия 14 дней", "current_streak", 14, 75),
