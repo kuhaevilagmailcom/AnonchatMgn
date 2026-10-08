@@ -1097,10 +1097,26 @@ class MiniAppServer:
                 self.cfg.xp_per_dialog if live else 0
             )
             gain = message_gain + dialog_gain
-            if message_gain:
-                await self.db.award_xp(player_id, message_gain, commit=False, source='message')
+            message_only = min(sent_count, self.cfg.xp_message_cap) * self.cfg.xp_per_message
+            extra_bonus = int(bonus_xp.get(player_id, 0))
+            if message_only:
+                await self.db.award_xp(
+                    player_id, message_only, commit=False, source='message',
+                    reason=f'{min(sent_count, self.cfg.xp_message_cap)} сообщений',
+                    reference_type='dialog', reference_id=str(match_id),
+                )
+            if extra_bonus:
+                await self.db.award_xp(
+                    player_id, extra_bonus, commit=False, source='game_bonus',
+                    reason='Бонус, накопленный в диалоге',
+                    reference_type='dialog', reference_id=str(match_id),
+                )
             if dialog_gain:
-                await self.db.award_xp(player_id, dialog_gain, commit=False, source='dialog')
+                await self.db.award_xp(
+                    player_id, dialog_gain, commit=False, source='dialog',
+                    reason='Награда за завершённый диалог',
+                    reference_type='dialog', reference_id=str(match_id),
+                )
             if sent_count:
                 await self.db.bump(
                     player_id, "messages", sent_count, commit=False
@@ -1313,7 +1329,11 @@ class MiniAppServer:
         if value:
             reward = await self.db.effective_xp_reward(self.cfg.xp_good_rating)
             if reward:
-                await self.db.award_xp(partner, reward, source='rating')
+                await self.db.award_xp(
+                    partner, reward, source='rating',
+                    reason='Положительная оценка собеседника',
+                    reference_type='dialog', reference_id=str(result_row['match_id']),
+                )
             await self.db.activity_add(partner, good_ratings=1)
             await self._push_event(
                 partner, "rating", "Хорошая оценка",
