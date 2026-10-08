@@ -22,10 +22,6 @@ from .permissions import ALL_ADMIN_PERMISSIONS, parse_permissions
 from .diagnostics import METRICS
 
 
-def _error(status: int, message: str) -> web.HTTPException:
-    return web.HTTPException(reason=message) if False else _json_error(status, message)
-
-
 def _json_error(status: int, message: str) -> web.HTTPException:
     cls = {400: web.HTTPBadRequest, 401: web.HTTPUnauthorized,
            403: web.HTTPForbidden, 404: web.HTTPNotFound,
@@ -160,7 +156,7 @@ class MiniAppAdmin:
         where = " AND ".join(parts)
         totals = await self.s.db._fetchone(
             f"""SELECT COUNT(*) n,
-                     COALESCE(SUM(CASE WHEN t.amount>0 THEN t.amount ELSE 0 END),0) credits,
+                     COALESCE(SUM(CASE WHEN t.amount>0 AND t.source<>'opening_balance' THEN t.amount ELSE 0 END),0) credits,
                      COALESCE(SUM(CASE WHEN t.amount<0 THEN -t.amount ELSE 0 END),0) debits
                 FROM xp_transactions t WHERE {where}""", args
         )
@@ -338,6 +334,31 @@ class MiniAppAdmin:
                 await con.rollback()
                 raise
         db._top_cache.clear()
+        if action in ("ban","mute","report_ban","report_mute"):
+            from .actions import break_pair, send_to
+            from . import texts
+            try:
+                await break_pair(
+                    self.s.bot,self.s.cfg,self.s.mm,target,texts.MOD_CLOSED_DIALOG,
+                    self.s.pack,db,
+                )
+                db.schedule_matchmaker_save(self.s.mm)
+                if action in ("ban","report_ban"):
+                    await send_to(
+                        self.s.bot,target,
+                        texts.BANNED.format(
+                            city=texts.esc(self.s.cfg.city),
+                            reason=texts.esc(reason)),
+                        None,self.s.pack,
+                    )
+                else:
+                    await send_to(
+                        self.s.bot,target,
+                        texts.MUTED.format(mins=minutes),None,self.s.pack,
+                    )
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception("Failed to notify moderation target")
         # Reward only when moderation actually took effect, once per report.
         if report is not None and action in ("report_ban","report_mute"):
             try:
@@ -368,6 +389,115 @@ class MiniAppAdmin:
         return web.json_response({"total":len(pairs),"page":page,
               "pages":max(1,(len(pairs)+14)//15),
               "items":[{"user_a":a,"user_b":b} for a,b in selected]})
+
+    async def queue(self, request):
+        await self.access(request,"queue")
+        page=_number(request.query.get("page",0),high=10000)
+        entries=self.s.mm.queue_debug_snapshot((page+1)*15)
+        selected=entries[page*15:(page+1)*15]
+        return web.json_response({"items":selected,"page":page,
+          "total":self.s.mm.queue_size(),
+          "pages":max(1,(self.s.mm.queue_size()+14)//15)})
+
+    async def polls(self, request):
+        _,_,owner=await self.access(request)
+        if not owner:
+            raise _json_error(403,"Опросами управляет владелец")
+        poll=await self.s.db.active_poll()
+        return web.json_response({
+            "active":dict(poll) if poll else None,
+            "results":await self.s.db.poll_results(int(poll["id"])) if poll else {},
+            "voters":_rows(await self.s.db.poll_voters(int(poll["id"]),limit=80)) if poll else [],
+        })
+
+    async def update_poll(self, request):
+        actor,_,owner=await self.access(request)
+        if not owner:
+            raise _json_error(403,"Опросами управляет владелец")
+        data=await self.body(request)
+        action=str(data.get("action") or "")
+        key=str(data.get("key") or "")
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{16,90}",key):
+            raise _json_error(400,"Некорректное подтверждение")
+        if action not in ("create","close"):
+            raise _json_error(400,"Неизвестное действие")
+        q=str(data.get("question") or "").strip()[:250]
+        a=str(data.get("option_a") or "").strip()[:48]
+        b=str(data.get("option_b") or "").strip()[:48]
+        if action=="create" and not (q and a and b):
+            raise _json_error(400,"Укажи вопрос и два варианта ответа")
+        row=await self.s.db.db.execute(
+            """INSERT OR IGNORE INTO admin_action_log
+               (action_key,actor_id,target_id,action,reason,created_at)
+               VALUES(?,?,0,?,?,?)""",(key,actor,"poll_"+action,q,now()),
+        )
+        if not row.rowcount:
+            return web.json_response({"applied":False})
+        try:
+            if action=="create":
+                poll_id=await self.s.db.create_poll(q,a,b,actor)
+                return web.json_response({"applied":True,"id":poll_id})
+            result=await self.s.db.close_active_poll()
+            return web.json_response({"applied":True,"closed":result})
+        except Exception:
+            await self.s.db.db.execute(
+                "DELETE FROM admin_action_log WHERE action_key=?",(key,)
+            )
+            raise
+
+    async def export_transactions(self, request):
+        actor,permissions,_=await self.access(request)
+        selected=_number(request.query.get("user_id"),low=0,high=9999999999999)
+        if not ("points" in permissions or (selected and "users" in permissions)):
+            raise _json_error(403,"Экспорт недоступен")
+        period=request.query.get("period","all")
+        kind=request.query.get("kind","all")
+        source=request.query.get("source","")[:60]
+        query=["1=1"]
+        args=[]
+        if selected:
+            query.append("t.user_id=?");args.append(selected)
+        if kind=="plus":
+            query.append("t.amount>0")
+        elif kind=="minus":
+            query.append("t.amount<0")
+        if source:
+            query.append("t.source=?");args.append(source)
+        since=_since(period)
+        if since:
+            query.append("t.created_at>=?");args.append(since)
+        import csv
+        import io
+        response=web.StreamResponse(headers={
+            "Content-Type":"text/csv; charset=utf-8",
+            "Content-Disposition":'attachment; filename="anon_mgn_xp_history.csv"',
+            "Cache-Control":"no-store",
+        })
+        await response.prepare(request)
+        await response.write(b"\\xef\\xbb\\xbf")
+        def csvline(values):
+            buf=io.StringIO()
+            writer=csv.writer(buf)
+            writer.writerow([
+                "'"+str(v) if str(v).lstrip().startswith(("=","+","-","@")) and not isinstance(v,(int,float)) else v
+                for v in values
+            ])
+            return buf.getvalue().encode("utf-8")
+        await response.write(csvline(["id","user_id","amount","balance_after","source","reason",
+                                      "actor_id","reference_type","reference_id","created_at"]))
+        cursor=await self.s.db.db.execute(
+            """SELECT t.id,t.user_id,t.amount,t.balance_after,t.source,t.reason,
+                      t.actor_id,t.reference_type,t.reference_id,t.created_at
+                 FROM xp_transactions t WHERE """+" AND ".join(query)+
+            " ORDER BY t.id DESC LIMIT 50000",tuple(args)
+        )
+        try:
+            async for row in cursor:
+                await response.write(csvline(tuple(row)))
+        finally:
+            await cursor.close()
+        await response.write_eof()
+        return response
 
     async def games(self, request):
         await self.access(request,"monitor")
@@ -546,7 +676,8 @@ def install_admin_routes(app: web.Application, server) -> MiniAppAdmin:
         ("/users/{user_id}",a.user), ("/transactions",a.transactions),
         ("/sources",a.sources),("/rankings",a.rankings),
         ("/reports",a.reports), ("/restrictions",a.restrictions),
-        ("/chats",a.chats),("/games",a.games),
+        ("/chats",a.chats),("/queue",a.queue),("/games",a.games),
+        ("/polls",a.polls),("/transactions/export",a.export_transactions),
         ("/analytics",a.analytics),("/admins",a.admins),
         ("/actions",a.action_log), ("/diagnostics",a.diagnostics),
         ("/backup",a.backup),("/broadcast/status",a.broadcast_status),
@@ -555,7 +686,7 @@ def install_admin_routes(app: web.Application, server) -> MiniAppAdmin:
     for path,handler in (
         ("/adjust",a.adjust), ("/moderate",a.moderation),
         ("/admins",a.save_admin),("/multiplier",a.change_multiplier),
-        ("/broadcast",a.broadcast)
+        ("/broadcast",a.broadcast),("/polls",a.update_poll)
     ):
         app.router.add_post(prefix+path,handler)
     return a
