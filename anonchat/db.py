@@ -645,6 +645,20 @@ class Database:
     async def _migrate_xp_ledger(self) -> None:
         """Неразрушающий одноразовый снимок старых балансов и атомарный аудит через SQLite."""
         await self.db.executescript("""
+            CREATE TABLE IF NOT EXISTS admin_action_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                action_key TEXT NOT NULL UNIQUE,
+                actor_id INTEGER NOT NULL,
+                target_id INTEGER NOT NULL DEFAULT 0,
+                action TEXT NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                reference_id INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_admin_actions_recent
+                ON admin_action_log(created_at DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_admin_actions_target
+                ON admin_action_log(target_id, created_at DESC);
             CREATE TABLE IF NOT EXISTS xp_transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
