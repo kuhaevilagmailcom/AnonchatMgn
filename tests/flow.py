@@ -786,6 +786,12 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await press(ADMIN, confirm)
     check(int((await db.get_user(A))["xp"]) == 50,
           "повторный callback не дублирует выдачу")
+    await press(ADMIN, "ax:ledger:0")
+    check(any("Начисления · журнал" in item for item in session.texts_to(ADMIN)),
+          "глобальный журнал начислений доступен администратору")
+    await press(ADMIN, "ax:chats:0")
+    check(any("Активные диалоги" in item for item in session.texts_to(ADMIN)),
+          "список активных диалогов открывается")
     session.clear()
     await send(ADMIN, "/bc Тест рассылки")
     broadcast = next(item for item in session.to(A) if item.get("text") == "Тест рассылки")
