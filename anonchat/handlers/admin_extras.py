@@ -42,6 +42,7 @@ XP_NAMES = {
     "daily_quest": "Задание дня", "subscription": "Подписка",
     "report": "Жалоба", "admin_award": "Администратор",
     "admin_debit": "Администратор", "admin_legacy": "Старая команда",
+    "game_bonus": "Бонус в диалоге",
 }
 
 
@@ -202,10 +203,19 @@ async def show_history(
         uid, offset=offset, kind={'a':'all','p':'plus','m':'minus'}[kind],
         since=since, source=SOURCES[source_code][0],
     )
+    opening_amount = 0
+    if kind in {'a', 'p'} and source_code == 'a':
+        opening = await db._fetchone(
+            "SELECT COALESCE(SUM(amount),0) AS n FROM xp_transactions "
+            "WHERE user_id=? AND source='opening_balance' AND created_at>=?",
+            (uid, since),
+        )
+        opening_amount = int(opening["n"] or 0) if opening else 0
     lines = [f"⭐ <b>История · {texts.esc(_name(user))}</b>",
              f"Баланс: <b>{user['xp']} ⭐</b>",
              f"{KIND[kind]} · {PERIOD[period]} · {SOURCES[source_code][1]}",
-             f"Начислено: +{info['credits']} · Списано: −{info['debits']}",
+             f"Начислено: +{max(0, info['credits'] - opening_amount)} · Списано: −{info['debits']}",
+             f"Начальный баланс: {opening_amount} ⭐ (архив)" if opening_amount else "",
              f"Операций: {info['count']}", ""]
     for r in rows:
         amount = int(r['amount'])
@@ -271,8 +281,18 @@ async def show_global_ledger(ctx: Ctx, db: Database, offset: int = 0) -> None:
           ORDER BY t.id DESC LIMIT 13 OFFSET ?""",
         (offset,),
     )
+    totals = await db._fetchone(
+        """SELECT
+           COALESCE(SUM(CASE WHEN amount>0 AND source<>'opening_balance'
+                             THEN amount ELSE 0 END),0) AS earned,
+           COALESCE(SUM(CASE WHEN amount<0 THEN -amount ELSE 0 END),0) AS spent
+           FROM xp_transactions WHERE created_at>=?""",
+        (referral_day_start(),),
+    )
     shown = rows[:12]
     lines = ["⭐ <b>Начисления · журнал</b>",
+             f"За сегодня: +{int(totals['earned'] or 0)} ⭐ · −{int(totals['spent'] or 0)} ⭐",
+             "<i>Начальный баланс — это снимок, не заработанные сегодня очки.</i>",
              f"Операции {offset+1}–{offset+len(shown)}", ""]
     b = InlineKeyboardBuilder()
     for r in shown:

@@ -645,6 +645,20 @@ class Database:
     async def _migrate_xp_ledger(self) -> None:
         """Неразрушающий одноразовый снимок старых балансов и атомарный аудит через SQLite."""
         await self.db.executescript("""
+            CREATE TABLE IF NOT EXISTS admin_action_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                action_key TEXT NOT NULL UNIQUE,
+                actor_id INTEGER NOT NULL,
+                target_id INTEGER NOT NULL DEFAULT 0,
+                action TEXT NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                reference_id INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_admin_actions_recent
+                ON admin_action_log(created_at DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_admin_actions_target
+                ON admin_action_log(target_id, created_at DESC);
             CREATE TABLE IF NOT EXISTS xp_transactions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -1275,8 +1289,10 @@ class Database:
         if resolved.rowcount and game is not None and int(game["reward_awarded"]):
             reward = await self.effective_xp_reward(25)
             await self.db.execute(
-                "UPDATE users SET xp=xp+?, xp_source='battle' WHERE user_id IN (?, ?)",
-                (reward, int(game["user_a"]), int(game["user_b"])),
+                "UPDATE users SET xp=xp+?, xp_source='battle', xp_reason=?, "
+                "xp_reference_type='game', xp_reference_id=? WHERE user_id IN (?, ?)",
+                (reward, f"Идеальное совпадение: {game['total_questions']} вопросов",
+                 str(game_id), int(game["user_a"]), int(game["user_b"])),
             )
             day = referral_day_start()
             await self.db.executemany(
@@ -1327,7 +1343,8 @@ class Database:
         return int(row["stars"] or 0) if row else 0
 
     async def _award_number_daily_unlocked(
-        self, user_id: int, requested: int, day_start: int
+        self, user_id: int, requested: int, day_start: int,
+        game_id: int = 0, round_index: int = 0,
     ) -> int:
         requested = max(0, int(requested))
         if requested <= 0:
@@ -1341,8 +1358,9 @@ class Database:
             (int(user_id), int(day_start), awarded),
         )
         await self.db.execute(
-            "UPDATE users SET xp=xp+?, xp_source='numbers' WHERE user_id=?",
-            (awarded, int(user_id)),
+            "UPDATE users SET xp=xp+?, xp_source='numbers', xp_reason=?, "
+            "xp_reference_type='game', xp_reference_id=? WHERE user_id=?",
+            (awarded, f"Числа · раунд {round_index + 1}", str(game_id), int(user_id)),
         )
         await self.db.execute(
             """INSERT INTO daily_activity(user_id, day_start, xp_earned)
@@ -1475,10 +1493,10 @@ class Database:
             if int(game["reward_awarded"] or 0) and raw_reward > 0:
                 day_start = number_reward_day_start()
                 reward_a = await self._award_number_daily_unlocked(
-                    int(game["user_a"]), raw_reward, day_start
+                    int(game["user_a"]), raw_reward, day_start, game_id, round_index
                 )
                 reward_b = await self._award_number_daily_unlocked(
-                    int(game["user_b"]), raw_reward, day_start
+                    int(game["user_b"]), raw_reward, day_start, game_id, round_index
                 )
 
             await self.db.execute(
@@ -1635,7 +1653,8 @@ class Database:
         return row if cur.rowcount else None
 
     async def _award_geo_daily_unlocked(
-        self, user_id: int, requested: int, day_start: int
+        self, user_id: int, requested: int, day_start: int,
+        game_id: int = 0, round_index: int = 0,
     ) -> int:
         requested = max(0, int(requested))
         if requested <= 0:
@@ -1649,7 +1668,9 @@ class Database:
             (int(user_id), int(day_start), awarded),
         )
         await self.db.execute(
-            "UPDATE users SET xp=xp+?, xp_source='geoguessr' WHERE user_id=?", (awarded, int(user_id))
+            "UPDATE users SET xp=xp+?, xp_source='geoguessr', xp_reason=?, "
+            "xp_reference_type='game', xp_reference_id=? WHERE user_id=?",
+            (awarded, f"GeoGuessr · раунд {round_index + 1}", str(game_id), int(user_id))
         )
         await self.db.execute(
             """INSERT INTO daily_activity(user_id, day_start, xp_earned)
@@ -1679,10 +1700,10 @@ class Database:
         if int(game["reward_awarded"] or 0):
             day = referral_day_start()
             reward_a = await self._award_geo_daily_unlocked(
-                int(game["user_a"]), raw_a, day
+                int(game["user_a"]), raw_a, day, game_id, round_index
             )
             reward_b = await self._award_geo_daily_unlocked(
-                int(game["user_b"]), raw_b, day
+                int(game["user_b"]), raw_b, day, game_id, round_index
             )
 
         total = max(1, int(game["total_questions"] or 1))
@@ -1938,7 +1959,8 @@ class Database:
 
     async def award_xp(
         self, user_id: int, amount: int, *, column: str | None = None, commit: bool = True,
-        source: str = 'other',
+        source: str = 'other', reason: str = '',
+        reference_type: str = '', reference_id: str = '',
     ) -> int:
         """Начисляем опыт и, опционально, плюсует счётчик (messages/dialogs/good_ratings...)."""
         if column and column in {
@@ -1950,11 +1972,17 @@ class Database:
             "reports_received",
         }:
             await self.db.execute(
-                f"UPDATE users SET xp = xp + ?, xp_source=?, {column} = {column} + ? WHERE user_id = ?",
-                (amount, source, amount, user_id),
+                f"UPDATE users SET xp = xp + ?, xp_source=?, xp_reason=?, "
+                f"xp_reference_type=?, xp_reference_id=?, "
+                f"{column} = {column} + ? WHERE user_id = ?",
+                (amount, source, reason, reference_type, reference_id, amount, user_id),
             )
         else:
-            await self.db.execute("UPDATE users SET xp = xp + ?, xp_source=? WHERE user_id = ?", (amount, source, user_id))
+            await self.db.execute(
+                "UPDATE users SET xp=xp+?, xp_source=?, xp_reason=?, "
+                "xp_reference_type=?, xp_reference_id=? WHERE user_id=?",
+                (amount,source,reason,reference_type,reference_id,user_id)
+            )
         if int(amount) > 0:
             await self.db.execute(
                 """INSERT INTO daily_activity(user_id, day_start, xp_earned)
@@ -1995,10 +2023,11 @@ class Database:
             await self.db.commit()
             return False
         await self.db.execute(
-            "UPDATE users SET xp=xp+?, xp_source=? WHERE user_id=?",
+            "UPDATE users SET xp=xp+?, xp_source=?, xp_reason=?, "
+            "xp_reference_type='reward_claim', xp_reference_id=? WHERE user_id=?",
             (amount, ('subscription' if reward_key.startswith('channel_subscription') else
                       'report' if reward_key.startswith('approved_report') else
-                      'one_time_reward'), int(user_id)),
+                      'one_time_reward'), reward_key, reward_key, int(user_id)),
         )
         await self.db.execute(
             """INSERT INTO daily_activity(user_id, day_start, xp_earned)
@@ -2046,8 +2075,9 @@ class Database:
                 await self.db.commit()
                 return False
             await self.db.execute(
-                "UPDATE users SET xp = xp + ?, xp_source='referral' WHERE user_id = ?",
-                (amount, referrer_id),
+                "UPDATE users SET xp=xp+?, xp_source='referral', xp_reason=?, "
+                "xp_reference_type='referral', xp_reference_id=? WHERE user_id=?",
+                (amount, f"Приглашён пользователь {invitee_id}", str(invitee_id), referrer_id),
             )
             await self.db.execute(
                 """INSERT INTO daily_activity(user_id, day_start, xp_earned)
@@ -3041,7 +3071,8 @@ class Database:
             )
             if reward:
                 await self.db.execute(
-                    "UPDATE users SET xp=xp+?, xp_source='achievement' WHERE user_id=?", (reward, int(user_id))
+                    "UPDATE users SET xp=xp+?, xp_source='achievement', xp_reason=? WHERE user_id=?",
+                    (reward, str(key), int(user_id))
                 )
                 day = referral_day_start()
                 await self.db.execute(
@@ -3087,7 +3118,8 @@ class Database:
             )
             if reward:
                 await self.db.execute(
-                    "UPDATE users SET xp=xp+?, xp_source='daily_quest' WHERE user_id=?", (reward, int(user_id))
+                    "UPDATE users SET xp=xp+?, xp_source='daily_quest', xp_reason=? WHERE user_id=?",
+                    (reward, str(quest_key), int(user_id))
                 )
                 await self.db.execute(
                     """INSERT INTO daily_activity(user_id, day_start, xp_earned)
