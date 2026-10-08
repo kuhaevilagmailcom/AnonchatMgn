@@ -18,5 +18,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python -m tests.core
       - run: python -m tests.flow
+      - run: python -m tests.admin_miniapp
       - run: python -m compileall -q .
       - run: node --check miniapp/web/app.js
+      - run: node --check miniapp/web/admin.js
