@@ -2333,8 +2333,12 @@ class MiniAppServer:
                             f"Совпадений: <b>{int(game['matches'])}/{int(game['total_questions'])}</b>."
                         )
                         if int(game["matches"]) == int(game["total_questions"]):
-                            battle_reward = await self.db.effective_xp_reward(25)
-                            body += f"\n🎁 Каждому начислено <b>{battle_reward} ⭐</b>."
+                            side = "a" if player_id == user_a else "b"
+                            actual_reward = int(game[f"reward_total_{side}"] or 0)
+                            if actual_reward:
+                                body += f"\n🎁 Тебе начислено <b>{actual_reward} ⭐</b>."
+                            else:
+                                body += "\n⭐ Дневной лимит игр достигнут (500 ⭐)."
                     await send_to(self.bot, player_id, body, K.chat_keyboard(), self.pack)
                 if str(game["status"]) == "finished":
                     self.mm.record_game(
