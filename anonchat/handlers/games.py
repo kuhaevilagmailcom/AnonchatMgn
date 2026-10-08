@@ -238,8 +238,11 @@ async def _send_question(ctx: Ctx, row: Any) -> None:
         await send_to(ctx.bot, user_id, body, markup, ctx.pack)
 
 
-def _final_text(matches: int, total: int, reward: int = 25) -> str:
-    reward_line = f"\n🎁 Каждому начислено <b>{reward} ⭐</b>." if matches == total else ""
+def _final_text(matches: int, total: int, reward: int = 0) -> str:
+    reward_line = (
+        f"\n🎁 Начислено <b>{reward} ⭐</b>."
+        if reward > 0 else "\n⭐ Дневной лимит игр достигнут (500 ⭐)."
+    ) if matches == total else ""
     return f"⚔️ <b>Битва окончена</b>\nСовпадений: <b>{matches}/{total}</b>.{reward_line}"
 
 
@@ -266,11 +269,15 @@ async def _send_round_result(ctx: Ctx, row: Any) -> None:
             f"Собеседник: <b>{texts.esc(question.option(answer_a))}</b>"
         )
     if row["status"] == "finished":
-        reward = await ctx.db.effective_xp_reward(25)
-        final = _final_text(int(row["matches"]), _total(row), reward)
+        final_a = _final_text(
+            int(row["matches"]), _total(row), int(row["reward_total_a"] or 0)
+        )
+        final_b = _final_text(
+            int(row["matches"]), _total(row), int(row["reward_total_b"] or 0)
+        )
         markup = K.battle_end_keyboard()
-        body_a = f"{body_a}\n\n{final}"
-        body_b = f"{body_b}\n\n{final}"
+        body_a = f"{body_a}\n\n{final_a}"
+        body_b = f"{body_b}\n\n{final_b}"
     else:
         markup = K.battle_next_keyboard(int(row["id"]), index)
     await send_to(ctx.bot, user_a, body_a, markup, ctx.pack)
