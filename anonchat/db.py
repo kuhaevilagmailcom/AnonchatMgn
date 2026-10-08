@@ -367,6 +367,12 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("support_stars", "ALTER TABLE users ADD COLUMN support_stars INTEGER NOT NULL DEFAULT 0"),
     ("support_rub", "ALTER TABLE users ADD COLUMN support_rub INTEGER NOT NULL DEFAULT 0"),
     ("profile_deleted", "ALTER TABLE users ADD COLUMN profile_deleted INTEGER NOT NULL DEFAULT 0"),
+    ("xp_source", "ALTER TABLE users ADD COLUMN xp_source TEXT NOT NULL DEFAULT ''"),
+    ("xp_reason", "ALTER TABLE users ADD COLUMN xp_reason TEXT NOT NULL DEFAULT ''"),
+    ("xp_actor_id", "ALTER TABLE users ADD COLUMN xp_actor_id INTEGER NOT NULL DEFAULT 0"),
+    ("xp_reference_type", "ALTER TABLE users ADD COLUMN xp_reference_type TEXT NOT NULL DEFAULT ''"),
+    ("xp_reference_id", "ALTER TABLE users ADD COLUMN xp_reference_id TEXT NOT NULL DEFAULT ''"),
+    ("xp_idempotency_key", "ALTER TABLE users ADD COLUMN xp_idempotency_key TEXT NOT NULL DEFAULT ''"),
 )
 
 _REPORT_MIGRATIONS: tuple[tuple[str, str], ...] = (
@@ -443,6 +449,7 @@ class Database:
         self._engagement_lock = asyncio.Lock()
         self._nickname_lock = asyncio.Lock()
         self._anon_question_lock = asyncio.Lock()
+        self._xp_lock = asyncio.Lock()
         self._admin_permissions_cache: dict[int, tuple[float, frozenset[str]]] = {}
         self._top_cache: dict[tuple[int, int], tuple[float, list[aiosqlite.Row]]] = {}
         self._xp_multiplier_cache: int | None = None
@@ -526,6 +533,7 @@ class Database:
             if name not in cols:
                 await self.db.execute(sql)
                 added = True
+        await self._migrate_xp_ledger()
         async with self.db.execute("PRAGMA table_info(reports)") as cur:
             report_cols = {row[1] for row in await cur.fetchall()}
         for name, sql in _REPORT_MIGRATIONS:
@@ -633,6 +641,227 @@ class Database:
             "UPDATE users SET premium_until=? WHERE premium_until>?",
             (ANON_PLUS_LIFETIME_UNTIL, now()),
         )
+
+    async def _migrate_xp_ledger(self) -> None:
+        """Неразрушающий одноразовый снимок старых балансов и атомарный аудит через SQLite."""
+        await self.db.executescript("""
+            CREATE TABLE IF NOT EXISTS xp_transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                amount INTEGER NOT NULL,
+                balance_after INTEGER NOT NULL,
+                source TEXT NOT NULL DEFAULT 'other',
+                reason TEXT NOT NULL DEFAULT '',
+                actor_id INTEGER NOT NULL DEFAULT 0,
+                reference_type TEXT NOT NULL DEFAULT '',
+                reference_id TEXT NOT NULL DEFAULT '',
+                idempotency_key TEXT UNIQUE,
+                created_at INTEGER NOT NULL,
+                metadata TEXT NOT NULL DEFAULT '{}'
+            );
+            CREATE INDEX IF NOT EXISTS idx_xp_transactions_user_time
+                ON xp_transactions(user_id, created_at DESC, id DESC);
+            CREATE INDEX IF NOT EXISTS idx_xp_transactions_period
+                ON xp_transactions(created_at, source, user_id);
+            CREATE INDEX IF NOT EXISTS idx_users_dialogs ON users(dialogs DESC, user_id);
+            CREATE INDEX IF NOT EXISTS idx_users_banned ON users(banned, user_id);
+            CREATE INDEX IF NOT EXISTS idx_users_mute_until ON users(mute_until, user_id);
+            CREATE INDEX IF NOT EXISTS idx_users_support ON users(support_stars, support_rub);
+            CREATE INDEX IF NOT EXISTS idx_users_username ON users(username COLLATE NOCASE);
+            CREATE INDEX IF NOT EXISTS idx_users_nick_key ON users(nick_key);
+        """)
+        # Восстанавливать детализацию прошлых начислений невозможно. Одна стартовая
+        # запись создаётся строго один раз, без изменения пользователей и daily_activity.
+        if await self.get_kv("xp_ledger_baseline_v1") != "1":
+            await self.db.execute(
+                """INSERT INTO xp_transactions(user_id, amount, balance_after, source,
+                                              reason, created_at)
+                   SELECT u.user_id, u.xp, u.xp, 'opening_balance',
+                          'Начальный баланс до введения журнала', ?
+                     FROM users u
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM xp_transactions t WHERE t.user_id=u.user_id
+                    )""",
+                (now(),),
+            )
+            await self.db.execute(
+                "INSERT INTO kv(key, value) VALUES ('xp_ledger_baseline_v1','1') "
+                "ON CONFLICT(key) DO UPDATE SET value='1'"
+            )
+        # Любое изменение users.xp попадает в тот же SQLite statement, включая
+        # старые игровые пути и обновления через отдельное соединение.
+        await self.db.executescript("""
+            CREATE TRIGGER IF NOT EXISTS trg_xp_transactions
+            AFTER UPDATE OF xp ON users
+            WHEN NEW.xp <> OLD.xp
+            BEGIN
+                INSERT INTO xp_transactions (
+                    user_id, amount, balance_after, source, reason, actor_id,
+                    reference_type, reference_id, idempotency_key, created_at
+                ) VALUES (
+                    NEW.user_id, NEW.xp - OLD.xp, NEW.xp,
+                    COALESCE(NULLIF(NEW.xp_source, ''), 'other'),
+                    NEW.xp_reason, NEW.xp_actor_id,
+                    NEW.xp_reference_type, NEW.xp_reference_id,
+                    NULLIF(NEW.xp_idempotency_key, ''), CAST(strftime('%s', 'now') AS INTEGER)
+                );
+                UPDATE users SET xp_source='', xp_reason='', xp_actor_id=0,
+                    xp_reference_type='', xp_reference_id='', xp_idempotency_key=''
+                    WHERE user_id=NEW.user_id;
+            END;
+        """)
+
+    async def change_xp(
+        self, user_id: int, amount: int, *, source: str, reason: str,
+        actor_id: int = 0, reference_type: str = '', reference_id: str = '',
+        idempotency_key: str = '',
+    ) -> tuple[int, bool]:
+        """Атомарное изменение баланса. Возвращает (баланс, применено).
+
+        Выделенное соединение + BEGIN IMMEDIATE изолирует несколько конкурентных
+        callback от остальных autocommit-обработчиков общей connection.
+        """
+        uid = int(user_id)
+        delta = int(amount)
+        if uid <= 0 or not delta:
+            raise ValueError("Укажите пользователя и ненулевую сумму")
+        if not str(reason).strip():
+            raise ValueError("Укажите причину")
+        if abs(delta) > 1_000_000_000:
+            raise ValueError("Сумма слишком большая")
+        key = str(idempotency_key or '')
+        if len(key) > 180:
+            raise ValueError("Слишком длинный ключ операции")
+        async with self._xp_lock:
+            async with aiosqlite.connect(self.path, isolation_level=None) as conn:
+                conn.row_factory = aiosqlite.Row
+                await conn.execute("PRAGMA busy_timeout=10000")
+                await conn.execute("BEGIN IMMEDIATE")
+                try:
+                    if key:
+                        async with conn.execute(
+                            "SELECT user_id, balance_after FROM xp_transactions WHERE idempotency_key=?",
+                            (key,),
+                        ) as cur:
+                            previous = await cur.fetchone()
+                        if previous:
+                            if int(previous["user_id"]) != uid:
+                                raise ValueError("Ключ операции принадлежит другому пользователю")
+                            await conn.commit()
+                            return int(previous["balance_after"]), False
+                    async with conn.execute(
+                        "SELECT xp FROM users WHERE user_id=?", (uid,)
+                    ) as cur:
+                        row = await cur.fetchone()
+                    if row is None:
+                        raise ValueError("Пользователь не найден")
+                    before = int(row["xp"] or 0)
+                    after = before + delta
+                    if after < 0:
+                        raise ValueError("Недостаточно очков для списания")
+                    await conn.execute(
+                        """UPDATE users SET xp=?, xp_source=?, xp_reason=?,
+                               xp_actor_id=?, xp_reference_type=?, xp_reference_id=?,
+                               xp_idempotency_key=? WHERE user_id=?""",
+                        (after, str(source), str(reason)[:500], int(actor_id),
+                         str(reference_type), str(reference_id), key, uid),
+                    )
+                    if delta > 0:
+                        await conn.execute(
+                            """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+                               VALUES (?, ?, ?) ON CONFLICT(user_id, day_start)
+                               DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
+                            (uid, referral_day_start(), delta),
+                        )
+                    await conn.commit()
+                    self._top_cache.clear()
+                    return after, True
+                except Exception:
+                    await conn.rollback()
+                    raise
+
+    async def xp_history(
+        self, user_id: int, *, limit: int = 10, offset: int = 0,
+        kind: str = 'all', source: str = '', since: int = 0,
+    ) -> tuple[list[aiosqlite.Row], dict[str, int]]:
+        where = ["user_id=?"]
+        args: list[Any] = [int(user_id)]
+        if kind == 'plus':
+            where.append("amount>0")
+        elif kind == 'minus':
+            where.append("amount<0")
+        if source:
+            where.append("source=?")
+            args.append(str(source))
+        if since:
+            where.append("created_at>=?")
+            args.append(int(since))
+        cond = " AND ".join(where)
+        rows = await self._fetchall(
+            f"SELECT * FROM xp_transactions WHERE {cond} "
+            "ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?",
+            (*args, max(1, min(int(limit), 30)), max(0, int(offset))),
+        )
+        summary = await self._fetchone(
+            f"SELECT COUNT(*) AS count, "
+            f"COALESCE(SUM(CASE WHEN amount>0 THEN amount END),0) AS credits, "
+            f"COALESCE(SUM(CASE WHEN amount<0 THEN -amount END),0) AS debits "
+            f"FROM xp_transactions WHERE {cond}",
+            args,
+        )
+        return rows, {k: int(summary[k] or 0) for k in ('count','credits','debits')}
+
+    async def admin_user_list(
+        self, *, limit: int = 12, offset: int = 0, sort: str = 'recent',
+        filter_by: str = 'all', query: str = '', ids: Sequence[int] = (),
+    ) -> tuple[list[aiosqlite.Row], int]:
+        orders = {
+            'recent': 'last_seen DESC, user_id DESC',
+            'new': 'created_at DESC, user_id DESC',
+            'xp': 'xp DESC, user_id ASC',
+            'messages': 'messages DESC, user_id ASC',
+            'dialogs': 'dialogs DESC, user_id ASC',
+        }
+        where: list[str] = []
+        args: list[Any] = []
+        if filter_by == 'active':
+            where.append('last_seen>=?')
+            args.append(now()-600)
+        elif filter_by == 'ban':
+            where.append('banned=1')
+        elif filter_by == 'mute':
+            where.append('mute_until>?')
+            args.append(now())
+        elif filter_by == 'support':
+            where.append('(support_stars>0 OR support_rub>0)')
+        elif filter_by == 'admins':
+            where.append('user_id IN (SELECT user_id FROM admins)')
+        elif filter_by in {'queue','dialog'}:
+            selected = [int(uid) for uid in ids][:500]
+            if not selected:
+                return [], 0
+            where.append('user_id IN ('+','.join('?' for _ in selected)+')')
+            args.extend(selected)
+        if query:
+            value = query.strip().lstrip('@')[:100]
+            if value.isdigit():
+                where.append('(user_id=? OR username LIKE ? OR nickname LIKE ? OR first_name LIKE ?)')
+                args.extend((int(value),f'%{value}%',f'%{value}%',f'%{value}%'))
+            else:
+                value = value.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
+                where.append("(username LIKE ? ESCAPE '\\' OR nickname LIKE ? ESCAPE '\\' "
+                             "OR first_name LIKE ? ESCAPE '\\')")
+                args.extend((f'%{value}%',)*3)
+        condition = (' WHERE ' + ' AND '.join(where)) if where else ''
+        total = await self._fetchone('SELECT COUNT(*) AS c FROM users'+condition, args)
+        rows = await self._fetchall(
+            'SELECT user_id, username, first_name, nickname, xp, support_stars, '
+            'messages, dialogs, last_seen, created_at, banned, mute_until '
+            'FROM users'+condition+' ORDER BY '+orders.get(sort,'last_seen DESC, user_id DESC')+
+            ' LIMIT ? OFFSET ?',
+            (*args, max(1, min(int(limit), 15)), max(0, int(offset))),
+        )
+        return rows, int(total['c'] if total else 0)
 
     async def _backfill_nick_keys(self) -> None:
         """Регистронезависимый ключ ника: LOWER() в SQLite не понимает кириллицу, считаем в Python."""
