@@ -577,12 +577,16 @@ async def panel_screen(ctx: Ctx, db: Database, mm: Matchmaker, edit: bool = True
     s = await db.stats()
     multiplier = await db.xp_multiplier()
     active_poll = await db.active_poll()
+    uptime = METRICS.uptime_seconds()
+    db_mb = db.path.stat().st_size / 1048576 if db.path.exists() else 0
     body = (
         f"{texts.PANEL_TITLE.format(city=texts.esc(ctx.cfg.city))}\n\n"
-        f"👥 {s['users']} · 🆕 сегодня {s['new_today']} · 🟢 {s['active_week']}\n"
-        f"⏳ {mm.queue_size()} · 💬 {mm.online_pairs()} · ⭐ x{multiplier}\n"
-        f"🚩 открытых жалоб: <b>{s['open_reports']}</b>\n\n"
-        f"{texts.PANEL_NOTE}"
+        f"👥 Всего {s['users']} · новых сегодня {s['new_today']}\n"
+        f"🟢 Сегодня {s['active_today']} · за 7 дней {s['active_week']}\n"
+        f"⏳ В поиске {mm.queue_size()} · 💬 диалогов {mm.online_pairs()}\n"
+        f"🚩 Жалоб {s['open_reports']} · ⛔ банов {s['banned']} · 🔇 мутов {s['muted']}\n"
+        f"⭐ Начислено сегодня {s['xp_today']} · множитель x{multiplier}\n"
+        f"💾 SQLite {db_mb:.2f} МБ · 🟢 работает {uptime//3600} ч {uptime%3600//60} мин\n"
     )
     kb = K.admin_panel_keyboard(
         int(s["open_reports"]), ctx.admin_permissions, owner=ctx.is_owner,
@@ -768,8 +772,7 @@ async def cmd_points(message: Message, ctx: Ctx, db: Database) -> None:
     except ValueError:
         await ctx.reply("Количество очков должно быть целым числом со знаком.")
         return
-    balance = await db.adjust_xp(int(parts[0]), amount)
-    await ctx.reply(f"⭐ Баланс <code>{parts[0]}</code>: <b>{balance}</b> очков.")
+    await ctx.reply("Ручные изменения очков проводятся через /admin → Пользователи → карточка: с причиной и подтверждением.")
 
 
 @router.message(Command("adminadd", "adminperms"))
@@ -1138,9 +1141,19 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         await ctx.edit(queue_text(mm), K.panel_back_keyboard())
         return
     if data == K.CB_PANEL_USERS:
-        body, count = await users_text(db)
-        await ctx.reply(body, K.users_page_keyboard(0, count))
+        from .admin_extras import show_users
         await ctx.ack()
+        await show_users(ctx, db, mm, state)
+        return
+    if data == K.CB_PANEL_FIND:
+        from .admin_extras import start_search
+        await ctx.ack()
+        await start_search(ctx, state)
+        return
+    if data == K.CB_PANEL_POINTS:
+        from .admin_extras import start_search
+        await ctx.ack()
+        await start_search(ctx, state)
         return
     if data == K.CB_PANEL_BAN_LIST:
         await ctx.ack()
@@ -1497,8 +1510,7 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
         if uid is None or amount == 0:
             await ctx.reply("Формат: <code>123456 +50</code> или <code>123456 -50</code>.")
         else:
-            balance = await db.adjust_xp(uid, amount)
-            await ctx.reply(f"⭐ Баланс <code>{uid}</code>: <b>{balance}</b> очков.")
+            await ctx.reply("Для изменения баланса открой /admin → Пользователи → карточка, укажи причину и подтверди.")
     elif what == "admins":
         uid, tail = _id_args(raw)
         permissions = parse_permissions(tail)
