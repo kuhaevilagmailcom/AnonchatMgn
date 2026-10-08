@@ -1296,13 +1296,19 @@ class Database:
         )
         game = await self.get_battle(game_id)
         if resolved.rowcount and game is not None and int(game["reward_awarded"]):
+            payouts = []
             for player_id in (int(game["user_a"]), int(game["user_b"])):
-                await self.award_game_xp(
+                payouts.append(await self.award_game_xp(
                     player_id, 25, source="battle",
                     reason=f"Идеальное совпадение: {game['total_questions']} вопросов",
                     reference_type="game", reference_id=str(game_id),
                     commit=False,
-                )
+                ))
+            await self.db.execute(
+                "UPDATE battle_games SET reward_total_a=?, reward_total_b=? WHERE id=?",
+                (payouts[0], payouts[1], game_id),
+            )
+            game = await self.get_battle(game_id)
         if resolved.rowcount and game is not None and str(game["status"]) == "finished":
             await self.db.execute("DELETE FROM battle_games WHERE id = ?", (game_id,))
         await self.db.commit()
