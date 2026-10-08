@@ -309,7 +309,6 @@ def settings_keyboard(
 def games_keyboard(*, admin: bool = False) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "Битва мнений", callback_data=CB_BATTLE, icon="bonus", style="primary")
-    _button(b, "Числа", callback_data=CB_NUMBERS, icon="stars", style="success")
     _button(b, "Объясни слово", callback_data=CB_WORDS, icon="ticket", style="primary")
     _button(b, "GeoGuessr📍", callback_data=CB_GEO, icon="geo", style="success")
     _button(b, "Вернуться в чат", callback_data="game:return", icon="home")

@@ -1094,84 +1094,17 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     check("5 вопросов" in str(session.to(A)[-1].get("reply_markup")),
           "сыграть ещё работает без хранения старой игры")
 
-    # Новая игра «Числа»: три раунда, диапазон выбирает инициатор.
+    # Числа больше нельзя запускать ни с новых, ни со старых кнопок.
     await send(A, "/game")
-    check("Числа" in str(session.to(A)[-1].get("reply_markup")),
-          "в меню игр появилась игра Числа")
+    game_menu = str(session.to(A)[-1].get("reply_markup"))
+    check("Числа" not in game_menu and "GeoGuessr" in game_menu,
+          "игра Числа убрана из меню")
+    check("500" in session.last_to(A), "бот сообщает общий лимит за игры")
     await press(A, "game:numbers")
-    range_markup = str(session.to(A)[-1].get("reply_markup"))
-    check("1–10" in range_markup and "1–1000" in range_markup,
-          "инициатор выбирает диапазон игры Числа")
-
-    xp_a_before = int((await db.get_user(A))["xp"])
-    xp_b_before = int((await db.get_user(B))["xp"])
-    number_reward_a_before = await db.number_daily_reward(A)
-    number_reward_b_before = await db.number_daily_reward(B)
     await press(A, "game:numbers:range:10")
-    number_game = await db.number_for_pair(A, B)
-    check(bool(number_game and number_game["status"] == "invited"),
-          "предложение игры Числа сохранено в SQLite")
-    number_id = int(number_game["id"])
-    check("Числа" in session.last_to(B) and "3" in session.last_to(B),
-          "собеседник получает приглашение на три раунда")
-    await press(B, f"game:num:yes:{number_id}")
-    check("раунд 1/3" in session.last_to(A).lower()
-          and "раунд 1/3" in session.last_to(B).lower(),
-          "после согласия начинается первый раунд")
-
-    game_multiplier = await db.xp_multiplier()
-
-    # 1-й раунд: точное совпадение = 15 ⭐ базово.
-    await press(A, f"game:num:set:{number_id}:0:5")
-    await press(A, f"game:num:submit:{number_id}:0:5")
-    await press(B, f"game:num:set:{number_id}:0:5")
-    await press(B, f"game:num:submit:{number_id}:0:5")
-    check(
-        "Точное совпадение" in session.last_to(A)
-        and str(15 * game_multiplier) in session.last_to(A),
-        "точное совпадение начисляет 15 звёзд базово в диапазоне 1–10",
-    )
-
-    await press(A, f"game:num:next:{number_id}:0")
-    check("раунд 2/3" in session.last_to(B).lower(), "игра переходит ко второму раунду")
-
-    # 2-й раунд: разница ровно 1 = половина награды, то есть 7 ⭐ базово.
-    await press(A, f"game:num:set:{number_id}:1:4")
-    await press(A, f"game:num:submit:{number_id}:1:4")
-    await press(B, f"game:num:set:{number_id}:1:5")
-    await press(B, f"game:num:submit:{number_id}:1:5")
-    check(
-        "Почти совпало" in session.last_to(A)
-        and str(7 * game_multiplier) in session.last_to(A),
-        "разница в один даёт половину награды",
-    )
-
-    await press(B, f"game:num:next:{number_id}:1")
-    check("раунд 3/3" in session.last_to(A).lower(), "игра переходит к третьему раунду")
-
-    # 3-й раунд: далеко друг от друга = без награды.
-    await press(A, f"game:num:set:{number_id}:2:1")
-    await press(A, f"game:num:submit:{number_id}:2:1")
-    await press(B, f"game:num:set:{number_id}:2:9")
-    await press(B, f"game:num:submit:{number_id}:2:9")
-    number_texts = session.texts_to(A)
-    number_total = 22 * game_multiplier
-    check(
-        any("Игра окончена" in text and str(number_total) in text for text in number_texts),
-        "после трёх раундов показан общий заработок",
-    )
+    await press(A, "game:num:yes:999")
     check(await db.number_for_pair(A, B) is None,
-          "завершённая игра Числа не хранится как история")
-    check(
-        await db.number_daily_reward(A) == number_reward_a_before + number_total
-        and await db.number_daily_reward(B) == number_reward_b_before + number_total,
-        "награды Чисел начисляются обоим игрокам без лимита",
-    )
-    check(
-        int((await db.get_user(A))["xp"]) >= xp_a_before + number_total
-        and int((await db.get_user(B))["xp"]) >= xp_b_before + number_total,
-        "дополнительные достижения не уменьшают награду Чисел",
-    )
+          "старые кнопки Чисел не создают игру")
 
     await press(ADMIN, "adm:panel:monitor")
     session.clear()
@@ -1265,7 +1198,7 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     closed_battle = await db.get_battle(int(active_battle["id"]))
     check(closed_battle is None, "/stop удаляет активную игру из SQLite")
     dialog_results = session.texts_to(A)
-    check(any("2 игры · +" in text for text in dialog_results),
+    check(any("1 игра · +" in text for text in dialog_results),
           "статистика после диалога доступна каждому пользователю")
     check(any("Диалог закрыт" in text for text in dialog_results),
           "после диалога остаётся обычное уведомление и возможность оценить")

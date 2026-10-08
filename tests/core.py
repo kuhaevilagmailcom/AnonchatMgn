@@ -1028,10 +1028,10 @@ def test_keyboard_styles_and_icons() -> None:
         ["Следующий"], ["Стоп", "Жалоба"], ["Игры"],
     ]
     assert texts_of(K.games_keyboard()) == [
-        "Битва мнений", "Числа", "Объясни слово", "GeoGuessr📍", "Вернуться в чат",
+        "Битва мнений", "Объясни слово", "GeoGuessr📍", "Вернуться в чат",
     ]
     assert texts_of(K.games_keyboard(admin=True)) == [
-        "Битва мнений", "Числа", "Объясни слово", "GeoGuessr📍", "Вернуться в чат",
+        "Битва мнений", "Объясни слово", "GeoGuessr📍", "Вернуться в чат",
     ]
     assert texts_of(K.geo_rounds_keyboard()) == [
         "3 раунда", "5 раундов", "10 раундов", "Назад к играм",
@@ -1543,24 +1543,59 @@ def test_word_game_word_pool() -> None:
     assert "слово &lt;тест&gt;" in secret and "слово <тест>" not in secret
 
 
-def test_word_game_rewards_are_unlimited() -> None:
+def test_shared_game_daily_cap_500_and_multiplied_rewards() -> None:
+    """Every game shares 500 XP/day; multipliers count inside the quota."""
     async def scenario() -> None:
-        path = Path(tempfile.mkdtemp()) / "word-unlimited.db"
+        path = Path(tempfile.mkdtemp()) / "all-games-cap.db"
         db = await Database(path).start()
         try:
-            await db.ensure_user(980001, "word_a", "A")
-            await db.ensure_user(980002, "word_b", "B")
+            for uid in (980001, 980002, 980003):
+                await db.ensure_user(uid, f"game_{uid}", "Test")
+            assert await db.set_xp_multiplier(3) == 3
 
-            # Раньше один вызов обрезался парным лимитом до 6 ⭐,
-            # а общий заработок за сутки — до 300 ⭐.
-            assert await db.award_word_guess(980001, 980002, 500) == 500
-            assert await db.award_word_guess(980001, 980002, 500) == 500
-            assert int((await db.get_user(980001))["xp"]) == 1000
+            # x3 is calculated first: 150 base becomes 450 stars.
+            assert await db.award_word_guess(980001, 980002, 150) == 450
+            assert await db.game_xp_today(980001) == 450
+            assert await db.game_xp_remaining(980001) == 50
+
+            # GeoGuessr asks for 30 * 3 = 90, but only 50 fit.
+            assert await db.award_game_xp(
+                980001, 30, source="geoguessr", reason="Раунд 1",
+            ) == 50
+            assert await db.game_xp_today(980001) == 500
+            assert await db.game_xp_remaining(980001) == 0
+
+            # Any other game yields zero today, but non-game rewards still work.
+            assert await db.award_game_xp(
+                980001, 25, source="battle", reason="Совпадение",
+            ) == 0
+            assert await db.award_word_guess(980001, 980003, 6) == 0
+            assert await db.award_xp(980001, 30, source="message") == 530
+            assert await db.game_xp_today(980001) == 500
+            assert int((await db.get_user(980001))["xp"]) == 530
+
+            # Simultaneous claims from multiple game types cannot overpay.
+            import asyncio as _asyncio
+            rewards = await _asyncio.gather(
+                db.award_game_xp(980002, 160, source="word_game"),
+                db.award_game_xp(980002, 150, source="battle"),
+                db.award_game_xp(980002, 100, source="geoguessr"),
+            )
+            assert sum(rewards) == 500, rewards
+            assert int((await db.get_user(980002))["xp"]) == 500
+            assert await db.game_xp_remaining(980002) == 0
+
+            # The next local day has a fresh quota, without resetting balances.
+            assert await db.game_xp_today(980001, referral_day_start()+86400) == 0
+            assert await db.game_xp_today(980002, referral_day_start()+86400) == 0
+            rows,_ = await db.xp_history(980001,limit=10)
+            credits = [int(r["amount"]) for r in rows if r["source"] in (
+                "word_game","geoguessr","battle","numbers"
+            )]
+            assert sum(credits) == 500
         finally:
             await db.close()
-
     asyncio.run(scenario())
-
 
 
 def test_x3_applies_to_star_rewards() -> None:
