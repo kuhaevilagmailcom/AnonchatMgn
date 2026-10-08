@@ -970,10 +970,26 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
             ctx.cfg.xp_per_dialog if live else 0
         )
         gain = message_gain + dialog_gain
-        if message_gain:
-            await ctx.db.award_xp(uid, message_gain, commit=False, source='message')
+        message_only = min(sent, cap) * ctx.cfg.xp_per_message
+        extra_bonus = int(bonus_xp.get(uid, 0))
+        if message_only:
+            await ctx.db.award_xp(
+                uid, message_only, commit=False, source='message',
+                reason=f'{min(sent, cap)} сообщений',
+                reference_type='dialog', reference_id=str(match_id),
+            )
+        if extra_bonus:
+            await ctx.db.award_xp(
+                uid, extra_bonus, commit=False, source='game_bonus',
+                reason='Бонус, накопленный в диалоге',
+                reference_type='dialog', reference_id=str(match_id),
+            )
         if dialog_gain:
-            await ctx.db.award_xp(uid, dialog_gain, commit=False, source='dialog')
+            await ctx.db.award_xp(
+                uid, dialog_gain, commit=False, source='dialog',
+                reason='Награда за завершённый диалог',
+                reference_type='dialog', reference_id=str(match_id),
+            )
         if sent:
             await ctx.db.bump(uid, "messages", sent, commit=False)
         await ctx.db.activity_add(
@@ -1096,7 +1112,11 @@ async def apply_rating(ctx: Ctx, positive: bool) -> None:
     await ctx.db.activity_add(ctx.user_id, ratings_given=1)
     if positive:
         reward = await ctx.db.effective_xp_reward(ctx.cfg.xp_good_rating)
-        await ctx.db.award_xp(partner, reward, source='rating')
+        await ctx.db.award_xp(
+            partner, reward, source='rating',
+            reason='Положительная оценка собеседника',
+            reference_type='dialog',reference_id=str(match_id),
+        )
         await ctx.db.activity_add(partner, good_ratings=1)
         await ctx.ack("Спасибо")
         result_text = texts.RATING_DONE_GOOD.format(xp=reward)
