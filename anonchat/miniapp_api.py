@@ -2712,6 +2712,8 @@ class MiniAppServer:
         app.router.add_post("/api/miniapp/games/words/invite", self.game_words)
         app.router.add_post("/api/miniapp/games/respond", self.game_respond)
         app.router.add_post("/api/miniapp/games/action", self.game_action)
+        from .admin_api import install_admin_routes
+        install_admin_routes(app, self)
         app.router.add_get("/api/miniapp/subscription", self.subscription)
         app.router.add_post("/api/miniapp/subscription/claim", self.subscription_claim)
         app.router.add_route("OPTIONS", "/api/miniapp/{tail:.*}", self.health)
