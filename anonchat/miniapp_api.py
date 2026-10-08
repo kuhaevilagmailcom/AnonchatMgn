@@ -327,6 +327,11 @@ class MiniAppServer:
                 "referral_url": f"https://t.me/{bot_username}?start=ref_{uid}",
                 "bot_url": f"https://t.me/{bot_username}",
                 "notifications": await self._notifications(uid),
+                "game_rewards": {
+                    "earned": await self.db.game_xp_today(uid),
+                    "remaining": await self.db.game_xp_remaining(uid),
+                    "limit": 500,
+                },
             }
         )
 
@@ -1950,47 +1955,9 @@ class MiniAppServer:
         return web.json_response({"ok": True, "message": "Приглашение отправлено"})
 
     async def game_numbers(self, request: web.Request) -> web.Response:
-        uid, _, _ = await self._auth(request)
-        partner = self.mm.partner(uid)
-        if partner is None:
-            raise _json_error(409, "Сначала найди собеседника")
-        data = await request.json()
-        try:
-            range_max = int(data.get("range_max", 0))
-        except (TypeError, ValueError) as exc:
-            raise _json_error(400, "Неверный диапазон") from exc
-        if range_max not in NUMBER_REWARDS:
-            raise _json_error(400, "Можно выбрать 1–10, 1–100 или 1–1000")
-        if await self.db.game_for_pair(uid, partner) is not None:
-            raise _json_error(409, "У вас уже есть активная игра")
-        game, created = await self.db.create_number_invite(uid, partner, range_max)
-        if not created:
-            raise _json_error(409, "Предложение уже создано")
-        reward = await self.db.effective_xp_reward(NUMBER_REWARDS[range_max])
-        near = await self.db.effective_xp_reward(NUMBER_REWARDS[range_max] // 2)
-        result = await send_to(
-            self.bot,
-            partner,
-            f"🔢 <b>Собеседник предлагает сыграть в Числа</b>\n"
-            f"Диапазон: <b>1–{range_max}</b> · раундов: <b>{NUMBER_ROUNDS}</b>\n"
-            f"Точное совпадение: <b>{reward} ⭐</b> · "
-            f"разница до {NUMBER_NEAR_DIFFS[range_max]}: <b>{near} ⭐</b>\n"
-            "Награды без дневного лимита.",
-            K.number_invite_keyboard(int(game["id"])),
-            self.pack,
-        )
-        if result is DeliveryResult.UNAVAILABLE:
-            await self.db.cancel_battle(int(game["id"]))
-            raise _json_error(503, "Не удалось доставить приглашение")
-        live_chat.game_invite(
-            uid,
-            partner,
-            "numbers",
-            int(game["id"]),
-            "🔢 Числа",
-            f"Диапазон 1–{range_max} · {NUMBER_ROUNDS} раунда",
-        )
-        return web.json_response({"ok": True, "message": "Приглашение отправлено"})
+        # Keep a friendly error for cached old Mini App clients.
+        await self._auth(request)
+        raise _json_error(409, "Игра «Числа» удалена. Выбери другую игру.")
 
     async def game_geo(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
