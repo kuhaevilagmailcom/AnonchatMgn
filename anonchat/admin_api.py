@@ -446,6 +446,73 @@ class MiniAppAdmin:
             raise _json_error(400,"Множитель x1/x2/x3")
         return web.json_response({"multiplier":await self.s.db.set_xp_multiplier(value)})
 
+    async def broadcast(self, request):
+        actor, _, _ = await self.access(request, "broadcast")
+        data = await self.body(request)
+        message = str(data.get("message") or "").strip()
+        key = str(data.get("key") or "")
+        label = str(data.get("button_text") or "").strip()[:45]
+        url = str(data.get("button_url") or "").strip()
+        if not message or len(message) > 3000:
+            raise _json_error(400, "Текст рассылки должен содержать от 1 до 3000 символов")
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{16,90}", key):
+            raise _json_error(400, "Необходимо подтверждение рассылки")
+        if bool(label) != bool(url):
+            raise _json_error(400, "Для кнопки нужны и текст, и ссылка")
+        if url and (urlsplit(url).scheme != "https" or not urlsplit(url).netloc):
+            raise _json_error(400, "Разрешены только HTTPS-ссылки")
+        cur = await self.s.db.db.execute(
+            """INSERT OR IGNORE INTO admin_action_log
+               (action_key,actor_id,target_id,action,reason,created_at)
+               VALUES(?,?,0,'broadcast',?,?)""",
+            (key, actor, f"Text broadcast ({len(message)} chars)", now()),
+        )
+        if not cur.rowcount:
+            return web.json_response({"started":False,"message":"Эта рассылка уже запускалась"})
+        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+        markup = (InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text=label, url=url)
+        ]]) if url else None)
+        self.jobs[key] = {"status":"running","sent":0,"failed":0}
+        async def deliver():
+            from aiogram.exceptions import TelegramAPIError, TelegramRetryAfter
+            last_id = 0
+            try:
+                while True:
+                    receivers = await self.s.db._fetchall(
+                        """SELECT user_id FROM users WHERE user_id>? AND banned=0
+                           ORDER BY user_id ASC LIMIT 100""",(last_id,)
+                    )
+                    if not receivers:
+                        break
+                    for r in receivers:
+                        target = int(r["user_id"])
+                        last_id = target
+                        try:
+                            await self.s.bot.send_message(
+                                target,message,parse_mode=None,reply_markup=markup,
+                                disable_web_page_preview=True,
+                            )
+                            self.jobs[key]["sent"] += 1
+                        except TelegramRetryAfter as exc:
+                            await asyncio.sleep(min(float(exc.retry_after), 30.0))
+                            self.jobs[key]["failed"] += 1
+                        except TelegramAPIError:
+                            self.jobs[key]["failed"] += 1
+                        await asyncio.sleep(0.06)
+                self.jobs[key]["status"] = "complete"
+            except Exception:
+                self.jobs[key]["status"] = "error"
+                import logging
+                logging.getLogger(__name__).exception("Admin broadcast failed")
+        asyncio.create_task(deliver(),name=f"admin-broadcast:{key[:10]}")
+        return web.json_response({"started":True,"key":key})
+
+    async def broadcast_status(self, request):
+        await self.access(request,"broadcast")
+        key=request.query.get("key","")
+        return web.json_response(self.jobs.get(key,{"status":"unknown","sent":0,"failed":0}))
+
     async def backup(self, request):
         _,_,owner=await self.access(request)
         if not owner:
@@ -482,12 +549,13 @@ def install_admin_routes(app: web.Application, server) -> MiniAppAdmin:
         ("/chats",a.chats),("/games",a.games),
         ("/analytics",a.analytics),("/admins",a.admins),
         ("/actions",a.action_log), ("/diagnostics",a.diagnostics),
-        ("/backup",a.backup),
+        ("/backup",a.backup),("/broadcast/status",a.broadcast_status),
     ):
         app.router.add_get(prefix+path,handler)
     for path,handler in (
         ("/adjust",a.adjust), ("/moderate",a.moderation),
-        ("/admins",a.save_admin),("/multiplier",a.change_multiplier)
+        ("/admins",a.save_admin),("/multiplier",a.change_multiplier),
+        ("/broadcast",a.broadcast)
     ):
         app.router.add_post(prefix+path,handler)
     return a
