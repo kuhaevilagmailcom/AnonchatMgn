@@ -2092,6 +2092,20 @@ def test_xp_change_idempotent_concurrent_and_negative_guard() -> None:
             assert len(rows) == 2
             assert rows[0]["actor_id"] == 999 and rows[0]["reason"] == "корректировка"
             assert summary == {"count": 2, "credits": 100, "debits": 40}
+            try:
+                await db.db.execute("DELETE FROM xp_transactions WHERE user_id=?", (84011,))
+            except Exception:
+                pass
+            else:
+                raise AssertionError("журнал операций нельзя удалять")
+            try:
+                await db.db.execute(
+                    "UPDATE xp_transactions SET amount=777 WHERE user_id=?", (84011,)
+                )
+            except Exception:
+                pass
+            else:
+                raise AssertionError("журнал операций нельзя редактировать")
             totals = await db.activity_totals(84011, 7)
             assert totals["xp_earned"] == 100
         finally:
