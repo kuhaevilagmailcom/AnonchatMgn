@@ -589,7 +589,7 @@ async def panel_screen(ctx: Ctx, db: Database, mm: Matchmaker, edit: bool = True
         f"💾 SQLite {db_mb:.2f} МБ · 🟢 работает {uptime//3600} ч {uptime%3600//60} мин\n"
     )
     kb = K.admin_panel_keyboard(
-        int(s["open_reports"]), ctx.admin_permissions, owner=ctx.is_owner,
+        int(s["open_reports"]), ctx.admin_permissions, owner=ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS,
         monitor_enabled=await db.get_kv(f"chat_monitor:{ctx.user_id}") == "1",
         anonymous_monitor_enabled=await db.get_kv(f"anonq_monitor:{ctx.user_id}") == "1",
         xp_multiplier=multiplier,
@@ -777,7 +777,7 @@ async def cmd_points(message: Message, ctx: Ctx, db: Database) -> None:
 
 @router.message(Command("adminadd", "adminperms"))
 async def cmd_admin_add(message: Message, ctx: Ctx, db: Database) -> None:
-    if not ctx.is_owner:
+    if not (ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS):
         await ctx.reply("Назначать администраторов может только владелец.")
         return
     parts = (message.text or "").split(maxsplit=2)
@@ -799,7 +799,7 @@ async def cmd_admin_add(message: Message, ctx: Ctx, db: Database) -> None:
 
 @router.message(Command("admindel"))
 async def cmd_admin_del(message: Message, ctx: Ctx, db: Database) -> None:
-    if not ctx.is_owner:
+    if not (ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS):
         await ctx.reply("Снимать администраторов может только владелец.")
         return
     parts = _parse_args(message.text or "")
@@ -817,7 +817,7 @@ async def cmd_admin_del(message: Message, ctx: Ctx, db: Database) -> None:
 
 @router.message(Command("adminlist"))
 async def cmd_admin_list(message: Message, ctx: Ctx, db: Database) -> None:
-    if not ctx.is_owner:
+    if not (ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS):
         await ctx.reply("Список администраторов доступен только владельцу.")
         return
     await ctx.reply(await admins_text(db, ctx.cfg.admin_ids))
@@ -826,7 +826,7 @@ async def cmd_admin_list(message: Message, ctx: Ctx, db: Database) -> None:
 @router.message(Command("purge_referrals"))
 async def cmd_purge_referrals(message: Message, ctx: Ctx, db: Database) -> None:
     """Только владелец: сначала показывает точный предпросмотр, затем просит подтверждение."""
-    if not ctx.is_owner:
+    if not (ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS):
         await ctx.reply("Очистка реферальной накрутки доступна только владельцу.")
         return
     args = _parse_args(message.text or "")
@@ -1039,7 +1039,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         return
 
     if data.startswith("adm:panel:xp:"):
-        if not ctx.is_owner:
+        if not (ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS):
             await ctx.ack("Только для владельца", alert=True)
             return
         raw = data.rsplit(":", 1)[-1]
@@ -1055,7 +1055,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         return
 
     if data.startswith("adm:panel:poll:"):
-        if not ctx.is_owner:
+        if not (ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS):
             await ctx.ack("Только для владельца", alert=True)
             return
         action = data.rsplit(":", 1)[-1]
@@ -1099,14 +1099,14 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
     if required and not ctx.can(required):
         await ctx.ack("У тебя нет этого права", alert=True)
         return
-    if data == K.CB_PANEL_ADMINS and not ctx.is_owner:
+    if data == K.CB_PANEL_ADMINS and not (ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS):
         await ctx.ack("Только для владельца", alert=True)
         return
-    if data == K.CB_PANEL_BACKUP and not ctx.is_owner:
+    if data == K.CB_PANEL_BACKUP and not (ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS):
         await ctx.ack("Только для владельца", alert=True)
         return
     if data == K.CB_PANEL_MULTIPLIER:
-        if not ctx.is_owner:
+        if not (ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS):
             await ctx.ack("Только для владельца", alert=True)
             return
         value = await db.xp_multiplier()
@@ -1118,7 +1118,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         )
         return
     if data == K.CB_PANEL_POLL:
-        if not ctx.is_owner:
+        if not (ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS):
             await ctx.ack("Только для владельца", alert=True)
             return
         poll = await db.active_poll()
@@ -1427,7 +1427,7 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
         )
         return
 
-    if what in {"poll_question", "poll_options"} and not ctx.is_owner:
+    if what in {"poll_question", "poll_options"} and not (ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS):
         await state.clear()
         await ctx.reply("Создавать опрос может только владелец.")
         return
@@ -1475,7 +1475,7 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
     if required and not ctx.can(required):
         await ctx.reply("У тебя нет этого права.")
         return
-    if what == "admins" and not ctx.is_owner:
+    if what == "admins" and not (ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS):
         await ctx.reply("Назначать администраторов может только владелец.")
         return
 
@@ -1591,7 +1591,7 @@ async def cb_restricted_list(event: CallbackQuery, ctx: Ctx, db: Database) -> No
 
 @router.callback_query(F.data.startswith("adm:games:"))
 async def cb_game_watch(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
-    if not ctx.is_owner:
+    if not (ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS):
         await ctx.ack("Только для владельца", alert=True)
         return
     view = (event.data or "").rsplit(":", 1)[-1]
@@ -1606,7 +1606,7 @@ async def cb_game_watch(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
 async def cb_purge_referrals(
     event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker
 ) -> None:
-    if not ctx.is_owner:
+    if not (ctx.is_owner or ctx.admin_permissions == ALL_ADMIN_PERMISSIONS):
         await ctx.ack("Только для владельца", alert=True)
         return
     raw_id = (event.data or "").rsplit(":", 1)[-1]
