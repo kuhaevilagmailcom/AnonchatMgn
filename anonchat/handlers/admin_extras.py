@@ -203,10 +203,19 @@ async def show_history(
         uid, offset=offset, kind={'a':'all','p':'plus','m':'minus'}[kind],
         since=since, source=SOURCES[source_code][0],
     )
+    opening_amount = 0
+    if kind in {'a', 'p'} and source_code == 'a':
+        opening = await db._fetchone(
+            "SELECT COALESCE(SUM(amount),0) AS n FROM xp_transactions "
+            "WHERE user_id=? AND source='opening_balance' AND created_at>=?",
+            (uid, since),
+        )
+        opening_amount = int(opening["n"] or 0) if opening else 0
     lines = [f"⭐ <b>История · {texts.esc(_name(user))}</b>",
              f"Баланс: <b>{user['xp']} ⭐</b>",
              f"{KIND[kind]} · {PERIOD[period]} · {SOURCES[source_code][1]}",
-             f"Начислено: +{info['credits']} · Списано: −{info['debits']}",
+             f"Начислено: +{max(0, info['credits'] - opening_amount)} · Списано: −{info['debits']}",
+             f"Начальный баланс: {opening_amount} ⭐ (архив)" if opening_amount else "",
              f"Операций: {info['count']}", ""]
     for r in rows:
         amount = int(r['amount'])
