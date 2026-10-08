@@ -474,7 +474,7 @@ class MiniAppAdmin:
             "Cache-Control":"no-store",
         })
         await response.prepare(request)
-        await response.write(b"\\xef\\xbb\\xbf")
+        await response.write(bytes((239,187,191)))
         def csvline(values):
             buf=io.StringIO()
             writer=csv.writer(buf)
