@@ -404,6 +404,11 @@ def now() -> int:
 
 REFERRAL_DAILY_LIMIT = 30
 GAME_INACTIVE_TTL_SECONDS = 2 * 24 * 60 * 60
+GAME_XP_DAILY_LIMIT = 500
+# Overall cap across the games available in the bot. Legacy Numbers rewards from
+# earlier today also count, so removal cannot reset a user's daily allowance.
+GAME_XP_SOURCES = ("battle", "numbers", "geoguessr", "word_game")
+
 
 # Магнитогорск живёт по UTC+5. Фиксированный сдвиг не зависит от часового пояса хостинга.
 REFERRAL_TIMEZONE_OFFSET = 5 * 60 * 60
@@ -446,6 +451,7 @@ class Database:
         self._referral_lock = asyncio.Lock()
         self._number_reward_lock = asyncio.Lock()
         self._word_reward_lock = asyncio.Lock()
+        self._game_reward_lock = asyncio.Lock()
         self._engagement_lock = asyncio.Lock()
         self._nickname_lock = asyncio.Lock()
         self._anon_question_lock = asyncio.Lock()
@@ -551,6 +557,9 @@ class Database:
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_dialog_once "
             "ON reports(reporter_id, target_id, dialog_key) WHERE dialog_key <> ''"
         )
+        # Числа больше не доступны. Удаляем приглашения и незавершённые сессии
+        # при запуске, но сохраняем прошлые XP-операции и статистику игроков.
+        await self.db.execute("DELETE FROM battle_games WHERE game_type='numbers'")
         # Историю игр не храним: после обновления удаляем старые завершённые записи.
         await self.db.execute(
             "DELETE FROM battle_games WHERE status NOT IN ('invited', 'active', 'round_done')"
@@ -1287,24 +1296,13 @@ class Database:
         )
         game = await self.get_battle(game_id)
         if resolved.rowcount and game is not None and int(game["reward_awarded"]):
-            reward = await self.effective_xp_reward(25)
-            await self.db.execute(
-                "UPDATE users SET xp=xp+?, xp_source='battle', xp_reason=?, "
-                "xp_reference_type='game', xp_reference_id=? WHERE user_id IN (?, ?)",
-                (reward, f"Идеальное совпадение: {game['total_questions']} вопросов",
-                 str(game_id), int(game["user_a"]), int(game["user_b"])),
-            )
-            day = referral_day_start()
-            await self.db.executemany(
-                """INSERT INTO daily_activity(user_id, day_start, xp_earned)
-                   VALUES (?, ?, ?)
-                   ON CONFLICT(user_id, day_start)
-                   DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
-                [
-                    (int(game["user_a"]), day, reward),
-                    (int(game["user_b"]), day, reward),
-                ],
-            )
+            for player_id in (int(game["user_a"]), int(game["user_b"])):
+                await self.award_game_xp(
+                    player_id, 25, source="battle",
+                    reason=f"Идеальное совпадение: {game['total_questions']} вопросов",
+                    reference_type="game", reference_id=str(game_id),
+                    commit=False,
+                )
         if resolved.rowcount and game is not None and str(game["status"]) == "finished":
             await self.db.execute("DELETE FROM battle_games WHERE id = ?", (game_id,))
         await self.db.commit()
@@ -1332,6 +1330,66 @@ class Database:
         await self.db.commit()
         return await self.get_battle(game_id) if cur.rowcount else None
 
+    async def game_xp_today(self, user_id: int, timestamp: int | None = None) -> int:
+        """Полученные за текущие сутки игровые звёзды (Магнитогорск UTC+5).
+
+        Используем неизменяемый XP-журнал вместо разрозненных счётчиков
+        отдельных игр. Ручное списание не восстанавливает дневную квоту.
+        """
+        row = await self._fetchone(
+            """SELECT COALESCE(SUM(amount), 0) AS earned
+                 FROM xp_transactions
+                WHERE user_id=? AND created_at>=?
+                  AND source IN ('battle','numbers','geoguessr','word_game')
+                  AND amount>0""",
+            (int(user_id), referral_day_start(timestamp)),
+        )
+        return int(row["earned"] or 0) if row else 0
+
+    async def game_xp_remaining(self, user_id: int) -> int:
+        return max(0, GAME_XP_DAILY_LIMIT - await self.game_xp_today(user_id))
+
+    async def award_game_xp(
+        self, user_id: int, amount: int, *, source: str,
+        reason: str = "", reference_type: str = "game",
+        reference_id: str = "", commit: bool = True,
+        already_multiplied: bool = False,
+    ) -> int:
+        """Единый дневной лимит ВСЕХ игр: не больше 500 ⭐ на человека.
+
+        Множитель применяется ДО ограничения. Общий lock не допускает двух
+        параллельных выигрышей через разные игры выйти за дневную квоту.
+        """
+        if source not in GAME_XP_SOURCES:
+            raise ValueError("Неизвестный тип игровой награды")
+        requested = max(0, int(amount))
+        if requested <= 0:
+            return 0
+        effective = requested if already_multiplied else await self.effective_xp_reward(requested)
+        async with self._game_reward_lock:
+            available = await self.game_xp_remaining(user_id)
+            credited = min(effective, available)
+            if credited <= 0:
+                return 0
+            await self.db.execute(
+                """UPDATE users SET xp=xp+?, xp_source=?, xp_reason=?,
+                          xp_reference_type=?, xp_reference_id=?
+                    WHERE user_id=?""",
+                (credited, source, str(reason)[:500],
+                 str(reference_type), str(reference_id), int(user_id)),
+            )
+            await self.db.execute(
+                """INSERT INTO daily_activity(user_id, day_start, xp_earned)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(user_id, day_start)
+                   DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
+                (int(user_id), referral_day_start(), credited),
+            )
+            if commit:
+                await self.db.commit()
+            self._top_cache.clear()
+            return credited
+
     async def number_pair_reward_available(self, user_a: int, user_b: int) -> bool:
         return True
 
@@ -1349,27 +1407,19 @@ class Database:
         requested = max(0, int(requested))
         if requested <= 0:
             return 0
-        awarded = await self.effective_xp_reward(requested)
-        await self.db.execute(
-            """INSERT INTO number_daily_rewards(user_id, day_start, stars)
-               VALUES (?, ?, ?)
-               ON CONFLICT(user_id, day_start)
-               DO UPDATE SET stars=stars+excluded.stars""",
-            (int(user_id), int(day_start), awarded),
+        awarded = await self.award_game_xp(
+            user_id, requested, source="numbers",
+            reason=f"Числа · раунд {round_index + 1}",
+            reference_id=str(game_id), commit=False,
         )
-        await self.db.execute(
-            "UPDATE users SET xp=xp+?, xp_source='numbers', xp_reason=?, "
-            "xp_reference_type='game', xp_reference_id=? WHERE user_id=?",
-            (awarded, f"Числа · раунд {round_index + 1}", str(game_id), int(user_id)),
-        )
-        await self.db.execute(
-            """INSERT INTO daily_activity(user_id, day_start, xp_earned)
-               VALUES (?, ?, ?)
-               ON CONFLICT(user_id, day_start)
-               DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
-            (int(user_id), int(day_start), awarded),
-        )
-        self._top_cache.clear()
+        if awarded:
+            await self.db.execute(
+                """INSERT INTO number_daily_rewards(user_id, day_start, stars)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(user_id, day_start)
+                   DO UPDATE SET stars=stars+excluded.stars""",
+                (int(user_id), int(day_start), awarded),
+            )
         return awarded
 
     async def create_number_invite(
@@ -1659,27 +1709,19 @@ class Database:
         requested = max(0, int(requested))
         if requested <= 0:
             return 0
-        awarded = await self.effective_xp_reward(requested)
-        await self.db.execute(
-            """INSERT INTO geo_daily_rewards(user_id, day_start, stars)
-               VALUES (?, ?, ?)
-               ON CONFLICT(user_id, day_start)
-               DO UPDATE SET stars=stars+excluded.stars""",
-            (int(user_id), int(day_start), awarded),
+        awarded = await self.award_game_xp(
+            user_id, requested, source="geoguessr",
+            reason=f"GeoGuessr · раунд {round_index + 1}",
+            reference_id=str(game_id), commit=False,
         )
-        await self.db.execute(
-            "UPDATE users SET xp=xp+?, xp_source='geoguessr', xp_reason=?, "
-            "xp_reference_type='game', xp_reference_id=? WHERE user_id=?",
-            (awarded, f"GeoGuessr · раунд {round_index + 1}", str(game_id), int(user_id))
-        )
-        await self.db.execute(
-            """INSERT INTO daily_activity(user_id, day_start, xp_earned)
-               VALUES (?, ?, ?)
-               ON CONFLICT(user_id, day_start)
-               DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
-            (int(user_id), int(day_start), awarded),
-        )
-        self._top_cache.clear()
+        if awarded:
+            await self.db.execute(
+                """INSERT INTO geo_daily_rewards(user_id, day_start, stars)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(user_id, day_start)
+                   DO UPDATE SET stars=stars+excluded.stars""",
+                (int(user_id), int(day_start), awarded),
+            )
         return awarded
 
     async def _resolve_geo_round_unlocked(
@@ -1898,16 +1940,18 @@ class Database:
     async def award_word_guess(
         self, user_id: int, partner_id: int, requested: int = WORD_REWARD
     ) -> int:
-        """Награда за каждое угадывание без лимитов, с учётом x2/x3."""
+        """Награда за слово с общим дневным лимитом игр 500 ⭐."""
         user_id = int(user_id)
         partner_id = int(partner_id)
         requested = max(0, int(requested))
         if not user_id or not partner_id or user_id == partner_id or requested <= 0:
             return 0
 
-        awarded = await self.effective_xp_reward(requested)
-        await self.award_xp(user_id, awarded, source='word_game')
-        return awarded
+        return await self.award_game_xp(
+            user_id, requested, source="word_game",
+            reason="Угаданное слово", reference_type="word_partner",
+            reference_id=str(partner_id),
+        )
 
     async def nickname_taken(self, nickname: str, except_user_id: int = 0) -> int | None:
         """Ник должен быть уникальным — иначе топ превращается в «Аноним, Аноним, Аноним».
