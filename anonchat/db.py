@@ -691,6 +691,12 @@ class Database:
         # Любое изменение users.xp попадает в тот же SQLite statement, включая
         # старые игровые пути и обновления через отдельное соединение.
         await self.db.executescript("""
+            CREATE TRIGGER IF NOT EXISTS trg_xp_no_edit
+            BEFORE UPDATE ON xp_transactions
+            BEGIN SELECT RAISE(ABORT, 'XP journal is append-only'); END;
+            CREATE TRIGGER IF NOT EXISTS trg_xp_no_delete
+            BEFORE DELETE ON xp_transactions
+            BEGIN SELECT RAISE(ABORT, 'XP journal is append-only'); END;
             CREATE TRIGGER IF NOT EXISTS trg_xp_transactions
             AFTER UPDATE OF xp ON users
             WHEN NEW.xp <> OLD.xp
@@ -2096,6 +2102,7 @@ class Database:
         )
         owner = await self.get_user(referrer_id)
         self._top_cache.clear()
+        self._top_cache.clear()
         return {
             "referrer_id": int(referrer_id),
             "referrals": len(rows),
@@ -2503,6 +2510,7 @@ class Database:
             (int(banned), reason if banned else "", user_id),
         )
         await self.db.commit()
+        self._top_cache.clear()
 
     async def set_mute(self, user_id: int, minutes: int) -> int:
         await self._ensure_row(user_id)
