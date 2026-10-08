@@ -37,6 +37,7 @@ def test_admin_miniapp_endpoints() -> None:
         db=await Database(path).start()
         cfg=SimpleNamespace(
             bot_token="123456:ADMIN_TEST",miniapp_url="",admin_ids=(1001,),
+            menu_rate_limit=30, inchat_rate_limit=30,
         )
         mm=Matchmaker()
         server=MiniAppServer(None,cfg,db,mm,None)
