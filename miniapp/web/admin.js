@@ -152,7 +152,13 @@
     return wrapHeader('Данные участника · только для администрации')+
       '<div class="admin-user-hero"><small>ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ</small><h2>'+escape(u.nickname||u.first_name||'Аноним')+'</h2><strong>'+fmt(u.xp)+' ★</strong></div>'+
       '<dl class="admin-details">'+parts.map(([k,v])=>'<div><dt>'+escape(k)+'</dt><dd>'+v+'</dd></div>').join('')+'</dl>'+
-      '<div class="admin-actions">'+buttons.join('')+'</div>'+navButton('← Вернуться в список','nav','users','text');
+      '<div class="admin-actions">'+buttons.join('')+'</div>'+
+      '<div class="admin-subheading">История уведомлений</div><div class="admin-list">'+
+      ((d.notices||[]).length?(d.notices||[]).map(n=>
+        '<article class="admin-report"><strong>'+escape(n.title)+'</strong><p>'+escape(n.body)+'</p>'+
+        '<small>'+date(n.created_at)+' · Доставка: '+escape(n.status)+
+        (n.last_error?' · '+escape(n.last_error):'')+'</small></article>').join(''):placeholder)+'</div>'+
+      navButton('← Вернуться в список','nav','users','text');
   }
   function transactionControls(){
     const periods=[['today','Сегодня'],['week','Неделя'],['month','Месяц'],['all','Всё время']];
@@ -279,7 +285,8 @@
       '<label>Текст кнопки (необязательно)<input name="button_text" maxlength="45" placeholder="Подробнее"></label>'+
       '<label>HTTPS-ссылка кнопки (необязательно)<input name="button_url" placeholder="https://t.me/..."></label>'+
       '<button type="submit" class="admin-primary">Предпросмотр рассылки</button></form>'+
-      (state.broadcastKey?'<div class="admin-note">Последняя рассылка: '+escape(state.broadcastKey.slice(0,10))+' · '+navButton('Проверить статус','broadcastStatus')+'</div>':'');
+      (state.broadcastKey?'<div class="admin-note">Последняя рассылка: '+escape(state.broadcastKey.slice(0,10))+' · '+navButton('Проверить статус','broadcastStatus')+
+      navButton('Остановить','broadcastStop','','danger')+'</div>':'');
   }
   async function diagnostics(){
     const d=await api('/diagnostics');
@@ -290,7 +297,14 @@
       tile('Активные игры',fmt(d.games?.total))+
       tile('Ошибки Telegram',fmt(d.telegram_errors))+
       tile('Недоступные пользователи',fmt(d.unavailable))+
-      tile('Последняя очистка',date(d.last_cleanup_at))+'</section>'+
+      tile('Последняя очистка',date(d.last_cleanup_at))+
+      tile('SQLite',d.db_ok?'Работает':'Ошибка')+
+      tile('Задержка БД',String(d.db_query_ms||0)+' мс')+
+      tile('Последний бэкап',d.backup_last_success_at?date(d.backup_last_success_at):'Нет')+
+      tile('Уведомления в очереди',fmt(d.notifications?.pending||0))+
+      tile('Ошибки уведомлений',fmt((d.notifications?.failed||0)+(d.notifications?.undeliverable||0)))+
+      tile('Активные рассылки',fmt(d.broadcasts?.running||0))+'</section>'+
+      (d.backup_error?'<div class="admin-note">Ошибка бэкапа: '+escape(d.backup_error)+'</div>':'')+
       (state.owner?'<div class="admin-actions">'+navButton('Скачать резервную копию SQLite','backup')+
       navButton('Изменить x1 / x2 / x3','multiplier')+'</div>':'');
   }
@@ -343,7 +357,7 @@
   async function statusBroadcast(){
     if(!state.broadcastKey)return;
     const d=await api('/broadcast/status',{}, {key:state.broadcastKey});
-    toast('Рассылка: '+d.status+' · отправлено '+fmt(d.sent)+' · ошибок '+fmt(d.failed));
+    toast('Рассылка: '+d.status+' · отправлено '+fmt(d.sent)+' · ожидает '+fmt(d.pending)+' · ошибок '+fmt(d.failed)+' · проверить '+fmt(d.uncertain));
   }
   root.addEventListener('click',async e=>{
     const el=e.target.closest('[data-action]');if(!el||el.disabled)return;
@@ -372,6 +386,10 @@
       else if(action==='gamesPage'){state.gamesPage=Number(value);render()}
       else if(action==='actionsPage'){state.actionsPage=Number(value);render()}
       else if(action==='backup')await downloadBackup();
+      else if(action==='broadcastStop'){if(state.broadcastKey&&confirm('Остановить рассылку?')){
+        const info=await post('/broadcast/stop',{key:state.broadcastKey});
+        toast('Статус рассылки: '+info.status);render();
+      }}
       else if(action==='exportLedger'){
         const params={period:state.ledgerPeriod,kind:state.ledgerKind,
           source:state.ledgerSource,user_id:state.ledgerUser};
