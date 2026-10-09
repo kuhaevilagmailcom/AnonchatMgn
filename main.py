@@ -30,6 +30,7 @@ from anonchat.pack import EmojiPack
 from anonchat.diagnostics import METRICS
 from anonchat.admin_events import run_worker as run_notice_worker
 from anonchat.admin_broadcasts import run_worker as run_broadcast_worker
+from anonchat.backups import maybe_backup
 from anonchat.runtime_state import online_count as presence_online_count
 from anonchat import live_chat
 from anonchat import word_game as WG
@@ -63,6 +64,7 @@ async def janitor(
 ) -> None:
     """Подчищает устаревшее состояние и регулярно пересобирает возможные пары."""
     last_maintenance = 0.0
+    last_backup_check = 0.0
     while True:
         try:
             await asyncio.sleep(60)
@@ -74,6 +76,12 @@ async def janitor(
                 await db.cleanup_report_context(cfg.report_context_retention_days)
                 await db.cleanup_service_data()
                 last_maintenance = time.time()
+            if time.time() - last_backup_check >= 3600:
+                last_backup_check = time.time()
+                try:
+                    await maybe_backup(db,mm)
+                except Exception:
+                    log.exception("janitor: backup failed")
             METRICS.last_cleanup_at = int(time.time())
             METRICS.janitor_removed_games += int(removed_games)
             paired = await reconcile_queue(bot, cfg, db, mm, pack)
