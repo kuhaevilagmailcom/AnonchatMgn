@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import math
 import secrets
 import sqlite3
@@ -3625,7 +3626,7 @@ class Database:
         """Дешёвый debounce: на каждом апдейте сравниваем только integer revision.
 
         Snapshot не сериализуется и SQLite не пишется на каждое сообщение. При
-        активном чате состояние сбрасывается на диск максимум раз в 5 секунд.
+        активном чате изменения сбрасываются каждые 0.3 секунды.
         """
         revision = int(getattr(matchmaker, "persistence_revision", 0))
         if revision == self._matchmaker_revision:
@@ -3639,11 +3640,19 @@ class Database:
     async def _save_matchmaker_loop(self) -> None:
         try:
             while True:
-                await asyncio.sleep(5)
+                await asyncio.sleep(0.3)
                 self._matchmaker_dirty = False
                 if self._matchmaker is not None:
                     state = self._matchmaker.snapshot()
-                    await self.save_matchmaker(state)
+                    try:
+                        await self.save_matchmaker(state)
+                    except Exception:
+                        logging.getLogger(__name__).exception(
+                            "Matchmaker persistence failed; retrying instead of losing the revision"
+                        )
+                        self._matchmaker_dirty = True
+                        await asyncio.sleep(2)
+                        continue
                     self._matchmaker_snapshot_key = json.dumps(
                         state, ensure_ascii=False, separators=(",", ":"), sort_keys=True
                     )
