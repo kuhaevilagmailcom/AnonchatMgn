@@ -28,7 +28,8 @@ from anonchat.middlewares import DataContext, Throttling
 from anonchat.miniapp_api import start_miniapp_server
 from anonchat.pack import EmojiPack
 from anonchat.diagnostics import METRICS
-from anonchat.admin_events import run_worker
+from anonchat.admin_events import run_worker as run_notice_worker
+from anonchat.admin_broadcasts import run_worker as run_broadcast_worker
 from anonchat.runtime_state import online_count as presence_online_count
 from anonchat import live_chat
 from anonchat import word_game as WG
@@ -178,11 +179,12 @@ async def main() -> None:  # pragma: no cover
     janitor_task: asyncio.Task | None = None
     menu_task: asyncio.Task | None = None
     notice_task: asyncio.Task | None = None
+    broadcast_task: asyncio.Task | None = None
     miniapp_server = None
 
     @dp.startup()
     async def on_startup(bot: Bot) -> None:
-        nonlocal janitor_task, menu_task, notice_task, miniapp_server
+        nonlocal janitor_task, menu_task, notice_task, broadcast_task, miniapp_server
         try:
             await bot.delete_webhook(drop_pending_updates=cfg.drop_pending_updates)
         except TelegramAPIError as exc:
@@ -220,7 +222,8 @@ async def main() -> None:  # pragma: no cover
             log.info("startup queue reconcile: создано пар=%s", paired)
         janitor_task = asyncio.create_task(janitor(bot, cfg, database, mm, pack))
         menu_task = asyncio.create_task(menu_refresher(bot, mm, pack, database))
-        notice_task = asyncio.create_task(run_worker(bot, database),name='admin-notice-delivery')
+        notice_task = asyncio.create_task(run_notice_worker(bot, database),name='admin-notice-delivery')
+        broadcast_task = asyncio.create_task(run_broadcast_worker(bot,database),name='admin-broadcast-delivery')
 
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
@@ -229,6 +232,12 @@ async def main() -> None:  # pragma: no cover
             janitor_task.cancel()
         if menu_task is not None:
             menu_task.cancel()
+        if broadcast_task is not None:
+            broadcast_task.cancel()
+            try:
+                await broadcast_task
+            except asyncio.CancelledError:
+                pass
         if notice_task is not None:
             notice_task.cancel()
             try:
