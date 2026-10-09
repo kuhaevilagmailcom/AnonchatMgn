@@ -3384,6 +3384,15 @@ class Database:
     async def cleanup_service_data(self) -> dict[str, int]:
         """Редкая безопасная чистка служебной истории, не затрагивающая профили и активные данные."""
         ts = now()
+        # Do not delete pending/uncertain deliveries or active FSM drafts.
+        await self.db.execute(
+            "DELETE FROM admin_notice_outbox WHERE status IN ('sent','undeliverable') AND created_at<?",
+            (ts-90*86400,),
+        )
+        await self.db.execute(
+            "DELETE FROM fsm_storage WHERE state IS NULL AND updated_at<?",
+            (ts-30*86400,),
+        )
         old_matches = await self.db.execute(
             "DELETE FROM matches WHERE ended_at IS NOT NULL AND ended_at < ?",
             (ts - 90 * 86_400,),
