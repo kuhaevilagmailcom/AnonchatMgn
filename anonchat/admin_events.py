@@ -41,7 +41,8 @@ def notice(kind: str, *, reason: str = "", minutes: int = 0,
            until: int = 0, amount: int = 0, balance: int = 0) -> tuple[str, str]:
     why = (str(reason).strip() or "Решение модерации")[:500]
     if kind == "ban":
-        return "🚫 Вы заблокированы в АНОН МГН", f"Причина: {why}\nСрок: Бессрочно.\nЕсли решение ошибочно, обратитесь в поддержку."
+        term = f"{_duration(minutes)}.\nДо: {_time_local(until)}." if minutes>0 and until else "Бессрочно."
+        return "🚫 Вы заблокированы в АНОН МГН", f"Причина: {why}\nСрок: {term}\nЕсли решение ошибочно, обратитесь в поддержку."
     if kind == "unban":
         return "✅ Блокировка снята", f"Причина: {why}\nВы снова можете пользоваться АНОН МГН."
     if kind == "mute":
