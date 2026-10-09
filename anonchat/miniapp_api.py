@@ -2595,7 +2595,16 @@ class MiniAppServer:
         return ws
 
     async def health(self, _request: web.Request) -> web.Response:
-        return web.json_response({"ok": True, "service": "anon-mgn-miniapp"})
+        """Check a real SQLite query, not only the presence of an HTTP listener."""
+        try:
+            row = await asyncio.wait_for(self.db._fetchone("SELECT 1 AS ready"), timeout=2)
+            healthy = bool(row and int(row["ready"]) == 1)
+        except (asyncio.TimeoutError, Exception):
+            healthy = False
+        return web.json_response(
+            {"ok": healthy, "service": "anon-mgn-miniapp"},
+            status=200 if healthy else 503,
+        )
 
     @web.middleware
     async def security_headers(self, request: web.Request, handler):
