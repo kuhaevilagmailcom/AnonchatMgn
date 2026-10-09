@@ -15,7 +15,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.memory import SimpleEventIsolation
+from anonchat.fsm_storage import SQLiteFSMStorage
 from aiogram.types import ErrorEvent
 
 from anonchat.actions import announce_pairs, refresh_live_menus
@@ -28,6 +29,9 @@ from anonchat.middlewares import DataContext, Throttling
 from anonchat.miniapp_api import start_miniapp_server
 from anonchat.pack import EmojiPack
 from anonchat.diagnostics import METRICS
+from anonchat.admin_events import run_worker as run_notice_worker
+from anonchat.admin_broadcasts import run_worker as run_broadcast_worker
+from anonchat.backups import maybe_backup
 from anonchat.runtime_state import online_count as presence_online_count
 from anonchat import live_chat
 from anonchat import word_game as WG
@@ -61,17 +65,28 @@ async def janitor(
 ) -> None:
     """Подчищает устаревшее состояние и регулярно пересобирает возможные пары."""
     last_maintenance = 0.0
+    last_backup_check = 0.0
     while True:
         try:
             await asyncio.sleep(60)
             mm.drop_stale_ratings()
             removed_games = await db.cleanup_stale_games()
             await db.cleanup_daily_activity()
+            expired_mutes = await db.expire_mutes()
+            expired_bans = await db.expire_bans()
+            if expired_mutes or expired_bans:
+                log.info('Expired restrictions lifted: mutes=%s bans=%s', expired_mutes, expired_bans)
             await db.online_peak(presence_online_count())
             if time.time() - last_maintenance >= 3600:
                 await db.cleanup_report_context(cfg.report_context_retention_days)
                 await db.cleanup_service_data()
                 last_maintenance = time.time()
+            if time.time() - last_backup_check >= 3600:
+                last_backup_check = time.time()
+                try:
+                    await maybe_backup(db,mm)
+                except Exception:
+                    log.exception("janitor: backup failed")
             METRICS.last_cleanup_at = int(time.time())
             METRICS.janitor_removed_games += int(removed_games)
             paired = await reconcile_queue(bot, cfg, db, mm, pack)
@@ -105,7 +120,7 @@ def build(cfg: Config) -> tuple[Bot, Dispatcher, Database, Matchmaker, EmojiPack
     mm = Matchmaker(queue_limit=cfg.queue_soft_limit)
     pack = EmojiPack(cfg.emoji_pack_url)
     bot = Bot(cfg.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    dp = Dispatcher(storage=MemoryStorage())
+    dp = Dispatcher(storage=SQLiteFSMStorage(db),events_isolation=SimpleEventIsolation())
 
     for observer in (dp.message, dp.edited_message, dp.callback_query):
         observer.outer_middleware(Throttling(cfg))
@@ -176,11 +191,13 @@ async def main() -> None:  # pragma: no cover
 
     janitor_task: asyncio.Task | None = None
     menu_task: asyncio.Task | None = None
+    notice_task: asyncio.Task | None = None
+    broadcast_task: asyncio.Task | None = None
     miniapp_server = None
 
     @dp.startup()
     async def on_startup(bot: Bot) -> None:
-        nonlocal janitor_task, menu_task, miniapp_server
+        nonlocal janitor_task, menu_task, notice_task, broadcast_task, miniapp_server
         try:
             await bot.delete_webhook(drop_pending_updates=cfg.drop_pending_updates)
         except TelegramAPIError as exc:
@@ -218,6 +235,8 @@ async def main() -> None:  # pragma: no cover
             log.info("startup queue reconcile: создано пар=%s", paired)
         janitor_task = asyncio.create_task(janitor(bot, cfg, database, mm, pack))
         menu_task = asyncio.create_task(menu_refresher(bot, mm, pack, database))
+        notice_task = asyncio.create_task(run_notice_worker(bot, database),name='admin-notice-delivery')
+        broadcast_task = asyncio.create_task(run_broadcast_worker(bot,database),name='admin-broadcast-delivery')
 
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
@@ -226,6 +245,18 @@ async def main() -> None:  # pragma: no cover
             janitor_task.cancel()
         if menu_task is not None:
             menu_task.cancel()
+        if broadcast_task is not None:
+            broadcast_task.cancel()
+            try:
+                await broadcast_task
+            except asyncio.CancelledError:
+                pass
+        if notice_task is not None:
+            notice_task.cancel()
+            try:
+                await notice_task
+            except asyncio.CancelledError:
+                pass
         if miniapp_server is not None:
             await miniapp_server.stop()
         await live_chat.flush()

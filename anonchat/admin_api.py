@@ -20,6 +20,8 @@ from aiohttp import web
 from .db import referral_day_start, week_period_start, month_period_start, now
 from .permissions import ALL_ADMIN_PERMISSIONS, parse_permissions
 from .diagnostics import METRICS
+from .admin_events import enqueue
+from .admin_broadcasts import create_job, job_status
 
 
 def _json_error(status: int, message: str) -> web.HTTPException:
@@ -115,8 +117,13 @@ class MiniAppAdmin:
             raise _json_error(404, "Пользователь не найден")
         invited, earned = await self.s.db.referral_stats(uid)
         permissions = await self.s.db.get_admin_permissions(uid, self.s.cfg.admin_ids)
+        notices = await self.s.db._fetchall(
+            """SELECT event_key,kind,title,body,status,attempts,created_at,sent_at,last_error
+               FROM admin_notice_outbox WHERE user_id=? ORDER BY created_at DESC,event_key DESC LIMIT 30""",
+            (uid,),
+        )
         return web.json_response({
-            "user": dict(r), "status": self.s.mm.status(uid),
+            "notices": _rows(notices), "user": dict(r), "status": self.s.mm.status(uid),
             "partner_id": self.s.mm.partner(uid),
             "referrals": {"invited": invited, "earned": earned},
             "admin_permissions": sorted(permissions),
@@ -271,7 +278,7 @@ class MiniAppAdmin:
         key=str(data.get("key") or "")
         target=_number(data.get("user_id"),low=0,high=9999999999999)
         report_id=_number(data.get("report_id"),low=0,high=9999999999)
-        minutes=_number(data.get("minutes",60),low=1,high=43200)
+        minutes=_number(data.get("minutes",0 if action in ("ban","report_ban") else 60),low=0 if action in ("ban","report_ban") else 1,high=43200)
         if not re.fullmatch(r"[a-zA-Z0-9_-]{16,90}",key) or not reason:
             raise _json_error(400,"Подтверждение и причина обязательны")
         if action not in ("ban","unban","mute","unmute","report_close","report_ban","report_mute"):
@@ -310,19 +317,37 @@ class MiniAppAdmin:
                     async with con.execute("SELECT 1 FROM users WHERE user_id=?",(target,)) as cur:
                         if not await cur.fetchone():
                             raise _json_error(404,"Пользователь не найден")
+                expires_at=now()+minutes*60 if action in ("mute","report_mute") or (action in ("ban","report_ban") and minutes>0) else 0
                 if action in ("ban","report_ban"):
-                    await con.execute("UPDATE users SET banned=1,ban_reason=?,mute_until=0 WHERE user_id=?",(reason,target))
+                    await con.execute("UPDATE users SET banned=1,ban_reason=?,ban_until=?,mute_until=0 WHERE user_id=?",(reason,expires_at,target))
                 if action=="unban":
-                    await con.execute("UPDATE users SET banned=0,ban_reason='' WHERE user_id=?",(target,))
+                    await con.execute("UPDATE users SET banned=0,ban_reason='',ban_until=0 WHERE user_id=?",(target,))
                 if action in ("mute","report_mute"):
-                    await con.execute("UPDATE users SET mute_until=? WHERE user_id=?",(now()+minutes*60,target))
+                    await con.execute("UPDATE users SET mute_until=? WHERE user_id=?",(expires_at,target))
                 if action=="unmute":
                     await con.execute("UPDATE users SET mute_until=0 WHERE user_id=?",(target,))
+                if action in ("mute","report_mute"):
+                    await con.execute(
+                        "INSERT INTO active_mute_expirations(user_id,until_at) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET until_at=excluded.until_at",
+                        (target,expires_at),
+                    )
+                elif action in ("ban","report_ban","unmute"):
+                    await con.execute("DELETE FROM active_mute_expirations WHERE user_id=?",(target,))
+                if action in ("ban","report_ban") and expires_at>0:
+                    await con.execute(
+                        "INSERT INTO active_ban_expirations(user_id,until_at) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET until_at=excluded.until_at",
+                        (target,expires_at),
+                    )
+                elif action in ("ban","report_ban","unban"):
+                    await con.execute("DELETE FROM active_ban_expirations WHERE user_id=?",(target,))
                 if report is not None:
                     await con.execute(
                         "UPDATE reports SET status='done',handled_by=?,handled_at=? WHERE id=?",
                         (actor,now(),report_id)
                     )
+                if action!="report_close":
+                    kind="ban" if action in ("ban","report_ban") else "mute" if action in ("mute","report_mute") else action
+                    await enqueue(con,target,kind,reason=reason,minutes=minutes,until=expires_at,event_key="moderation:"+key)
                 await con.execute(
                     """INSERT INTO admin_action_log(
                        action_key,actor_id,target_id,action,reason,reference_id,created_at
@@ -343,19 +368,7 @@ class MiniAppAdmin:
                     self.s.pack,db,
                 )
                 db.schedule_matchmaker_save(self.s.mm)
-                if action in ("ban","report_ban"):
-                    await send_to(
-                        self.s.bot,target,
-                        texts.BANNED.format(
-                            city=texts.esc(self.s.cfg.city),
-                            reason=texts.esc(reason)),
-                        None,self.s.pack,
-                    )
-                else:
-                    await send_to(
-                        self.s.bot,target,
-                        texts.MUTED.format(mins=minutes),None,self.s.pack,
-                    )
+                # Telegram delivery is handled by the durable administrative outbox.
             except Exception:
                 import logging
                 logging.getLogger(__name__).exception("Failed to notify moderation target")
@@ -555,15 +568,34 @@ class MiniAppAdmin:
     async def diagnostics(self, request):
         await self.access(request,"stats")
         db=self.s.db
+        started=time.perf_counter()
+        healthy=False
+        try:
+            row=await asyncio.wait_for(db._fetchone("SELECT 1 ok"),timeout=2)
+            healthy=bool(row and row["ok"]==1)
+        except Exception:
+            pass
+        notices=await db._fetchall(
+            "SELECT status,COUNT(*) count FROM admin_notice_outbox GROUP BY status"
+        )
+        broadcasts=await db._fetchall(
+            "SELECT status,COUNT(*) count FROM admin_broadcast_jobs GROUP BY status"
+        )
         return web.json_response({
-            "status":"online","version":METRICS.version,"uptime":METRICS.uptime_seconds(),
+            "status":"online" if healthy else "degraded",
+            "version":METRICS.version,"uptime":METRICS.uptime_seconds(),
+            "db_ok":healthy,"db_query_ms":round((time.perf_counter()-started)*1000,2),
             "db_bytes":db.path.stat().st_size if db.path.exists() else 0,
             "queue":self.s.mm.queue_size(),"pairs":self.s.mm.online_pairs(),
             "games":await db.game_diagnostics(),
-            "telegram_errors":METRICS.temp_errors, "unavailable":METRICS.unavailable,
+            "telegram_errors":METRICS.temp_errors,"unavailable":METRICS.unavailable,
             "janitor_removed_games":METRICS.janitor_removed_games,
             "last_cleanup_at":METRICS.last_cleanup_at,
             "last_matchmaker_save_at":METRICS.last_matchmaker_save_at,
+            "backup_last_success_at":int(await db.get_kv("backup_last_success_at","0") or 0),
+            "backup_error":await db.get_kv("backup_last_error"),
+            "notifications":{str(x["status"]):int(x["count"]) for x in notices},
+            "broadcasts":{str(x["status"]):int(x["count"]) for x in broadcasts},
         })
 
     async def change_multiplier(self, request):
@@ -583,65 +615,45 @@ class MiniAppAdmin:
         key = str(data.get("key") or "")
         label = str(data.get("button_text") or "").strip()[:45]
         url = str(data.get("button_url") or "").strip()
-        if not message or len(message) > 3000:
-            raise _json_error(400, "Текст рассылки должен содержать от 1 до 3000 символов")
+        if not message or len(message)>3000:
+            raise _json_error(400,"Текст рассылки должен содержать от 1 до 3000 символов")
         if not re.fullmatch(r"[a-zA-Z0-9_-]{16,90}", key):
-            raise _json_error(400, "Необходимо подтверждение рассылки")
-        if bool(label) != bool(url):
-            raise _json_error(400, "Для кнопки нужны и текст, и ссылка")
-        if url and (urlsplit(url).scheme != "https" or not urlsplit(url).netloc):
-            raise _json_error(400, "Разрешены только HTTPS-ссылки")
-        cur = await self.s.db.db.execute(
-            """INSERT OR IGNORE INTO admin_action_log
-               (action_key,actor_id,target_id,action,reason,created_at)
-               VALUES(?,?,0,'broadcast',?,?)""",
-            (key, actor, f"Text broadcast ({len(message)} chars)", now()),
-        )
-        if not cur.rowcount:
-            return web.json_response({"started":False,"message":"Эта рассылка уже запускалась"})
-        from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-        markup = (InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=label, url=url)
-        ]]) if url else None)
-        self.jobs[key] = {"status":"running","sent":0,"failed":0}
-        async def deliver():
-            from aiogram.exceptions import TelegramAPIError, TelegramRetryAfter
-            last_id = 0
-            try:
-                while True:
-                    receivers = await self.s.db._fetchall(
-                        """SELECT user_id FROM users WHERE user_id>? AND banned=0
-                           ORDER BY user_id ASC LIMIT 100""",(last_id,)
-                    )
-                    if not receivers:
-                        break
-                    for r in receivers:
-                        target = int(r["user_id"])
-                        last_id = target
-                        try:
-                            await self.s.bot.send_message(
-                                target,message,parse_mode=None,reply_markup=markup,
-                                disable_web_page_preview=True,
-                            )
-                            self.jobs[key]["sent"] += 1
-                        except TelegramRetryAfter as exc:
-                            await asyncio.sleep(min(float(exc.retry_after), 30.0))
-                            self.jobs[key]["failed"] += 1
-                        except TelegramAPIError:
-                            self.jobs[key]["failed"] += 1
-                        await asyncio.sleep(0.06)
-                self.jobs[key]["status"] = "complete"
-            except Exception:
-                self.jobs[key]["status"] = "error"
-                import logging
-                logging.getLogger(__name__).exception("Admin broadcast failed")
-        asyncio.create_task(deliver(),name=f"admin-broadcast:{key[:10]}")
-        return web.json_response({"started":True,"key":key})
+            raise _json_error(400,"Необходимо подтверждение рассылки")
+        if bool(label)!=bool(url):
+            raise _json_error(400,"Для кнопки нужны и текст, и ссылка")
+        if url and (urlsplit(url).scheme!="https" or not urlsplit(url).netloc):
+            raise _json_error(400,"Разрешены только HTTPS-ссылки")
+        started = await create_job(self.s.db,key=key,actor=actor,message=message,
+                                   button_text=label,button_url=url)
+        return web.json_response({"started":started,"key":key,
+                                  "message":"Задание сохранено" if started else "Эта рассылка уже существует"})
 
     async def broadcast_status(self, request):
         await self.access(request,"broadcast")
-        key=request.query.get("key","")
-        return web.json_response(self.jobs.get(key,{"status":"unknown","sent":0,"failed":0}))
+        return web.json_response(await job_status(self.s.db,request.query.get("key","")))
+
+    async def broadcast_jobs(self, request):
+        await self.access(request,"broadcast")
+        jobs=await self.s.db._fetchall(
+            "SELECT job_key FROM admin_broadcast_jobs ORDER BY created_at DESC LIMIT 20"
+        )
+        results=[]
+        for item in jobs:
+            status=await job_status(self.s.db,str(item["job_key"]))
+            results.append({"key":str(item["job_key"]),**status})
+        return web.json_response({"items":results})
+
+    async def broadcast_stop(self, request):
+        await self.access(request,"broadcast")
+        data=await self.body(request)
+        key=str(data.get("key") or "")
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{16,90}",key):
+            raise _json_error(400,"Некорректный ID рассылки")
+        await self.s.db.db.execute(
+            "UPDATE admin_broadcast_jobs SET status='stopped',finished_at=? WHERE job_key=? AND status='running'",
+            (now(),key),
+        )
+        return web.json_response(await job_status(self.s.db,key))
 
     async def backup(self, request):
         _,_,owner=await self.access(request)
@@ -680,13 +692,13 @@ def install_admin_routes(app: web.Application, server) -> MiniAppAdmin:
         ("/polls",a.polls),("/transactions/export",a.export_transactions),
         ("/analytics",a.analytics),("/admins",a.admins),
         ("/actions",a.action_log), ("/diagnostics",a.diagnostics),
-        ("/backup",a.backup),("/broadcast/status",a.broadcast_status),
+        ("/backup",a.backup),("/broadcast/status",a.broadcast_status),("/broadcast/jobs",a.broadcast_jobs),
     ):
         app.router.add_get(prefix+path,handler)
     for path,handler in (
         ("/adjust",a.adjust), ("/moderate",a.moderation),
         ("/admins",a.save_admin),("/multiplier",a.change_multiplier),
-        ("/broadcast",a.broadcast),("/polls",a.update_poll)
+        ("/broadcast",a.broadcast),("/broadcast/stop",a.broadcast_stop),("/polls",a.update_poll)
     ):
         app.router.add_post(prefix+path,handler)
     return a

@@ -429,10 +429,7 @@ async def poll_voters_text(db: Database) -> str:
 async def do_ban(ctx: Ctx, db: Database, mm: Matchmaker, cfg: Config, uid: int, reason: str) -> str:
     await db.set_ban(uid, True, reason)
     await break_pair(ctx.bot, cfg, mm, uid, texts.PARTNER_LEFT, ctx.pack, db)
-    await send_to(
-        ctx.bot, uid, texts.BANNED.format(city=texts.esc(cfg.city), reason=texts.esc(reason)),
-        None, ctx.pack,
-    )
+    # Notification is queued transactionally in Database.set_ban().
     return f"⛔ <code>{uid}</code> забанен. Причина: {texts.esc(reason)}"
 
 
@@ -442,12 +439,10 @@ async def do_unban(db: Database, uid: int) -> str:
 
 
 async def do_mute(
-    ctx: Ctx, db: Database, mm: Matchmaker, cfg: Config, uid: int, mins: int
+    ctx: Ctx, db: Database, mm: Matchmaker, cfg: Config, uid: int, mins: int,
+    reason: str = "Решение модерации",
 ) -> str:
-    until = await db.set_mute(uid, mins)
-    await send_to(
-        ctx.bot, uid, texts.MUTED.format(mins=max(1, int((until - time.time()) // 60))), None, ctx.pack
-    )
+    await db.set_mute(uid, mins, reason=reason)
     await break_pair(ctx.bot, cfg, mm, uid, texts.MOD_CLOSED_DIALOG, ctx.pack, db)
     return f"🔇 <code>{uid}</code> заглушён на {mins} мин."
 
@@ -726,9 +721,10 @@ async def cmd_mute(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, cfg
         return
     parts = _parse_args(message.text or "")
     if len(parts) < 2 or not parts[0].lstrip("-").isdigit() or not parts[1].isdigit():
-        await ctx.reply("Формат: <code>/mute 123456 60</code> (id и минуты)")
+        await ctx.reply("Формат: <code>/mute 123456 60 причина</code> (id, минуты, причина)")
         return
-    await ctx.reply(await do_mute(ctx, db, mm, cfg, int(parts[0]), int(parts[1])))
+    reason = " ".join(parts[2:]).strip() or "Решение модерации"
+    await ctx.reply(await do_mute(ctx, db, mm, cfg, int(parts[0]), int(parts[1]), reason))
 
 
 @router.message(Command("find"))

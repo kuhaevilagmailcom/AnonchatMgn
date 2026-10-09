@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import logging
 import math
 import secrets
 import sqlite3
@@ -54,6 +55,7 @@ CREATE TABLE IF NOT EXISTS users (
     about            TEXT    NOT NULL DEFAULT '',
     banned           INTEGER NOT NULL DEFAULT 0,
     ban_reason       TEXT    NOT NULL DEFAULT '',
+    ban_until        INTEGER NOT NULL DEFAULT 0,
     mute_until       INTEGER NOT NULL DEFAULT 0,
     premium_until    INTEGER NOT NULL DEFAULT 0,
     anon_plus_theme   TEXT    NOT NULL DEFAULT 'pink',
@@ -251,6 +253,68 @@ CREATE TABLE IF NOT EXISTS miniapp_dialog_results (
     rated      INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS fsm_storage (
+    storage_key TEXT PRIMARY KEY,
+    state TEXT,
+    data TEXT NOT NULL DEFAULT '{}',
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_fsm_storage_updated_at
+    ON fsm_storage(updated_at);
+CREATE TABLE IF NOT EXISTS active_ban_expirations (
+    user_id INTEGER PRIMARY KEY,
+    until_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ban_expiration_until
+    ON active_ban_expirations(until_at);
+CREATE TABLE IF NOT EXISTS active_mute_expirations (
+    user_id INTEGER PRIMARY KEY,
+    until_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mute_expiration_until
+    ON active_mute_expirations(until_at);
+CREATE TABLE IF NOT EXISTS admin_notice_outbox (
+    event_key           TEXT PRIMARY KEY,
+    user_id             INTEGER NOT NULL,
+    kind                TEXT NOT NULL,
+    title               TEXT NOT NULL,
+    body                TEXT NOT NULL,
+    status              TEXT NOT NULL DEFAULT 'pending',
+    attempts            INTEGER NOT NULL DEFAULT 0,
+    created_at          INTEGER NOT NULL,
+    next_attempt_at     INTEGER NOT NULL,
+    sent_at             INTEGER NOT NULL DEFAULT 0,
+    telegram_message_id INTEGER NOT NULL DEFAULT 0,
+    last_error          TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_notice_outbox_pending
+    ON admin_notice_outbox(status, next_attempt_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_notice_outbox_user
+    ON admin_notice_outbox(user_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS admin_broadcast_jobs (
+    job_key      TEXT PRIMARY KEY,
+    actor_id     INTEGER NOT NULL,
+    message      TEXT NOT NULL,
+    button_text  TEXT NOT NULL DEFAULT '',
+    button_url   TEXT NOT NULL DEFAULT '',
+    status       TEXT NOT NULL DEFAULT 'running',
+    created_at   INTEGER NOT NULL,
+    finished_at  INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS admin_broadcast_targets (
+    job_key       TEXT NOT NULL,
+    user_id       INTEGER NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'pending',
+    attempts      INTEGER NOT NULL DEFAULT 0,
+    next_retry_at INTEGER NOT NULL DEFAULT 0,
+    last_error    TEXT NOT NULL DEFAULT '',
+    telegram_message_id INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (job_key,user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_broadcast_delivery
+    ON admin_broadcast_targets(job_key,status,next_retry_at);
+
 CREATE INDEX IF NOT EXISTS idx_miniapp_events_user
     ON miniapp_events(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_miniapp_events_unread
@@ -358,6 +422,7 @@ _MIGRATIONS: tuple[tuple[str, str], ...] = (
     ("nickname", "ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT ''"),
     ("nick_key", "ALTER TABLE users ADD COLUMN nick_key TEXT NOT NULL DEFAULT ''"),
     ("age", "ALTER TABLE users ADD COLUMN age INTEGER NOT NULL DEFAULT 0"),
+    ("ban_until", "ALTER TABLE users ADD COLUMN ban_until INTEGER NOT NULL DEFAULT 0"),
     ("gender", "ALTER TABLE users ADD COLUMN gender TEXT NOT NULL DEFAULT ''"),
     ("looking_for", "ALTER TABLE users ADD COLUMN looking_for TEXT NOT NULL DEFAULT ''"),
     ("premium_until", "ALTER TABLE users ADD COLUMN premium_until INTEGER NOT NULL DEFAULT 0"),
@@ -801,6 +866,12 @@ class Database:
                                VALUES (?, ?, ?) ON CONFLICT(user_id, day_start)
                                DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
                             (uid, referral_day_start(), delta),
+                        )
+                    if str(source) in {"admin_award", "admin_debit"}:
+                        from .admin_events import enqueue
+                        await enqueue(
+                            conn, uid, "points", reason=reason, amount=delta,
+                            balance=after, event_key=f"xp:{key}" if key else "",
                         )
                     await conn.commit()
                     self._top_cache.clear()
@@ -2583,21 +2654,141 @@ class Database:
             )
             await self.db.commit()
 
-    async def set_ban(self, user_id: int, banned: bool, reason: str = "") -> None:
+    async def set_ban(self, user_id: int, banned: bool, reason: str = "", minutes: int = 0) -> None:
+        """Commit restriction and user notice atomically, including bot commands."""
+        from .admin_events import enqueue
         await self._ensure_row(user_id)
-        await self.db.execute(
-            "UPDATE users SET banned = ?, ban_reason = ?, mute_until = 0 WHERE user_id = ?",
-            (int(banned), reason if banned else "", user_id),
-        )
-        await self.db.commit()
+        expires_at=now()+max(0,int(minutes))*60 if banned and int(minutes)>0 else 0
+        async with aiosqlite.connect(self.path, isolation_level=None) as conn:
+            conn.row_factory = aiosqlite.Row
+            await conn.execute("PRAGMA busy_timeout=10000")
+            await conn.execute("BEGIN IMMEDIATE")
+            try:
+                async with conn.execute("SELECT banned,ban_reason,ban_until FROM users WHERE user_id=?", (int(user_id),)) as cur:
+                    prev = await cur.fetchone()
+                if not prev:
+                    raise ValueError("Пользователь не найден")
+                changed = bool(prev["banned"]) != bool(banned) or (
+                    bool(banned) and (str(prev["ban_reason"] or "") != str(reason) or int(prev["ban_until"] or 0)!=expires_at)
+                )
+                await conn.execute(
+                    "UPDATE users SET banned=?,ban_reason=?,ban_until=?,mute_until=0 WHERE user_id=?",
+                    (int(banned), str(reason)[:500] if banned else "", expires_at, int(user_id)),
+                )
+                await conn.execute("DELETE FROM active_mute_expirations WHERE user_id=?",(int(user_id),))
+                if expires_at:
+                    await conn.execute(
+                        "INSERT INTO active_ban_expirations(user_id,until_at) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET until_at=excluded.until_at",
+                        (int(user_id),expires_at),
+                    )
+                else:
+                    await conn.execute("DELETE FROM active_ban_expirations WHERE user_id=?",(int(user_id),))
+                if changed:
+                    await enqueue(conn, user_id, "ban" if banned else "unban",
+                                  reason=reason or "Решение модерации",minutes=int(minutes),until=expires_at)
+                await conn.commit()
+            except BaseException:
+                await conn.rollback()
+                raise
         self._top_cache.clear()
 
-    async def set_mute(self, user_id: int, minutes: int) -> int:
+    async def set_mute(self, user_id: int, minutes: int,
+                       reason: str = "Решение модерации") -> int:
+        from .admin_events import enqueue
         await self._ensure_row(user_id)
-        until = now() + max(0, minutes) * 60
-        await self.db.execute("UPDATE users SET mute_until = ? WHERE user_id = ?", (until, user_id))
-        await self.db.commit()
+        until = now() + max(0, int(minutes)) * 60
+        async with aiosqlite.connect(self.path, isolation_level=None) as conn:
+            conn.row_factory = aiosqlite.Row
+            await conn.execute("PRAGMA busy_timeout=10000")
+            await conn.execute("BEGIN IMMEDIATE")
+            try:
+                async with conn.execute("SELECT mute_until FROM users WHERE user_id=?", (int(user_id),)) as cur:
+                    prev = await cur.fetchone()
+                if not prev:
+                    raise ValueError("Пользователь не найден")
+                before = int(prev["mute_until"] or 0)
+                await conn.execute("UPDATE users SET mute_until=? WHERE user_id=?", (until, int(user_id)))
+                if minutes>0:
+                    await conn.execute(
+                        "INSERT INTO active_mute_expirations(user_id,until_at) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET until_at=excluded.until_at",
+                        (int(user_id),until),
+                    )
+                else:
+                    await conn.execute("DELETE FROM active_mute_expirations WHERE user_id=?",(int(user_id),))
+                if (int(minutes)>0 and before != until) or (int(minutes)<=0 and before>0):
+                    await enqueue(conn, user_id, "mute" if minutes>0 else "unmute",
+                                  reason=reason, minutes=int(minutes), until=until)
+                await conn.commit()
+            except BaseException:
+                await conn.rollback()
+                raise
         return until
+
+    async def expire_bans(self, *, limit: int = 100) -> int:
+        """Lift temporary bans only when their active expiry matches the database."""
+        from .admin_events import enqueue
+        count=0
+        async with aiosqlite.connect(self.path,isolation_level=None) as con:
+            con.row_factory=aiosqlite.Row
+            await con.execute("PRAGMA busy_timeout=10000")
+            await con.execute("BEGIN IMMEDIATE")
+            try:
+                stamp=now()
+                async with con.execute(
+                    """SELECT e.user_id,e.until_at FROM active_ban_expirations e
+                       JOIN users u ON u.user_id=e.user_id
+                       WHERE e.until_at<=? AND u.banned=1 AND u.ban_until=e.until_at
+                       ORDER BY e.until_at LIMIT ?""",
+                    (stamp,max(1,min(int(limit),1000))),
+                ) as cursor:
+                    rows=await cursor.fetchall()
+                for row in rows:
+                    uid=int(row["user_id"])
+                    await con.execute("UPDATE users SET banned=0,ban_reason='',ban_until=0 WHERE user_id=? AND ban_until=?",
+                                      (uid,int(row["until_at"])))
+                    await con.execute("DELETE FROM active_ban_expirations WHERE user_id=?",(uid,))
+                    await enqueue(con,uid,"unban",reason="Срок блокировки истёк",
+                                  event_key=f"auto-unban:{uid}:{int(row['until_at'])}")
+                    count+=1
+                await con.commit()
+            except BaseException:
+                await con.rollback()
+                raise
+        if count:
+            self._top_cache.clear()
+        return count
+
+    async def expire_mutes(self, *, limit: int = 100) -> int:
+        """Clear only still-current expired mutes and queue their notices atomically."""
+        from .admin_events import enqueue
+        count = 0
+        async with aiosqlite.connect(self.path,isolation_level=None) as conn:
+            conn.row_factory=aiosqlite.Row
+            await conn.execute("PRAGMA busy_timeout=10000")
+            await conn.execute("BEGIN IMMEDIATE")
+            try:
+                stamp=now()
+                async with conn.execute(
+                    """SELECT e.user_id,e.until_at FROM active_mute_expirations e
+                       JOIN users u ON u.user_id=e.user_id
+                       WHERE e.until_at<=? AND u.mute_until=e.until_at
+                       ORDER BY e.until_at LIMIT ?""",
+                    (stamp,max(1,min(int(limit),1000))),
+                ) as cur:
+                    rows=await cur.fetchall()
+                for row in rows:
+                    uid=int(row["user_id"])
+                    await conn.execute("UPDATE users SET mute_until=0 WHERE user_id=? AND mute_until=?",
+                                       (uid,int(row["until_at"])))
+                    await conn.execute("DELETE FROM active_mute_expirations WHERE user_id=?",(uid,))
+                    await enqueue(conn,uid,"unmute",reason="Срок мута истёк",
+                                  event_key=f"auto-unmute:{uid}:{int(row['until_at'])}")
+                    count+=1
+                await conn.commit()
+            except BaseException:
+                await conn.rollback()
+                raise
+        return count
 
     async def list_restricted(
         self, kind: str, limit: int = 10, offset: int = 0
@@ -3193,6 +3384,15 @@ class Database:
     async def cleanup_service_data(self) -> dict[str, int]:
         """Редкая безопасная чистка служебной истории, не затрагивающая профили и активные данные."""
         ts = now()
+        # Do not delete pending/uncertain deliveries or active FSM drafts.
+        await self.db.execute(
+            "DELETE FROM admin_notice_outbox WHERE status IN ('sent','undeliverable') AND created_at<?",
+            (ts-90*86400,),
+        )
+        await self.db.execute(
+            "DELETE FROM fsm_storage WHERE state IS NULL AND updated_at<?",
+            (ts-30*86400,),
+        )
         old_matches = await self.db.execute(
             "DELETE FROM matches WHERE ended_at IS NOT NULL AND ended_at < ?",
             (ts - 90 * 86_400,),
@@ -3539,7 +3739,7 @@ class Database:
         """Дешёвый debounce: на каждом апдейте сравниваем только integer revision.
 
         Snapshot не сериализуется и SQLite не пишется на каждое сообщение. При
-        активном чате состояние сбрасывается на диск максимум раз в 5 секунд.
+        активном чате изменения сбрасываются каждые 0.3 секунды.
         """
         revision = int(getattr(matchmaker, "persistence_revision", 0))
         if revision == self._matchmaker_revision:
@@ -3553,11 +3753,19 @@ class Database:
     async def _save_matchmaker_loop(self) -> None:
         try:
             while True:
-                await asyncio.sleep(5)
+                await asyncio.sleep(0.3)
                 self._matchmaker_dirty = False
                 if self._matchmaker is not None:
                     state = self._matchmaker.snapshot()
-                    await self.save_matchmaker(state)
+                    try:
+                        await self.save_matchmaker(state)
+                    except Exception:
+                        logging.getLogger(__name__).exception(
+                            "Matchmaker persistence failed; retrying instead of losing the revision"
+                        )
+                        self._matchmaker_dirty = True
+                        await asyncio.sleep(2)
+                        continue
                     self._matchmaker_snapshot_key = json.dumps(
                         state, ensure_ascii=False, separators=(",", ":"), sort_keys=True
                     )

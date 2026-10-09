@@ -94,7 +94,7 @@
       else if(state.page==='games')result=await games();
       else if(state.page==='analytics')result=await analytics();
       else if(state.page==='admins')result=await admins();
-      else if(state.page==='broadcast')result=broadcast();
+      else if(state.page==='broadcast')result=await broadcast();
       else if(state.page==='diagnostics')result=await diagnostics();
       else if(state.page==='audit')result=await audit();
       if(token===state.nonce)target.innerHTML=result;
@@ -140,7 +140,7 @@
       ['Сообщений / диалогов',fmt(u.messages)+' / '+fmt(u.dialogs)],
       ['Оценки + / −',fmt(u.good_ratings)+' / '+fmt(u.bad_ratings)],
       ['Жалоб',fmt(u.reports_received)],['Рефералов',fmt(ref.invited)+' · +'+fmt(ref.earned)+' ★'],
-      ['Бан',u.banned?'Да · '+escape(u.ban_reason||'—'):'Нет'],
+      ['Бан',u.banned?'Да · '+escape(u.ban_reason||'—')+(Number(u.ban_until)>0?' · до '+date(u.ban_until):' · бессрочно'):'Нет'],
       ['Мут до',Number(u.mute_until)>Date.now()/1000?date(u.mute_until):'Не активен'],
       ['Администратор',d.admin_permissions?.length?escape(d.admin_permissions.join(', ')):'Нет']
     ];
@@ -152,7 +152,13 @@
     return wrapHeader('Данные участника · только для администрации')+
       '<div class="admin-user-hero"><small>ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ</small><h2>'+escape(u.nickname||u.first_name||'Аноним')+'</h2><strong>'+fmt(u.xp)+' ★</strong></div>'+
       '<dl class="admin-details">'+parts.map(([k,v])=>'<div><dt>'+escape(k)+'</dt><dd>'+v+'</dd></div>').join('')+'</dl>'+
-      '<div class="admin-actions">'+buttons.join('')+'</div>'+navButton('← Вернуться в список','nav','users','text');
+      '<div class="admin-actions">'+buttons.join('')+'</div>'+
+      '<div class="admin-subheading">История уведомлений</div><div class="admin-list">'+
+      ((d.notices||[]).length?(d.notices||[]).map(n=>
+        '<article class="admin-report"><strong>'+escape(n.title)+'</strong><p>'+escape(n.body)+'</p>'+
+        '<small>'+date(n.created_at)+' · Доставка: '+escape(n.status)+
+        (n.last_error?' · '+escape(n.last_error):'')+'</small></article>').join(''):placeholder)+'</div>'+
+      navButton('← Вернуться в список','nav','users','text');
   }
   function transactionControls(){
     const periods=[['today','Сегодня'],['week','Неделя'],['month','Месяц'],['all','Всё время']];
@@ -273,13 +279,20 @@
         '<div class="admin-actions">'+navButton('Изменить','editAdmin',u.user_id)+'</div></article>').join(''):placeholder)+'</div>'+
       navButton('+ Назначить администратора','editAdmin','0','accent');
   }
-  function broadcast(){
+  async function broadcast(){
+    const jobs=await api('/broadcast/jobs');
     return wrapHeader('Одно сообщение для пользователей')+
       '<form id="adminBroadcastForm" class="admin-form"><label>Сообщение<textarea name="message" maxlength="3000" rows="6" required placeholder="Текст рассылки"></textarea></label>'+
       '<label>Текст кнопки (необязательно)<input name="button_text" maxlength="45" placeholder="Подробнее"></label>'+
       '<label>HTTPS-ссылка кнопки (необязательно)<input name="button_url" placeholder="https://t.me/..."></label>'+
       '<button type="submit" class="admin-primary">Предпросмотр рассылки</button></form>'+
-      (state.broadcastKey?'<div class="admin-note">Последняя рассылка: '+escape(state.broadcastKey.slice(0,10))+' · '+navButton('Проверить статус','broadcastStatus')+'</div>':'');
+      '<div class="admin-subheading">История рассылок</div><div class="admin-list">'+
+      ((jobs.items||[]).length?jobs.items.map(j=>
+        '<article class="admin-report"><b>'+escape(j.key.slice(0,12))+'</b><p>Статус: '+escape(j.status)+'</p>'+
+        '<small>'+date(j.created_at)+' · '+fmt(j.sent)+' / '+fmt(j.total)+' отправлено · '+fmt(j.uncertain)+' проверить</small>'+
+        '<div class="admin-actions">'+navButton('Статус','broadcastStatus',j.key)+
+        (j.status==='running'?navButton('Остановить','broadcastStop',j.key,'danger'):'')+
+        '</div></article>').join(''):placeholder)+'</div>';
   }
   async function diagnostics(){
     const d=await api('/diagnostics');
@@ -290,7 +303,14 @@
       tile('Активные игры',fmt(d.games?.total))+
       tile('Ошибки Telegram',fmt(d.telegram_errors))+
       tile('Недоступные пользователи',fmt(d.unavailable))+
-      tile('Последняя очистка',date(d.last_cleanup_at))+'</section>'+
+      tile('Последняя очистка',date(d.last_cleanup_at))+
+      tile('SQLite',d.db_ok?'Работает':'Ошибка')+
+      tile('Задержка БД',String(d.db_query_ms||0)+' мс')+
+      tile('Последний бэкап',d.backup_last_success_at?date(d.backup_last_success_at):'Нет')+
+      tile('Уведомления в очереди',fmt(d.notifications?.pending||0))+
+      tile('Ошибки уведомлений',fmt((d.notifications?.failed||0)+(d.notifications?.undeliverable||0)))+
+      tile('Активные рассылки',fmt(d.broadcasts?.running||0))+'</section>'+
+      (d.backup_error?'<div class="admin-note">Ошибка бэкапа: '+escape(d.backup_error)+'</div>':'')+
       (state.owner?'<div class="admin-actions">'+navButton('Скачать резервную копию SQLite','backup')+
       navButton('Изменить x1 / x2 / x3','multiplier')+'</div>':'');
   }
@@ -320,6 +340,7 @@
     showModal('<h2>'+escape(names[action]||action)+'</h2><p class="admin-muted">ID '+escape(user_id||'—')+
       (report_id?' · жалоба #'+escape(report_id):'')+'</p><form id="adminModerationForm" class="admin-form">'+
       (action.includes('mute')&&action!=='unmute'?'<label>Продолжительность, минут<input type="number" name="minutes" min="1" max="43200" value="60" required></label>':'')+
+      ((action==='ban'||action==='report_ban')?'<label>Срок блокировки<select name="minutes"><option value="0">Бессрочно</option><option value="15">15 минут</option><option value="60">1 час</option><option value="180">3 часа</option><option value="1440">1 день</option><option value="4320">3 дня</option><option value="10080">7 дней</option><option value="43200">30 дней</option></select></label>':'')+
       '<label>Причина действия<textarea name="reason" maxlength="500" required placeholder="Укажи причину"></textarea></label>'+
       '<button type="submit" class="admin-primary">Проверить действие</button></form>');
   }
@@ -340,10 +361,11 @@
     setTimeout(()=>URL.revokeObjectURL(object),10000);
     toast('Копия базы сформирована');
   }
-  async function statusBroadcast(){
-    if(!state.broadcastKey)return;
-    const d=await api('/broadcast/status',{}, {key:state.broadcastKey});
-    toast('Рассылка: '+d.status+' · отправлено '+fmt(d.sent)+' · ошибок '+fmt(d.failed));
+  async function statusBroadcast(keyOverride=''){
+    const current=keyOverride||state.broadcastKey;
+    if(!current)return;
+    const d=await api('/broadcast/status',{}, {key:current});
+    toast('Рассылка: '+d.status+' · отправлено '+fmt(d.sent)+' · ожидает '+fmt(d.pending)+' · ошибок '+fmt(d.failed)+' · проверить '+fmt(d.uncertain));
   }
   root.addEventListener('click',async e=>{
     const el=e.target.closest('[data-action]');if(!el||el.disabled)return;
@@ -372,6 +394,10 @@
       else if(action==='gamesPage'){state.gamesPage=Number(value);render()}
       else if(action==='actionsPage'){state.actionsPage=Number(value);render()}
       else if(action==='backup')await downloadBackup();
+      else if(action==='broadcastStop'){if((value||state.broadcastKey)&&confirm('Остановить рассылку?')){
+        const info=await post('/broadcast/stop',{key:value||state.broadcastKey});
+        toast('Статус рассылки: '+info.status);render();
+      }}
       else if(action==='exportLedger'){
         const params={period:state.ledgerPeriod,kind:state.ledgerKind,
           source:state.ledgerSource,user_id:state.ledgerUser};
@@ -388,7 +414,7 @@
         await post('/polls',{action:'close',key:key(),question:''});
         toast('Опрос завершён');render();
       }
-      else if(action==='broadcastStatus')await statusBroadcast();
+      else if(action==='broadcastStatus')await statusBroadcast(value);
       else if(action==='multiplier'){showModal('<h2>Множитель очков</h2><p class="admin-muted">Устанавливает ручной x1/x2/x3. Автоматический x2 по дням недели действует отдельно.</p><div class="admin-actions">'+[1,2,3].map(n=>navButton('×'+n,'setMultiplier',n)).join('')+'</div>')}
       else if(action==='setMultiplier'){if(!confirm('Установить x'+value+'?'))return;const d=await post('/multiplier',{value:Number(value)});closeModal();toast('Множитель: x'+d.multiplier);render()}
       else if(action==='executeAdjust'){
@@ -438,7 +464,7 @@
       }else if(id==='adminModerationForm'){
         const a=state.moderation,reason=String(data.get('reason')||'').trim();
         if(!reason)throw new Error('Причина обязательна');
-        state.pending={...a,reason,minutes:Number(data.get('minutes')||60),key:key()};
+        state.pending={...a,reason,minutes:Number(data.get('minutes')??(a.action==='ban'||a.action==='report_ban'?0:60)),key:key()};
         showModal('<h2>Подтвердить действие?</h2><p>'+escape(a.action)+' · пользователь '+a.user_id+
           (a.report_id?' · жалоба #'+a.report_id:'')+'</p><p class="admin-muted">'+escape(reason)+'</p>'+
           navButton('Да, выполнить','executeModeration','','admin-primary danger'));
