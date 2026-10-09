@@ -326,6 +326,13 @@ class MiniAppAdmin:
                     await con.execute("UPDATE users SET mute_until=? WHERE user_id=?",(expires_at,target))
                 if action=="unmute":
                     await con.execute("UPDATE users SET mute_until=0 WHERE user_id=?",(target,))
+                if action in ("mute","report_mute"):
+                    await con.execute(
+                        "INSERT INTO active_mute_expirations(user_id,until_at) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET until_at=excluded.until_at",
+                        (target,expires_at),
+                    )
+                elif action in ("ban","report_ban","unmute"):
+                    await con.execute("DELETE FROM active_mute_expirations WHERE user_id=?",(target,))
                 if report is not None:
                     await con.execute(
                         "UPDATE reports SET status='done',handled_by=?,handled_at=? WHERE id=?",
