@@ -252,6 +252,14 @@ CREATE TABLE IF NOT EXISTS miniapp_dialog_results (
     rated      INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS fsm_storage (
+    storage_key TEXT PRIMARY KEY,
+    state TEXT,
+    data TEXT NOT NULL DEFAULT '{}',
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_fsm_storage_updated_at
+    ON fsm_storage(updated_at);
 CREATE TABLE IF NOT EXISTS active_mute_expirations (
     user_id INTEGER PRIMARY KEY,
     until_at INTEGER NOT NULL
