@@ -140,7 +140,7 @@
       ['Сообщений / диалогов',fmt(u.messages)+' / '+fmt(u.dialogs)],
       ['Оценки + / −',fmt(u.good_ratings)+' / '+fmt(u.bad_ratings)],
       ['Жалоб',fmt(u.reports_received)],['Рефералов',fmt(ref.invited)+' · +'+fmt(ref.earned)+' ★'],
-      ['Бан',u.banned?'Да · '+escape(u.ban_reason||'—'):'Нет'],
+      ['Бан',u.banned?'Да · '+escape(u.ban_reason||'—')+(Number(u.ban_until)>0?' · до '+date(u.ban_until):' · бессрочно'):'Нет'],
       ['Мут до',Number(u.mute_until)>Date.now()/1000?date(u.mute_until):'Не активен'],
       ['Администратор',d.admin_permissions?.length?escape(d.admin_permissions.join(', ')):'Нет']
     ];
@@ -340,6 +340,7 @@
     showModal('<h2>'+escape(names[action]||action)+'</h2><p class="admin-muted">ID '+escape(user_id||'—')+
       (report_id?' · жалоба #'+escape(report_id):'')+'</p><form id="adminModerationForm" class="admin-form">'+
       (action.includes('mute')&&action!=='unmute'?'<label>Продолжительность, минут<input type="number" name="minutes" min="1" max="43200" value="60" required></label>':'')+
+      ((action==='ban'||action==='report_ban')?'<label>Срок блокировки<select name="minutes"><option value="0">Бессрочно</option><option value="15">15 минут</option><option value="60">1 час</option><option value="180">3 часа</option><option value="1440">1 день</option><option value="4320">3 дня</option><option value="10080">7 дней</option><option value="43200">30 дней</option></select></label>':'')+
       '<label>Причина действия<textarea name="reason" maxlength="500" required placeholder="Укажи причину"></textarea></label>'+
       '<button type="submit" class="admin-primary">Проверить действие</button></form>');
   }
@@ -463,7 +464,7 @@
       }else if(id==='adminModerationForm'){
         const a=state.moderation,reason=String(data.get('reason')||'').trim();
         if(!reason)throw new Error('Причина обязательна');
-        state.pending={...a,reason,minutes:Number(data.get('minutes')||60),key:key()};
+        state.pending={...a,reason,minutes:Number(data.get('minutes')??(a.action==='ban'||a.action==='report_ban'?0:60)),key:key()};
         showModal('<h2>Подтвердить действие?</h2><p>'+escape(a.action)+' · пользователь '+a.user_id+
           (a.report_id?' · жалоба #'+a.report_id:'')+'</p><p class="admin-muted">'+escape(reason)+'</p>'+
           navButton('Да, выполнить','executeModeration','','admin-primary danger'));
