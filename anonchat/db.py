@@ -252,6 +252,12 @@ CREATE TABLE IF NOT EXISTS miniapp_dialog_results (
     rated      INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS active_mute_expirations (
+    user_id INTEGER PRIMARY KEY,
+    until_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mute_expiration_until
+    ON active_mute_expirations(until_at);
 CREATE TABLE IF NOT EXISTS admin_notice_outbox (
     event_key           TEXT PRIMARY KEY,
     user_id             INTEGER NOT NULL,
@@ -2652,6 +2658,7 @@ class Database:
                     "UPDATE users SET banned=?,ban_reason=?,mute_until=0 WHERE user_id=?",
                     (int(banned), str(reason)[:500] if banned else "", int(user_id)),
                 )
+                await conn.execute("DELETE FROM active_mute_expirations WHERE user_id=?",(int(user_id),))
                 if changed:
                     await enqueue(conn, user_id, "ban" if banned else "unban",
                                   reason=reason or "Решение модерации")
@@ -2677,7 +2684,14 @@ class Database:
                     raise ValueError("Пользователь не найден")
                 before = int(prev["mute_until"] or 0)
                 await conn.execute("UPDATE users SET mute_until=? WHERE user_id=?", (until, int(user_id)))
-                if (int(minutes)>0 and before != until) or (int(minutes)<=0 and before>now()):
+                if minutes>0:
+                    await conn.execute(
+                        "INSERT INTO active_mute_expirations(user_id,until_at) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET until_at=excluded.until_at",
+                        (int(user_id),until),
+                    )
+                else:
+                    await conn.execute("DELETE FROM active_mute_expirations WHERE user_id=?",(int(user_id),))
+                if (int(minutes)>0 and before != until) or (int(minutes)<=0 and before>0):
                     await enqueue(conn, user_id, "mute" if minutes>0 else "unmute",
                                   reason=reason, minutes=int(minutes), until=until)
                 await conn.commit()
@@ -2685,6 +2699,38 @@ class Database:
                 await conn.rollback()
                 raise
         return until
+
+    async def expire_mutes(self, *, limit: int = 100) -> int:
+        """Clear only still-current expired mutes and queue their notices atomically."""
+        from .admin_events import enqueue
+        count = 0
+        async with aiosqlite.connect(self.path,isolation_level=None) as conn:
+            conn.row_factory=aiosqlite.Row
+            await conn.execute("PRAGMA busy_timeout=10000")
+            await conn.execute("BEGIN IMMEDIATE")
+            try:
+                stamp=now()
+                async with conn.execute(
+                    """SELECT e.user_id,e.until_at FROM active_mute_expirations e
+                       JOIN users u ON u.user_id=e.user_id
+                       WHERE e.until_at<=? AND u.mute_until=e.until_at
+                       ORDER BY e.until_at LIMIT ?""",
+                    (stamp,max(1,min(int(limit),1000))),
+                ) as cur:
+                    rows=await cur.fetchall()
+                for row in rows:
+                    uid=int(row["user_id"])
+                    await conn.execute("UPDATE users SET mute_until=0 WHERE user_id=? AND mute_until=?",
+                                       (uid,int(row["until_at"])))
+                    await conn.execute("DELETE FROM active_mute_expirations WHERE user_id=?",(uid,))
+                    await enqueue(conn,uid,"unmute",reason="Срок мута истёк",
+                                  event_key=f"auto-unmute:{uid}:{int(row['until_at'])}")
+                    count+=1
+                await conn.commit()
+            except BaseException:
+                await conn.rollback()
+                raise
+        return count
 
     async def list_restricted(
         self, kind: str, limit: int = 10, offset: int = 0
