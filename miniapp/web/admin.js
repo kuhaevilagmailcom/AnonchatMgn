@@ -94,7 +94,7 @@
       else if(state.page==='games')result=await games();
       else if(state.page==='analytics')result=await analytics();
       else if(state.page==='admins')result=await admins();
-      else if(state.page==='broadcast')result=broadcast();
+      else if(state.page==='broadcast')result=await broadcast();
       else if(state.page==='diagnostics')result=await diagnostics();
       else if(state.page==='audit')result=await audit();
       if(token===state.nonce)target.innerHTML=result;
@@ -279,14 +279,20 @@
         '<div class="admin-actions">'+navButton('Изменить','editAdmin',u.user_id)+'</div></article>').join(''):placeholder)+'</div>'+
       navButton('+ Назначить администратора','editAdmin','0','accent');
   }
-  function broadcast(){
+  async function broadcast(){
+    const jobs=await api('/broadcast/jobs');
     return wrapHeader('Одно сообщение для пользователей')+
       '<form id="adminBroadcastForm" class="admin-form"><label>Сообщение<textarea name="message" maxlength="3000" rows="6" required placeholder="Текст рассылки"></textarea></label>'+
       '<label>Текст кнопки (необязательно)<input name="button_text" maxlength="45" placeholder="Подробнее"></label>'+
       '<label>HTTPS-ссылка кнопки (необязательно)<input name="button_url" placeholder="https://t.me/..."></label>'+
       '<button type="submit" class="admin-primary">Предпросмотр рассылки</button></form>'+
-      (state.broadcastKey?'<div class="admin-note">Последняя рассылка: '+escape(state.broadcastKey.slice(0,10))+' · '+navButton('Проверить статус','broadcastStatus')+
-      navButton('Остановить','broadcastStop','','danger')+'</div>':'');
+      '<div class="admin-subheading">История рассылок</div><div class="admin-list">'+
+      ((jobs.items||[]).length?jobs.items.map(j=>
+        '<article class="admin-report"><b>'+escape(j.key.slice(0,12))+'</b><p>Статус: '+escape(j.status)+'</p>'+
+        '<small>'+date(j.created_at)+' · '+fmt(j.sent)+' / '+fmt(j.total)+' отправлено · '+fmt(j.uncertain)+' проверить</small>'+
+        '<div class="admin-actions">'+navButton('Статус','broadcastStatus',j.key)+
+        (j.status==='running'?navButton('Остановить','broadcastStop',j.key,'danger'):'')+
+        '</div></article>').join(''):placeholder)+'</div>';
   }
   async function diagnostics(){
     const d=await api('/diagnostics');
@@ -354,9 +360,10 @@
     setTimeout(()=>URL.revokeObjectURL(object),10000);
     toast('Копия базы сформирована');
   }
-  async function statusBroadcast(){
-    if(!state.broadcastKey)return;
-    const d=await api('/broadcast/status',{}, {key:state.broadcastKey});
+  async function statusBroadcast(keyOverride=''){
+    const current=keyOverride||state.broadcastKey;
+    if(!current)return;
+    const d=await api('/broadcast/status',{}, {key:current});
     toast('Рассылка: '+d.status+' · отправлено '+fmt(d.sent)+' · ожидает '+fmt(d.pending)+' · ошибок '+fmt(d.failed)+' · проверить '+fmt(d.uncertain));
   }
   root.addEventListener('click',async e=>{
@@ -386,8 +393,8 @@
       else if(action==='gamesPage'){state.gamesPage=Number(value);render()}
       else if(action==='actionsPage'){state.actionsPage=Number(value);render()}
       else if(action==='backup')await downloadBackup();
-      else if(action==='broadcastStop'){if(state.broadcastKey&&confirm('Остановить рассылку?')){
-        const info=await post('/broadcast/stop',{key:state.broadcastKey});
+      else if(action==='broadcastStop'){if((value||state.broadcastKey)&&confirm('Остановить рассылку?')){
+        const info=await post('/broadcast/stop',{key:value||state.broadcastKey});
         toast('Статус рассылки: '+info.status);render();
       }}
       else if(action==='exportLedger'){
@@ -406,7 +413,7 @@
         await post('/polls',{action:'close',key:key(),question:''});
         toast('Опрос завершён');render();
       }
-      else if(action==='broadcastStatus')await statusBroadcast();
+      else if(action==='broadcastStatus')await statusBroadcast(value);
       else if(action==='multiplier'){showModal('<h2>Множитель очков</h2><p class="admin-muted">Устанавливает ручной x1/x2/x3. Автоматический x2 по дням недели действует отдельно.</p><div class="admin-actions">'+[1,2,3].map(n=>navButton('×'+n,'setMultiplier',n)).join('')+'</div>')}
       else if(action==='setMultiplier'){if(!confirm('Установить x'+value+'?'))return;const d=await post('/multiplier',{value:Number(value)});closeModal();toast('Множитель: x'+d.multiplier);render()}
       else if(action==='executeAdjust'){
