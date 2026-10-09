@@ -117,8 +117,13 @@ class MiniAppAdmin:
             raise _json_error(404, "Пользователь не найден")
         invited, earned = await self.s.db.referral_stats(uid)
         permissions = await self.s.db.get_admin_permissions(uid, self.s.cfg.admin_ids)
+        notices = await self.s.db._fetchall(
+            """SELECT event_key,kind,title,body,status,attempts,created_at,sent_at,last_error
+               FROM admin_notice_outbox WHERE user_id=? ORDER BY created_at DESC,event_key DESC LIMIT 30""",
+            (uid,),
+        )
         return web.json_response({
-            "user": dict(r), "status": self.s.mm.status(uid),
+            "notices": _rows(notices), "user": dict(r), "status": self.s.mm.status(uid),
             "partner_id": self.s.mm.partner(uid),
             "referrals": {"invited": invited, "earned": earned},
             "admin_permissions": sorted(permissions),
@@ -549,15 +554,34 @@ class MiniAppAdmin:
     async def diagnostics(self, request):
         await self.access(request,"stats")
         db=self.s.db
+        started=time.perf_counter()
+        healthy=False
+        try:
+            row=await asyncio.wait_for(db._fetchone("SELECT 1 ok"),timeout=2)
+            healthy=bool(row and row["ok"]==1)
+        except Exception:
+            pass
+        notices=await db._fetchall(
+            "SELECT status,COUNT(*) count FROM admin_notice_outbox GROUP BY status"
+        )
+        broadcasts=await db._fetchall(
+            "SELECT status,COUNT(*) count FROM admin_broadcast_jobs GROUP BY status"
+        )
         return web.json_response({
-            "status":"online","version":METRICS.version,"uptime":METRICS.uptime_seconds(),
+            "status":"online" if healthy else "degraded",
+            "version":METRICS.version,"uptime":METRICS.uptime_seconds(),
+            "db_ok":healthy,"db_query_ms":round((time.perf_counter()-started)*1000,2),
             "db_bytes":db.path.stat().st_size if db.path.exists() else 0,
             "queue":self.s.mm.queue_size(),"pairs":self.s.mm.online_pairs(),
             "games":await db.game_diagnostics(),
-            "telegram_errors":METRICS.temp_errors, "unavailable":METRICS.unavailable,
+            "telegram_errors":METRICS.temp_errors,"unavailable":METRICS.unavailable,
             "janitor_removed_games":METRICS.janitor_removed_games,
             "last_cleanup_at":METRICS.last_cleanup_at,
             "last_matchmaker_save_at":METRICS.last_matchmaker_save_at,
+            "backup_last_success_at":int(await db.get_kv("backup_last_success_at","0") or 0),
+            "backup_error":await db.get_kv("backup_last_error"),
+            "notifications":{str(x["status"]):int(x["count"]) for x in notices},
+            "broadcasts":{str(x["status"]):int(x["count"]) for x in broadcasts},
         })
 
     async def change_multiplier(self, request):
