@@ -625,6 +625,17 @@ class MiniAppAdmin:
         await self.access(request,"broadcast")
         return web.json_response(await job_status(self.s.db,request.query.get("key","")))
 
+    async def broadcast_jobs(self, request):
+        await self.access(request,"broadcast")
+        jobs=await self.s.db._fetchall(
+            "SELECT job_key FROM admin_broadcast_jobs ORDER BY created_at DESC LIMIT 20"
+        )
+        results=[]
+        for item in jobs:
+            status=await job_status(self.s.db,str(item["job_key"]))
+            results.append({"key":str(item["job_key"]),**status})
+        return web.json_response({"items":results})
+
     async def broadcast_stop(self, request):
         await self.access(request,"broadcast")
         data=await self.body(request)
@@ -674,7 +685,7 @@ def install_admin_routes(app: web.Application, server) -> MiniAppAdmin:
         ("/polls",a.polls),("/transactions/export",a.export_transactions),
         ("/analytics",a.analytics),("/admins",a.admins),
         ("/actions",a.action_log), ("/diagnostics",a.diagnostics),
-        ("/backup",a.backup),("/broadcast/status",a.broadcast_status),
+        ("/backup",a.backup),("/broadcast/status",a.broadcast_status),("/broadcast/jobs",a.broadcast_jobs),
     ):
         app.router.add_get(prefix+path,handler)
     for path,handler in (
