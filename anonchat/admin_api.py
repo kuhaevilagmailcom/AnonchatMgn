@@ -20,6 +20,7 @@ from aiohttp import web
 from .db import referral_day_start, week_period_start, month_period_start, now
 from .permissions import ALL_ADMIN_PERMISSIONS, parse_permissions
 from .diagnostics import METRICS
+from .admin_events import enqueue
 
 
 def _json_error(status: int, message: str) -> web.HTTPException:
@@ -310,12 +311,13 @@ class MiniAppAdmin:
                     async with con.execute("SELECT 1 FROM users WHERE user_id=?",(target,)) as cur:
                         if not await cur.fetchone():
                             raise _json_error(404,"Пользователь не найден")
+                expires_at=now()+minutes*60 if action in ("mute","report_mute") else 0
                 if action in ("ban","report_ban"):
                     await con.execute("UPDATE users SET banned=1,ban_reason=?,mute_until=0 WHERE user_id=?",(reason,target))
                 if action=="unban":
                     await con.execute("UPDATE users SET banned=0,ban_reason='' WHERE user_id=?",(target,))
                 if action in ("mute","report_mute"):
-                    await con.execute("UPDATE users SET mute_until=? WHERE user_id=?",(now()+minutes*60,target))
+                    await con.execute("UPDATE users SET mute_until=? WHERE user_id=?",(expires_at,target))
                 if action=="unmute":
                     await con.execute("UPDATE users SET mute_until=0 WHERE user_id=?",(target,))
                 if report is not None:
@@ -323,6 +325,9 @@ class MiniAppAdmin:
                         "UPDATE reports SET status='done',handled_by=?,handled_at=? WHERE id=?",
                         (actor,now(),report_id)
                     )
+                if action!="report_close":
+                    kind="ban" if action in ("ban","report_ban") else "mute" if action in ("mute","report_mute") else action
+                    await enqueue(con,target,kind,reason=reason,minutes=minutes,until=expires_at,event_key="moderation:"+key)
                 await con.execute(
                     """INSERT INTO admin_action_log(
                        action_key,actor_id,target_id,action,reason,reference_id,created_at
@@ -343,19 +348,7 @@ class MiniAppAdmin:
                     self.s.pack,db,
                 )
                 db.schedule_matchmaker_save(self.s.mm)
-                if action in ("ban","report_ban"):
-                    await send_to(
-                        self.s.bot,target,
-                        texts.BANNED.format(
-                            city=texts.esc(self.s.cfg.city),
-                            reason=texts.esc(reason)),
-                        None,self.s.pack,
-                    )
-                else:
-                    await send_to(
-                        self.s.bot,target,
-                        texts.MUTED.format(mins=minutes),None,self.s.pack,
-                    )
+                # Telegram delivery is handled by the durable administrative outbox.
             except Exception:
                 import logging
                 logging.getLogger(__name__).exception("Failed to notify moderation target")
