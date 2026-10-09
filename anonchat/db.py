@@ -270,6 +270,29 @@ CREATE INDEX IF NOT EXISTS idx_notice_outbox_pending
 CREATE INDEX IF NOT EXISTS idx_notice_outbox_user
     ON admin_notice_outbox(user_id, created_at DESC);
 
+CREATE TABLE IF NOT EXISTS admin_broadcast_jobs (
+    job_key      TEXT PRIMARY KEY,
+    actor_id     INTEGER NOT NULL,
+    message      TEXT NOT NULL,
+    button_text  TEXT NOT NULL DEFAULT '',
+    button_url   TEXT NOT NULL DEFAULT '',
+    status       TEXT NOT NULL DEFAULT 'running',
+    created_at   INTEGER NOT NULL,
+    finished_at  INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS admin_broadcast_targets (
+    job_key       TEXT NOT NULL,
+    user_id       INTEGER NOT NULL,
+    status        TEXT NOT NULL DEFAULT 'pending',
+    attempts      INTEGER NOT NULL DEFAULT 0,
+    next_retry_at INTEGER NOT NULL DEFAULT 0,
+    last_error    TEXT NOT NULL DEFAULT '',
+    telegram_message_id INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (job_key,user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_broadcast_delivery
+    ON admin_broadcast_targets(job_key,status,next_retry_at);
+
 CREATE INDEX IF NOT EXISTS idx_miniapp_events_user
     ON miniapp_events(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_miniapp_events_unread
