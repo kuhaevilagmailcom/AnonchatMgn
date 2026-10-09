@@ -8,6 +8,11 @@ from types import SimpleNamespace
 
 from anonchat.admin_events import deliver_batch, notice
 from anonchat.admin_broadcasts import create_job, job_status, run_once
+from anonchat.fsm_storage import SQLiteFSMStorage
+from anonchat.backups import maybe_backup
+from anonchat.matching import Matchmaker
+from aiogram.fsm.storage.base import StorageKey
+import time
 from anonchat.db import Database
 
 
@@ -25,6 +30,10 @@ async def scenario() -> None:
         db = await Database(path).start()
         bot = FakeBot()
         try:
+            fsm=SQLiteFSMStorage(db)
+            fsmkey=StorageKey(bot_id=42,chat_id=801001,user_id=801001)
+            await fsm.set_state(fsmkey,"admin:waiting_reason")
+            await fsm.set_data(fsmkey,{"target":801002,"action":"mute"})
             await db.ensure_user(801001,"first","First")
             await db.ensure_user(801002,"second","Second")
             await db.set_ban(801002, True, "Спам")
@@ -40,6 +49,13 @@ async def scenario() -> None:
             muted=await db.get_user(801002)
             assert muted["mute_until"]>0
             await db.set_mute(801002,0,reason="Досрочно")
+            await db.set_mute(801002,1,reason="Тест автоокончания")
+            old_stamp=int(time.time())-1
+            await db.db.execute("UPDATE users SET mute_until=? WHERE user_id=?",(old_stamp,801002))
+            await db.db.execute("UPDATE active_mute_expirations SET until_at=? WHERE user_id=?",(old_stamp,801002))
+            assert await db.expire_mutes()==1
+            assert (await db.get_user(801002))["mute_until"]==0
+            assert await db.expire_mutes()==0
             after,applied=await db.change_xp(
                 801002,100,source="admin_award",reason="Компенсация",
                 actor_id=801001,idempotency_key="admin-test-reliability-000001")
@@ -55,12 +71,17 @@ async def scenario() -> None:
 
             await db.close()
             db = await Database(path).start()
+            restored=SQLiteFSMStorage(db)
+            assert await restored.get_state(fsmkey)=="admin:waiting_reason"
+            assert await restored.get_data(fsmkey)=={"target":801002,"action":"mute"}
             pending=await db._fetchone("SELECT COUNT(*) count FROM admin_notice_outbox WHERE status='pending'")
             assert pending["count"]>=4,"Unsent notices survive an actual database reopen"
             count=await deliver_batch(bot,db)
             assert count>=4 and len(bot.sent)==count
             assert (await deliver_batch(bot,db))==0
 
+            backup=await maybe_backup(db,Matchmaker(),force=True)
+            assert backup and Path(backup).is_file()
             started=await create_job(db,key="test-broadcast-job-001",actor=801001,message="Test message")
             assert started
             assert not await create_job(db,key="test-broadcast-job-001",actor=801001,message="Test message")
