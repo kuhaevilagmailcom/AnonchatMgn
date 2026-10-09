@@ -45,6 +45,14 @@ async def scenario() -> None:
                 "SELECT title,text FROM miniapp_events WHERE user_id=801002 ORDER BY id DESC LIMIT 1")
             assert "заблокированы" in ban_event["title"].lower() and "Спам" in ban_event["text"]
             await db.set_ban(801002,False)
+            await db.set_ban(801002,True,"Временная блокировка",minutes=1)
+            assert (await db.get_user(801002))["ban_until"]>0
+            expired_at=int(time.time())-1
+            await db.db.execute("UPDATE users SET ban_until=? WHERE user_id=?",(expired_at,801002))
+            await db.db.execute("UPDATE active_ban_expirations SET until_at=? WHERE user_id=?",(expired_at,801002))
+            assert await db.expire_bans()==1
+            assert (await db.get_user(801002))["banned"]==0
+            assert await db.expire_bans()==0
             await db.set_mute(801002,60,reason="Нарушение правил")
             muted=await db.get_user(801002)
             assert muted["mute_until"]>0
