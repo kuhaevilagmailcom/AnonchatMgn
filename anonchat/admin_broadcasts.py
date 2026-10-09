@@ -92,9 +92,14 @@ async def run_once(bot, db) -> bool:
             "SELECT COUNT(*) count FROM admin_broadcast_targets WHERE job_key=? AND status='pending'", (key,)
         )
         if not int(row["count"]):
+            unresolved=await db._fetchone(
+                "SELECT COUNT(*) count FROM admin_broadcast_targets WHERE job_key=? AND status='uncertain'",
+                (key,),
+            )
+            final_status="review" if int(unresolved["count"] or 0) else "completed"
             await db.db.execute(
-                "UPDATE admin_broadcast_jobs SET status='completed',finished_at=? WHERE job_key=? AND status='running'",
-                (int(time.time()), key),
+                "UPDATE admin_broadcast_jobs SET status=?,finished_at=? WHERE job_key=? AND status='running'",
+                (final_status,int(time.time()),key),
             )
         return False
 
