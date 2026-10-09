@@ -278,7 +278,7 @@ class MiniAppAdmin:
         key=str(data.get("key") or "")
         target=_number(data.get("user_id"),low=0,high=9999999999999)
         report_id=_number(data.get("report_id"),low=0,high=9999999999)
-        minutes=_number(data.get("minutes",60),low=1,high=43200)
+        minutes=_number(data.get("minutes",0 if action in ("ban","report_ban") else 60),low=0 if action in ("ban","report_ban") else 1,high=43200)
         if not re.fullmatch(r"[a-zA-Z0-9_-]{16,90}",key) or not reason:
             raise _json_error(400,"Подтверждение и причина обязательны")
         if action not in ("ban","unban","mute","unmute","report_close","report_ban","report_mute"):
@@ -317,11 +317,11 @@ class MiniAppAdmin:
                     async with con.execute("SELECT 1 FROM users WHERE user_id=?",(target,)) as cur:
                         if not await cur.fetchone():
                             raise _json_error(404,"Пользователь не найден")
-                expires_at=now()+minutes*60 if action in ("mute","report_mute") else 0
+                expires_at=now()+minutes*60 if action in ("mute","report_mute") or (action in ("ban","report_ban") and minutes>0) else 0
                 if action in ("ban","report_ban"):
-                    await con.execute("UPDATE users SET banned=1,ban_reason=?,mute_until=0 WHERE user_id=?",(reason,target))
+                    await con.execute("UPDATE users SET banned=1,ban_reason=?,ban_until=?,mute_until=0 WHERE user_id=?",(reason,expires_at,target))
                 if action=="unban":
-                    await con.execute("UPDATE users SET banned=0,ban_reason='' WHERE user_id=?",(target,))
+                    await con.execute("UPDATE users SET banned=0,ban_reason='',ban_until=0 WHERE user_id=?",(target,))
                 if action in ("mute","report_mute"):
                     await con.execute("UPDATE users SET mute_until=? WHERE user_id=?",(expires_at,target))
                 if action=="unmute":
@@ -333,6 +333,13 @@ class MiniAppAdmin:
                     )
                 elif action in ("ban","report_ban","unmute"):
                     await con.execute("DELETE FROM active_mute_expirations WHERE user_id=?",(target,))
+                if action in ("ban","report_ban") and expires_at>0:
+                    await con.execute(
+                        "INSERT INTO active_ban_expirations(user_id,until_at) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET until_at=excluded.until_at",
+                        (target,expires_at),
+                    )
+                elif action in ("ban","report_ban","unban"):
+                    await con.execute("DELETE FROM active_ban_expirations WHERE user_id=?",(target,))
                 if report is not None:
                     await con.execute(
                         "UPDATE reports SET status='done',handled_by=?,handled_at=? WHERE id=?",
