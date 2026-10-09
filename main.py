@@ -73,8 +73,9 @@ async def janitor(
             removed_games = await db.cleanup_stale_games()
             await db.cleanup_daily_activity()
             expired_mutes = await db.expire_mutes()
-            if expired_mutes:
-                log.info('Expired mutes automatically lifted: %s', expired_mutes)
+            expired_bans = await db.expire_bans()
+            if expired_mutes or expired_bans:
+                log.info('Expired restrictions lifted: mutes=%s bans=%s', expired_mutes, expired_bans)
             await db.online_peak(presence_online_count())
             if time.time() - last_maintenance >= 3600:
                 await db.cleanup_report_context(cfg.report_context_retention_days)
