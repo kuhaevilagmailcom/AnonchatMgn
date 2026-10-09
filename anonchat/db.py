@@ -251,6 +251,25 @@ CREATE TABLE IF NOT EXISTS miniapp_dialog_results (
     rated      INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS admin_notice_outbox (
+    event_key           TEXT PRIMARY KEY,
+    user_id             INTEGER NOT NULL,
+    kind                TEXT NOT NULL,
+    title               TEXT NOT NULL,
+    body                TEXT NOT NULL,
+    status              TEXT NOT NULL DEFAULT 'pending',
+    attempts            INTEGER NOT NULL DEFAULT 0,
+    created_at          INTEGER NOT NULL,
+    next_attempt_at     INTEGER NOT NULL,
+    sent_at             INTEGER NOT NULL DEFAULT 0,
+    telegram_message_id INTEGER NOT NULL DEFAULT 0,
+    last_error          TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_notice_outbox_pending
+    ON admin_notice_outbox(status, next_attempt_at, created_at);
+CREATE INDEX IF NOT EXISTS idx_notice_outbox_user
+    ON admin_notice_outbox(user_id, created_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_miniapp_events_user
     ON miniapp_events(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_miniapp_events_unread
@@ -801,6 +820,12 @@ class Database:
                                VALUES (?, ?, ?) ON CONFLICT(user_id, day_start)
                                DO UPDATE SET xp_earned=xp_earned+excluded.xp_earned""",
                             (uid, referral_day_start(), delta),
+                        )
+                    if str(source) in {"admin_award", "admin_debit"}:
+                        from .admin_events import enqueue
+                        await enqueue(
+                            conn, uid, "points", reason=reason, amount=delta,
+                            balance=after, event_key=f"xp:{key}" if key else "",
                         )
                     await conn.commit()
                     self._top_cache.clear()
@@ -2584,19 +2609,57 @@ class Database:
             await self.db.commit()
 
     async def set_ban(self, user_id: int, banned: bool, reason: str = "") -> None:
+        """Commit restriction and user notice atomically, including bot commands."""
+        from .admin_events import enqueue
         await self._ensure_row(user_id)
-        await self.db.execute(
-            "UPDATE users SET banned = ?, ban_reason = ?, mute_until = 0 WHERE user_id = ?",
-            (int(banned), reason if banned else "", user_id),
-        )
-        await self.db.commit()
+        async with aiosqlite.connect(self.path, isolation_level=None) as conn:
+            conn.row_factory = aiosqlite.Row
+            await conn.execute("PRAGMA busy_timeout=10000")
+            await conn.execute("BEGIN IMMEDIATE")
+            try:
+                async with conn.execute("SELECT banned,ban_reason FROM users WHERE user_id=?", (int(user_id),)) as cur:
+                    prev = await cur.fetchone()
+                if not prev:
+                    raise ValueError("Пользователь не найден")
+                changed = bool(prev["banned"]) != bool(banned) or (
+                    bool(banned) and str(prev["ban_reason"] or "") != str(reason)
+                )
+                await conn.execute(
+                    "UPDATE users SET banned=?,ban_reason=?,mute_until=0 WHERE user_id=?",
+                    (int(banned), str(reason)[:500] if banned else "", int(user_id)),
+                )
+                if changed:
+                    await enqueue(conn, user_id, "ban" if banned else "unban",
+                                  reason=reason or "Решение модерации")
+                await conn.commit()
+            except BaseException:
+                await conn.rollback()
+                raise
         self._top_cache.clear()
 
-    async def set_mute(self, user_id: int, minutes: int) -> int:
+    async def set_mute(self, user_id: int, minutes: int,
+                       reason: str = "Решение модерации") -> int:
+        from .admin_events import enqueue
         await self._ensure_row(user_id)
-        until = now() + max(0, minutes) * 60
-        await self.db.execute("UPDATE users SET mute_until = ? WHERE user_id = ?", (until, user_id))
-        await self.db.commit()
+        until = now() + max(0, int(minutes)) * 60
+        async with aiosqlite.connect(self.path, isolation_level=None) as conn:
+            conn.row_factory = aiosqlite.Row
+            await conn.execute("PRAGMA busy_timeout=10000")
+            await conn.execute("BEGIN IMMEDIATE")
+            try:
+                async with conn.execute("SELECT mute_until FROM users WHERE user_id=?", (int(user_id),)) as cur:
+                    prev = await cur.fetchone()
+                if not prev:
+                    raise ValueError("Пользователь не найден")
+                before = int(prev["mute_until"] or 0)
+                await conn.execute("UPDATE users SET mute_until=? WHERE user_id=?", (until, int(user_id)))
+                if (int(minutes)>0 and before != until) or (int(minutes)<=0 and before>now()):
+                    await enqueue(conn, user_id, "mute" if minutes>0 else "unmute",
+                                  reason=reason, minutes=int(minutes), until=until)
+                await conn.commit()
+            except BaseException:
+                await conn.rollback()
+                raise
         return until
 
     async def list_restricted(
