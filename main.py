@@ -15,7 +15,8 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramAPIError
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.memory import SimpleEventIsolation
+from anonchat.fsm_storage import SQLiteFSMStorage
 from aiogram.types import ErrorEvent
 
 from anonchat.actions import announce_pairs, refresh_live_menus
@@ -118,7 +119,7 @@ def build(cfg: Config) -> tuple[Bot, Dispatcher, Database, Matchmaker, EmojiPack
     mm = Matchmaker(queue_limit=cfg.queue_soft_limit)
     pack = EmojiPack(cfg.emoji_pack_url)
     bot = Bot(cfg.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    dp = Dispatcher(storage=MemoryStorage())
+    dp = Dispatcher(storage=SQLiteFSMStorage(db),events_isolation=SimpleEventIsolation())
 
     for observer in (dp.message, dp.edited_message, dp.callback_query):
         observer.outer_middleware(Throttling(cfg))
