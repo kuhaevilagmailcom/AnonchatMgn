@@ -338,6 +338,13 @@ CREATE TABLE IF NOT EXISTS daily_activity (
     PRIMARY KEY (user_id, day_start)
 );
 
+-- Only anonymous per-day totals are retained here; no message content or user IDs.
+-- Unlike daily_activity / matches these aggregates are not purged after 40/90 days.
+CREATE TABLE IF NOT EXISTS message_daily_totals (
+    day_start INTEGER PRIMARY KEY,
+    messages  INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS user_engagement (
     user_id           INTEGER PRIMARY KEY,
     current_streak    INTEGER NOT NULL DEFAULT 0,
@@ -542,6 +549,7 @@ class Database:
             await self._db.execute("PRAGMA busy_timeout=5000")
             await self._db.executescript(SCHEMA)
             await self._migrate()
+            await self._backfill_message_daily_totals()
             await self._backfill_legacy_activity_xp()
             await self._db.commit()
         except (OSError, aiosqlite.Error) as exc:
@@ -550,6 +558,29 @@ class Database:
                 self._db = None
             raise RuntimeError(f"Не удалось открыть SQLite {self.path}: {exc}") from exc
         return self
+
+    async def _backfill_message_daily_totals(self) -> None:
+        """Recover daily totals from retained completed matches exactly once.
+
+        Older matches may already have been purged. Missing dates before the
+        first recovered day are intentionally treated as unavailable, not zero.
+        """
+        marker = "message_daily_totals_matches_v1"
+        if await self.get_kv(marker) == "1":
+            return
+        await self.db.execute(
+            """INSERT OR IGNORE INTO message_daily_totals(day_start, messages)
+               SELECT ((ended_at + 18000) / 86400) * 86400 - 18000 AS day_start,
+                      COALESCE(SUM(MAX(0, msg_a) + MAX(0, msg_b)), 0)
+                 FROM matches
+                WHERE ended_at IS NOT NULL
+                GROUP BY ((ended_at + 18000) / 86400)"""
+        )
+        await self.db.execute(
+            """INSERT INTO kv(key, value) VALUES (?, '1')
+               ON CONFLICT(key) DO UPDATE SET value='1'""",
+            (marker,),
+        )
 
     async def _backfill_legacy_activity_xp(self) -> int:
         """Один раз переносит старый баланс в периодную статистику.
@@ -3048,11 +3079,20 @@ class Database:
         self, user_a: int, user_b: int, msg_a: int, msg_b: int, started_at: int,
         ended_by: int | None, *, count_dialog: bool = True, commit: bool = True,
     ) -> int:
+        ended_at = now()
         cur = await self.db.execute(
             """INSERT INTO matches (started_at, ended_at, user_a, user_b, msg_a, msg_b, ended_by)
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (started_at, now(), user_a, user_b, msg_a, msg_b, ended_by),
+            (started_at, ended_at, user_a, user_b, msg_a, msg_b, ended_by),
         )
+        message_count = max(0, int(msg_a)) + max(0, int(msg_b))
+        if message_count:
+            await self.db.execute(
+                """INSERT INTO message_daily_totals(day_start,messages) VALUES (?,?)
+                   ON CONFLICT(day_start) DO UPDATE SET
+                   messages=messages+excluded.messages""",
+                (referral_day_start(ended_at), message_count),
+            )
         if count_dialog:
             await self.db.execute(
                 "UPDATE users SET dialogs = dialogs + 1 WHERE user_id IN (?, ?)", (user_a, user_b)
@@ -3520,23 +3560,46 @@ class Database:
             )
         return [int(r["user_id"]) for r in rows]
 
-    async def message_activity_days(self, days: int = 14) -> list[dict[str, int]]:
-        """Daily messages for the Mini App graph, in Magnetogorsk UTC+5."""
-        days = max(1, min(int(days), 40))
-        current = referral_day_start()
-        first = current - (days - 1) * 86_400
+    async def message_activity_range(self, first: int, last: int) -> list[dict[str, int | None]]:
+        """Completed-dialog messages by local (Magnetogorsk UTC+5) day.
+
+        Data earlier than the first preserved daily aggregate is unknown,
+        rather than a fabricated zero; a month is at most 31 days long.
+        """
+        first, last = int(first), int(last)
+        if last < first or (last - first) % 86_400 or last - first > 30 * 86_400:
+            raise ValueError("Invalid activity date range")
         rows = await self._fetchall(
-            """SELECT day_start, COALESCE(SUM(messages),0) AS count
-                 FROM daily_activity WHERE day_start>=?
-                 GROUP BY day_start""",
-            (first,),
+            """SELECT day_start, messages FROM message_daily_totals
+               WHERE day_start BETWEEN ? AND ? ORDER BY day_start""",
+            (first, last),
         )
-        lookup = {int(r["day_start"]): int(r["count"]) for r in rows}
+        earliest = await self._fetchone(
+            "SELECT MIN(day_start) AS day_start FROM message_daily_totals"
+        )
+        first_saved = int(earliest["day_start"]) if earliest and earliest["day_start"] is not None else None
+        lookup = {int(r["day_start"]): int(r["messages"]) for r in rows}
+        total = await self._fetchone("SELECT COALESCE(SUM(messages),0) AS c FROM users")
+        has_legacy = int(total["c"] or 0) > 0 if total else False
         return [
-            {"day_start": first + i * 86_400,
-             "messages": lookup.get(first + i * 86_400, 0)}
-            for i in range(days)
+            {"day_start": day, "messages": None if has_legacy and
+             (first_saved is None or day < first_saved) else lookup.get(day, 0)}
+            for day in range(first, last + 1, 86_400)
         ]
+
+    async def message_activity_months(self) -> list[str]:
+        rows = await self._fetchall(
+            """SELECT DISTINCT strftime('%Y-%m', day_start + 18000, 'unixepoch') AS ym
+               FROM message_daily_totals
+               WHERE messages>0 ORDER BY ym DESC LIMIT 48"""
+        )
+        return [str(row["ym"]) for row in rows if row["ym"]]
+
+    async def message_activity_days(self, days: int = 14) -> list[dict[str, int | None]]:
+        """Compatibility wrapper for rolling daily activity."""
+        days = max(1, min(int(days), 31))
+        current = referral_day_start()
+        return await self.message_activity_range(current - (days - 1) * 86_400, current)
 
     async def dialog_records(self, user_id: int) -> dict[str, int]:
         """Read-only records from completed dialogs; no per-message DB writes."""
