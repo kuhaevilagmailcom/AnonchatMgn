@@ -987,6 +987,30 @@ if (typeof window === 'undefined') {
       body+='</div>';root.innerHTML=top+body;
     }
 
+    if(game.finished&&['battle','geo','words'].includes(game.type)){
+      const body=root.querySelector('.active-game-body');
+      if(body){
+        const replay=document.createElement('button');
+        replay.type='button';replay.className='game-next game-repeat';
+        replay.textContent='🔄 Сыграть ещё';
+        body.appendChild(replay);
+        replay.onclick=async()=>{
+          replay.disabled=true;
+          const route=game.type==='words'?'words':game.type;
+          const args=game.type==='battle'?{total:game.total||5}:
+            game.type==='geo'?{rounds:game.total||3}:{};
+          try{
+            const response=await request('/api/miniapp/games/'+route+'/invite',
+              {method:'POST',body:JSON.stringify(args)});
+            if(response?.ok){
+              root.hidden=true;notify();toast('Предложение повторить игру отправлено');
+              await syncChat(false);
+            }
+          }catch(e){toast(e.message)}
+          finally{replay.disabled=false}
+        };
+      }
+    }
     const next=$('[data-game-next]',root);if(next)next.onclick=async()=>{
       next.disabled=true;
       try{
