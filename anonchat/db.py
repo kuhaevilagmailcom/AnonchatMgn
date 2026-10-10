@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import html
 import logging
 import math
 import secrets
@@ -3649,9 +3650,10 @@ class Database:
                 poll_id = int(cur.lastrowid)
                 key = f"poll:{poll_id}"
                 message = (
-                    f"📊 Новый опрос в АНОН МГН!\n\n{question}\n\n"
-                    f"1️⃣ {option_a}\n2️⃣ {option_b}\n\n"
-                    "Выбери 1 или 2 с помощью кнопок ниже 👇"
+                    "📊 <b>Новый опрос в АНОН МГН</b>\n\n"
+                    f"<blockquote>{html.escape(question)}</blockquote>\n\n"
+                    f"1️⃣ {html.escape(option_a)}\n2️⃣ {html.escape(option_b)}\n\n"
+                    "Выбери вариант кнопкой ниже 👇"
                 )
                 await con.execute(
                     """INSERT INTO admin_broadcast_jobs
