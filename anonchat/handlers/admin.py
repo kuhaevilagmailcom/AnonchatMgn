@@ -482,9 +482,15 @@ async def do_simple_broadcast(
     action: str,
     photo_file_id: str = "",
     entities: list[MessageEntity] | None = None,
+    *, audience: str = "all",
 ) -> str:
-    """Обычная рассылка: текст, опциональное фото и кнопка действия внутри бота."""
-    ids = await db.broadcast_ids()
+    """Обычная рассылка: текст, опциональное фото, выбор получателей."""
+    if audience not in {"all", "admins"}:
+        raise ValueError("Неизвестная аудитория рассылки")
+    ids = (
+        await db.all_admin_ids(ctx.cfg.admin_ids)
+        if audience == "admins" else await db.broadcast_ids()
+    )
     await ctx.reply(texts.PANEL_BC_PROGRESS.format(total=len(ids)))
     sent = 0
     markup = K.broadcast_simple_user_keyboard(action)
@@ -863,6 +869,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         body = str(draft.get("bc_text") or "")
         photo_file_id = str(draft.get("bc_photo") or "")
         action = str(draft.get("bc_action") or "")
+        audience = str(draft.get("bc_audience") or "all")
         entities = [
             MessageEntity.model_validate(item)
             for item in (draft.get("bc_entities") or [])
@@ -872,6 +879,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
             draft.get("adm") != "bc_simple_ready"
             or not body.strip()
             or action not in _SIMPLE_BROADCAST_ACTIONS
+            or audience not in {"all", "admins"}
         ):
             await ctx.ack("Черновик рассылки устарел. Создай его заново.", alert=True)
             await state.clear()
@@ -886,7 +894,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
             except TelegramAPIError:
                 pass
         result = await do_simple_broadcast(
-            ctx, db, body, action, photo_file_id, entities
+            ctx, db, body, action, photo_file_id, entities, audience=audience
         )
         await state.clear()
         await ctx.reply(result)
@@ -910,9 +918,13 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
             await ctx.ack("Черновик рассылки устарел. Создай его заново.", alert=True)
             await state.clear()
             return
+        audience = str(draft.get("bc_audience") or "all")
+        if audience not in {"all", "admins"}:
+            await ctx.ack("Выбери получателей заново", alert=True)
+            return
         await state.update_data(adm="bc_simple_ready", bc_action=action)
         await ctx.ack()
-        preview_markup = K.broadcast_simple_preview_keyboard(action)
+        preview_markup = K.broadcast_simple_preview_keyboard(action, audience)
         if photo_file_id:
             await ctx.bot.send_photo(
                 chat_id=ctx.user_id,
@@ -932,14 +944,16 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
             )
         await ctx.reply(
             "👆 <b>Предпросмотр готов.</b> Проверь текст, картинку и кнопку. "
-            "Если всё верно — нажми «Отправить всем».",
+            "Если всё верно — подтверди отправку выбранным получателям.",
             K.panel_cancel_keyboard(),
         )
         return
 
     if data == K.CB_PANEL_BC_SIMPLE_PHOTO:
         await state.set_state(AdminStates.await_input)
-        await state.set_data({"adm": "bc_simple_image", "bc_photo": ""})
+        current = await state.get_data()
+        await state.set_data({"adm": "bc_simple_image", "bc_photo": "",
+                              "bc_audience": current.get("bc_audience", "all")})
         await ctx.edit(
             "📣 <b>Рассылка · картинка</b>\n\n"
             "Отправь картинку <b>как фото</b>. После этого бот попросит текст.",
@@ -950,7 +964,9 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
 
     if data == K.CB_PANEL_BC_SIMPLE_NO_PHOTO:
         await state.set_state(AdminStates.await_input)
-        await state.set_data({"adm": "bc_simple_text", "bc_photo": ""})
+        current = await state.get_data()
+        await state.set_data({"adm": "bc_simple_text", "bc_photo": "",
+                              "bc_audience": current.get("bc_audience", "all")})
         await ctx.edit(
             "📣 <b>Рассылка · без картинки</b>\n\n"
             "Отправь текст рассылки одним сообщением. Максимум 4000 символов.",
@@ -1012,15 +1028,28 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         )
         return
 
-    if data == K.CB_PANEL_BC_SIMPLE:
+    if data.startswith(K.CB_PANEL_BC_SIMPLE_AUDIENCE_PREFIX):
+        audience = data[len(K.CB_PANEL_BC_SIMPLE_AUDIENCE_PREFIX):]
+        if audience not in {"all", "admins"}:
+            await ctx.ack("Выбери получателей заново", alert=True)
+            return
         await state.set_state(AdminStates.await_input)
-        await state.set_data({"adm": "bc_simple_media"})
+        await state.set_data({"adm": "bc_simple_media", "bc_audience": audience})
         await ctx.edit(
             "📣 <b>Рассылка</b>\n\n"
-            "Выбери формат рассылки. Картинка необязательна — дальше добавишь текст "
-            "и выберешь кнопку: «Обратная связь», «Главное меню», "
-            "«Найти собеседника» или «Профиль».",
+            f"Получатели: <b>{'только администраторы' if audience == 'admins' else 'все пользователи'}</b>.\n"
+            "Выбери формат рассылки. Картинка необязательна — дальше добавишь текст и кнопку.",
             K.broadcast_simple_media_keyboard(),
+        )
+        await ctx.ack()
+        return
+
+    if data == K.CB_PANEL_BC_SIMPLE:
+        await state.clear()
+        await ctx.edit(
+            "📣 <b>Кому отправить рассылку?</b>\n\n"
+            "Выбери получателей перед созданием сообщения.",
+            K.broadcast_audience_keyboard(),
         )
         await ctx.ack()
         return
@@ -1057,6 +1086,27 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
             await ctx.ack("Только для владельца", alert=True)
             return
         action = data.rsplit(":", 1)[-1]
+        if data.startswith("adm:panel:poll:audience:"):
+            audience = action
+            draft = await state.get_data()
+            opts = draft.get("poll_options") or []
+            question = str(draft.get("poll_question") or "")
+            if draft.get("adm") != "poll_ready" or audience not in {"all", "admins"} or len(opts) != 2 or not question:
+                await ctx.ack("Черновик опроса устарел", alert=True)
+                return
+            admin_ids = await db.all_admin_ids(ctx.cfg.admin_ids) if audience == "admins" else ()
+            poll_id = await db.create_poll(
+                question, str(opts[0]), str(opts[1]), ctx.user_id,
+                audience=audience, admin_ids=admin_ids,
+            )
+            await state.clear()
+            await ctx.ack("Опрос создан")
+            await ctx.edit(
+                f"✅ Опрос #{poll_id} запущен. Уведомления отправляются "
+                f"{'администраторам' if audience == 'admins' else 'всем пользователям'} в очереди.",
+                K.admin_poll_keyboard(True),
+            )
+            return
         if action == "create":
             await state.set_state(AdminStates.await_input)
             await state.update_data(adm="poll_question")
@@ -1456,13 +1506,11 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
         if len(options) != 2:
             await ctx.reply("Нужно ровно два варианта: две строки или через <code>|</code>.")
             return
-        await state.clear()
-        poll_id = await db.create_poll(
-            question, options[0], options[1], ctx.user_id, audience="all"
-        )
+        await state.update_data(adm="poll_ready", poll_options=options)
         await ctx.reply(
-            f"✅ Опрос #{poll_id} запущен. Кнопка «Опрос» уже появилась в главном меню.",
-            K.admin_poll_keyboard(True),
+            "📊 <b>Опрос готов</b>\n\n"
+            "Кому отправить уведомление о новом опросе?",
+            K.admin_poll_audience_keyboard(),
         )
         return
 
