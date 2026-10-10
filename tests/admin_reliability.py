@@ -180,6 +180,55 @@ async def poll_notifications_and_message_statistics() -> None:
             await db.close()
 
 
+async def historical_month_archive() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        path=Path(tmp) / "archive.db"
+        db=await Database(path).start()
+        try:
+            await db.ensure_user(901,"first","First")
+            await db.ensure_user(902,"second","Second")
+            now_day=referral_day_start()
+            await db.log_dialog(901,902,3,5,now_day+100,None)
+            await db.bump(901,"messages",3)
+            await db.bump(902,"messages",5)
+            current=await db.message_activity_days(7)
+            assert current[-1]["messages"]==8,current
+            await db.cleanup_daily_activity(retention_days=2)
+            assert (await db.message_activity_days(7))[-1]["messages"]==8
+            # Simulate completed matches from an older version before archiving.
+            old_end=now_day-29*86400+3600
+            await db.db.execute(
+                """INSERT INTO matches(started_at,ended_at,user_a,user_b,msg_a,msg_b)
+                   VALUES(?,?,?,?,?,?)""",
+                (old_end-100,old_end,901,902,4,6),
+            )
+            await db.db.execute(
+                "DELETE FROM kv WHERE key='message_daily_totals_matches_v1'"
+            )
+        finally:
+            await db.close()
+        db=await Database(path).start()
+        try:
+            old_day=referral_day_start(old_end)
+            historical=await db.message_activity_range(old_day,old_day)
+            assert historical[0]["messages"]==10,historical
+            assert (await db.message_activity_days(7))[-1]["messages"]==8
+            months=await db.message_activity_months()
+            assert months
+        finally:
+            await db.close()
+        db=await Database(path).start()
+        try:
+            assert (await db.message_activity_range(old_day,old_day))[0]["messages"]==10
+            assert (await db.message_activity_days(7))[-1]["messages"]==8
+        finally:
+            await db.close()
+
+
+def test_monthly_message_archive() -> None:
+    asyncio.run(historical_month_archive())
+
+
 def test_poll_notifications() -> None:
     asyncio.run(poll_notifications_and_message_statistics())
 
@@ -190,4 +239,5 @@ def test_reliability() -> None:
 if __name__ == "__main__":
     test_reliability()
     test_poll_notifications()
-    print("ok durable moderation notices, poll alerts, message periods and broadcasts")
+    test_monthly_message_archive()
+    print("ok durable moderation notices, poll alerts, calendar archive and broadcasts")
