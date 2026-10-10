@@ -17,6 +17,7 @@ from ..actions import Ctx, DeliveryResult, break_pair, send_copy_to, send_to
 from ..config import Config
 from ..db import Database
 from ..matching import Matchmaker
+from ..moderation_channel import send_moderation_channel
 
 router = Router(name="reports")
 
@@ -104,6 +105,13 @@ async def _deliver_feedback(ctx: Ctx, message: Message, body: str = "") -> int:
                 result = await send_copy_to(ctx.bot, message, admin_id)
         if result is DeliveryResult.DELIVERED:
             delivered += 1
+    channel_body = (
+        f"{header}\n\n{texts.esc(body[:3500])}" if body else header
+    )
+    if await send_moderation_channel(
+        ctx.bot, ctx.cfg, channel_body, message=message if not body else None
+    ):
+        delivered += 1
     return delivered
 
 
@@ -194,6 +202,9 @@ async def finish_report(ctx: Ctx, state: FSMContext, reason: str, comment: str) 
     assert stored_report is not None
     card = format_report_card(stored_report, day_count, is_new=True)
     await notify_admins(ctx, card, report_id=report_id)
+    await send_moderation_channel(
+        ctx.bot, cfg, card.replace("\n\nВыбери действие кнопками ниже.", "")
+    )
 
     auto = ""
     if cfg.auto_mute_reports > 0 and day_count >= cfg.auto_mute_reports:
