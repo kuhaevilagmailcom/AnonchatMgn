@@ -29,6 +29,7 @@ from . import live_chat
 from . import word_game as WG
 from . import geoquest as GQ
 from . import geo_runtime as GR
+from .diagnostics import METRICS
 from . import nick as nicklib
 from .actions import DeliveryResult, _dialog_summary_text, announce_pairs, break_pair, send_to
 from .levels import rank_for
@@ -611,6 +612,7 @@ class MiniAppServer:
     async def _after_chat_message(
         self, uid: int, partner: int, sent_count: int, *, text: str = ""
     ) -> None:
+        METRICS.note_chat_relay()
         multiplier = await self.db.xp_multiplier()
         if multiplier > 1 and sent_count <= max(0, int(self.cfg.xp_message_cap)):
             self.mm.add_bonus_xp(
