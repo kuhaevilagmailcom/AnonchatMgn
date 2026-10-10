@@ -157,6 +157,7 @@ async def relay_to_partner(
             markup=K.menu_keyboard(),
         )
         return
+    METRICS.note_chat_relay()
     if copied is not None:
         relay_state.remember(ctx.user_id, message.message_id, partner, copied.message_id)
 
