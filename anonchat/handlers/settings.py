@@ -12,6 +12,7 @@ from aiogram.types import CallbackQuery, Message
 from .. import keyboards as K
 from .. import nick as nicklib
 from .. import texts
+from ..moderation_channel import send_moderation_channel
 from .. import live_chat
 from ..actions import (
     Ctx, DeliveryResult, announce_pairs, forget_everything, send_to,
@@ -244,6 +245,11 @@ async def feedback_text(
                 await message.send_copy(chat_id=admin_id, reply_markup=None)
             except TelegramAPIError:
                 pass
+
+    if await send_moderation_channel(
+        ctx.bot, ctx.cfg, card, message=message if has_media else None
+    ):
+        delivered += 1
 
     await state.clear()
     if delivered:
