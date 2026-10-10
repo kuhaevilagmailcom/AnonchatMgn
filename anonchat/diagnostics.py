@@ -5,6 +5,7 @@ import os
 import time
 from pathlib import Path
 from dataclasses import dataclass, field
+from collections import deque
 
 @dataclass(slots=True)
 class RuntimeMetrics:
@@ -14,6 +15,17 @@ class RuntimeMetrics:
     janitor_removed_games: int = 0
     last_cleanup_at: int = 0
     last_matchmaker_save_at: int = 0
+    recent_chat_relays: deque = field(default_factory=lambda: deque(maxlen=500))
+
+    def note_chat_relay(self) -> None:
+        """Small in-memory rolling sample; no per-message database queries."""
+        self.recent_chat_relays.append(time.monotonic())
+
+    def chat_relays_per_second(self) -> float:
+        now_mono = time.monotonic()
+        while self.recent_chat_relays and self.recent_chat_relays[0] < now_mono - 5:
+            self.recent_chat_relays.popleft()
+        return len(self.recent_chat_relays) / 5.0
 
     def uptime_seconds(self) -> int:
         return max(0, int(time.time() - self.started_at))
