@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 
 
 async def create_job(db, *, key: str, actor: int, message: str, button_text: str = "",
-                     button_url: str = "") -> bool:
+                     button_url: str = "", recipient_ids: list[int] | None = None) -> bool:
     async with aiosqlite.connect(db.path, isolation_level=None) as con:
         await con.execute("PRAGMA busy_timeout=10000")
         await con.execute("BEGIN IMMEDIATE")
@@ -38,11 +38,17 @@ async def create_job(db, *, key: str, actor: int, message: str, button_text: str
                    VALUES (?,?,?,?,?,'running',?)""",
                 (key, int(actor), message, button_text, button_url, stamp),
             )
-            await con.execute(
-                """INSERT INTO admin_broadcast_targets(job_key,user_id)
-                   SELECT ?,user_id FROM users WHERE banned=0""",
-                (key,),
-            )
+            if recipient_ids is None:
+                await con.execute(
+                    """INSERT INTO admin_broadcast_targets(job_key,user_id)
+                       SELECT ?,user_id FROM users WHERE banned=0""",
+                    (key,),
+                )
+            else:
+                await con.executemany(
+                    "INSERT OR IGNORE INTO admin_broadcast_targets(job_key,user_id) VALUES (?,?)",
+                    [(key, uid) for uid in sorted(set(int(x) for x in recipient_ids if int(x)>0))],
+                )
             await con.commit()
             return True
         except BaseException:
@@ -112,9 +118,32 @@ async def run_once(bot, db) -> bool:
     )
     if not changed.rowcount:
         return False
-    markup = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=job["button_text"],url=job["button_url"])
-    ]]) if job["button_url"] else None
+    # Poll notification buttons vote directly, without exposing another user's ID.
+    # A new/closed poll invalidates any unsent old notification.
+    poll_url = str(job["button_url"] or "")
+    if poll_url.startswith("poll:") and poll_url[5:].isdigit():
+        poll_id = int(poll_url[5:])
+        active = await db._fetchone(
+            "SELECT active,option_a,option_b FROM polls WHERE id=?", (poll_id,)
+        )
+        if active is None or not int(active["active"]):
+            await db.db.execute(
+                "UPDATE admin_broadcast_jobs SET status='stopped',finished_at=? WHERE job_key=?",
+                (int(time.time()), key),
+            )
+            await db.db.execute(
+                "UPDATE admin_broadcast_targets SET status='failed',last_error='poll_closed' "
+                "WHERE job_key=? AND user_id=? AND status='sending'", (key,uid)
+            )
+            return False
+        markup = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"1️⃣ {str(active['option_a'])[:48]}",callback_data=f"poll:vote:{poll_id}:0")],
+            [InlineKeyboardButton(text=f"2️⃣ {str(active['option_b'])[:48]}",callback_data=f"poll:vote:{poll_id}:1")],
+        ])
+    else:
+        markup = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text=job["button_text"],url=job["button_url"])
+        ]]) if job["button_url"] else None
     try:
         result = await bot.send_message(
             uid, str(job["message"]), parse_mode=None,reply_markup=markup,
