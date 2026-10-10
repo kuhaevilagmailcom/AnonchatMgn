@@ -1074,6 +1074,9 @@ class MiniAppServer:
         partner, summary = self.mm.release(uid)
         if partner is None:
             return self._status_payload(uid)
+        geo = await self.db.geo_for_pair(uid, partner)
+        if geo is not None:
+            GR.cancel_timeout(int(geo["id"]), int(geo["question_index"]))
         await self.db.close_battles_for_users(uid, partner)
         WG.clear_pair(uid, partner)
         relay_state.clear_pair(uid, partner)
