@@ -12,7 +12,7 @@ from urllib.parse import urlencode
 
 from aiohttp.test_utils import TestClient, TestServer
 
-from anonchat.db import Database
+from anonchat.db import Database, referral_day_start, month_period_start
 from anonchat.matching import Matchmaker
 from anonchat.miniapp_api import MiniAppServer
 
@@ -48,7 +48,7 @@ def test_admin_miniapp_endpoints() -> None:
             home=await client.get("/")
             assert home.status==200
             home_html=await home.text()
-            assert "admin.js?v=3" in home_html and "admin.css?v=3" in home_html
+            assert "admin.js?v=8" in home_html and "admin.css?v=8" in home_html
             assert 'data-game="numbers"' not in home_html
             assert "500 ⭐ в день" in home_html
             admin_bundle=await client.get("/admin.js")
@@ -132,11 +132,41 @@ def test_admin_miniapp_endpoints() -> None:
                 response=await client.get(route,headers=headers(1001))
                 assert response.status==200,(route,await response.text())
                 if route.endswith("/analytics"):
-                    days=(await response.json())["message_activity"]
-                    assert len(days)==30
-                    assert isinstance((await response.json())["all_time_messages"], int)
+                    payload=await response.json()
+                    days=payload["message_activity"]
+                    current_first=month_period_start()
+                    assert payload["period"]=="month" and payload["month"] in payload["months"]
+                    assert days[0]["day_start"]==current_first
+                    assert days[-1]["day_start"]==referral_day_start()
+                    assert isinstance(payload["all_time_messages"],int)
                     assert all(days[i]["day_start"] - days[i-1]["day_start"] == 86400
-                               for i in range(1, len(days)))
+                               for i in range(1,len(days)))
+            for period in ("7","14"):
+                response=await client.get("/api/miniapp/admin/analytics?period="+period,
+                                          headers=headers(1001))
+                assert response.status==200
+                payload=await response.json()
+                assert payload["period"]==period
+                assert len(payload["message_activity"])==int(period)
+            prior=month_period_start()-86400
+            previous_month=__import__("time").strftime("%Y-%m",__import__("time").gmtime(prior+18000))
+            previous_first=month_period_start(prior)
+            await db.db.execute(
+                "INSERT INTO message_daily_totals(day_start,messages) VALUES (?,?)",
+                (previous_first,5),
+            )
+            older=await client.get(
+                "/api/miniapp/admin/analytics?period=month&month="+previous_month,
+                headers=headers(1001),
+            )
+            assert older.status==200
+            old_data=await older.json()
+            assert old_data["month"]==previous_month
+            assert old_data["message_activity"][0]["day_start"]==previous_first
+            assert sum(r["messages"] or 0 for r in old_data["message_activity"])==5
+            bad=await client.get("/api/miniapp/admin/analytics?period=month&month=2000-01",
+                                 headers=headers(1001))
+            assert bad.status==400
             # New admin-only monitors and owner-managed polls.
             mm.connect(1002)
             queue=await client.get("/api/miniapp/admin/queue",headers=headers(1001))
