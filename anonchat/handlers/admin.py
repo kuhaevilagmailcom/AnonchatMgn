@@ -1457,7 +1457,9 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
             await ctx.reply("Нужно ровно два варианта: две строки или через <code>|</code>.")
             return
         await state.clear()
-        poll_id = await db.create_poll(question, options[0], options[1], ctx.user_id)
+        poll_id = await db.create_poll(
+            question, options[0], options[1], ctx.user_id, audience="all"
+        )
         await ctx.reply(
             f"✅ Опрос #{poll_id} запущен. Кнопка «Опрос» уже появилась в главном меню.",
             K.admin_poll_keyboard(True),
