@@ -206,36 +206,36 @@ class Matchmaker:
         return "queued", self.position(user_id)
 
     def sweep(self) -> list[tuple[int, int]]:
-        """Сначала желаемый пол, затем берег; если совпадений нет — сводим любых незаблокированных."""
-        candidates = sorted(self._queue.values(), key=lambda c: c.joined_at)
-        ranked: list[tuple[int, int, float, float, int, int]] = []
-        for i, first in enumerate(candidates):
-            for other in candidates[i + 1:]:
-                if not compatible(first, other):
-                    continue
-                ranked.append((
-                    -gender_score(first, other),
-                    -bank_score(first, other),
-                    min(first.joined_at, other.joined_at),
-                    max(first.joined_at, other.joined_at),
-                    first.user_id,
-                    other.user_id,
-                ))
-        ranked.sort()
+        """Greedy preference-based matching with O(n) extra memory.
+
+        Order by gender preference, then same bank, then queue age. The old
+        implementation materialized and sorted O(n²) possible pairs. Here each
+        priority bucket is scanned in waiting order, skipping matched users.
+        """
+        candidates = sorted(self._queue.values(), key=lambda c: (c.joined_at, c.user_id))
         pairs: list[tuple[int, int]] = []
         taken: set[int] = set()
-        for _gender, _bank, _oldest, _newest, a, b in ranked:
-            if a in taken or b in taken:
-                continue
-            pairs.append((a, b))
-            taken.update({a, b})
-        safe_pairs: list[tuple[int, int]] = []
+        # gender_score ranges 0..2; bank_score ranges 0..1.
+        for gender_priority in (2, 1, 0):
+            for bank_priority in (1, 0):
+                for index, first in enumerate(candidates):
+                    if first.user_id in taken:
+                        continue
+                    for other in candidates[index + 1:]:
+                        if other.user_id in taken or not compatible(first, other):
+                            continue
+                        if gender_score(first, other) != gender_priority:
+                            continue
+                        if bank_score(first, other) != bank_priority:
+                            continue
+                        # Matched on this bucket: later pairs involving either
+                        # user must be ignored, just like the sorted greedy pass.
+                        taken.update((first.user_id, other.user_id))
+                        pairs.append((first.user_id, other.user_id))
+                        break
         for a, b in pairs:
-            if int(a) == int(b):
-                continue
             self._pair(a, b)
-            safe_pairs.append((a, b))
-        return safe_pairs
+        return pairs
 
     def refresh(
         self, user_id: int, *, district: str, same_district: bool,
