@@ -25,7 +25,7 @@
     sort:'recent',userFilter:'all',usersPage:0,ledgerPage:0,ledgerKind:'all',ledgerPeriod:'today',
     ledgerSource:'',ledgerUser:'',reportsPage:0,reportsStatus:'new',restrictedPage:0,
     rankingPeriod:'week',chatsPage:0,gamesPage:0,queuePage:0,actionsPage:0,
-    activityPeriod:30,activityDays:[],activityAllTime:0,
+    activityPeriod:'month',activityMonth:'',activityMonths:[],activityDays:[],activityAllTime:0,
     modal:null,loading:false,nonce:0, broadcastKey:''};
   const can = p => state.owner || state.permissions.includes(p);
   const root=document.createElement('div');
@@ -266,18 +266,21 @@
       pageNav(state.gamesPage,state.gamesPage+1<d.pages,'gamesPage');
   }
   function activityChart(days,allTime=0){
-    const period=[7,14,30].includes(state.activityPeriod)?state.activityPeriod:30;
-    const rows=(Array.isArray(days)?days:[]).slice(-period);
+    const period=['7','14','month'].includes(state.activityPeriod)?state.activityPeriod:'month';
+    const rows=Array.isArray(days)?days:[];
     if(!rows.length)return '<div class="admin-note">Нет статистики за выбранный период.</div>';
-    const count=d=>Math.max(0,Number(d.messages)||0);
-    const max=Math.max(1,...rows.map(count));
-    const total=rows.reduce((sum,d)=>sum+count(d),0);
-    const bestIndex=rows.reduce((best,d,i)=>count(d)>count(rows[best])?i:best,0);
-    const best=rows[bestIndex];
+    const count=d=>d.messages==null?null:Math.max(0,Number(d.messages)||0);
+    const known=rows.filter(d=>count(d)!==null);
+    const max=Math.max(1,...known.map(d=>count(d)));
+    const total=known.reduce((sum,d)=>sum+count(d),0);
+    const bestIndex=rows.reduce((best,d,i)=>count(d)!==null&&(best<0||count(d)>count(rows[best]))?i:best,-1);
     const caption=d=>new Date((Number(d.day_start)+43200)*1000)
       .toLocaleDateString('ru-RU',{day:'numeric',month:'short',timeZone:'UTC'});
     const columns=rows.map((d,i)=>{
       const n=count(d),label=caption(d);
+      if(n===null)return '<div class="admin-activity-day is-missing" title="'+escape(label+': история недоступна')+
+        '" aria-label="'+escape(label+': нет сохранённых данных')+'">'+
+        '<span class="admin-activity-track" aria-hidden="true"></span></div>';
       const height=n>0?Math.max(4,n/max*100):0;
       const active=i===bestIndex;
       return '<button type="button" class="admin-activity-day'+(active?' is-active':'')+
@@ -289,24 +292,43 @@
     const axisIndices=[0,Math.floor((rows.length-1)/3),Math.ceil((rows.length-1)*2/3),rows.length-1]
       .filter((i,k,a)=>a.indexOf(i)===k);
     const axis=axisIndices.map(i=>'<span>'+escape(caption(rows[i]))+'</span>').join('');
-    const periods=[[7,'7 дней'],[14,'14 дней'],[30,'Месяц']];
-    const buttons=periods.map(([days,label])=>
-      '<button type="button" data-action="activityPeriod" data-value="'+days+
-      '" class="'+(period===days?'selected':'')+'" aria-pressed="'+(period===days)+'">'+label+'</button>').join('');
+    const periods=[['7','7 дней'],['14','14 дней'],['month','Месяц']];
+    const buttons=periods.map(([value,label])=>
+      '<button type="button" data-action="activityPeriod" data-value="'+value+
+      '" class="'+(period===value?'selected':'')+'" aria-pressed="'+(period===value)+'">'+label+'</button>').join('');
+    const monthTitle=ym=>{
+      if(!/^\\d{4}-\\d{2}$/.test(String(ym)))return ym;
+      const [year,month]=ym.split('-').map(Number);
+      return new Date(Date.UTC(year,month-1,1)).toLocaleDateString('ru-RU',
+        {month:'long',year:'numeric',timeZone:'UTC'});
+    };
+    const months=(state.activityMonths||[]).map(ym=>'<option value="'+escape(ym)+'"'+
+      (state.activityMonth===ym?' selected':'')+'>'+escape(monthTitle(ym))+'</option>').join('');
+    const monthSelect=period==='month'?'<select class="admin-activity-month" data-filter="activityMonth" '+
+      'aria-label="Выбрать месяц">'+months+'</select>':'';
+    const subtitle=period==='month'?monthTitle(state.activityMonth):'за '+period+' дней';
+    const highlight=bestIndex>=0?escape(caption(rows[bestIndex]))+' · '+
+      fmt(count(rows[bestIndex]))+' сообщений':'Нет данных';
+    const unavailable=rows.some(d=>count(d)===null);
     return '<section class="admin-activity-card">'+
       '<div class="admin-activity-header"><div><strong>Активность общения</strong></div>'+
-      '<b>'+fmt(total)+' <small>за '+period+' дней</small></b></div>'+
+      '<b>'+fmt(total)+' <small>'+escape(subtitle)+'</small></b></div>'+
       '<div class="admin-activity-periods" role="group" aria-label="Период аналитики">'+buttons+'</div>'+
-      '<div class="admin-activity-detail"><strong data-activity-detail>'+
-      escape(caption(best))+' · '+fmt(count(best))+' сообщений</strong></div>'+
+      monthSelect+
+      '<div class="admin-activity-detail"><strong data-activity-detail>'+highlight+'</strong></div>'+
       '<div class="admin-activity-plot" role="group" aria-label="Сообщения по дням" style="--admin-activity-count:'+rows.length+'">'+columns+'</div>'+
       '<div class="admin-activity-axis">'+axis+'</div>'+
+      (unavailable?'<div class="admin-activity-warning">Часть старой истории не сохранилась</div>':'')+
       '<div class="admin-activity-alltime"><span>За всё время</span><strong>'+fmt(allTime)+'</strong></div></section>';
   }
   async function analytics(){
-    const d=await api('/analytics'),p=d.payments||{},g=d.games||{};
+    const params={period:state.activityPeriod};
+    if(state.activityPeriod==='month'&&state.activityMonth)params.month=state.activityMonth;
+    const d=await api('/analytics',{},params),p=d.payments||{},g=d.games||{};
     state.activityDays=Array.isArray(d.message_activity)?d.message_activity:[];
     state.activityAllTime=Math.max(0,Number(d.all_time_messages)||0);
+    state.activityMonth=d.month||state.activityMonth;
+    state.activityMonths=Array.isArray(d.months)?d.months:[];
     const amounts=[['Поддержка Stars',fmt(p.support_stars_total)+' ★'],['Поддержка СБП',fmt(p.support_sbp_total)+' ₽'],
       ['Anon Plus Stars',fmt(p.anonplus_stars_total)+' ★'],['Anon Plus СБП',fmt(p.anonplus_sbp_total)+' ₽'],
       ['Активных Plus',fmt(p.anonplus_active)],['Игр: битва',fmt(g.battle)],['Игр: числа',fmt(g.numbers)],['Игр: Geo',fmt(g.geo)]];
@@ -420,11 +442,9 @@
       else if(action==='back')state.modal?closeModal():state.page==='user'?goto(state.back||'users'):state.page==='dashboard'?close():goto('dashboard');
       else if(action==='refresh')render();
       else if(action==='activityPeriod'){
-        const period=Number(value);
-        if(![7,14,30].includes(period))return;
-        state.activityPeriod=period;
-        const card=el.closest('.admin-activity-card');
-        if(card)card.outerHTML=activityChart(state.activityDays,state.activityAllTime);
+        if(!['7','14','month'].includes(value)||state.activityPeriod===value)return;
+        state.activityPeriod=value;
+        render();
       }
       else if(action==='activityDay'){
         const chart=el.closest('.admin-activity-card');
@@ -502,6 +522,12 @@
   root.addEventListener('change',e=>{
     if(!e.target.dataset.filter)return;
     const f=e.target.dataset.filter;
+    if(f==='activityMonth'){
+      if(!state.activityMonths.includes(e.target.value))return;
+      state.activityMonth=e.target.value;
+      render();
+      return;
+    }
     state[f]=e.target.value;
     if(f==='sort'||f==='userFilter')state.usersPage=0;
     if(f.startsWith('ledger'))state.ledgerPage=0;
