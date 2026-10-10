@@ -732,6 +732,7 @@ async def show_profile(ctx: Ctx) -> None:
         return
     me = ctx.me
     invited, referral_xp = await ctx.db.referral_stats(ctx.user_id)
+    personal_records = await ctx.db.dialog_records(ctx.user_id)
     messages = int(me["messages"])
     rank = rank_for(messages)
     lines = [
@@ -747,6 +748,11 @@ async def show_profile(ctx: Ctx) -> None:
     lines += [
         f"💬 Сообщения: <b>{messages}</b> · Диалоги: <b>{me['dialogs']}</b>",
         f"👍 Хорошие оценки: <b>{me['good_ratings']}</b> · 👎 <b>{me['bad_ratings']}</b>",
+        "",
+        "<b>Рекорды общения</b>",
+        f"⏱ Самый долгий диалог: <b>{personal_records['longest_seconds'] // 60} мин</b>",
+        f"💬 Максимум сообщений в диалоге: <b>{personal_records['max_dialog_messages']}</b>",
+        f"🕒 Всего времени в разговорах: <b>{personal_records['total_seconds'] // 3600} ч {(personal_records['total_seconds'] % 3600) // 60} мин</b>",
     ]
     if not rank.is_max:
         progress_bar = ctx.pack.progress_bar(rank.progress)
