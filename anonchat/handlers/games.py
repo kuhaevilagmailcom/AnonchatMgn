@@ -275,7 +275,7 @@ async def _send_round_result(ctx: Ctx, row: Any) -> None:
         final_b = _final_text(
             int(row["matches"]), _total(row), int(row["reward_total_b"] or 0)
         )
-        markup = K.battle_end_keyboard()
+        markup = K.battle_end_keyboard(_total(row))
         body_a = f"{body_a}\n\n{final_a}"
         body_b = f"{body_b}\n\n{final_b}"
     else:
