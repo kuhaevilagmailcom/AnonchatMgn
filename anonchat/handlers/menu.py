@@ -367,17 +367,11 @@ async def cmd_connect(message: Message, ctx: Ctx) -> None:
 
 @router.message(Command("next", "skip"))
 async def cmd_next(message: Message, ctx: Ctx, db: Database) -> None:
-    if await _geo_blocks_chat_exit(ctx, db):
-        await ctx.reply("🗺 Сначала заверши текущий раунд Геогусера.")
-        return
     await act_next(ctx)
 
 
 @router.message(Command("stop", "disconnect", "leave"))
 async def cmd_stop(message: Message, ctx: Ctx, db: Database) -> None:
-    if await _geo_blocks_chat_exit(ctx, db):
-        await ctx.reply("🗺 Сначала заверши Геогусер.")
-        return
     await act_stop(ctx)
 
 
@@ -420,18 +414,34 @@ async def cb_connect(event: CallbackQuery, ctx: Ctx) -> None:
 
 @router.callback_query(F.data == K.CB_NEXT)
 async def cb_next(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
-    if await _geo_blocks_chat_exit(ctx, db):
-        await ctx.ack("Сначала заверши Геогусер", alert=True)
+    stats = ctx.mm.dialog_stats(ctx.user_id)
+    started = float(stats.get("started_at", 0) or 0)
+    # Normal chats: immediate skip; long conversations: protect from a mis-tap.
+    if started and time.time() - started >= 5 * 60:
+        await ctx.ack()
+        await ctx.edit(
+            "⏭ Диалог идёт больше 5 минут. Точно найти следующего?",
+            K.confirm_next_keyboard(),
+        )
         return
     await ctx.ack()
     await act_next(ctx)
 
 
+@router.callback_query(F.data == K.CB_NEXT_YES)
+async def cb_next_yes(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack()
+    await act_next(ctx)
+
+
+@router.callback_query(F.data == K.CB_NEXT_NO)
+async def cb_next_no(event: CallbackQuery, ctx: Ctx) -> None:
+    await ctx.ack("Остаёмся")
+    await show_menu(ctx)
+
+
 @router.callback_query(F.data == K.CB_STOP)
 async def cb_stop(event: CallbackQuery, ctx: Ctx, cfg: Config, db: Database) -> None:
-    if await _geo_blocks_chat_exit(ctx, db):
-        await ctx.ack("Сначала заверши Геогусер", alert=True)
-        return
     status = ctx.mm.status(ctx.user_id)
     if status == "queued":
         ctx.mm.forget(ctx.user_id)
@@ -459,9 +469,6 @@ async def cb_stop(event: CallbackQuery, ctx: Ctx, cfg: Config, db: Database) -> 
 
 @router.callback_query(F.data == K.CB_STOP_YES)
 async def cb_stop_yes(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
-    if await _geo_blocks_chat_exit(ctx, db):
-        await ctx.ack("Сначала заверши Геогусер", alert=True)
-        return
     await ctx.ack()
     await act_stop(ctx)
 
