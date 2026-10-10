@@ -146,7 +146,9 @@ async def run_once(bot, db) -> bool:
         ]]) if job["button_url"] else None
     try:
         result = await bot.send_message(
-            uid, str(job["message"]), parse_mode=None,reply_markup=markup,
+            uid, str(job["message"]),
+            parse_mode="HTML" if poll_url.startswith("poll:") and poll_url[5:].isdigit() else None,
+            reply_markup=markup,
             disable_web_page_preview=True,
         )
     except TelegramForbiddenError:
