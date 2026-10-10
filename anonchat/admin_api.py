@@ -540,7 +540,7 @@ class MiniAppAdmin:
         )
         return web.json_response({"payments":payments,"sources":_rows(grouped),
                                   "games":await self.s.db.game_diagnostics(),
-                                  "message_activity":await self.s.db.message_activity_days(14)})
+                                  "message_activity":await self.s.db.message_activity_days(30)})
 
     async def admins(self, request):
         actor,_,owner=await self.access(request)
