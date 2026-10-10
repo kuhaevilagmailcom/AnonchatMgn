@@ -229,9 +229,22 @@ class Matchmaker:
         candidates = sorted(self._queue.values(), key=lambda c: (c.joined_at, c.user_id))
         pairs: list[tuple[int, int]] = []
         taken: set[int] = set()
-        # gender_score ranges 0..2; bank_score ranges 0..1.
-        for gender_priority in (2, 1, 0):
-            for bank_priority in (1, 0):
+        # Skip scoring tiers that are impossible for this specific waiting queue.
+        # Most people choose "any", so the common case becomes close to O(n).
+        seeking = sum(bool(c.looking_for) for c in candidates)
+        max_gender = min(2, seeking) if any(c.gender for c in candidates) else 0
+        seen_banks: set[str] = set()
+        shared_bank = False
+        for candidate in candidates:
+            if not candidate.district:
+                continue
+            if candidate.district in seen_banks:
+                shared_bank = True
+                break
+            seen_banks.add(candidate.district)
+        bank_tiers = (1, 0) if shared_bank else (0,)
+        for gender_priority in range(max_gender, -1, -1):
+            for bank_priority in bank_tiers:
                 for index, first in enumerate(candidates):
                     if first.user_id in taken:
                         continue
