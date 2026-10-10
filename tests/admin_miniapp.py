@@ -134,6 +134,7 @@ def test_admin_miniapp_endpoints() -> None:
                 if route.endswith("/analytics"):
                     days=(await response.json())["message_activity"]
                     assert len(days)==30
+                    assert isinstance((await response.json())["all_time_messages"], int)
                     assert all(days[i]["day_start"] - days[i-1]["day_start"] == 86400
                                for i in range(1, len(days)))
             # New admin-only monitors and owner-managed polls.
