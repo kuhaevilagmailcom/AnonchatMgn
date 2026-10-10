@@ -149,7 +149,7 @@ def test_admin_miniapp_endpoints() -> None:
                 assert payload["period"]==period
                 assert len(payload["message_activity"])==int(period)
             prior=month_period_start()-86400
-            previous_month=__import__("time").strftime("%Y-%m",__import__("time").gmtime(prior+18000))
+            previous_month=time.strftime("%Y-%m",time.gmtime(prior+18000))
             previous_first=month_period_start(prior)
             await db.db.execute(
                 "INSERT INTO message_daily_totals(day_start,messages) VALUES (?,?)",
