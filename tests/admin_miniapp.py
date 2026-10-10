@@ -131,6 +131,11 @@ def test_admin_miniapp_endpoints() -> None:
                           "/api/miniapp/admin/diagnostics","/api/miniapp/admin/sources"):
                 response=await client.get(route,headers=headers(1001))
                 assert response.status==200,(route,await response.text())
+                if route.endswith("/analytics"):
+                    days=(await response.json())["message_activity"]
+                    assert len(days)==30
+                    assert all(days[i]["day_start"] - days[i-1]["day_start"] == 86400
+                               for i in range(1, len(days)))
             # New admin-only monitors and owner-managed polls.
             mm.connect(1002)
             queue=await client.get("/api/miniapp/admin/queue",headers=headers(1001))
