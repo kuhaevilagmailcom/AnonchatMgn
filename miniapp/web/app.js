@@ -404,8 +404,8 @@ if (typeof window === 'undefined') {
     if(!poll){root.hidden=true;root.innerHTML='';return}
     root.hidden=false;
     const voted=poll.selected===0||poll.selected===1;
-    root.innerHTML=`<header><span><small>ОПРОС ДНЯ</small><strong>Что выбрал город</strong></span><b>${poll.total||0} голосов</b></header>
-      <h3>${esc(poll.question)}</h3>
+    root.innerHTML=`<header><span><small>ОПРОС</small><strong>Что выбрал город</strong></span><b>${poll.total||0} голосов</b></header>
+      <blockquote class="poll-question">${esc(poll.question)}</blockquote>
       <div class="poll-options">
         ${poll.options.map((label,i)=>`<button type="button" data-poll-choice="${i}" class="${poll.selected===i?'selected':''}">
           <span><strong>${esc(label)}</strong>${voted?`<small>${poll.percentages?.[i]||0}%</small>`:''}</span>
