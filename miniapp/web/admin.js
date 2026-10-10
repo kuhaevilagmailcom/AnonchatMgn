@@ -16,7 +16,7 @@
     ['rankings','Топы','stats'],['reports','Жалобы','reports'],['ban','Бан-лист','ban'],
     ['mute','Мут-лист','mute'],['chats','Диалоги','monitor'],['games','Игры','monitor'],
     ['analytics','Аналитика','stats'],['broadcast','Рассылка','broadcast'],
-    ['admins','Администраторы','owner'],['polls','Опрос дня','owner'],['audit','Аудит','stats'],
+    ['admins','Администраторы','owner'],['polls','Опрос','owner'],['audit','Аудит','stats'],
     ['diagnostics','Диагностика','stats']
   ];
   const opt = (items, current) => items.map(([value,title])=>'<option value="'+escape(value)+'"'+(String(value)===String(current)?' selected':'')+'>'+escape(title)+'</option>').join('');
@@ -253,8 +253,8 @@
       '<label>Вопрос<input name="question" maxlength="250" required></label>'+
       '<label>Вариант 1<input name="option_a" maxlength="48" required></label>'+
       '<label>Вариант 2<input name="option_b" maxlength="48" required></label>'+
-      '<label>Кому отправить уведомление<select name="audience"><option value="all">Всем пользователям</option><option value="admins">Только администраторам</option></select></label>'+
-      '<button type="submit" class="admin-primary">Создать опрос и уведомить</button></form>';
+      '<p class="admin-muted">Опрос публикуется для всех пользователей. Уведомление придёт всем, кто не заблокировал бота.</p>'+
+      '<button type="submit" class="admin-primary">Опубликовать опрос</button></form>';
   }
   async function games(){
     const d=await api('/games',{}, {page:state.gamesPage});
@@ -480,11 +480,10 @@
       }else if(id==='adminPollForm'){
         const question=String(data.get('question')||'').trim(),
               option_a=String(data.get('option_a')||'').trim(),
-              option_b=String(data.get('option_b')||'').trim(),
-              audience=String(data.get('audience')||'all');
+              option_b=String(data.get('option_b')||'').trim();
         if(!question||!option_a||!option_b)throw new Error('Заполни все поля');
-        if(!confirm('Опубликовать новый опрос? Предыдущий закроется. Уведомление получат '+(audience==='admins'?'только администраторы':'все пользователи')+'.'))return;
-        await post('/polls',{action:'create',question,option_a,option_b,audience,key:key()});
+        if(!confirm('Опубликовать опрос для всех? Предыдущий опрос закроется.'))return;
+        await post('/polls',{action:'create',question,option_a,option_b,key:key()});
         toast('Опрос создан');render();
       }else if(id==='adminBroadcastForm'){
         const message=String(data.get('message')||'').trim(),button_text=String(data.get('button_text')||'').trim(),button_url=String(data.get('button_url')||'').trim(),audience=String(data.get('audience')||'all');
