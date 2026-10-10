@@ -21,6 +21,8 @@ jobs:
       - run: python -m tests.moderation_channel
       - run: python -m tests.admin_miniapp
       - run: python -m tests.admin_reliability
+      - run: python -m tests.load_smoke
+      - run: python -m tests.game_resilience
       - run: python -m compileall -q .
       - run: node --check miniapp/web/app.js
       - run: node --check miniapp/web/admin.js
