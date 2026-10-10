@@ -97,6 +97,28 @@ async def scenario() -> None:
             assert await db.close_battles_for_users(991001, 991002) == 1
             assert (await db.expire_geo_round(geo_id, 1))[0] == "closed"
 
+            # Cooldown refresh: already-waiting partners can meet after 2 minutes.
+            await db.log_dialog(991001, 991002, 0, 0, int(time.time()) - 10, 991001)
+            mm = Matchmaker()
+            await db.db.execute(
+                "UPDATE matches SET ended_at=? WHERE user_a=? AND user_b=?",
+                (int(time.time()) - 60, 991001, 991002),
+            )
+            assert mm.connect(991001, excluded={991002})[0] == "queued"
+            assert mm.connect(991002, excluded={991001})[0] == "queued"
+            active = await db.queue_recent_exclusions(mm.queued_user_ids(), 120)
+            assert active[991001] == {991002}
+            mm.refresh_queued_exclusions(active)
+            assert mm.sweep() == []
+            await db.db.execute(
+                "UPDATE matches SET ended_at=? WHERE user_a=? AND user_b=?",
+                (int(time.time()) - 125, 991001, 991002),
+            )
+            expired = await db.queue_recent_exclusions(mm.queued_user_ids(), 120)
+            mm.refresh_queued_exclusions(expired)
+            assert len(mm.sweep()) == 1
+            assert mm.online_pairs() == 1
+
             # Explain a word: idempotent guesses, role switching, process reload.
             WG.bind_database(db)
             WG.clear_pair(991001, 991002)
