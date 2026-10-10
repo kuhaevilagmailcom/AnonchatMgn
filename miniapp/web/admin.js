@@ -265,36 +265,45 @@
       pageNav(state.gamesPage,state.gamesPage+1<d.pages,'gamesPage');
   }
   function activityChart(days){
-    const rows=Array.isArray(days)?days:[];
+    const rows=(Array.isArray(days)?days:[]).slice(-14);
     if(!rows.length)return '<div class="admin-note">Пока нет статистики.</div>';
-    const max=Math.max(1,...rows.map(d=>Number(d.messages)||0));
-    const total=rows.reduce((sum,d)=>sum+(Number(d.messages)||0),0);
-    const best=rows.reduce((a,b)=>Number(a.messages)>=Number(b.messages)?a:b);
+    const count=d=>Math.max(0,Number(d.messages)||0);
+    const max=Math.max(1,...rows.map(count));
+    const total=rows.reduce((sum,d)=>sum+count(d),0);
+    const bestIndex=rows.reduce((best,d,i)=>count(d)>count(rows[best])?i:best,0);
+    const best=rows[bestIndex];
     const caption=d=>new Date((Number(d.day_start)+43200)*1000)
       .toLocaleDateString('ru-RU',{day:'numeric',month:'short',timeZone:'UTC'});
-    const columns=rows.map(d=>{
-      const n=Math.max(0,Number(d.messages)||0);
-      const height=n>0?Math.max(5,n/max*100):2;
-      return '<div class="admin-activity-day" tabindex="0" role="img" aria-label="'+caption(d)+': '+fmt(n)+' сообщений" title="'+caption(d)+' · '+fmt(n)+' сообщений">'+
-        '<span class="admin-activity-value">'+fmt(n)+'</span>'+
-        '<div class="admin-activity-track"><i style="height:'+height+'%"></i></div>'+
-        '<small>'+caption(d)+'</small></div>';
+    const columns=rows.map((d,i)=>{
+      const n=count(d),label=caption(d);
+      const height=n>0?Math.max(4,n/max*100):0;
+      const active=i===bestIndex;
+      return '<button type="button" class="admin-activity-day'+(active?' is-active':'')+
+        '" data-action="activityDay" data-value="'+i+'" data-label="'+escape(label)+
+        '" data-messages="'+n+'" aria-label="'+escape(label+': '+fmt(n)+' сообщений')+
+        '" aria-pressed="'+active+'" title="'+escape(label+' · '+fmt(n)+' сообщений')+'">'+
+        '<span class="admin-activity-track" aria-hidden="true"><i style="height:'+height+'%"></i></span></button>';
     }).join('');
+    const axisIndices=[0,Math.floor((rows.length-1)/3),Math.ceil((rows.length-1)*2/3),rows.length-1]
+      .filter((i,k,a)=>a.indexOf(i)===k);
+    const axis=axisIndices.map(i=>'<span>'+escape(caption(rows[i]))+'</span>').join('');
     return '<section class="admin-activity-card">'+
-      '<div class="admin-activity-header"><div><small>Последние 14 дней · МГН</small>'+
-      '<strong>Активность общения</strong></div><b>'+fmt(total)+' <small>сообщ.</small></b></div>'+
-      '<div class="admin-activity-plot">'+columns+'</div>'+
-      '<p class="admin-activity-foot">Самый активный день: '+caption(best)+' · '+fmt(best.messages)+' сообщений. '+
-      'Данные обновляются после завершения диалогов.</p></section>';
+      '<div class="admin-activity-header"><div><small>Последние '+rows.length+' дней · МГН</small>'+
+      '<strong>Активность общения</strong></div><b>'+fmt(total)+' <small>сообщений</small></b></div>'+
+      '<div class="admin-activity-detail"><span>Выбранный день</span><strong data-activity-detail>'+
+      escape(caption(best))+' · '+fmt(count(best))+' сообщений</strong></div>'+
+      '<div class="admin-activity-plot" role="group" aria-label="Сообщения по дням" style="--admin-activity-count:'+rows.length+'">'+columns+'</div>'+
+      '<div class="admin-activity-axis">'+axis+'</div>'+
+      '<p class="admin-activity-foot">Пик активности: '+escape(caption(best))+' · '+fmt(count(best))+
+      ' сообщений. Нажмите на столбец, чтобы посмотреть день. Данные обновляются после завершения диалогов.</p></section>';
   }
-
   async function analytics(){
     const d=await api('/analytics'),p=d.payments||{},g=d.games||{};
     const amounts=[['Поддержка Stars',fmt(p.support_stars_total)+' ★'],['Поддержка СБП',fmt(p.support_sbp_total)+' ₽'],
       ['Anon Plus Stars',fmt(p.anonplus_stars_total)+' ★'],['Anon Plus СБП',fmt(p.anonplus_sbp_total)+' ₽'],
       ['Активных Plus',fmt(p.anonplus_active)],['Игр: битва',fmt(g.battle)],['Игр: числа',fmt(g.numbers)],['Игр: Geo',fmt(g.geo)]];
     const sources=d.sources||[],max=Math.max(1,...sources.map(a=>Number(a.credits)));
-    return wrapHeader('Поддержка проекта и экономика')+activityChart(d.message_activity)+
+    return activityChart(d.message_activity)+
       '<section class="admin-stats">'+amounts.map(([k,v])=>tile(k,v)).join('')+'</section><div class="admin-subheading">Начисления по источникам · неделя</div>'+
       '<div class="admin-chart">'+(sources.length?sources.map(s=>'<div class="admin-chart-row"><span>'+escape(sourceNames[s.source]||s.source)+'</span><strong>+'+fmt(s.credits)+' ★</strong><div class="admin-chart-track"><i style="width:'+Math.max(0,Math.min(100,s.credits/max*100))+'%"></i></div></div>').join(''):placeholder)+'</div>';
   }
@@ -402,6 +411,17 @@
       if(action==='close')close();
       else if(action==='back')state.modal?closeModal():state.page==='user'?goto(state.back||'users'):state.page==='dashboard'?close():goto('dashboard');
       else if(action==='refresh')render();
+      else if(action==='activityDay'){
+        const chart=el.closest('.admin-activity-card');
+        if(!chart)return;
+        chart.querySelectorAll('.admin-activity-day').forEach(day=>{
+          const selected=day===el;
+          day.classList.toggle('is-active',selected);
+          day.setAttribute('aria-pressed',String(selected));
+        });
+        const detail=chart.querySelector('[data-activity-detail]');
+        if(detail)detail.textContent=(el.dataset.label||'')+' · '+fmt(el.dataset.messages)+' сообщений';
+      }
       else if(action==='nav'){if(value==='ledger'){state.ledgerUser='';state.ledgerPage=0}goto(value)}
       else if(action==='openUser'||action==='user'){if(!can('users'))return;state.back=state.page==='user'?'users':state.page;state.selectedId=Number(value);goto('user')}
       else if(action==='userLedger'){state.ledgerUser=String(value);state.ledgerPage=0;goto('ledger')}
