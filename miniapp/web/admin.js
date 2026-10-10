@@ -105,7 +105,9 @@
     return wrapHeader('Бот онлайн · '+Math.floor((d.uptime||0)/3600)+' ч работы')+
       '<section class="admin-stats">'+tile('Пользователи',fmt(s.users))+
       tile('Новых сегодня',fmt(s.new_today))+tile('Активны сегодня',fmt(s.active_today))+
-      tile('За 7 дней',fmt(s.active_week))+tile('В поиске',fmt(d.queue))+
+      tile('За 7 дней',fmt(s.active_week))+tile('Сообщений сегодня',fmt(s.messages_today))+
+      tile('Сообщений за 7 дней',fmt(s.messages_week))+tile('Сообщений за всё время',fmt(s.messages))+
+      tile('В поиске',fmt(d.queue))+
       tile('Диалогов сейчас',fmt(d.dialogs))+tile('Жалоб открыто',fmt(s.open_reports))+
       tile('Начислено сегодня',fmt(s.xp_today)+' ★')+
       tile('Банов / мутов',fmt(s.banned)+' / '+fmt(s.muted))+
