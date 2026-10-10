@@ -1,4 +1,4 @@
-"""Публичный опрос дня: открыть, проголосовать, увидеть только проценты."""
+"""Публичный опрос: открыть, проголосовать, увидеть только проценты."""
 
 from __future__ import annotations
 
@@ -24,8 +24,8 @@ async def _show_poll(ctx: Ctx, db: Database) -> None:
     results = await db.poll_results(poll_id)
     selected = await db.poll_vote_for(poll_id, ctx.user_id)
     body = (
-        "<b>Опрос дня</b>\n\n"
-        f"{texts.esc(poll['question'])}\n\n"
+        "<b>Опрос</b>\n\n"
+        f"<blockquote>{texts.esc(poll['question'])}</blockquote>\n\n"
         "Выбери вариант. На кнопках показываются только проценты."
     )
     markup = K.poll_keyboard(
