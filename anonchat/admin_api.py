@@ -12,6 +12,8 @@ import re
 import tempfile
 import time
 from pathlib import Path
+from datetime import datetime, timezone
+from calendar import monthrange
 from urllib.parse import urlsplit
 
 import aiosqlite
@@ -529,22 +531,47 @@ class MiniAppAdmin:
                                   "pages":max(1,(int(count["n"])+14)//15)})
 
     async def analytics(self, request):
-        await self.access(request,"stats")
-        payments=await self.s.db.payment_stats()
-        grouped=await self.s.db._fetchall(
+        await self.access(request, "stats")
+        period = request.query.get("period", "month")
+        if period not in ("7", "14", "month"):
+            raise _json_error(400, "Недопустимый период аналитики")
+        today = referral_day_start()
+        current_month = time.strftime("%Y-%m", time.gmtime(today + 18000))
+        known_months = await self.s.db.message_activity_months()
+        months = list(dict.fromkeys([current_month, *known_months]))
+        if period == "month":
+            selected_month = request.query.get("month") or current_month
+            if selected_month not in months:
+                raise _json_error(400, "Нет доступной статистики за выбранный месяц")
+            year, month = map(int, selected_month.split("-"))
+            month_start = int(datetime(year, month, 1, tzinfo=timezone.utc).timestamp()) - 18000
+            last_day = month_start + (monthrange(year, month)[1] - 1) * 86_400
+            last_day = min(today, last_day)
+            first_day = month_start
+        else:
+            selected_month = current_month
+            first_day = today - (int(period) - 1) * 86_400
+            last_day = today
+        days = await self.s.db.message_activity_range(first_day, last_day)
+        payments = await self.s.db.payment_stats()
+        grouped = await self.s.db._fetchall(
             """SELECT source, COUNT(*) operations,
                       COALESCE(SUM(CASE WHEN amount>0 THEN amount ELSE 0 END),0) credits,
                       COALESCE(SUM(CASE WHEN amount<0 THEN -amount ELSE 0 END),0) debits
                FROM xp_transactions WHERE created_at>=? AND source<>'opening_balance'
                GROUP BY source ORDER BY credits DESC""",(week_period_start(),)
         )
-        total_messages=await self.s.db._fetchone(
+        total_messages = await self.s.db._fetchone(
             "SELECT COALESCE(SUM(messages),0) AS total FROM users"
         )
-        return web.json_response({"payments":payments,"sources":_rows(grouped),
-                                  "games":await self.s.db.game_diagnostics(),
-                                  "message_activity":await self.s.db.message_activity_days(30),
-                                  "all_time_messages":int(total_messages["total"] or 0) if total_messages else 0})
+        return web.json_response({
+            "payments": payments, "sources": _rows(grouped),
+            "games": await self.s.db.game_diagnostics(),
+            "period": period, "month": selected_month, "months": months,
+            "message_activity": days,
+            "all_time_messages": int(total_messages["total"] or 0) if total_messages else 0,
+            "activity_partial": any(d["messages"] is None for d in days),
+        })
 
     async def admins(self, request):
         actor,_,owner=await self.access(request)
