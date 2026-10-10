@@ -10,6 +10,7 @@ import logging
 import time
 
 import aiosqlite
+from .diagnostics import METRICS
 from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError, TelegramRetryAfter, TelegramNetworkError
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
@@ -187,4 +188,8 @@ async def run_worker(bot, db) -> None:
         except Exception:
             log.exception("Broadcast worker failed")
             busy = False
-        await asyncio.sleep(0.08 if busy else 2)
+        # Lower-priority bulk notices yield capacity while live chats are busy.
+        # Never throttle direct chat replies or game buttons.
+        rate = METRICS.chat_relays_per_second()
+        delay = 0.35 if rate >= 10 else 0.16 if rate >= 4 else 0.08
+        await asyncio.sleep(delay if busy else 2)
