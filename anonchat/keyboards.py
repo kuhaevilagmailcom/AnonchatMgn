@@ -344,10 +344,10 @@ def geo_next_keyboard(game_id: int, round_index: int) -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
-def geo_end_keyboard(*, can_start: bool = True) -> InlineKeyboardMarkup:
+def geo_end_keyboard(*, can_start: bool = True, rounds: int = 3) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     if can_start:
-        _button(b, "Сыграть ещё", callback_data=CB_GEO, icon="refresh", style="success")
+        _button(b, "Сыграть ещё", callback_data=f"game:geo:rounds:{int(rounds)}", icon="refresh", style="success")
     _button(b, "Вернуться в чат", callback_data="game:return", icon="home")
     b.adjust(1, 1)
     return b.as_markup()
@@ -492,9 +492,9 @@ def battle_next_keyboard(game_id: int, question_index: int) -> InlineKeyboardMar
     return b.as_markup()
 
 
-def battle_end_keyboard() -> InlineKeyboardMarkup:
+def battle_end_keyboard(total: int = 5) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    _button(b, "Сыграть ещё", callback_data="game:again", icon="refresh", style="success")
+    _button(b, "Сыграть ещё", callback_data=f"game:battle:{int(total)}", icon="refresh", style="success")
     _button(b, "Вернуться в чат", callback_data="game:return", icon="home")
     b.adjust(1, 1)
     return b.as_markup()
