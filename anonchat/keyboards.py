@@ -598,6 +598,7 @@ CB_PANEL_QUEUE = "adm:panel:queue"
 CB_PANEL_FIND = "adm:panel:find"
 CB_PANEL_BC = "adm:panel:broadcast"
 CB_PANEL_BC_SIMPLE = "adm:panel:broadcast:simple"
+CB_PANEL_BC_SIMPLE_AUDIENCE_PREFIX = "adm:panel:broadcast:simple:audience:"
 CB_PANEL_BC_SIMPLE_PHOTO = "adm:panel:broadcast:simple:photo"
 CB_PANEL_BC_SIMPLE_NO_PHOTO = "adm:panel:broadcast:simple:no_photo"
 CB_PANEL_BC_SIMPLE_BUTTON_PREFIX = "adm:panel:broadcast:simple:button:"
@@ -768,6 +769,24 @@ def panel_cancel_keyboard() -> InlineKeyboardMarkup:
     return b.as_markup()
 
 
+def broadcast_audience_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "👥 Всем пользователям", callback_data=f"{CB_PANEL_BC_SIMPLE_AUDIENCE_PREFIX}all", style="primary")
+    _button(b, "🛡 Только администраторам", callback_data=f"{CB_PANEL_BC_SIMPLE_AUDIENCE_PREFIX}admins")
+    _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="delete", style="danger")
+    b.adjust(1)
+    return b.as_markup()
+
+
+def admin_poll_audience_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "👥 Всем пользователям", callback_data="adm:panel:poll:audience:all", style="success")
+    _button(b, "🛡 Только администраторам", callback_data="adm:panel:poll:audience:admins")
+    _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="delete", style="danger")
+    b.adjust(1)
+    return b.as_markup()
+
+
 def broadcast_simple_media_keyboard() -> InlineKeyboardMarkup:
     """Выбор: будет ли у обычной рассылки картинка."""
     b = InlineKeyboardBuilder()
@@ -823,7 +842,7 @@ def broadcast_simple_user_keyboard(action: str) -> InlineKeyboardMarkup | None:
     return b.as_markup()
 
 
-def broadcast_simple_preview_keyboard(action: str) -> InlineKeyboardMarkup:
+def broadcast_simple_preview_keyboard(action: str, audience: str = "all") -> InlineKeyboardMarkup:
     """Предпросмотр обычной рассылки + служебные кнопки отправки."""
     b = InlineKeyboardBuilder()
     item = _BROADCAST_SIMPLE_ACTIONS.get(str(action))
@@ -831,7 +850,7 @@ def broadcast_simple_preview_keyboard(action: str) -> InlineKeyboardMarkup:
         label, callback_data, icon, style = item
         _button(b, label, callback_data=callback_data, icon=icon, style=style)
     _button(
-        b, "Отправить всем",
+        b, "Отправить админам" if audience == "admins" else "Отправить всем",
         callback_data=CB_PANEL_BC_SIMPLE_SEND, icon="check", style="success",
     )
     _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="delete", style="danger")
