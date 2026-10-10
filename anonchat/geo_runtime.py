@@ -213,6 +213,25 @@ async def finish_tracking(bot, db, mm, pack, row: Any) -> None:
             await send_to(bot, user_id, notice, pack=pack)
 
 
+async def restore_timeouts(bot, db, mm, pack) -> int:
+    """Restore running GeoGuessr clocks following a process restart.
+
+    Original deadlines are preserved: an overdue round resolves once.
+    Stale/non-matching pairs are ignored rather than reconnected.
+    """
+    rows = await db._fetchall(
+        "SELECT * FROM battle_games WHERE game_type='geo' AND status='active'"
+    )
+    restored = 0
+    for game in rows:
+        a, b = players(game)
+        if mm.partner(a) != b or mm.partner(b) != a:
+            continue
+        schedule_timeout(bot, db, mm, pack, game)
+        restored += 1
+    return restored
+
+
 def cancel_timeout(game_id: int, round_index: int) -> None:
     task = _timeout_tasks.pop((int(game_id), int(round_index)), None)
     if task is not None and not task.done() and task is not asyncio.current_task():
