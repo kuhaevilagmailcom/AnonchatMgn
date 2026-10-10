@@ -396,6 +396,8 @@ CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users(last_seen DESC);
 CREATE INDEX IF NOT EXISTS idx_polls_active ON polls(active, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_poll_votes_poll_choice ON poll_votes(poll_id, choice);
 CREATE INDEX IF NOT EXISTS idx_matches_recent ON matches(ended_at, user_a, user_b);
+CREATE INDEX IF NOT EXISTS idx_matches_user_a ON matches(user_a);
+CREATE INDEX IF NOT EXISTS idx_matches_user_b ON matches(user_b);
 CREATE INDEX IF NOT EXISTS idx_referrals_referrer ON referrals(referrer_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sbp_payments_user ON sbp_payments(user_id, created_at);
@@ -3496,6 +3498,38 @@ class Database:
                 (limit,),
             )
         return [int(r["user_id"]) for r in rows]
+
+    async def message_activity_days(self, days: int = 14) -> list[dict[str, int]]:
+        """Daily messages for the Mini App graph, in Magnetogorsk UTC+5."""
+        days = max(1, min(int(days), 40))
+        current = referral_day_start()
+        first = current - (days - 1) * 86_400
+        rows = await self._fetchall(
+            """SELECT day_start, COALESCE(SUM(messages),0) AS count
+                 FROM daily_activity WHERE day_start>=?
+                 GROUP BY day_start""",
+            (first,),
+        )
+        lookup = {int(r["day_start"]): int(r["count"]) for r in rows}
+        return [
+            {"day_start": first + i * 86_400,
+             "messages": lookup.get(first + i * 86_400, 0)}
+            for i in range(days)
+        ]
+
+    async def dialog_records(self, user_id: int) -> dict[str, int]:
+        """Read-only records from completed dialogs; no per-message DB writes."""
+        row = await self._fetchone(
+            """SELECT COALESCE(MAX(MAX(0, ended_at-started_at)),0) AS longest_seconds,
+                      COALESCE(MAX(msg_a+msg_b),0) AS max_dialog_messages,
+                      COALESCE(SUM(MAX(0, ended_at-started_at)),0) AS total_seconds
+                 FROM matches
+                WHERE ended_at IS NOT NULL AND (user_a=? OR user_b=?)""",
+            (int(user_id), int(user_id)),
+        )
+        return {key: int(row[key] or 0) for key in (
+            "longest_seconds", "max_dialog_messages", "total_seconds"
+        )} if row else {"longest_seconds": 0, "max_dialog_messages": 0, "total_seconds": 0}
 
     async def stats(self) -> dict[str, Any]:
         total = await self._fetchone("SELECT COUNT(*) AS c FROM users")
