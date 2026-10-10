@@ -49,7 +49,7 @@ def test_config_defaults(monkeypatch=None) -> None:
         assert cfg.emoji_pack_url.startswith("https://t.me/addemoji/")
         assert cfg.max_message_len == 3000
         assert cfg.xp_good_rating == 10
-        assert cfg.recent_partner_cooldown_minutes == 30
+        assert cfg.recent_partner_cooldown_minutes == 2
         assert cfg.subscription_channel == "@anonmgn"
         assert cfg.subscription_reward == 100
         assert cfg.miniapp_enabled is True
