@@ -19,6 +19,8 @@ from .pack import ICONS
 # callback_data
 CB_CONNECT = "act:connect"
 CB_NEXT = "act:next"
+CB_NEXT_YES = "act:next:yes"
+CB_NEXT_NO = "act:next:no"
 CB_STOP = "act:stop"
 CB_STOP_YES = "act:stop:yes"
 CB_STOP_NO = "act:stop:no"
@@ -528,6 +530,14 @@ def rating_keyboard() -> InlineKeyboardMarkup:
     _button(b, "Не зашло", callback_data="rate:0", icon="warn")
     _button(b, "Найти ещё", callback_data=CB_CONNECT, icon="view")
     b.adjust(2, 1)
+    return b.as_markup()
+
+
+def confirm_next_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    _button(b, "Да, следующий", callback_data=CB_NEXT_YES, icon="next", style="danger")
+    _button(b, "Остаться", callback_data=CB_NEXT_NO, icon="check")
+    b.adjust(2)
     return b.as_markup()
 
 
