@@ -14,7 +14,7 @@ from anonchat.matching import Candidate, Matchmaker
 
 
 def test_matchmaking_load() -> None:
-    for size in (100,300,500):
+    for size in (100,300,500,1000):
         mm=Matchmaker(queue_limit=size+10)
         mm._queue={uid:Candidate(user_id=uid,joined_at=float(uid)) for uid in range(10001,10001+size)}
         start=time.perf_counter()
@@ -28,6 +28,30 @@ def test_matchmaking_load() -> None:
         restored.restore(mm.snapshot())
         assert restored.online_pairs()==size//2
         print(f"matching: {size} synthetic users, {elapsed:.1f} ms, {len(pairs)} pairs")
+
+
+def test_1000_active_chat_sessions() -> None:
+    """1,000 virtual chatters, 500 isolated pairs and 20,000 chat messages."""
+    mm = Matchmaker(queue_limit=1100)
+    for uid in range(10001, 11001):
+        mm._queue[uid] = Candidate(user_id=uid, joined_at=float(uid))
+    start = time.perf_counter()
+    assert len(mm.sweep()) == 500
+    for _ in range(20):
+        for uid in range(10001, 11001):
+            result = mm.count_message(uid)
+            assert result is not None and result[0] != uid
+    snap = mm.snapshot()
+    replica = Matchmaker(queue_limit=1100)
+    replica.restore(snap)
+    assert replica.online_pairs() == 500
+    total = sum(replica._pairs[uid].counts.get(uid, 0) for uid in range(10001,11001))
+    assert total == 20_000, total
+    for uid in range(10001,11001,2):
+        partner, summary = replica.release(uid)
+        assert partner is not None and sum(summary["counts"].values()) == 40
+    assert replica.online_pairs() == 0
+    print(f"chat: 1000 users, 500 pairs, 20k virtual messages, {(time.perf_counter()-start)*1000:.1f} ms")
 
 
 async def test_sqlite_idempotency_load() -> None:
@@ -58,5 +82,6 @@ async def test_sqlite_idempotency_load() -> None:
 
 if __name__ == "__main__":
     test_matchmaking_load()
+    test_1000_active_chat_sessions()
     asyncio.run(test_sqlite_idempotency_load())
     print("ok synthetic load smoke")
