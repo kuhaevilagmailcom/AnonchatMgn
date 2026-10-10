@@ -13,7 +13,7 @@ from anonchat.backups import maybe_backup
 from anonchat.matching import Matchmaker
 from aiogram.fsm.storage.base import StorageKey
 import time
-from anonchat.db import Database
+from anonchat.db import Database, referral_day_start
 
 
 class FakeBot:
@@ -107,10 +107,87 @@ async def scenario() -> None:
             await db.close()
 
 
+
+async def poll_notifications_and_message_statistics() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        db = await Database(Path(tmp) / "poll-notifications.db").start()
+        bot = FakeBot()
+        try:
+            await db.ensure_user(901, "first", "First")
+            await db.ensure_user(902, "second", "Second")
+            await db.db.execute("UPDATE users SET messages=19 WHERE user_id=901")
+            local_today = referral_day_start()
+            await db.activity_add(901, timestamp=local_today + 30, messages=4)
+            await db.activity_add(901, timestamp=local_today - 86400 + 30, messages=3)
+            await db.activity_add(901, timestamp=local_today - 6 * 86400 + 30, messages=5)
+            await db.activity_add(901, timestamp=local_today - 7 * 86400 + 30, messages=7)
+            summary = await db.stats()
+            assert summary["messages_today"] == 4, summary
+            assert summary["messages_week"] == 12, summary
+            assert summary["messages"] == 19, summary
+
+            poll_id = await db.create_poll(
+                "Участвуешь?", "Конечно", "Нет", 901,
+                audience="admins", admin_ids=(901, 903),
+            )
+            key = f"poll:{poll_id}"
+            progress = await job_status(db, key)
+            assert progress["total"] == 2, progress
+            assert await run_once(bot, db)
+            sent = bot.sent[-1]
+            assert sent["chat_id"] == 901
+            assert "Новый опрос" in sent["text"]
+            buttons = sent["reply_markup"].inline_keyboard
+            assert [b[0].callback_data for b in buttons] == [
+                f"poll:vote:{poll_id}:0", f"poll:vote:{poll_id}:1"
+            ]
+            await run_once(bot, db)
+            await run_once(bot, db)
+            assert (await job_status(db, key))["status"] == "completed"
+            assert len(bot.sent) == 2, bot.sent
+
+            all_poll = await db.create_poll("Второй?", "Да", "Нет", 901)
+            all_key = f"poll:{all_poll}"
+            assert (await job_status(db, all_key))["total"] == 2
+            await run_once(bot, db)
+            assert len(bot.sent) == 3
+            replacement = await db.create_poll("Третий?", "1", "2", 901)
+            assert (await job_status(db, all_key))["status"] == "stopped"
+            assert await db.close_active_poll()
+            assert (await job_status(db, f"poll:{replacement}"))["status"] == "stopped"
+            for _ in range(3):
+                await run_once(bot, db)
+            assert len(bot.sent) == 3, "Closed/overridden polls must not send"
+
+            with_closed = False
+            try:
+                await db.create_poll("invalid", "1", "2", 901, audience="unknown")
+            except ValueError:
+                with_closed = True
+            assert with_closed
+
+            admin_job = "test-broadcast-admins-only-001"
+            assert await create_job(
+                db, key=admin_job, actor=901, message="Only administrators",
+                recipient_ids=[901],
+            )
+            assert (await job_status(db, admin_job))["total"] == 1
+            await run_once(bot, db)
+            await run_once(bot, db)
+            assert bot.sent[-1]["chat_id"] == 901
+            assert bot.sent[-1]["text"] == "Only administrators"
+        finally:
+            await db.close()
+
+
+def test_poll_notifications() -> None:
+    asyncio.run(poll_notifications_and_message_statistics())
+
 def test_reliability() -> None:
     asyncio.run(scenario())
 
 
 if __name__ == "__main__":
     test_reliability()
-    print("ok durable moderation notices and broadcasts across restart")
+    test_poll_notifications()
+    print("ok durable moderation notices, poll alerts, message periods and broadcasts")
