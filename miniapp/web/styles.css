@@ -1085,3 +1085,14 @@ body[data-theme="mono"] .premium-overlay-button{color:#000}
 .nft-leader small{font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--accent)}
 .nft-leader strong{font-size:15px;line-height:1.25}
 .nft-leader span{font-size:11px;color:var(--muted)}
+
+/* Compact conversation records inside the existing profile. */
+.profile-records{margin:10px 0;padding:17px;border-radius:17px}
+.profile-records header{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:13px}
+.profile-records header strong{font-size:14px;font-weight:800}
+.profile-records header small,.profile-records-grid small{color:var(--text-muted,#a6a0aa);font-size:11px}
+.profile-records-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.profile-records-grid>div{display:flex;min-width:0;flex-direction:column;gap:7px}
+.profile-records-grid strong{font-size:16px;line-height:1.25;overflow-wrap:anywhere}
+.poll-question{border-left:3px solid #f07ab8;background:rgba(239,105,170,.08);border-radius:0 11px 11px 0;margin:13px 0 16px;padding:12px 13px;font-size:17px;font-weight:750;line-height:1.55}
+@media(max-width:370px){.profile-records{padding:12px}.profile-records-grid{gap:6px}.profile-records-grid strong{font-size:13px}.profile-records-grid small{font-size:10px}}
