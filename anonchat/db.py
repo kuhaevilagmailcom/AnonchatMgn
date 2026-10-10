@@ -3507,6 +3507,15 @@ class Database:
         )
         dialogs = await self._fetchone("SELECT COUNT(*) AS c FROM matches")
         msgs = await self._fetchone("SELECT COALESCE(SUM(messages), 0) AS c FROM users")
+        # Daily activity is recorded by local (UTC+5) calendar day when a
+        # conversation is committed. Last seven days includes today.
+        day_start = referral_day_start()
+        daily_messages = await self._fetchone(
+            """SELECT COALESCE(SUM(CASE WHEN day_start=? THEN messages ELSE 0 END),0) today,
+                      COALESCE(SUM(messages),0) week
+                 FROM daily_activity WHERE day_start>=?""",
+            (day_start, day_start - 6 * 86_400),
+        )
         open_reports = await self._fetchone(
             "SELECT COUNT(*) AS c FROM reports WHERE status = 'new'"
         )
@@ -3532,6 +3541,8 @@ class Database:
             "active_week": int(week["c"]) if week else 0,
             "dialogs": int(dialogs["c"]) if dialogs else 0,
             "messages": int(msgs["c"]) if msgs else 0,
+            "messages_today": int(daily_messages["today"]) if daily_messages else 0,
+            "messages_week": int(daily_messages["week"]) if daily_messages else 0,
             "open_reports": int(open_reports["c"]) if open_reports else 0,
         }
 
