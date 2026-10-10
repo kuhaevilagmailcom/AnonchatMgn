@@ -439,6 +439,9 @@ class MiniAppAdmin:
         b=str(data.get("option_b") or "").strip()[:48]
         if action=="create" and not (q and a and b):
             raise _json_error(400,"Укажи вопрос и два варианта ответа")
+        audience=str(data.get("audience") or "all")
+        if audience not in ("all","admins"):
+            raise _json_error(400,"Неизвестная аудитория уведомления")
         row=await self.s.db.db.execute(
             """INSERT OR IGNORE INTO admin_action_log
                (action_key,actor_id,target_id,action,reason,created_at)
@@ -448,8 +451,12 @@ class MiniAppAdmin:
             return web.json_response({"applied":False})
         try:
             if action=="create":
-                poll_id=await self.s.db.create_poll(q,a,b,actor)
-                return web.json_response({"applied":True,"id":poll_id})
+                ids = (await self.s.db.all_admin_ids(self.s.cfg.admin_ids)) if audience=="admins" else ()
+                poll_id=await self.s.db.create_poll(
+                    q,a,b,actor,audience=audience,admin_ids=ids
+                )
+                return web.json_response({"applied":True,"id":poll_id,"audience":audience,
+                                          "broadcast_key":f"poll:{poll_id}"})
             result=await self.s.db.close_active_poll()
             return web.json_response({"applied":True,"closed":result})
         except Exception:
@@ -623,9 +630,13 @@ class MiniAppAdmin:
             raise _json_error(400,"Для кнопки нужны и текст, и ссылка")
         if url and (urlsplit(url).scheme!="https" or not urlsplit(url).netloc):
             raise _json_error(400,"Разрешены только HTTPS-ссылки")
+        audience=str(data.get("audience") or "all")
+        if audience not in ("all","admins"):
+            raise _json_error(400,"Выбери получателей: админы или все пользователи")
+        recipients=(await self.s.db.all_admin_ids(self.s.cfg.admin_ids)) if audience=="admins" else None
         started = await create_job(self.s.db,key=key,actor=actor,message=message,
-                                   button_text=label,button_url=url)
-        return web.json_response({"started":started,"key":key,
+                                   button_text=label,button_url=url,recipient_ids=recipients)
+        return web.json_response({"started":started,"key":key,"audience":audience,
                                   "message":"Задание сохранено" if started else "Эта рассылка уже существует"})
 
     async def broadcast_status(self, request):
