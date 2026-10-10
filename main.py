@@ -35,6 +35,7 @@ from anonchat.backups import maybe_backup
 from anonchat.runtime_state import online_count as presence_online_count
 from anonchat import live_chat
 from anonchat import word_game as WG
+from anonchat import geo_runtime as GR
 
 log = logging.getLogger("anonchat")
 
@@ -233,6 +234,9 @@ async def main() -> None:  # pragma: no cover
         paired = await reconcile_queue(bot, cfg, database, mm, pack)
         if paired:
             log.info("startup queue reconcile: создано пар=%s", paired)
+        restored = await GR.restore_timeouts(bot, database, mm, pack)
+        if restored:
+            log.info("GeoGuessr: восстановлено таймеров=%s", restored)
         janitor_task = asyncio.create_task(janitor(bot, cfg, database, mm, pack))
         menu_task = asyncio.create_task(menu_refresher(bot, mm, pack, database))
         notice_task = asyncio.create_task(run_notice_worker(bot, database),name='admin-notice-delivery')
