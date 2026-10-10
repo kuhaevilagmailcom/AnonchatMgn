@@ -265,7 +265,7 @@
       pageNav(state.gamesPage,state.gamesPage+1<d.pages,'gamesPage');
   }
   function activityChart(days){
-    const rows=(Array.isArray(days)?days:[]).slice(-14);
+    const rows=(Array.isArray(days)?days:[]).slice(-30);
     if(!rows.length)return '<div class="admin-note">Пока нет статистики.</div>';
     const count=d=>Math.max(0,Number(d.messages)||0);
     const max=Math.max(1,...rows.map(count));
@@ -290,12 +290,10 @@
     return '<section class="admin-activity-card">'+
       '<div class="admin-activity-header"><div><small>Последние '+rows.length+' дней · МГН</small>'+
       '<strong>Активность общения</strong></div><b>'+fmt(total)+' <small>сообщений</small></b></div>'+
-      '<div class="admin-activity-detail"><span>Выбранный день</span><strong data-activity-detail>'+
+      '<div class="admin-activity-detail"><strong data-activity-detail>'+
       escape(caption(best))+' · '+fmt(count(best))+' сообщений</strong></div>'+
       '<div class="admin-activity-plot" role="group" aria-label="Сообщения по дням" style="--admin-activity-count:'+rows.length+'">'+columns+'</div>'+
-      '<div class="admin-activity-axis">'+axis+'</div>'+
-      '<p class="admin-activity-foot">Пик активности: '+escape(caption(best))+' · '+fmt(count(best))+
-      ' сообщений. Нажмите на столбец, чтобы посмотреть день. Данные обновляются после завершения диалогов.</p></section>';
+      '<div class="admin-activity-axis">'+axis+'</div></section>';
   }
   async function analytics(){
     const d=await api('/analytics'),p=d.payments||{},g=d.games||{};
