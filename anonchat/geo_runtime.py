@@ -181,6 +181,7 @@ async def send_result(bot, pack, row: Any, reward_a: int, reward_b: int) -> None
         return
     user_a, user_b = players(row)
     finished = str(row["status"]) == "finished"
+    total = max(1, int(row["total_questions"] or GQ.GEO_ROUNDS))
     markup = (
         K.geo_end_keyboard(rounds=total)
         if finished
