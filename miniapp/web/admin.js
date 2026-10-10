@@ -253,7 +253,8 @@
       '<label>Вопрос<input name="question" maxlength="250" required></label>'+
       '<label>Вариант 1<input name="option_a" maxlength="48" required></label>'+
       '<label>Вариант 2<input name="option_b" maxlength="48" required></label>'+
-      '<button type="submit" class="admin-primary">Создать опрос</button></form>';
+      '<label>Кому отправить уведомление<select name="audience"><option value="all">Всем пользователям</option><option value="admins">Только администраторам</option></select></label>'+
+      '<button type="submit" class="admin-primary">Создать опрос и уведомить</button></form>';
   }
   async function games(){
     const d=await api('/games',{}, {page:state.gamesPage});
@@ -287,6 +288,7 @@
       '<form id="adminBroadcastForm" class="admin-form"><label>Сообщение<textarea name="message" maxlength="3000" rows="6" required placeholder="Текст рассылки"></textarea></label>'+
       '<label>Текст кнопки (необязательно)<input name="button_text" maxlength="45" placeholder="Подробнее"></label>'+
       '<label>HTTPS-ссылка кнопки (необязательно)<input name="button_url" placeholder="https://t.me/..."></label>'+
+      '<label>Получатели<select name="audience"><option value="all">Всем пользователям</option><option value="admins">Только администраторам</option></select></label>'+
       '<button type="submit" class="admin-primary">Предпросмотр рассылки</button></form>'+
       '<div class="admin-subheading">История рассылок</div><div class="admin-list">'+
       ((jobs.items||[]).length?jobs.items.map(j=>
@@ -478,18 +480,19 @@
       }else if(id==='adminPollForm'){
         const question=String(data.get('question')||'').trim(),
               option_a=String(data.get('option_a')||'').trim(),
-              option_b=String(data.get('option_b')||'').trim();
+              option_b=String(data.get('option_b')||'').trim(),
+              audience=String(data.get('audience')||'all');
         if(!question||!option_a||!option_b)throw new Error('Заполни все поля');
-        if(!confirm('Опубликовать новый опрос? Предыдущий закроется.'))return;
-        await post('/polls',{action:'create',question,option_a,option_b,key:key()});
+        if(!confirm('Опубликовать новый опрос? Предыдущий закроется. Уведомление получат '+(audience==='admins'?'только администраторы':'все пользователи')+'.'))return;
+        await post('/polls',{action:'create',question,option_a,option_b,audience,key:key()});
         toast('Опрос создан');render();
       }else if(id==='adminBroadcastForm'){
-        const message=String(data.get('message')||'').trim(),button_text=String(data.get('button_text')||'').trim(),button_url=String(data.get('button_url')||'').trim();
+        const message=String(data.get('message')||'').trim(),button_text=String(data.get('button_text')||'').trim(),button_url=String(data.get('button_url')||'').trim(),audience=String(data.get('audience')||'all');
         if(!message)throw new Error('Напиши текст рассылки');
-        state.pending={message,button_text,button_url,key:key()};
+        state.pending={message,button_text,button_url,audience,key:key()};
         showModal('<h2>Предпросмотр рассылки</h2><div class="admin-broadcast-preview">'+escape(message).replace(/\n/g,'<br>')+
           (button_text?'<div class="admin-preview-button">'+escape(button_text)+'</div>':'')+'</div>'+
-          '<p class="admin-muted">Сообщение будет разослано пользователям бота. Повторное подтверждение не создаст вторую рассылку.</p>'+
+          '<p class="admin-muted">Получатели: '+(audience==='admins'?'только администраторы':'все пользователи')+'. Повторное подтверждение не создаст вторую рассылку.</p>'+
           navButton('Подтвердить рассылку','executeBroadcast','','admin-primary danger'));
       }
     }catch(error){toast(error.message||'Ошибка формы')}
