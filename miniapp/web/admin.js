@@ -9,7 +9,7 @@
   const fmt = n => Number(n||0).toLocaleString('ru-RU');
   const date = t => t ? new Date(Number(t)*1000).toLocaleString('ru-RU',{timeZone:'Asia/Yekaterinburg',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
   const sourceNames = {opening_balance:'Начальный баланс',message:'Сообщения',dialog:'Диалог',rating:'Оценка',referral:'Реферал',battle:'Битва мнений',numbers:'Числа',word_game:'Объясни слово',geoguessr:'GeoGuessr',achievement:'Достижение',daily_quest:'Задание',subscription:'Подписка',report:'Жалоба',admin_award:'Выдал администратор',admin_debit:'Списал администратор',admin_legacy:'Старое начисление',other:'Другое',one_time_reward:'Разовая награда',referral_correction:'Корректировка реферала',game_bonus:'Бонус в диалоге'};
-  const labels = {dashboard:'Обзор',users:'Пользователи',user:'Карточка',ledger:'Начисления',rankings:'Топы',reports:'Жалобы',ban:'Бан-лист',mute:'Мут-лист',chats:'Диалоги',games:'Игры',analytics:'Аналитика',admins:'Администраторы',broadcast:'Рассылка',diagnostics:'Диагностика',audit:'Аудит',queue:'Очередь',polls:'Опрос дня'};
+  const labels = {dashboard:'Обзор',users:'Пользователи',user:'Карточка',ledger:'Начисления',rankings:'Топы',reports:'Жалобы',ban:'Бан-лист',mute:'Мут-лист',chats:'Диалоги',games:'Игры',analytics:'Аналитика',admins:'Администраторы',broadcast:'Рассылка',diagnostics:'Диагностика',audit:'Аудит',queue:'Очередь',polls:'Опрос'};
   const sections = [
     ['dashboard','Обзор',null],['users','Пользователи','users'],['ledger','Начисления','points'],
     ['queue','Очередь','queue'],
