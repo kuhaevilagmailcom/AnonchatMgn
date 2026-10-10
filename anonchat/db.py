@@ -3580,24 +3580,68 @@ class Database:
         return await self.xp_multiplier()
 
     async def create_poll(
-        self, question: str, option_a: str, option_b: str, created_by: int
+        self, question: str, option_a: str, option_b: str, created_by: int,
+        *, audience: str = "all", admin_ids: Sequence[int] = (),
     ) -> int:
+        """Publish a poll and queue its one-time announcement atomically.
+
+        Recipients are snapshotted at creation, so retries/restarts cannot
+        notify the same person twice. Old unsent poll notices are stopped.
+        """
         question = str(question or "").strip()[:250]
         option_a = str(option_a or "").strip()[:48]
         option_b = str(option_b or "").strip()[:48]
         if not question or not option_a or not option_b:
             raise ValueError("Вопрос и оба варианта обязательны")
+        if audience not in {"all", "admins"}:
+            raise ValueError("Недопустимая аудитория")
         ts = now()
-        await self.db.execute(
-            "UPDATE polls SET active=0, closed_at=? WHERE active=1", (ts,)
-        )
-        cur = await self.db.execute(
-            """INSERT INTO polls(question, option_a, option_b, active, created_by, created_at)
-               VALUES (?, ?, ?, 1, ?, ?)""",
-            (question, option_a, option_b, int(created_by), ts),
-        )
-        await self.db.commit()
-        return int(cur.lastrowid)
+        async with aiosqlite.connect(self.path, isolation_level=None) as con:
+            await con.execute("PRAGMA busy_timeout=10000")
+            await con.execute("BEGIN IMMEDIATE")
+            try:
+                await con.execute(
+                    "UPDATE polls SET active=0, closed_at=? WHERE active=1", (ts,)
+                )
+                await con.execute(
+                    "UPDATE admin_broadcast_jobs SET status='stopped',finished_at=? "
+                    "WHERE job_key LIKE 'poll:%' AND status='running'", (ts,)
+                )
+                cur = await con.execute(
+                    """INSERT INTO polls(question, option_a, option_b, active, created_by, created_at)
+                       VALUES (?, ?, ?, 1, ?, ?)""",
+                    (question, option_a, option_b, int(created_by), ts),
+                )
+                poll_id = int(cur.lastrowid)
+                key = f"poll:{poll_id}"
+                message = (
+                    f"📊 Новый опрос в АНОН МГН!\n\n{question}\n\n"
+                    f"1️⃣ {option_a}\n2️⃣ {option_b}\n\n"
+                    "Выбери 1 или 2 с помощью кнопок ниже 👇"
+                )
+                await con.execute(
+                    """INSERT INTO admin_broadcast_jobs
+                       (job_key,actor_id,message,button_text,button_url,status,created_at)
+                       VALUES (?,?,?,?,?,'running',?)""",
+                    (key, int(created_by), message, "", key, ts),
+                )
+                if audience == "all":
+                    await con.execute(
+                        """INSERT INTO admin_broadcast_targets(job_key,user_id)
+                           SELECT ?,user_id FROM users WHERE banned=0""",
+                        (key,),
+                    )
+                else:
+                    ids = sorted({int(uid) for uid in admin_ids if int(uid) > 0})
+                    await con.executemany(
+                        "INSERT OR IGNORE INTO admin_broadcast_targets(job_key,user_id) VALUES (?,?)",
+                        [(key, uid) for uid in ids],
+                    )
+                await con.commit()
+                return poll_id
+            except BaseException:
+                await con.rollback()
+                raise
 
     async def active_poll(self) -> aiosqlite.Row | None:
         return await self._fetchone(
@@ -3605,10 +3649,14 @@ class Database:
         )
 
     async def close_active_poll(self) -> bool:
+        ts = now()
         cur = await self.db.execute(
-            "UPDATE polls SET active=0, closed_at=? WHERE active=1", (now(),)
+            "UPDATE polls SET active=0, closed_at=? WHERE active=1", (ts,)
         )
-        await self.db.commit()
+        await self.db.execute(
+            "UPDATE admin_broadcast_jobs SET status='stopped',finished_at=? "
+            "WHERE job_key LIKE 'poll:%' AND status='running'", (ts,)
+        )
         return bool(cur.rowcount)
 
     async def vote_poll(self, poll_id: int, user_id: int, choice: int) -> bool:
