@@ -13,6 +13,7 @@ from aiogram.types import ReplyParameters
 
 from . import texts
 from .actions import DeliveryResult, send_copy_to_message, send_to
+from .moderation_channel import send_moderation_channel
 
 log = logging.getLogger("anonchat.monitoring")
 
@@ -199,7 +200,7 @@ async def _notify_spam(
         for admin_id in ids
         if admin_id not in {int(sender_id), int(partner_id)}
     )
-    if not ids:
+    if not ids and not getattr(cfg, "moderation_channel_id", 0):
         return
 
     reason, samples = detected
@@ -223,6 +224,7 @@ async def _notify_spam(
 
     for admin_id in ids:
         await send_to(bot, admin_id, body, None, pack)
+    await send_moderation_channel(bot, cfg, body)
 
 
 async def _deliver(message, bot, pack, monitor_ids: tuple[int, ...], header: str) -> None:
