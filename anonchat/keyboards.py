@@ -671,7 +671,7 @@ def admin_panel_keyboard(
             style="success" if int(xp_multiplier) > 1 else "primary",
         )
         _button(
-            b, f"Опрос дня{' · ВКЛ' if poll_active else ''}",
+            b, f"Опрос{' · ВКЛ' if poll_active else ''}",
             callback_data=CB_PANEL_POLL, icon="ticket",
             style="success" if poll_active else "primary",
         )
@@ -773,15 +773,6 @@ def broadcast_audience_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "👥 Всем пользователям", callback_data=f"{CB_PANEL_BC_SIMPLE_AUDIENCE_PREFIX}all", style="primary")
     _button(b, "🛡 Только администраторам", callback_data=f"{CB_PANEL_BC_SIMPLE_AUDIENCE_PREFIX}admins")
-    _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="delete", style="danger")
-    b.adjust(1)
-    return b.as_markup()
-
-
-def admin_poll_audience_keyboard() -> InlineKeyboardMarkup:
-    b = InlineKeyboardBuilder()
-    _button(b, "👥 Всем пользователям", callback_data="adm:panel:poll:audience:all", style="success")
-    _button(b, "🛡 Только администраторам", callback_data="adm:panel:poll:audience:admins")
     _button(b, "Отмена", callback_data=CB_PANEL_BACK, icon="delete", style="danger")
     b.adjust(1)
     return b.as_markup()
