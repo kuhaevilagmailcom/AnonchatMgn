@@ -25,6 +25,7 @@
     sort:'recent',userFilter:'all',usersPage:0,ledgerPage:0,ledgerKind:'all',ledgerPeriod:'today',
     ledgerSource:'',ledgerUser:'',reportsPage:0,reportsStatus:'new',restrictedPage:0,
     rankingPeriod:'week',chatsPage:0,gamesPage:0,queuePage:0,actionsPage:0,
+    activityPeriod:30,activityDays:[],activityAllTime:0,
     modal:null,loading:false,nonce:0, broadcastKey:''};
   const can = p => state.owner || state.permissions.includes(p);
   const root=document.createElement('div');
@@ -264,9 +265,10 @@
       '<div class="admin-actions">'+navButton('ID '+g.user_a,'openUser',g.user_a)+navButton('ID '+g.user_b,'openUser',g.user_b)+'</div></div>').join(''):placeholder)+'</div>'+
       pageNav(state.gamesPage,state.gamesPage+1<d.pages,'gamesPage');
   }
-  function activityChart(days){
-    const rows=(Array.isArray(days)?days:[]).slice(-30);
-    if(!rows.length)return '<div class="admin-note">Пока нет статистики.</div>';
+  function activityChart(days,allTime=0){
+    const period=[7,14,30].includes(state.activityPeriod)?state.activityPeriod:30;
+    const rows=(Array.isArray(days)?days:[]).slice(-period);
+    if(!rows.length)return '<div class="admin-note">Нет статистики за выбранный период.</div>';
     const count=d=>Math.max(0,Number(d.messages)||0);
     const max=Math.max(1,...rows.map(count));
     const total=rows.reduce((sum,d)=>sum+count(d),0);
@@ -287,21 +289,29 @@
     const axisIndices=[0,Math.floor((rows.length-1)/3),Math.ceil((rows.length-1)*2/3),rows.length-1]
       .filter((i,k,a)=>a.indexOf(i)===k);
     const axis=axisIndices.map(i=>'<span>'+escape(caption(rows[i]))+'</span>').join('');
+    const periods=[[7,'7 дней'],[14,'14 дней'],[30,'Месяц']];
+    const buttons=periods.map(([days,label])=>
+      '<button type="button" data-action="activityPeriod" data-value="'+days+
+      '" class="'+(period===days?'selected':'')+'" aria-pressed="'+(period===days)+'">'+label+'</button>').join('');
     return '<section class="admin-activity-card">'+
-      '<div class="admin-activity-header"><div><small>Последние '+rows.length+' дней · МГН</small>'+
-      '<strong>Активность общения</strong></div><b>'+fmt(total)+' <small>сообщений</small></b></div>'+
+      '<div class="admin-activity-header"><div><strong>Активность общения</strong></div>'+
+      '<b>'+fmt(total)+' <small>за '+period+' дней</small></b></div>'+
+      '<div class="admin-activity-periods" role="group" aria-label="Период аналитики">'+buttons+'</div>'+
       '<div class="admin-activity-detail"><strong data-activity-detail>'+
       escape(caption(best))+' · '+fmt(count(best))+' сообщений</strong></div>'+
       '<div class="admin-activity-plot" role="group" aria-label="Сообщения по дням" style="--admin-activity-count:'+rows.length+'">'+columns+'</div>'+
-      '<div class="admin-activity-axis">'+axis+'</div></section>';
+      '<div class="admin-activity-axis">'+axis+'</div>'+
+      '<div class="admin-activity-alltime"><span>За всё время</span><strong>'+fmt(allTime)+'</strong></div></section>';
   }
   async function analytics(){
     const d=await api('/analytics'),p=d.payments||{},g=d.games||{};
+    state.activityDays=Array.isArray(d.message_activity)?d.message_activity:[];
+    state.activityAllTime=Math.max(0,Number(d.all_time_messages)||0);
     const amounts=[['Поддержка Stars',fmt(p.support_stars_total)+' ★'],['Поддержка СБП',fmt(p.support_sbp_total)+' ₽'],
       ['Anon Plus Stars',fmt(p.anonplus_stars_total)+' ★'],['Anon Plus СБП',fmt(p.anonplus_sbp_total)+' ₽'],
       ['Активных Plus',fmt(p.anonplus_active)],['Игр: битва',fmt(g.battle)],['Игр: числа',fmt(g.numbers)],['Игр: Geo',fmt(g.geo)]];
     const sources=d.sources||[],max=Math.max(1,...sources.map(a=>Number(a.credits)));
-    return activityChart(d.message_activity)+
+    return activityChart(state.activityDays,state.activityAllTime)+
       '<section class="admin-stats">'+amounts.map(([k,v])=>tile(k,v)).join('')+'</section><div class="admin-subheading">Начисления по источникам · неделя</div>'+
       '<div class="admin-chart">'+(sources.length?sources.map(s=>'<div class="admin-chart-row"><span>'+escape(sourceNames[s.source]||s.source)+'</span><strong>+'+fmt(s.credits)+' ★</strong><div class="admin-chart-track"><i style="width:'+Math.max(0,Math.min(100,s.credits/max*100))+'%"></i></div></div>').join(''):placeholder)+'</div>';
   }
@@ -409,6 +419,13 @@
       if(action==='close')close();
       else if(action==='back')state.modal?closeModal():state.page==='user'?goto(state.back||'users'):state.page==='dashboard'?close():goto('dashboard');
       else if(action==='refresh')render();
+      else if(action==='activityPeriod'){
+        const period=Number(value);
+        if(![7,14,30].includes(period))return;
+        state.activityPeriod=period;
+        const card=el.closest('.admin-activity-card');
+        if(card)card.outerHTML=activityChart(state.activityDays,state.activityAllTime);
+      }
       else if(action==='activityDay'){
         const chart=el.closest('.admin-activity-card');
         if(!chart)return;
