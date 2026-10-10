@@ -53,6 +53,12 @@ async def reconcile_queue(
     bot: Bot, cfg: Config, db: Database, mm: Matchmaker, pack: EmojiPack
 ) -> int:
     """Сводит совместимых людей, которые уже стоят в бессрочной очереди."""
+    waiting = mm.queued_user_ids()
+    if waiting:
+        current_exclusions = await db.queue_recent_exclusions(
+            waiting, max(0, int(cfg.recent_partner_cooldown_minutes)) * 60
+        )
+        mm.refresh_queued_exclusions(current_exclusions)
     pairs = mm.sweep()
     made = 0
     if pairs:
