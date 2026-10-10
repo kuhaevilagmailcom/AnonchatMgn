@@ -116,6 +116,7 @@ def decode_anon_question_token(token: str, secret: str) -> int | None:
 class Config:
     bot_token: str
     admin_ids: tuple[int, ...] = ()
+    moderation_channel_id: int = -1004482932867
     db_path: Path = Path("data/anonchat_mgn.db")
 
     # branded stuff
@@ -165,6 +166,7 @@ class Config:
         return cls(
             bot_token=_find_token(token_arg),
             admin_ids=_admin_ids(env),
+            moderation_channel_id=int(env("MODERATION_CHANNEL_ID", str(cls._default("moderation_channel_id")))),
             db_path=_pick_db_path(
                 env("DATABASE_PATH", env("DB_PATH", str(cls._default("db_path"))))
             ),
