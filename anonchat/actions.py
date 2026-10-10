@@ -949,6 +949,10 @@ async def _end_dialog(ctx: Ctx, ended_by: int, note: str, notify_partner: str) -
     if partner is None:
         await ctx.reply(texts.NO_DIALOG, markup=menu_keyboard())
         return
+    from . import geo_runtime as GR
+    geo = await ctx.db.geo_for_pair(ctx.user_id, partner)
+    if geo is not None:
+        GR.cancel_timeout(int(geo["id"]), int(geo["question_index"]))
     await ctx.db.close_battles_for_users(ctx.user_id, partner)
     WG.clear_pair(ctx.user_id, partner)
     relay_state.clear_pair(ctx.user_id, partner)
