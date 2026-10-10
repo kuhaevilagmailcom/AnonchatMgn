@@ -264,13 +264,37 @@
       '<div class="admin-actions">'+navButton('ID '+g.user_a,'openUser',g.user_a)+navButton('ID '+g.user_b,'openUser',g.user_b)+'</div></div>').join(''):placeholder)+'</div>'+
       pageNav(state.gamesPage,state.gamesPage+1<d.pages,'gamesPage');
   }
+  function activityChart(days){
+    const rows=Array.isArray(days)?days:[];
+    if(!rows.length)return '<div class="admin-note">Пока нет статистики.</div>';
+    const max=Math.max(1,...rows.map(d=>Number(d.messages)||0));
+    const total=rows.reduce((sum,d)=>sum+(Number(d.messages)||0),0);
+    const best=rows.reduce((a,b)=>Number(a.messages)>=Number(b.messages)?a:b);
+    const caption=d=>new Date((Number(d.day_start)+43200)*1000)
+      .toLocaleDateString('ru-RU',{day:'numeric',month:'short',timeZone:'UTC'});
+    const columns=rows.map(d=>{
+      const n=Math.max(0,Number(d.messages)||0);
+      const height=n>0?Math.max(5,n/max*100):2;
+      return '<div class="admin-activity-day" tabindex="0" role="img" aria-label="'+caption(d)+': '+fmt(n)+' сообщений" title="'+caption(d)+' · '+fmt(n)+' сообщений">'+
+        '<span class="admin-activity-value">'+fmt(n)+'</span>'+
+        '<div class="admin-activity-track"><i style="height:'+height+'%"></i></div>'+
+        '<small>'+caption(d)+'</small></div>';
+    }).join('');
+    return '<section class="admin-activity-card">'+
+      '<div class="admin-activity-header"><div><small>Последние 14 дней · МГН</small>'+
+      '<strong>Активность общения</strong></div><b>'+fmt(total)+' <small>сообщ.</small></b></div>'+
+      '<div class="admin-activity-plot">'+columns+'</div>'+
+      '<p class="admin-activity-foot">Самый активный день: '+caption(best)+' · '+fmt(best.messages)+' сообщений. '+
+      'Данные обновляются после завершения диалогов.</p></section>';
+  }
+
   async function analytics(){
     const d=await api('/analytics'),p=d.payments||{},g=d.games||{};
     const amounts=[['Поддержка Stars',fmt(p.support_stars_total)+' ★'],['Поддержка СБП',fmt(p.support_sbp_total)+' ₽'],
       ['Anon Plus Stars',fmt(p.anonplus_stars_total)+' ★'],['Anon Plus СБП',fmt(p.anonplus_sbp_total)+' ₽'],
       ['Активных Plus',fmt(p.anonplus_active)],['Игр: битва',fmt(g.battle)],['Игр: числа',fmt(g.numbers)],['Игр: Geo',fmt(g.geo)]];
     const sources=d.sources||[],max=Math.max(1,...sources.map(a=>Number(a.credits)));
-    return wrapHeader('Поддержка проекта и экономика')+
+    return wrapHeader('Поддержка проекта и экономика')+activityChart(d.message_activity)+
       '<section class="admin-stats">'+amounts.map(([k,v])=>tile(k,v)).join('')+'</section><div class="admin-subheading">Начисления по источникам · неделя</div>'+
       '<div class="admin-chart">'+(sources.length?sources.map(s=>'<div class="admin-chart-row"><span>'+escape(sourceNames[s.source]||s.source)+'</span><strong>+'+fmt(s.credits)+' ★</strong><div class="admin-chart-track"><i style="width:'+Math.max(0,Math.min(100,s.credits/max*100))+'%"></i></div></div>').join(''):placeholder)+'</div>';
   }
