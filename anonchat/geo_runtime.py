@@ -182,7 +182,7 @@ async def send_result(bot, pack, row: Any, reward_a: int, reward_b: int) -> None
     user_a, user_b = players(row)
     finished = str(row["status"]) == "finished"
     markup = (
-        K.geo_end_keyboard()
+        K.geo_end_keyboard(rounds=total)
         if finished
         else K.geo_next_keyboard(int(row["id"]), int(row["question_index"]))
     )
