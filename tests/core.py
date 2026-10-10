@@ -27,16 +27,22 @@ def test_config_defaults(monkeypatch=None) -> None:
         for k in (
             "BOT_TOKEN", "CITY_NAME", "ADMIN_IDS", "TELEGRAM_ADMIN_ID",
             "AUTO_MUTE_REPORTS", "XP_GOOD_RATING", "RECENT_PARTNER_COOLDOWN_MINUTES",
+            "MODERATION_CHANNEL_ID",
         )
     }
     os.environ["BOT_TOKEN"] = "12:TEST"
     os.environ.pop("CITY_NAME", None)
     os.environ.pop("TELEGRAM_ADMIN_ID", None)
     os.environ["ADMIN_IDS"] = "777, 888"
+    os.environ.pop("MODERATION_CHANNEL_ID", None)
     try:
         cfg = Config.from_env(dotenv=".__no_such_env__.local")
         assert cfg.city == "Магнитогорск" and cfg.city_short == "МГН"
         assert cfg.admin_ids == (777, 888)
+        assert cfg.moderation_channel_id == -1004482932867
+        os.environ["MODERATION_CHANNEL_ID"] = "0"
+        assert Config.from_env(dotenv=".__no_such_env__.local").moderation_channel_id == 0
+        os.environ.pop("MODERATION_CHANNEL_ID", None)
         assert cfg.auto_mute_reports == 3 and isinstance(cfg.auto_mute_reports, int)
         assert cfg.drop_pending_updates is False
         assert cfg.report_context_retention_days == 7
