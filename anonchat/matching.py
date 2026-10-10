@@ -205,6 +205,20 @@ class Matchmaker:
         self._touch_persistence()
         return "queued", self.position(user_id)
 
+    def queued_user_ids(self) -> set[int]:
+        return set(self._queue)
+
+    def refresh_queued_exclusions(self, exclusions: dict[int, set[int]]) -> None:
+        """Release expired cooldowns for users still waiting in the queue."""
+        changed = False
+        for uid, candidate in self._queue.items():
+            updated = set(exclusions.get(uid, ()))
+            if updated != candidate.excluded:
+                candidate.excluded = updated
+                changed = True
+        if changed:
+            self._touch_persistence()
+
     def sweep(self) -> list[tuple[int, int]]:
         """Greedy preference-based matching with O(n) extra memory.
 
