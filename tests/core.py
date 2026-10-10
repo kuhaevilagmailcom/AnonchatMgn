@@ -1920,6 +1920,7 @@ def test_miniapp_frontend_boot_guards() -> None:
 
 def test_miniapp_health_static_and_origin_guard() -> None:
     from types import SimpleNamespace
+    from unittest.mock import AsyncMock
 
     from aiohttp.test_utils import TestClient, TestServer
 
@@ -1927,10 +1928,13 @@ def test_miniapp_health_static_and_origin_guard() -> None:
 
     async def scenario() -> None:
         web_dir = Path(__file__).resolve().parents[1] / "miniapp" / "web"
+        # /health теперь реально проверяет SQLite: используем тестовую БД,
+        # а не None, иначе корректный 503 делает старый тест ложным.
+        healthy_db = SimpleNamespace(_fetchone=AsyncMock(return_value={"ready": 1}))
         miniapp = MiniAppServer(
             None,
             SimpleNamespace(miniapp_url="https://bot-1789383103-4489-furadev.bothost.tech"),
-            None,
+            healthy_db,
             None,
             None,
             web_dir=web_dir,
