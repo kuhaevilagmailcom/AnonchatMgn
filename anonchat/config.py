@@ -146,7 +146,7 @@ class Config:
 
     # matching
     queue_soft_limit: int = 500          # сколько максимум держим в очереди
-    recent_partner_cooldown_minutes: int = 30
+    recent_partner_cooldown_minutes: int = 2
     xp_per_message: int = 1
     xp_message_cap: int = 40             # максимум «за сообщения» с одного диалога
     xp_per_dialog: int = 8
