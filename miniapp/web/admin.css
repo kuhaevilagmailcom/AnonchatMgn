@@ -175,18 +175,83 @@ body.admin-open{overflow:hidden}
  .admin-icon-button{height:33px;min-width:33px}
 }
 
-/* Daily message activity: no chart library or external network dependency. */
-.admin-activity-card{margin:13px 0 23px;background:#16141a;border:1px solid #302b35;border-radius:17px;padding:17px 13px 12px}
-.admin-activity-header{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:1px 4px}
-.admin-activity-header strong{display:block;font-size:17px;font-weight:850;line-height:1.35;margin-top:3px}
-.admin-activity-header small{color:#a79daa;font-size:10px}
-.admin-activity-header>b{font-size:20px;white-space:nowrap;color:#ed84bb}
-.admin-activity-plot{display:grid;grid-template-columns:repeat(14,minmax(0,1fr));gap:4px;align-items:end;height:191px;margin:20px 0 7px}
-.admin-activity-day{height:100%;min-width:0;display:flex;flex-direction:column;justify-content:end;align-items:center;gap:4px;outline-offset:2px}
+/* Compact and accessible 14-day activity chart for the Telegram WebApp. */
+.admin-activity-card{
+  margin:6px 0 23px;padding:19px 15px 16px;min-width:0;
+  background:#16141a;border:1px solid #302b35;border-radius:17px
+}
+.admin-activity-header{
+  display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;
+  gap:12px;padding:0 2px
+}
+.admin-activity-header>div{flex:1 1 155px;min-width:0}
+.admin-activity-header strong{
+  display:block;margin-top:4px;font-size:18px;font-weight:850;
+  line-height:1.3;overflow-wrap:break-word
+}
+.admin-activity-header small{color:#a79daa;font-size:11px}
+.admin-activity-header>b{
+  display:flex;flex-direction:column;align-items:flex-end;gap:3px;
+  flex:0 0 auto;color:#ed84bb;font-size:23px;font-weight:850;
+  line-height:1.15;font-variant-numeric:tabular-nums
+}
+.admin-activity-header>b small{
+  color:#b8acb9;font-size:10px;font-weight:650;line-height:1.2
+}
+.admin-activity-detail{
+  display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;
+  gap:4px 12px;margin:15px 2px 0;padding:12px 0 10px;
+  border-top:1px solid #302a33
+}
+.admin-activity-detail span{font-size:11px;color:#a79daa}
+.admin-activity-detail strong{
+  color:#f4c1d8;font-size:12px;font-weight:750;
+  font-variant-numeric:tabular-nums;overflow-wrap:anywhere
+}
+.admin-activity-plot{
+  display:grid;grid-template-columns:repeat(var(--admin-activity-count,14),minmax(0,1fr));
+  align-items:stretch;gap:clamp(3px,1vw,8px);height:158px;
+  margin:10px 0 0;min-width:0
+}
+.admin-activity-day{
+  display:block;appearance:none;-webkit-appearance:none;
+  width:100%;height:100%;min-width:0;padding:0;
+  border:0;border-radius:6px;background:transparent;
+  cursor:pointer;touch-action:manipulation;outline-offset:2px
+}
+.admin-activity-track{
+  display:flex;align-items:flex-end;width:100%;height:100%;overflow:hidden;
+  border:1px solid transparent;border-radius:6px;background:#29232f;
+  transition:background .15s,border-color .15s
+}
+.admin-activity-track i{
+  display:block;width:100%;min-height:0;
+  background:linear-gradient(0deg,#b43c7f,#f292c6);
+  border-radius:5px 5px 2px 2px;transition:height .25s ease
+}
+.admin-activity-day.is-active .admin-activity-track{
+  border-color:#f2a1cc;background:#392637
+}
+.admin-activity-day:hover .admin-activity-track{background:#3d2a3b}
 .admin-activity-day:focus-visible{outline:2px solid #ed84bb}
-.admin-activity-value{height:12px;font-size:9px;font-weight:700;color:#b9afb9;white-space:nowrap;line-height:12px}
-.admin-activity-track{height:142px;width:100%;max-width:24px;background:#28222d;border-radius:6px;display:flex;align-items:end;overflow:hidden}
-.admin-activity-track i{display:block;width:100%;background:linear-gradient(0deg,#b43c7f,#f292c6);border-radius:6px 6px 2px 2px;min-height:2px;transition:height .25s ease}
-.admin-activity-day small{font-size:8px;color:#a79daa;white-space:nowrap;transform:rotate(-45deg);transform-origin:center;min-height:20px;padding-top:5px}
-.admin-activity-foot{font-size:11px;color:#bbb1bd;line-height:1.55;margin:11px 4px 3px}
-@media(max-width:380px){.admin-activity-plot{gap:2px}.admin-activity-value{font-size:8px}.admin-activity-day small{font-size:7px}}
+.admin-activity-axis{
+  display:flex;justify-content:space-between;align-items:center;gap:5px;
+  padding:10px 1px 0;min-width:0
+}
+.admin-activity-axis span{
+  color:#aea3b0;font-size:10px;white-space:nowrap;line-height:1.3
+}
+.admin-activity-foot{
+  font-size:11px;color:#bbb1bd;line-height:1.6;
+  margin:15px 2px 1px;overflow-wrap:break-word
+}
+@media(max-width:380px){
+  .admin-activity-card{padding:16px 11px 14px}
+  .admin-activity-header strong{font-size:16px}
+  .admin-activity-header>b{font-size:20px}
+  .admin-activity-axis span{font-size:9px}
+  .admin-activity-plot{gap:3px;height:148px}
+}
+@media(prefers-reduced-motion:reduce){
+  .admin-activity-track,.admin-activity-track i{transition:none}
+}
