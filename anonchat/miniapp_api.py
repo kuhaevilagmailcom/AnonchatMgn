@@ -280,7 +280,9 @@ class MiniAppServer:
         row = row or await self.db.get_user(user_id)
         today = await self.db.activity_totals(user_id, 1)
         engagement = await self.db.engagement_state(user_id)
+        records = await self.db.dialog_records(user_id)
         return {
+            **records,
             "online": presence_online_count(),
             "chatting": self.mm.online_pairs() * 2,
             "searching": self.mm.queue_size(),
