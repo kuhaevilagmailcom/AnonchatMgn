@@ -39,6 +39,7 @@ from .runtime_state import online_count as presence_online_count
 from .runtime_state import touch as presence_touch
 from .safety import contains_contact
 from .monitoring import enqueue_chat_monitor_sent
+from .moderation_channel import send_moderation_channel
 from .payments import RollyPayError, create_payment, get_payment
 from .miniapp_features import (
     REPORT_REASONS,
@@ -1399,6 +1400,7 @@ class MiniAppServer:
                 )
             except TelegramAPIError:
                 pass
+        await send_moderation_channel(self.bot, self.cfg, body)
         auto_muted = False
         if self.cfg.auto_mute_reports > 0 and day_count >= self.cfg.auto_mute_reports:
             await self.db.set_mute(partner, self.cfg.auto_mute_minutes)
@@ -1719,7 +1721,12 @@ class MiniAppServer:
                 sent += 1
             except TelegramAPIError:
                 pass
-        if admin_ids and not sent:
+        if await send_moderation_channel(
+            self.bot, self.cfg,
+            f"💬 <b>Обратная связь из Mini App</b>\n\n{html.escape(text)}\n\n<code>{uid}</code>",
+        ):
+            sent += 1
+        if not sent:
             raise _json_error(503, "Не получилось доставить сообщение")
         return web.json_response({"ok": True})
 
