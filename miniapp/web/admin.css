@@ -50,10 +50,10 @@ body.admin-open{overflow:hidden}
 .admin-actions button.text{background:transparent;border-color:transparent}
 .admin-filters{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:10px 0}
 .admin-filters.wrap{grid-template-columns:repeat(3,minmax(0,1fr))}
-.admin-filters select,.admin-search input,.admin-form textarea,.admin-form input{
+.admin-filters select,.admin-search input,.admin-form textarea,.admin-form input,.admin-form select{
  background:#17151a;border:1px solid #403743;color:#f9f8fa;padding:12px 13px;
  border-radius:11px;outline:none;min-width:0;width:100%;font-size:13px}
-.admin-filters select:focus,.admin-search input:focus,.admin-form input:focus,.admin-form textarea:focus{
+.admin-filters select:focus,.admin-search input:focus,.admin-form input:focus,.admin-form textarea:focus,.admin-form select:focus{
  border-color:#e979b6}
 .admin-filters select{height:44px}
 .admin-search{display:flex;gap:8px;margin:14px 0 8px}
