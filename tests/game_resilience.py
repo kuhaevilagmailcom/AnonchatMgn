@@ -140,8 +140,25 @@ async def scenario() -> None:
             assert await WG.restore(db) >= 1
             restored = WG.get_by_id(words_id)
             assert restored is not None and restored.round_index == 1
+            for index in range(1, WG.WORD_ROUNDS):
+                guessed = WG.resolve_guess(
+                    restored.guesser_id, restored.explainer_id, restored.word
+                )
+                assert guessed is not None
+                assert guessed.finished is (index == WG.WORD_ROUNDS - 1)
+                assert WG.resolve_guess(
+                    restored.guesser_id, restored.explainer_id, restored.word
+                ) is None
+                if index < WG.WORD_ROUNDS - 1:
+                    restored = WG.advance(words_id, 991001, index)
+                    assert restored is not None
+                else:
+                    assert WG.get_by_id(words_id).status == "finished"
             WG.clear_pair(991001, 991002)
             assert WG.get_by_id(words_id) is None
+            replay, created = WG.create_invite(991002, 991001)
+            assert created and replay.id != words_id
+            WG.clear_pair(991001, 991002)
             await WG.flush()
         finally:
             await db.close()
