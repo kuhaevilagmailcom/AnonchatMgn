@@ -213,6 +213,9 @@ if (typeof window === 'undefined') {
     setAll('online',state.stats.online);setAll('chatting',state.stats.chatting);setAll('searching',state.stats.searching);
     setAll('dialogs',state.stats.dialogs);setAll('messages',state.stats.messages);setAll('ratings',state.stats.ratings);setAll('games',state.stats.games);
     setAll('battle-games',state.stats.battle_games);setAll('game-remaining',state.gameRewards.remaining);setAll('streak',state.stats.streak);
+    setAll('record-longest',formatDuration(state.stats.longest_seconds));
+    setAll('record-messages',Number(state.stats.max_dialog_messages||0).toLocaleString('ru-RU'));
+    setAll('record-total',formatDuration(state.stats.total_seconds));
     setAll('invited',state.referral.invited);setAll('ref-earned',state.referral.earned);
     setAll('quest-progress-text',`${state.stats.quest_current}/${state.stats.quest_target}`);
     $$('[data-quest-progress]').forEach(el=>el.style.width=`${Math.min(100,state.stats.quest_current/Math.max(1,state.stats.quest_target)*100)}%`);
