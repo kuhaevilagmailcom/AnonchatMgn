@@ -297,7 +297,7 @@
       '<button type="button" data-action="activityPeriod" data-value="'+value+
       '" class="'+(period===value?'selected':'')+'" aria-pressed="'+(period===value)+'">'+label+'</button>').join('');
     const monthTitle=ym=>{
-      if(!/^\\d{4}-\\d{2}$/.test(String(ym)))return ym;
+      if(!/^\d{4}-\d{2}$/.test(String(ym)))return ym;
       const [year,month]=ym.split('-').map(Number);
       return new Date(Date.UTC(year,month-1,1)).toLocaleDateString('ru-RU',
         {month:'long',year:'numeric',timeZone:'UTC'});
@@ -327,7 +327,7 @@
     const d=await api('/analytics',{},params),p=d.payments||{},g=d.games||{};
     state.activityDays=Array.isArray(d.message_activity)?d.message_activity:[];
     state.activityAllTime=Math.max(0,Number(d.all_time_messages)||0);
-    state.activityMonth=d.month||state.activityMonth;
+    if(state.activityPeriod==='month')state.activityMonth=d.month||state.activityMonth;
     state.activityMonths=Array.isArray(d.months)?d.months:[];
     const amounts=[['Поддержка Stars',fmt(p.support_stars_total)+' ★'],['Поддержка СБП',fmt(p.support_sbp_total)+' ₽'],
       ['Anon Plus Stars',fmt(p.anonplus_stars_total)+' ★'],['Anon Plus СБП',fmt(p.anonplus_sbp_total)+' ₽'],
