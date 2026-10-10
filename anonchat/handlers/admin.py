@@ -394,11 +394,11 @@ async def admins_text(db: Database, owner_ids: tuple[int, ...]) -> str:
 async def poll_admin_text(db: Database) -> str:
     poll = await db.active_poll()
     if poll is None:
-        return "📊 <b>Опрос дня</b>\n\nСейчас активного опроса нет."
+        return "📊 <b>Опрос</b>\n\nСейчас активного опроса нет."
     results = await db.poll_results(int(poll["id"]))
     return (
-        "📊 <b>Опрос дня · активен</b>\n\n"
-        f"{texts.esc(poll['question'])}\n\n"
+        "📊 <b>Опрос · активен</b>\n\n"
+        f"<blockquote>{texts.esc(poll['question'])}</blockquote>\n\n"
         f"1. {texts.esc(poll['option_a'])} — <b>{results['pct_a']}%</b>\n"
         f"2. {texts.esc(poll['option_b'])} — <b>{results['pct_b']}%</b>\n\n"
         f"Всего голосов: <b>{results['total']}</b>"
@@ -1086,27 +1086,6 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
             await ctx.ack("Только для владельца", alert=True)
             return
         action = data.rsplit(":", 1)[-1]
-        if data.startswith("adm:panel:poll:audience:"):
-            audience = action
-            draft = await state.get_data()
-            opts = draft.get("poll_options") or []
-            question = str(draft.get("poll_question") or "")
-            if draft.get("adm") != "poll_ready" or audience not in {"all", "admins"} or len(opts) != 2 or not question:
-                await ctx.ack("Черновик опроса устарел", alert=True)
-                return
-            admin_ids = await db.all_admin_ids(ctx.cfg.admin_ids) if audience == "admins" else ()
-            poll_id = await db.create_poll(
-                question, str(opts[0]), str(opts[1]), ctx.user_id,
-                audience=audience, admin_ids=admin_ids,
-            )
-            await state.clear()
-            await ctx.ack("Опрос создан")
-            await ctx.edit(
-                f"✅ Опрос #{poll_id} запущен. Уведомления отправляются "
-                f"{'администраторам' if audience == 'admins' else 'всем пользователям'} в очереди.",
-                K.admin_poll_keyboard(True),
-            )
-            return
         if action == "create":
             await state.set_state(AdminStates.await_input)
             await state.update_data(adm="poll_question")
@@ -1506,11 +1485,12 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
         if len(options) != 2:
             await ctx.reply("Нужно ровно два варианта: две строки или через <code>|</code>.")
             return
-        await state.update_data(adm="poll_ready", poll_options=options)
+        await state.clear()
+        poll_id = await db.create_poll(question, options[0], options[1], ctx.user_id)
         await ctx.reply(
-            "📊 <b>Опрос готов</b>\n\n"
-            "Кому отправить уведомление о новом опросе?",
-            K.admin_poll_audience_keyboard(),
+            f"✅ Опрос #{poll_id} опубликован для всех пользователей. "
+            "Уведомления отправляются в очереди.",
+            K.admin_poll_keyboard(True),
         )
         return
 
