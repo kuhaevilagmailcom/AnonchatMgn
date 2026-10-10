@@ -538,9 +538,13 @@ class MiniAppAdmin:
                FROM xp_transactions WHERE created_at>=? AND source<>'opening_balance'
                GROUP BY source ORDER BY credits DESC""",(week_period_start(),)
         )
+        total_messages=await self.s.db._fetchone(
+            "SELECT COALESCE(SUM(messages),0) AS total FROM users"
+        )
         return web.json_response({"payments":payments,"sources":_rows(grouped),
                                   "games":await self.s.db.game_diagnostics(),
-                                  "message_activity":await self.s.db.message_activity_days(30)})
+                                  "message_activity":await self.s.db.message_activity_days(30),
+                                  "all_time_messages":int(total_messages["total"] or 0) if total_messages else 0})
 
     async def admins(self, request):
         actor,_,owner=await self.access(request)
