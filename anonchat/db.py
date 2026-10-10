@@ -2840,6 +2840,26 @@ class Database:
         )
         return int(cur.lastrowid), int(day["c"]) if day else 1
 
+    async def queue_recent_exclusions(
+        self, queued_ids: set[int], recent_seconds: int
+    ) -> dict[int, set[int]]:
+        """One indexed query refreshes cooldown exclusions for the whole queue."""
+        ids = {int(uid) for uid in queued_ids}
+        result = {uid: set() for uid in ids}
+        if not ids or recent_seconds <= 0:
+            return result
+        rows = await self._fetchall(
+            "SELECT user_a, user_b FROM matches WHERE ended_at>=?",
+            (now() - int(recent_seconds),),
+        )
+        for row in rows:
+            a, b = int(row["user_a"]), int(row["user_b"])
+            if a in ids:
+                result[a].add(b)
+            if b in ids:
+                result[b].add(a)
+        return result
+
     async def excluded_partners(self, user_id: int, recent_seconds: int = 0) -> set[int]:
         """Только временно исключает недавно завершённые пары; вечных блокировок больше нет."""
         result: set[int] = set()
