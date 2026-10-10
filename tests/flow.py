@@ -441,6 +441,11 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     check("НОВАЯ ЖАЛОБА" in card and "Нарушитель" in card and "Последние сообщения" in card
           and "Спам" in card, "админ получил новую удобную карточку жалобы")
     check(str(C) in card, "в карточке есть id нарушителя")
+    channel_card = " ".join(session.texts_to(cfg.moderation_channel_id))
+    check("НОВАЯ ЖАЛОБА" in channel_card and "Спам" in channel_card,
+          "жалоба продублирована в канал")
+    check(not any(m.get("reply_markup") for m in session.to(cfg.moderation_channel_id)),
+          "в канале нет кнопок модерации")
     reports = await db.list_reports("new")
     check(len(reports) == 1 and reports[0]["target_id"] == C, "жалоба легла в базу")
     check(mm.partner(A) == C, "жалоба сама по себе диалог не рвёт")
@@ -851,6 +856,10 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
           "обратная связь уходит владельцу")
     check(any(item["method"] == "sendPhoto" for item in session.to(D)),
           "медиаотзыв уходит всем назначенным админам")
+    check("Обратная связь" in " ".join(session.texts_to(cfg.moderation_channel_id)),
+          "канал получил заголовок обратной связи")
+    check(any(item["method"] == "sendPhoto" for item in session.to(cfg.moderation_channel_id)),
+          "канал получил фото обратной связи")
 
     session.clear()
     await press(A, "act:support")
