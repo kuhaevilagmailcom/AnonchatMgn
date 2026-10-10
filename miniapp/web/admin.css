@@ -175,7 +175,7 @@ body.admin-open{overflow:hidden}
  .admin-icon-button{height:33px;min-width:33px}
 }
 
-/* Compact 7 / 14 / 30-day activity chart for Telegram WebApp. */
+/* Compact 7 / 14 day and calendar-month activity chart for Telegram WebApp. */
 .admin-activity-card{
   margin:6px 0 23px;padding:19px 15px 16px;min-width:0;
   background:#16141a;border:1px solid #302b35;border-radius:17px
@@ -214,6 +214,13 @@ body.admin-open{overflow:hidden}
 .admin-center .admin-activity-periods button:focus-visible{
   outline:2px solid #f2a1cc;outline-offset:2px
 }
+.admin-activity-month{
+  display:block;appearance:auto;width:100%;max-width:100%;
+  margin:10px 0 0;padding:11px 14px;border:1px solid #403543;
+  border-radius:10px;background:#231d28;color:#f5eef3;
+  font-size:12px;font-weight:750;min-height:42px;outline-offset:2px
+}
+.admin-activity-month:focus-visible{outline:2px solid #e77bb3}
 .admin-activity-detail{
   display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;
   gap:4px 12px;margin:15px 2px 0;padding:12px 0 10px;
@@ -248,6 +255,10 @@ body.admin-open{overflow:hidden}
 .admin-activity-day.is-active .admin-activity-track{
   border-color:#f2a1cc;background:#392637
 }
+.admin-activity-day.is-missing .admin-activity-track{
+  background:repeating-linear-gradient(45deg,#29232f,#29232f 5px,#302833 5px,#302833 9px);
+  opacity:.55;border:1px dashed #493a4b
+}
 .admin-activity-day:hover .admin-activity-track{background:#3d2a3b}
 .admin-activity-day:focus-visible{outline:2px solid #ed84bb}
 .admin-activity-axis{
@@ -257,6 +268,7 @@ body.admin-open{overflow:hidden}
 .admin-activity-axis span{
   color:#aea3b0;font-size:10px;white-space:nowrap;line-height:1.3
 }
+.admin-activity-warning{margin:9px 2px 0;color:#aa9baa;font-size:10px;line-height:1.4}
 .admin-activity-alltime{
   display:flex;justify-content:space-between;align-items:center;gap:8px;
   margin:16px 2px 0;padding:12px 0 0;border-top:1px solid #302a33;
