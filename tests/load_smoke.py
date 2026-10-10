@@ -54,6 +54,33 @@ def test_1000_active_chat_sessions() -> None:
     print(f"chat: 1000 users, 500 pairs, 20k virtual messages, {(time.perf_counter()-start)*1000:.1f} ms")
 
 
+async def test_500_dialog_sqlite_load() -> None:
+    """500 simultaneous pair histories persisted without real Telegram traffic."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db = await Database(Path(tmp) / "dialogs.db").start()
+        try:
+            ids = range(810001, 811001)
+            for uid in ids:
+                await db.ensure_user(uid, f"load_{uid}", "Load")
+            started = time.perf_counter()
+            for index in range(500):
+                a, b = 810001 + index * 2, 810002 + index * 2
+                await db.log_dialog(a, b, 20, 20, int(time.time()) - 55, a)
+                for uid in (a, b):
+                    await db.bump(uid, "messages", 20)
+                    await db.activity_add(uid, messages=20, dialogs=1)
+            elapsed = (time.perf_counter() - started) * 1000
+            stats = await db.stats()
+            assert stats["dialogs"] == 500, stats
+            assert stats["messages"] == 20_000, stats
+            assert stats["messages_today"] == 20_000, stats
+            assert (await db.dialog_records(810001))["max_dialog_messages"] == 40
+            assert (await db.message_activity_days(1))[0]["messages"] == 20_000
+            print(f"sqlite: 500 completed pairs, 20k historical messages, {elapsed:.1f} ms")
+        finally:
+            await db.close()
+
+
 async def test_sqlite_idempotency_load() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         db=await Database(Path(tmp)/"load.db").start()
@@ -83,5 +110,6 @@ async def test_sqlite_idempotency_load() -> None:
 if __name__ == "__main__":
     test_matchmaking_load()
     test_1000_active_chat_sessions()
+    asyncio.run(test_500_dialog_sqlite_load())
     asyncio.run(test_sqlite_idempotency_load())
     print("ok synthetic load smoke")
