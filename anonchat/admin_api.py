@@ -134,9 +134,14 @@ class MiniAppAdmin:
     async def user_stars_at(self, request):
         await self.access(request, "users")
         uid = _number(request.match_info["user_id"], low=1, high=9999999999999)
-        timestamp = _number(request.query.get("timestamp", ""), low=1, high=4102444800)
-        if timestamp > now():
-            raise _json_error(400, "Нельзя выбрать будущее время")
+        raw = request.query.get("timestamp", "")
+        if not raw.isascii() or not raw.isdecimal() or len(raw)>12:
+            raise _json_error(400, "Укажите дату и время")
+        timestamp = int(raw)
+        if timestamp <= 0 or timestamp > now():
+            raise _json_error(400, "Неверное или будущее время")
+        if await self.s.db.get_user(uid) is None:
+            raise _json_error(404, "Пользователь не найден")
         result = await self.s.db.xp_balance_at(uid, timestamp)
         return web.json_response({"user_id": uid, "timestamp": timestamp, **result})
 
