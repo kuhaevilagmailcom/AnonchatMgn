@@ -80,10 +80,16 @@ async def check_wall():
         assert disliked["likes"] == 0 and not disliked["liked"]
 
         top_comment = json.loads((await wall.comment(Req(
-            102, {"body": "Привет, я отвечаю!"}, pid
+            102, {"body": "Привет, я отвечаю!", "client_key":"top_level_comment_demo_01"}, pid
         ))).text)["id"]
         assert server.events[-1][0] == 101
         assert "Новый комментарий" in server.events[-1][1]
+        previous=len(server.events)
+        retried=json.loads((await wall.comment(Req(
+            102, {"body":"Привет, я отвечаю!", "client_key":"top_level_comment_demo_01"}, pid
+        ))).text)
+        assert retried["id"]==top_comment and retried["existing"]
+        assert len(server.events)==previous, "duplicate comment caused notification"
         assert server.bot.sent[-1][2]["reply_markup"].inline_keyboard[0][0].text == "Открыть стену"
         await db.db.execute(
             "UPDATE wall_comments SET created_at=created_at-15 WHERE id=?", (top_comment,)
