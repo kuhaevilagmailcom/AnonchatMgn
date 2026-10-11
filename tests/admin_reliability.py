@@ -266,6 +266,69 @@ def test_historical_star_balance() -> None:
     asyncio.run(historical_star_balance_regression())
 
 
+async def giveaway_freeze_regression() -> None:
+    # Fixed October 2026 draw: use historical local dates, not the host clock.
+    start=1791140400
+    sunday=1791658800
+    cutoff=1791730800
+    with tempfile.TemporaryDirectory() as tmp:
+        db=await Database(Path(tmp)/"giveaway.db").start()
+        try:
+            for uid in (311,312,313,314):
+                await db.ensure_user(uid,f"giveaway{uid}",f"Player {uid}")
+                await db.db.execute(
+                    "UPDATE users SET created_at=? WHERE user_id=?",(start-86400,uid)
+                )
+            for uid,monday,sun,messages in (
+                (311,500,200,60),(312,500,100,70),
+                (313,400,80,80),(314,100,0,90),
+            ):
+                await db.activity_add(uid,timestamp=start+100,
+                                      xp_earned=monday,messages=messages,dialogs=1)
+                if sun:
+                    await db.activity_add(uid,timestamp=sunday+100,
+                                          xp_earned=sun,messages=12,dialogs=1)
+            # The XP ledger was already active when the draw ended.
+            await db.db.execute(
+                """INSERT INTO xp_transactions(user_id,amount,balance_after,source,created_at)
+                   VALUES(311,1,1,'test',?)""",(start+200,)
+            )
+            # Post-deadline credits must not change winners.
+            await db.db.execute(
+                """INSERT INTO xp_transactions(user_id,amount,balance_after,source,created_at)
+                   VALUES(311,250,250,'test',?)""",(cutoff+60,)
+            )
+            # Debit while the raffle is still open reduces weekly points.
+            await db.db.execute(
+                """INSERT INTO xp_transactions(user_id,amount,balance_after,source,created_at)
+                   VALUES(312,-50,550,'test',?)""",(cutoff-60,)
+            )
+            # Late completed conversation: exclude those messages and the dialog.
+            await db.db.execute(
+                """INSERT INTO matches(started_at,ended_at,user_a,user_b,msg_a,msg_b)
+                   VALUES(?,?,?,?,?,?)""",
+                (cutoff-100,cutoff+300,311,312,6,6),
+            )
+            result=await db.giveaway_results_2026_10_11()
+            assert result["status"]=="confirmed",result
+            assert [(x["user_id"],x["stars"]) for x in result["items"]]==[
+                (312,550),(313,480),(311,450)
+            ],result
+            # Later activity can never rewrite the archived prize ordering.
+            await db.activity_add(314,timestamp=sunday+100,xp_earned=999999)
+            again=await db.giveaway_results_2026_10_11()
+            assert again==result
+            await db.close()
+            db=await Database(Path(tmp)/"giveaway.db").start()
+            assert await db.giveaway_results_2026_10_11()==result
+        finally:
+            await db.close()
+
+
+def test_giveaway_freeze() -> None:
+    asyncio.run(giveaway_freeze_regression())
+
+
 def test_poll_notifications() -> None:
     asyncio.run(poll_notifications_and_message_statistics())
 
@@ -278,4 +341,5 @@ if __name__ == "__main__":
     test_poll_notifications()
     test_monthly_message_archive()
     test_historical_star_balance()
-    print("ok durable moderation notices, poll alerts, calendar archive, XP snapshots and broadcasts")
+    test_giveaway_freeze()
+    print("ok durable moderation notices, poll alerts, calendar archive, XP and raffle snapshots")
