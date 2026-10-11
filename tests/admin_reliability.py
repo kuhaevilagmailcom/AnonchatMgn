@@ -229,6 +229,43 @@ def test_monthly_message_archive() -> None:
     asyncio.run(historical_month_archive())
 
 
+async def historical_star_balance_regression() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        db=await Database(Path(tmp)/"star-timeline.db").start()
+        try:
+            await db.ensure_user(912,"timeline","Timeline")
+            baseline=int(time.time())-7200
+            await db.db.execute(
+                "UPDATE users SET created_at=? WHERE user_id=?", (baseline-100,912)
+            )
+            for amount, balance, timestamp in (
+                (150,150,baseline), (25,175,baseline+900),
+                (-55,120,baseline+900), (8,128,baseline+3600),
+            ):
+                await db.db.execute(
+                    """INSERT INTO xp_transactions(user_id,amount,balance_after,source,created_at)
+                       VALUES(?,?,?,?,?)""",
+                    (912,amount,balance,
+                     "opening_balance" if timestamp==baseline else "test",timestamp),
+                )
+            before=await db.xp_balance_at(912,baseline-1)
+            assert before["status"]=="unavailable" and before["balance"] is None
+            assert (await db.xp_balance_at(912,baseline))["balance"]==150
+            assert (await db.xp_balance_at(912,baseline+899))["balance"]==150
+            assert (await db.xp_balance_at(912,baseline+900))["balance"]==120
+            assert (await db.xp_balance_at(912,baseline+3600))["balance"]==128
+            from anonchat.monitoring import _chat_header
+            header=_chat_header(None,{"username":"one","nickname":"First","xp":175},912,
+                                {"username":"two","nickname":"Second","xp":120},913)
+            assert "175 ⭐" in header and "120 ⭐" in header,header
+        finally:
+            await db.close()
+
+
+def test_historical_star_balance() -> None:
+    asyncio.run(historical_star_balance_regression())
+
+
 def test_poll_notifications() -> None:
     asyncio.run(poll_notifications_and_message_statistics())
 
@@ -240,4 +277,5 @@ if __name__ == "__main__":
     test_reliability()
     test_poll_notifications()
     test_monthly_message_archive()
-    print("ok durable moderation notices, poll alerts, calendar archive and broadcasts")
+    test_historical_star_balance()
+    print("ok durable moderation notices, poll alerts, calendar archive, XP snapshots and broadcasts")
