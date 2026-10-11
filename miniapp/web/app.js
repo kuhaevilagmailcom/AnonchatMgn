@@ -1248,6 +1248,7 @@ if (typeof window === 'undefined') {
       const start=String(tg?.initDataUnsafe?.start_param||new URLSearchParams(location.search).get('startapp')||'');
       const wallMatch=/^wall_(\d{1,10})$/.exec(start);
       if(wallMatch){go('wall');window.AnonWall?.openPost(Number(wallMatch[1]));}
+      else if(start==='wall')go('wall');
     }catch(e){
       console.error('Mini App boot failed',e);
       if(tg?.initData)toast(e?.message||'Ошибка запуска Mini App');
