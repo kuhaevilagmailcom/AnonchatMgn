@@ -3289,6 +3289,111 @@ class Database:
             self._top_cache = {k:v for k,v in self._top_cache.items() if now_mono-v[0]<30}
         return rows
 
+    async def giveaway_results_2026_10_11(self) -> dict[str, Any]:
+        """Private, frozen Oct 11 weekly-top results, as of 20:00 Magnitogorsk.
+
+        Reconstruct the weekly ranking from daily earned stars, subtracting
+        credits/messages/dialogues earned on Sunday AFTER the deadline. Debits
+        are taken only through the deadline. Never present current totals as
+        historic. The first verified result is retained after periodic cleanup.
+        """
+        start = 1791140400  # Mon Oct 5, 00:00 Asia/Yekaterinburg
+        cutoff = 1791730800  # Sun Oct 11, 20:00 Asia/Yekaterinburg
+        sunday = 1791656400  # Sun Oct 11, 00:00 Asia/Yekaterinburg
+        next_day = 1791745200  # Mon Oct 12, 00:00 Asia/Yekaterinburg
+        key = "giveaway:2026-10-11:2000:weekly_v1"
+        if now() < cutoff:
+            return {"status": "pending", "cutoff": cutoff, "items": []}
+        saved = await self.get_kv(key)
+        if saved:
+            try:
+                snapshot = json.loads(saved)
+                if snapshot.get("status") == "confirmed":
+                    return snapshot
+            except (TypeError, ValueError):
+                pass
+
+        # A late first-ledger migration cannot reconstruct the 20:00 cut:
+        # earlier debits and post-cut credits may never have been timestamped.
+        led = await self._fetchone(
+            """SELECT MIN(created_at) first_entry,
+                      SUM(CASE WHEN source='opening_balance'
+                                    AND created_at>?
+                                    AND u.created_at<=? THEN 1 ELSE 0 END) late_openings
+                 FROM xp_transactions t JOIN users u ON u.user_id=t.user_id""",
+            (cutoff, cutoff),
+        )
+        if not led or led["first_entry"] is None or int(led["first_entry"]) > cutoff or int(led["late_openings"] or 0) > 0:
+            return {"status": "unavailable", "cutoff": cutoff, "items": [],
+                    "reason": "История начислений на момент завершения неполная"}
+
+        rows = await self._fetchall(
+            """WITH activity AS (
+                 SELECT user_id,SUM(xp_earned) credits,
+                        SUM(messages) messages,SUM(dialogs) dialogs
+                   FROM daily_activity WHERE day_start>=? AND day_start<=?
+                  GROUP BY user_id
+               ), late_credits AS (
+                 SELECT user_id,SUM(amount) amount FROM xp_transactions
+                  WHERE created_at>? AND created_at<? AND amount>0
+                    AND source<>'opening_balance'
+                  GROUP BY user_id
+               ), early_debits AS (
+                 SELECT user_id,SUM(amount) amount FROM xp_transactions
+                  WHERE created_at>=? AND created_at<=? AND amount<0
+                    AND source<>'referral_correction'
+                  GROUP BY user_id
+               ), late_dialogs AS (
+                 SELECT id, user_a user_id, MAX(0,msg_a) sent,
+                        CASE WHEN msg_a>0 AND msg_b>0 AND msg_a+msg_b>=6
+                             THEN 1 ELSE 0 END counted
+                   FROM matches WHERE ended_at>? AND ended_at<?
+                 UNION ALL
+                 SELECT id, user_b user_id, MAX(0,msg_b) sent,
+                        CASE WHEN msg_a>0 AND msg_b>0 AND msg_a+msg_b>=6
+                             THEN 1 ELSE 0 END counted
+                   FROM matches WHERE ended_at>? AND ended_at<?
+               ), late_messages AS (
+                 SELECT user_id,SUM(sent) messages,SUM(counted) dialogs
+                   FROM late_dialogs GROUP BY user_id
+               ), scores AS (
+                 SELECT u.user_id,u.nickname,u.username,u.first_name,
+                        COALESCE(a.credits,0)-COALESCE(lc.amount,0)
+                          +COALESCE(ed.amount,0) AS xp,
+                        MAX(0,COALESCE(a.messages,0)-COALESCE(lm.messages,0)) messages,
+                        MAX(0,COALESCE(a.dialogs,0)-COALESCE(lm.dialogs,0)) dialogs
+                   FROM users u
+                   LEFT JOIN activity a ON a.user_id=u.user_id
+                   LEFT JOIN late_credits lc ON lc.user_id=u.user_id
+                   LEFT JOIN early_debits ed ON ed.user_id=u.user_id
+                   LEFT JOIN late_messages lm ON lm.user_id=u.user_id
+                  WHERE u.created_at<=?
+               )
+               SELECT * FROM scores WHERE xp>0
+               ORDER BY xp DESC,dialogs DESC,messages DESC,user_id ASC LIMIT 3""",
+            (start, sunday, cutoff, next_day, start, cutoff,
+             cutoff, next_day, cutoff, next_day, cutoff),
+        )
+        if not rows:
+            return {"status": "unavailable", "cutoff": cutoff, "items": [],
+                    "reason": "Не сохранились данные недельного рейтинга"}
+        snapshot = {
+            "status": "confirmed", "cutoff": cutoff, "period_start": start,
+            "metric": "weekly_stars", "items": [
+                {"place": i, "user_id": int(r["user_id"]),
+                 "nickname": str(r["nickname"] or r["first_name"] or "Аноним"),
+                 "username": str(r["username"] or ""),
+                 "stars": int(r["xp"]), "messages": int(r["messages"])}
+                for i,r in enumerate(rows, 1)
+            ],
+        }
+        await self.db.execute(
+            "INSERT OR IGNORE INTO kv(key,value) VALUES(?,?)",
+            (key,json.dumps(snapshot,ensure_ascii=False)),
+        )
+        await self.db.commit()
+        return json.loads(await self.get_kv(key))
+
     async def top_position_period(self, user_id: int, days: int) -> dict[str, int]:
         uid = int(user_id)
         if not await self.get_user(uid):
