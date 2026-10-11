@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 from anonchat.db import Database
@@ -64,7 +65,6 @@ async def check_wall():
             pass
         await db.set_unique_nickname(101, "Автор МГН")
         new_post = await wall.create(Req(101, {"body": "Какие у нас новости?", "client_key": "post_create_demo_01"}))
-        import json
         pid = json.loads(new_post.text)["id"]
         duplicate = await wall.create(Req(101, {"body":"Какие у нас новости?", "client_key":"post_create_demo_01"}))
         assert json.loads(duplicate.text)["id"] == pid
