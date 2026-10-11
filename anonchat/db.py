@@ -4189,6 +4189,32 @@ class Database:
 
     async def forget_user(self, user_id: int) -> None:
         """Стирает профиль, но сохраняет действующий бан/мут и модерационные доказательства."""
+        # Posts/comments should not outlive a deleted identity: clean up related wall
+        # material before the existing user deletion. Guard legacy installations/tests
+        # where wall schema has not yet been installed.
+        wall_exists = await self._fetchone(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wall_posts'"
+        )
+        if wall_exists:
+            authored = "(SELECT id FROM wall_posts WHERE author_id=?)"
+            await self.db.execute(
+                f"""DELETE FROM wall_reports
+                    WHERE reporter_id=?
+                       OR (target_type='post' AND target_id IN {authored})
+                       OR (target_type='comment' AND target_id IN
+                           (SELECT id FROM wall_comments
+                            WHERE author_id=? OR post_id IN {authored}))""",
+                (user_id, user_id, user_id, user_id),
+            )
+            await self.db.execute(
+                f"DELETE FROM wall_likes WHERE user_id=? OR post_id IN {authored}",
+                (user_id, user_id),
+            )
+            await self.db.execute(
+                f"DELETE FROM wall_comments WHERE author_id=? OR post_id IN {authored}",
+                (user_id, user_id),
+            )
+            await self.db.execute("DELETE FROM wall_posts WHERE author_id=?", (user_id,))
         anon_token = await self.get_kv(f"anonq:user:{int(user_id)}")
         row = await self.get_user(user_id)
         restricted = bool(row and (row["banned"] or int(row["mute_until"] or 0) > now()))

@@ -42,6 +42,7 @@ from .safety import contains_contact
 from .monitoring import enqueue_chat_monitor_sent
 from .moderation_channel import send_moderation_channel
 from .payments import RollyPayError, create_payment, get_payment
+from .wall import install_wall_routes
 from .miniapp_features import (
     REPORT_REASONS,
     achievement_items,
@@ -235,6 +236,8 @@ class MiniAppServer:
             or path.startswith("/api/miniapp/payments/sbp")
         ):
             group, limit, window = "invoice", 12, 60.0
+        elif path.startswith("/api/miniapp/wall"):
+            group, limit, window = "wall", 90, 60.0
         elif path.startswith("/api/miniapp/chat/"):
             group, limit, window = "chat", max(30, int(self.cfg.inchat_rate_limit)), 60.0
         elif path.startswith("/api/miniapp/games/") or path.startswith("/api/miniapp/search/"):
@@ -2726,6 +2729,7 @@ class MiniAppServer:
         app.router.add_post("/api/miniapp/games/words/invite", self.game_words)
         app.router.add_post("/api/miniapp/games/respond", self.game_respond)
         app.router.add_post("/api/miniapp/games/action", self.game_action)
+        install_wall_routes(app, self)
         from .admin_api import install_admin_routes
         install_admin_routes(app, self)
         app.router.add_get("/api/miniapp/subscription", self.subscription)
@@ -2743,7 +2747,9 @@ class MiniAppServer:
     async def start(self) -> None:
         if self.runner is not None:
             return
-        self.runner = web.AppRunner(self.create_app(), access_log=None)
+        app = self.create_app()
+        await self.wall.ensure_schema()
+        self.runner = web.AppRunner(app, access_log=None)
         await self.runner.setup()
         host = os.getenv("MINIAPP_HOST", "0.0.0.0")
         port = int(os.getenv("PORT", os.getenv("MINIAPP_PORT", "3000")))
