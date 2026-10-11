@@ -914,6 +914,48 @@ class Database:
                     await conn.rollback()
                     raise
 
+    async def xp_balance_at(self, user_id: int, timestamp: int) -> dict[str, int | str | None]:
+        """Read-only balance snapshot from the append-only XP ledger.
+
+        The first opening_balance record starts reliable historical coverage
+        for pre-ledger accounts. Never infer an earlier balance from today's XP.
+        """
+        uid, at = int(user_id), int(timestamp)
+        user = await self._fetchone(
+            "SELECT xp, created_at FROM users WHERE user_id=?", (uid,)
+        )
+        if user is None:
+            raise ValueError("Unknown user")
+        created = int(user["created_at"] or 0)
+        if created and at < created:
+            return {"status": "unavailable", "balance": None,
+                    "reason": "before_registration", "available_since": created}
+        first = await self._fetchone(
+            """SELECT created_at, source FROM xp_transactions
+               WHERE user_id=? ORDER BY created_at ASC, id ASC LIMIT 1""",
+            (uid,),
+        )
+        if first is None:
+            # A recently registered zero-XP account might have no journal entry.
+            if int(user["xp"] or 0) == 0 and created and at >= created:
+                return {"status": "known", "balance": 0,
+                        "reason": "", "available_since": created}
+            return {"status": "unavailable", "balance": None,
+                    "reason": "no_history", "available_since": None}
+        coverage = int(first["created_at"])
+        if at < coverage:
+            # No pre-ledger events or individual balances were recorded.
+            return {"status": "unavailable", "balance": None,
+                    "reason": "before_history", "available_since": coverage}
+        last = await self._fetchone(
+            """SELECT balance_after FROM xp_transactions
+               WHERE user_id=? AND created_at<=?
+               ORDER BY created_at DESC, id DESC LIMIT 1""",
+            (uid, at),
+        )
+        return {"status": "known", "balance": int(last["balance_after"]),
+                "reason": "", "available_since": coverage}
+
     async def xp_history(
         self, user_id: int, *, limit: int = 10, offset: int = 0,
         kind: str = 'all', source: str = '', since: int = 0,
