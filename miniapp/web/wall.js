@@ -238,5 +238,5 @@
     $$('[data-wall-sort]',root).forEach(x=>{x.classList.toggle('active',x===b);x.setAttribute('aria-selected',x===b?'true':'false')});
     feed();
   });
-  window.AnonWall={onPage(page){if(page==='wall')feed()},openPost};
+  window.AnonWall={onPage(page){if(page==='wall')feed()},openPost,close,isOpen(){return !overlay.hidden}};
 })();
