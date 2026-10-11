@@ -3316,9 +3316,9 @@ class Database:
         # A late first-ledger migration cannot reconstruct the 20:00 cut:
         # earlier debits and post-cut credits may never have been timestamped.
         led = await self._fetchone(
-            """SELECT MIN(created_at) first_entry,
-                      SUM(CASE WHEN source='opening_balance'
-                                    AND created_at>?
+            """SELECT MIN(t.created_at) first_entry,
+                      SUM(CASE WHEN t.source='opening_balance'
+                                    AND t.created_at>?
                                     AND u.created_at<=? THEN 1 ELSE 0 END) late_openings
                  FROM xp_transactions t JOIN users u ON u.user_id=t.user_id""",
             (cutoff, cutoff),
