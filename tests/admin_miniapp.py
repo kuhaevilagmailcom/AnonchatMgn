@@ -48,7 +48,7 @@ def test_admin_miniapp_endpoints() -> None:
             home=await client.get("/")
             assert home.status==200
             home_html=await home.text()
-            assert "admin.js?v=8" in home_html and "admin.css?v=8" in home_html
+            assert "admin.js?v=9" in home_html and "admin.css?v=9" in home_html
             assert 'data-game="numbers"' not in home_html
             assert "500 ⭐ в день" in home_html
             admin_bundle=await client.get("/admin.js")
@@ -87,6 +87,16 @@ def test_admin_miniapp_endpoints() -> None:
             assert data["owner"] and "points" in data["permissions"]
             profile=await client.get("/api/miniapp/admin/users/1002",headers=headers(1001))
             assert (await profile.json())["user"]["xp"]==50
+            checked_at=int(time.time())
+            star_url="/api/miniapp/admin/users/1002/stars-at?timestamp="+str(checked_at)
+            star_owner=await client.get(star_url,headers=headers(1001))
+            assert star_owner.status==200
+            assert (await star_owner.json())["balance"]==50
+            assert (await client.get(star_url,headers=headers(1003))).status==200
+            assert (await client.get(star_url,headers=headers(1002))).status==403
+            star_future=await client.get(star_url[:-len(str(checked_at))]+str(checked_at+3600),
+                                         headers=headers(1001))
+            assert star_future.status==400
             key="test-protected-operation-01"
             args={"user_id":1002,"amount":70,"reason":"компенсация","key":key}
             plus=await client.post("/api/miniapp/admin/adjust",json=args,headers=headers(1001))
@@ -94,6 +104,11 @@ def test_admin_miniapp_endpoints() -> None:
             repeat=await client.post("/api/miniapp/admin/adjust",json=args,headers=headers(1001))
             assert repeat.status==200 and (await repeat.json())["applied"] is False
             assert int((await db.get_user(1002))["xp"])==120
+            stars_latest=await client.get(
+                "/api/miniapp/admin/users/1002/stars-at?timestamp="+str(int(time.time())),
+                headers=headers(1001),
+            )
+            assert (await stars_latest.json())["balance"]==120
             bad=await client.post("/api/miniapp/admin/adjust",headers=headers(1001),
                 json={"user_id":1002,"amount":-500,"reason":"too much",
                       "key":"test-negative-protected-02"})
@@ -126,6 +141,9 @@ def test_admin_miniapp_endpoints() -> None:
             assert (await db.get_user(1002))["mute_until"]>time.time()
             logs=await client.get("/api/miniapp/admin/actions",headers=headers(1001))
             assert logs.status==200 and (await logs.json())["items"]
+            pair_snapshot=await client.get("/api/miniapp/admin/chats",headers=headers(1001))
+            assert pair_snapshot.status==200
+            assert isinstance((await pair_snapshot.json())["items"],list)
             for route in ("/api/miniapp/admin/analytics","/api/miniapp/admin/games",
                           "/api/miniapp/admin/chats","/api/miniapp/admin/admins",
                           "/api/miniapp/admin/diagnostics","/api/miniapp/admin/sources"):
