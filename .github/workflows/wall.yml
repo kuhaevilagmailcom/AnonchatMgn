@@ -26,5 +26,6 @@ jobs:
         with:
           node-version: '22'
       - run: node --check miniapp/web/wall.js
+      - run: node tests/wall_ui.cjs
       - run: node --check miniapp/web/admin-wall.js
       - run: node --check miniapp/web/app.js
