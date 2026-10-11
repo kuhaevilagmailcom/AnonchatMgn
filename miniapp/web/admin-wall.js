@@ -3,6 +3,7 @@
   const tg=window.Telegram?.WebApp;
   const base=(window.ANON_MGN_API_BASE||document.querySelector('meta[name="api-base"]')?.content||'').replace(/\/$/,'');
   const state={tab:'posts',filter:'all',q:'',page:0,post:0};
+  let canSeeUsers=false;
   const esc=s=>String(s??'').replace(/[&<>"']/g,x=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
   const date=ts=>new Date(Number(ts||0)*1000).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
   const icon=(name)=>{
@@ -91,11 +92,13 @@
       '<article class="admin-wall-entry"><h2>Публикация #'+p.id+'</h2>'+
       '<strong>'+esc(p.nick)+'</strong><div class="admin-wall-meta">ID '+p.author_id+' · '+esc(p.username?'@'+p.username:'без username')+' · '+date(p.created_at)+'</div>'+
       '<p>'+esc(p.body||'Без текста')+'</p>'+mediaHtml(p.media)+
+      (canSeeUsers?'<button class="admin-wall-open" data-action="openUser" data-value="'+p.author_id+'">Карточка автора</button>':'')+
       actions('post',p.id,p.hidden)+'</article>'+
       '<h3 class="admin-wall-subheading">Комментарии · '+data.comments.length+'</h3>'+
       (data.comments.length?data.comments.map(c=>'<article class="admin-wall-entry"><strong>'+esc(c.nick)+'</strong>'+
         '<div class="admin-wall-meta">ID '+c.author_id+' · '+esc(c.username?'@'+c.username:'без username')+' · '+date(c.created_at)+' · '+(c.hidden?'Скрыт':'Виден')+'</div>'+
-        '<p>'+esc(c.body)+'</p>'+actions('comment',c.id,c.hidden)+'</article>').join(''):
+        '<p>'+esc(c.body)+'</p>'+(canSeeUsers?'<button data-action="openUser" data-value="'+c.author_id+'">Карточка автора</button>':'')+
+        actions('comment',c.id,c.hidden)+'</article>').join(''):
         '<div class="admin-empty">Комментариев ещё нет</div>')+
       (data.truncated?'<p>Показаны первые 500 комментариев</p>':'');
   }
@@ -152,5 +155,5 @@
     e.preventDefault();state.q=String(new FormData(e.target).get('q')||'').trim().slice(0,100);
     state.tab='posts';state.page=0;display();
   });
-  window.AnonWallAdmin={render(){state.tab='posts';return posts()},hydrate:loadImages};
+  window.AnonWallAdmin={render(userAccess){canSeeUsers=Boolean(userAccess);state.tab='posts';return posts()},hydrate:loadImages};
 })();
