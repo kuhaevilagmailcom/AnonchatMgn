@@ -181,26 +181,40 @@
     document.body.classList.remove('wall-sheet-open');
   }
   function compose(post=null){
-    state.current=post||null;
-    const title=post?'Редактировать':'Новая публикация';
-    sheet(title,`${header(title)}<form class="wall-compose" id="wallPostForm">
-      <div class="wall-compose-user"><span class="wall-avatar">${esc(($('[data-nick]')?.textContent||'А').slice(0,1).toUpperCase())}</span><strong>${esc($('[data-nick]')?.textContent||'Аноним')}</strong></div>
-      <textarea id="wallPostText" maxlength="1000" placeholder="Что нового? Напиши что-нибудь…" required>${esc(post?.body||'')}</textarea>
-      <div class="wall-compose-foot"><small id="wallCount"></small><button class="wall-publish" type="submit">${post?'Сохранить':'Опубликовать'}</button></div>
-      </form>`);
-    const input=$('#wallPostText'),counter=$('#wallCount'),submit=$('.wall-publish');
-    const update=()=>counter.textContent=input.value.length+' / 1000';
-    input.addEventListener('input',update);update();input.focus();
-    $('#wallPostForm').onsubmit=async e=>{
-      e.preventDefault();if(submit.disabled||!input.value.trim())return;
-      submit.disabled=true;
-      try{
-        const result=await api(post?'/api/miniapp/wall/'+post.id+'/edit':'/api/miniapp/wall','POST',{body:input.value.trim()});
-        close();flash(post?'Изменено':'Опубликовано');await feed();
-        if(post||result.id)openPost(post?.id||result.id);
-      }catch(err){flash(err.message);submit.disabled=false}
-    };
-  }
+  state.current=post||null;
+  draft={items:[...(post?.media||[])],uploading:0,clientKey:uuid()};
+  const title=post?'Редактировать':'Новая публикация';
+  sheet(title,header(title)+`<form class="wall-compose" id="wallPostForm">
+    <div class="wall-compose-user"><span class="wall-avatar">${esc(($('[data-nick]')?.textContent||'А').slice(0,1).toUpperCase())}</span><strong>${esc($('[data-nick]')?.textContent||'Аноним')}</strong></div>
+    <textarea id="wallPostText" maxlength="1000" placeholder="Что нового? Напиши что-нибудь…">${esc(post?.body||'')}</textarea>
+    <div class="wall-media-preview" id="wallMediaPreview"></div>
+    <input type="file" id="wallFileInput" accept="image/jpeg,image/png,image/webp,video/mp4" multiple hidden>
+    <div class="wall-compose-foot">
+      <div class="wall-compose-tools"><button type="button" id="wallAttach" class="wall-attach" aria-label="Прикрепить фото или видео">${icon('image')}</button>
+      <small id="wallCount"></small></div>
+      <button class="wall-publish" type="submit">${post?'Сохранить':'Опубликовать'}</button>
+    </div></form>`);
+  const input=$('#wallPostText'),counter=$('#wallCount'),submit=$('.wall-publish');
+  input.addEventListener('input',()=>counter.textContent=input.value.length+' / 1000');
+  counter.textContent=input.value.length+' / 1000';input.focus();
+  $('#wallAttach').onclick=()=>$('#wallFileInput').click();
+  $('#wallFileInput').onchange=e=>{uploadSelected(e.target.files);e.target.value='';};
+  draftPreview();
+  $('#wallPostForm').onsubmit=async e=>{
+    e.preventDefault();if(submit.disabled||draft.uploading)return;
+    const text=input.value.trim(),ids=draft.items.map(m=>m.id);
+    if(!text&&!ids.length){flash('Напиши текст или прикрепи фото/видео');return}
+    submit.disabled=true;
+    try{
+      const result=await api(post?'/api/miniapp/wall/'+post.id+'/edit':'/api/miniapp/wall','POST',{
+        body:text,media_ids:ids,client_key:draft.clientKey
+      });
+      draft.items.forEach(m=>m.localUrl&&URL.revokeObjectURL(m.localUrl));draft=null;
+      close();flash(post?'Изменено':'Опубликовано');
+      await feed();if(post||result.id)openPost(post?.id||result.id);
+    }catch(err){flash(err.message);submit.disabled=false}
+  };
+}
   function commentsHtml(rows){
     if(!rows.length)return '<div class="wall-empty wall-small-empty">Ответов пока нет. Начни обсуждение.</div>';
     const map=new Map(),ids=new Set(rows.map(c=>c.id));
