@@ -5,6 +5,7 @@ No public endpoint exposes Telegram IDs or admin audit records.
 from __future__ import annotations
 import time
 from aiohttp import web
+from .nick import display
 
 
 def err(code, msg):
@@ -64,7 +65,7 @@ class WallAdmin:
         return {
             "id":int(row["id"]),"author_id":int(row["author_id"]),
             "username":row["username"] or "", "first_name":row["first_name"] or "",
-            "nick": __import__("anonchat.nick",fromlist=["display"]).display(
+            "nick": display(
                 row["nickname"],int(row["author_id"]),int(row["support_stars"] or 0)
             ),
             "body":row["body"],"hidden":int(row["hidden"]),
