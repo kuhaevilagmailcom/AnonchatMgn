@@ -337,20 +337,10 @@ if (typeof window === 'undefined') {
     if(seq!==topRequestSeq)return;
     const items=data?.items||topFallback(topPeriod);
     renderTopPage(items);
-    const nft=$('#nftLeader');
-    if(nft){
-      const leader=items[0];
-      if(topPeriod==='week'&&leader){
-        nft.hidden=false;
-        nft.innerHTML=`<small>РОЗЫГРЫШ NFT</small><strong>Сейчас выигрывает: ${esc(leader.nick)}</strong><span>Конец розыгрыша · 11 октября 2026 в 20:00</span>`;
-      }else nft.hidden=true;
-    }
     const mine=$('#topMe');
     if(mine&&data?.my){
       const until=data.ends_at?new Date(data.ends_at*1000).toLocaleDateString('ru-RU',{day:'numeric',month:'long'}):'';
-      const periodHint=topPeriod==='week'
-        ?' · розыгрыш до 11 октября · 20:00'
-        :(until?` · до ${until}`:'');
+      const periodHint=until?` · до ${until}`:'';
       mine.hidden=false;
       mine.innerHTML=`<span><small>ТВОЁ МЕСТО</small><strong>#${data.my.place||'—'}</strong></span><span><b>${Number(data.my.stars||0).toLocaleString('ru-RU')} ★</b><small>${data.my.place>10&&data.my.to_top10?`${data.my.to_top10} ★ до топ-10`:'Ты в топ-10'}${periodHint}</small></span>`;
     }else if(mine)mine.hidden=true;
