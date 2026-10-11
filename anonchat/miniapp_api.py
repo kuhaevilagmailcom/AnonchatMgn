@@ -2665,7 +2665,7 @@ class MiniAppServer:
         response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self' https://telegram.org; "
-            "style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; "
+            "style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' blob:; "
             "connect-src 'self'; frame-ancestors https://web.telegram.org https://*.telegram.org"
         )
         if origin and origin_allowed:
@@ -2683,7 +2683,7 @@ class MiniAppServer:
             not self.web_dir.is_dir() or not (self.web_dir / "index.html").is_file()
         ):
             raise RuntimeError(f"MINIAPP_WEB_DIR не найден: {self.web_dir}")
-        app = web.Application(client_max_size=12 * 1024 * 1024, middlewares=[self.security_headers])
+        app = web.Application(client_max_size=53 * 1024 * 1024, middlewares=[self.security_headers])
         app.router.add_get("/api/miniapp/health", self.health)
         app.router.add_get("/api/miniapp/ws", self.websocket)
         app.router.add_get("/api/miniapp/me", self.me)

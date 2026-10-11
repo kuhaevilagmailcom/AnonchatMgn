@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 from anonchat.db import Database
@@ -19,7 +20,7 @@ class FakeBot:
 class FakeServer:
     def __init__(self, db):
         self.db = db
-        self.cfg = SimpleNamespace(admin_ids=(101,))
+        self.cfg = SimpleNamespace(admin_ids=(101, 102))
         self.bot = FakeBot()
         self.events = []
 
@@ -52,10 +53,22 @@ async def check_wall():
         await wall.ensure_schema()
         await db.ensure_user(101, None, "Автор")
         await db.ensure_user(102, None, "Участник")
+        await db.ensure_user(103, None, "Посторонний")
+        allowed = json.loads((await wall.access(Req(101))).text)
+        denied = json.loads((await wall.access(Req(103))).text)
+        assert allowed["allowed"] is True and denied["allowed"] is False
+        from aiohttp import web
+        try:
+            await wall.feed(Req(103,sort="new"))
+            assert False, "Non-admin unexpectedly read Wall"
+        except web.HTTPForbidden:
+            pass
         await db.set_unique_nickname(101, "Автор МГН")
-        new_post = await wall.create(Req(101, {"body": "Какие у нас новости?"}))
-        import json
+        new_post = await wall.create(Req(101, {"body": "Какие у нас новости?", "client_key": "post_create_demo_01"}))
         pid = json.loads(new_post.text)["id"]
+        duplicate = await wall.create(Req(101, {"body":"Какие у нас новости?", "client_key":"post_create_demo_01"}))
+        assert json.loads(duplicate.text)["id"] == pid
+        assert json.loads(duplicate.text)["existing"]
         listing = json.loads((await wall.feed(Req(102,sort="new"))).text)
         assert listing["items"][0]["nick"] == "Автор МГН", listing
         assert "author_id" not in listing["items"][0]
@@ -67,10 +80,16 @@ async def check_wall():
         assert disliked["likes"] == 0 and not disliked["liked"]
 
         top_comment = json.loads((await wall.comment(Req(
-            102, {"body": "Привет, я отвечаю!"}, pid
+            102, {"body": "Привет, я отвечаю!", "client_key":"top_level_comment_demo_01"}, pid
         ))).text)["id"]
         assert server.events[-1][0] == 101
         assert "Новый комментарий" in server.events[-1][1]
+        previous=len(server.events)
+        retried=json.loads((await wall.comment(Req(
+            102, {"body":"Привет, я отвечаю!", "client_key":"top_level_comment_demo_01"}, pid
+        ))).text)
+        assert retried["id"]==top_comment and retried["existing"]
+        assert len(server.events)==previous, "duplicate comment caused notification"
         assert server.bot.sent[-1][2]["reply_markup"].inline_keyboard[0][0].text == "Открыть стену"
         await db.db.execute(
             "UPDATE wall_comments SET created_at=created_at-15 WHERE id=?", (top_comment,)
@@ -91,7 +110,7 @@ async def check_wall():
         await wall.moderate(Req(101,{"type":"post","id":pid,"hide":True}))
         hidden = json.loads((await wall.feed(Req(102,sort="new"))).text)
         assert hidden["items"] == []
-        print("Wall checks passed: post/likes/replies/notifications/nicks/moderation")
+        print("Wall checks passed: closed access, idempotent post, likes, replies, nicknames, moderation")
     finally:
         await db.close()
 

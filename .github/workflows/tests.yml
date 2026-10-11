@@ -24,7 +24,9 @@ jobs:
       - run: python -m tests.load_smoke
       - run: python -m tests.game_resilience
       - run: python -m tests.wall
+      - run: python -m tests.wall_media
       - run: python -m compileall -q .
       - run: node --check miniapp/web/app.js
       - run: node --check miniapp/web/wall.js
+      - run: node --check miniapp/web/admin-wall.js
       - run: node --check miniapp/web/admin.js

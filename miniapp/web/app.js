@@ -369,6 +369,7 @@ if (typeof window === 'undefined') {
   }
   function go(page){
     if(page==='chat' && state.status!=='paired')page=state.status==='queued'?'search':'home';
+    if(page==="wall" && !state.wallAllowed){toast("Стена только для администраторов");return}
     state.page=page;
     document.body.classList.toggle('chat-open',page==='chat');
     $$('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===page));
@@ -1239,6 +1240,14 @@ if (typeof window === 'undefined') {
       icons();
       try{tg?.ready();tg?.expand();if(tgAtLeast('6.1')){tg.setHeaderColor?.('#050506');tg.setBackgroundColor?.('#050506')}if(tgAtLeast('7.7'))tg.disableVerticalSwipes?.()}catch(_){}
       bind();
+      // Fail closed until the server confirms this is an administrator.
+      state.wallAllowed=false;
+      try{
+        const access=await request('/api/miniapp/wall/access');
+        state.wallAllowed=access.allowed===true;
+      }catch(_){state.wallAllowed=false}
+      const wallNav=document.querySelector('#bottomNav [data-nav="wall"]');
+      if(wallNav)wallNav.hidden=!state.wallAllowed;
       await load();
       await syncStatus(true);
       startRealtime();
@@ -1247,8 +1256,8 @@ if (typeof window === 'undefined') {
       else await loadDialogResult(true);
       const start=String(tg?.initDataUnsafe?.start_param||new URLSearchParams(location.search).get('startapp')||'');
       const wallMatch=/^wall_(\d{1,10})$/.exec(start);
-      if(wallMatch){go('wall');window.AnonWall?.openPost(Number(wallMatch[1]));}
-      else if(start==='wall')go('wall');
+      if(wallMatch && state.wallAllowed){go('wall');window.AnonWall?.openPost(Number(wallMatch[1]));}
+      else if(start==='wall' && state.wallAllowed)go('wall');
     }catch(e){
       console.error('Mini App boot failed',e);
       if(tg?.initData)toast(e?.message||'Ошибка запуска Mini App');

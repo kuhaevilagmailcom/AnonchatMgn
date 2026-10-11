@@ -325,3 +325,39 @@ body.admin-open{overflow:hidden}
 @media(prefers-reduced-motion:reduce){
   .admin-activity-track,.admin-activity-track i{transition:none}
 }
+
+
+/* Wall moderation in the existing administration center */
+.admin-wall-icon{display:inline-block;width:19px;height:19px;flex:0 0 19px;vertical-align:middle}
+.admin-wall-links{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 16px}
+.admin-wall-links button,.admin-wall-search button,.admin-wall-actions button,.admin-wall-pager button,.admin-wall-open{min-height:40px;padding:9px 12px;border:1px solid #342c34;border-radius:10px;color:#eee;background:#211c21;font-size:12px;font-weight:650;display:inline-flex;gap:7px;align-items:center;justify-content:center}
+.admin-wall-links button:active,.admin-wall-actions button:active{background:#352535}
+.admin-wall-search{display:flex;gap:8px;margin:12px 0}
+.admin-wall-search input{min-width:0;flex:1;min-height:42px;border:1px solid #342a33;background:#191519;color:#fff;padding:0 12px;border-radius:10px;font:inherit}
+.admin-wall-search button,.admin-wall-open{background:#7e4166;color:#fff}
+.admin-wall-filters{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:12px 0 17px}
+.admin-wall-filters button{min-height:37px;border-radius:10px;padding:0 12px;background:#211d21;color:#c5b7c1;font-weight:630;font-size:12px;white-space:nowrap}
+.admin-wall-filters button.active{background:#60344f;color:#fff}
+.admin-wall-entry{border:1px solid #302a30;border-radius:14px;padding:15px 13px;margin:10px 0;background:#141214;min-width:0}
+.admin-wall-entry-top{display:flex;align-items:center;gap:8px;justify-content:space-between;min-width:0}
+.admin-wall-entry-top strong{color:#f3edf1;font-size:13px;overflow-wrap:anywhere}
+.admin-wall-entry-top small{color:#958a94;font-size:11px;white-space:nowrap}
+.admin-wall-entry p{font-size:13px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;margin:11px 0}
+.admin-wall-meta{font-size:11px;color:#a89daa;line-height:1.6;overflow-wrap:anywhere;margin:8px 0}
+.admin-wall-metrics{display:flex;align-items:center;gap:6px;color:#a78c9e;font-size:12px;margin:8px 0}
+.admin-wall-metrics svg:nth-of-type(2){margin-left:10px}
+.admin-wall-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding-top:8px}
+.admin-wall-actions button.danger{border-color:#85415a;color:#fbb1ce}
+.admin-wall-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin:10px 0}
+.admin-wall-asset{min-width:0;width:100%;height:auto;aspect-ratio:1.3;position:relative;display:grid;place-items:center;padding:0;border-radius:9px;overflow:hidden;background:#201b20}
+.admin-wall-grid:has(.admin-wall-asset:only-child){grid-template-columns:1fr}
+.admin-wall-asset img{display:block;width:100%;height:100%;object-fit:cover}
+.admin-wall-video{position:absolute;z-index:1;display:grid;place-items:center;min-width:88px;height:40px;padding:0 12px;border-radius:14px;color:#fff;background:#0009;font-size:12px;font-weight:700}
+.admin-wall-subheading{font-size:17px;margin:18px 0}
+.admin-wall-pager{display:flex;justify-content:space-between;gap:8px;align-items:center;color:#999;font-size:12px}
+.admin-wall-pager button{flex:none}
+#adminWallViewer[hidden]{display:none!important}
+#adminWallViewer{position:fixed;inset:0;z-index:450;background:#040404f7;display:grid;place-items:center;padding:55px 10px 20px}
+#adminWallViewer>img,#adminWallViewer>video{max-width:100%;max-height:100%;object-fit:contain}
+.admin-wall-viewer-close{position:absolute;top:20px;right:18px;width:44px;height:44px;display:grid;place-items:center;background:#292229;border-radius:50%;color:white;font-size:22px}
+@media(max-width:360px){.admin-wall-entry{padding:12px 10px}.admin-wall-entry-top{align-items:start;flex-wrap:wrap}.admin-wall-filters{margin-right:-9px}}

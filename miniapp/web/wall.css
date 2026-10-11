@@ -96,3 +96,70 @@ body.wall-sheet-open{overflow:hidden}
 
 .wall-mod[hidden],.wall-more[hidden]{display:none!important}
 .wall-event-open{color:var(--accent)!important;font-weight:730;margin-top:5px;font-size:11px!important}
+
+
+/* Wall v2 — every action is a 40px optical center, no baseline SVG drift. */
+#bottomNav [data-nav="wall"][hidden]{display:none!important}
+.wall-page{overflow-x:hidden}
+.wall-page *,.wall-overlay *{box-sizing:border-box}
+.wall-icon{display:block;width:21px;height:21px;flex:0 0 21px;stroke-width:1.75;vertical-align:middle}
+.wall-post-head{display:grid;grid-template-columns:40px minmax(0,1fr) 40px;align-items:center;gap:11px}
+.wall-post-meta{display:flex;flex-direction:column;align-items:start;justify-content:center;gap:3px}
+.wall-post-meta strong{font-size:14px;line-height:18px}
+.wall-post-meta small{font-size:11px;line-height:14px}
+.wall-post-head .wall-icon-btn,.wall-sheet-header .wall-icon-btn{height:40px;width:40px;display:grid;place-items:center;padding:0}
+.wall-post-actions{display:flex;align-items:center;gap:12px;min-height:40px}
+.wall-post-actions button:not(.wall-post-open){display:inline-flex;align-items:center;justify-content:center;min-width:40px;min-height:40px;gap:5px;padding:0;line-height:20px}
+.wall-post-actions button:not(.wall-post-open) .wall-icon{width:21px;height:21px}
+.wall-post-actions button span{font-size:12px;line-height:20px;font-variant-numeric:tabular-nums}
+.wall-post-actions .wall-post-open{height:36px;align-items:center}
+.wall-post-body{padding:12px 0;line-height:1.5}
+.wall-sheet{height:100dvh;max-height:100dvh;justify-content:flex-start;overflow-y:auto;overscroll-behavior:contain}
+.wall-sheet-header{height:calc(57px + env(safe-area-inset-top));min-height:calc(57px + env(safe-area-inset-top));grid-template-columns:40px 1fr 40px;padding-left:14px;padding-right:14px}
+.wall-detail-scroll{flex:none;max-height:calc(100dvh - 185px - env(safe-area-inset-top));overflow:auto;padding:0 18px 0;scrollbar-width:thin}
+.wall-detail-scroll .wall-post{padding:16px 0 12px}
+.wall-comments-title{margin-top:3px;padding:14px 0 10px}
+.wall-comment{padding:12px 0;gap:10px}
+.wall-comment-main{min-width:0}
+.wall-comment-top{display:flex;flex-wrap:wrap;align-items:center;gap:7px;min-height:18px}
+.wall-comment-top strong{font-size:12px;line-height:18px}
+.wall-comment-top small{margin-left:auto;font-size:11px;line-height:18px}
+.wall-author-label{display:inline-flex;height:20px;align-items:center;padding:1px 7px;line-height:16px}
+.wall-comment-main p{margin:7px 0 6px}
+.wall-comment-opts button{line-height:18px;padding:4px 0}
+.wall-comment-form{flex:none;position:sticky;bottom:0;margin-top:0;padding:9px 16px calc(9px + env(safe-area-inset-bottom));background:#0b0a0b}
+.wall-comment-row{min-height:52px;align-items:center;border:1px solid #302730}
+.wall-comment-row textarea{width:100%;min-height:28px;max-height:90px;margin:0;line-height:28px;padding:0;resize:none}
+.wall-send{width:40px;height:40px;flex:0 0 40px;padding:0;display:grid;place-items:center}
+.wall-send .wall-icon{width:20px;height:20px}
+.wall-compose{padding:18px 18px 0}
+.wall-compose textarea{min-height:125px;flex:1}
+.wall-compose-tools{display:flex;align-items:center;gap:9px}
+.wall-attach{width:40px;height:40px;display:grid;place-items:center;background:#201820;border-radius:11px;color:#ed91c4;padding:0}
+.wall-attach .wall-icon{width:22px;height:22px}
+.wall-compose-foot{padding-top:9px;gap:14px}
+.wall-media-preview{display:flex;gap:9px;flex-wrap:wrap;align-items:center;max-height:250px;overflow:auto;padding:0 0 12px}
+.wall-draft-item{position:relative;width:78px;height:78px;border:1px solid #352634;border-radius:11px;overflow:hidden;background:#1b181b}
+.wall-draft-item img{width:100%;height:100%;object-fit:cover;display:block}
+.wall-draft-video{width:100%;height:100%;display:grid;place-items:center;color:#ef8bc2}
+.wall-draft-item button{position:absolute;right:4px;top:4px;width:23px;height:23px;display:grid;place-items:center;border-radius:50%;background:#121012cc;color:#fff;padding:0}
+.wall-draft-item button .wall-icon{width:15px;height:15px}
+.wall-uploading{width:100%;font-size:12px;color:#eba6ce}
+.wall-post-media{width:100%;min-width:0;margin:0 0 8px;display:grid;gap:5px;border-radius:12px;overflow:hidden}
+.wall-post-media.photos{grid-template-columns:repeat(2,minmax(0,1fr))}
+.wall-post-media.photos.wall-count-1{grid-template-columns:1fr}
+.wall-photo-tile,.wall-video-tile{display:grid;position:relative;place-items:center;min-width:0;min-height:0;background:#201c20;padding:0;border-radius:7px;overflow:hidden}
+.wall-photo-tile{aspect-ratio:1.2}
+.wall-count-1 .wall-photo-tile{aspect-ratio:1.55}
+.wall-photo-tile img,.wall-video-tile img{width:100%;height:100%;object-fit:cover;display:block}
+.wall-video-tile{aspect-ratio:16/9}
+.wall-play{position:absolute;display:grid;place-items:center;width:52px;height:52px;border-radius:50%;background:#080607ba;border:1px solid #ffffff66;color:white}
+.wall-play .wall-icon{width:25px;height:25px}
+.wall-photo-viewer[hidden]{display:none!important}
+.wall-photo-viewer{position:fixed;inset:0;z-index:230;background:#020202f7;display:flex;align-items:center;justify-content:center}
+.wall-viewer-content{width:100%;height:100%;display:grid;place-items:center;padding:60px 8px 20px}
+.wall-viewer-content img,.wall-viewer-content video{max-width:100%;max-height:100%;object-fit:contain}
+.wall-viewer-close{position:absolute;right:16px;top:calc(15px + env(safe-area-inset-top));display:grid;place-items:center;width:44px;height:44px;background:#242024;border-radius:50%;color:white;z-index:1}
+.wall-viewer-loading{font-size:12px;color:#999}
+@media(max-width:360px){.wall-post-actions{gap:8px}.wall-comment.wall-comment-reply{margin-left:12px}.wall-detail-scroll{padding:0 14px}.wall-post-media{border-radius:9px}}
+@media (prefers-reduced-motion:reduce){.wall-post-actions button:active{transform:none}}
