@@ -10,7 +10,7 @@ const css = fs.readFileSync('miniapp/web/wall.css', 'utf8');
 const html = fs.readFileSync('miniapp/web/index.html', 'utf8');
 
 const noop = () => {};
-const root = { addEventListener: noop };
+const root = { addEventListener: noop, querySelectorAll: () => [] };
 const overlay = { addEventListener: noop, hidden: true };
 const basic = { addEventListener: noop, onclick: null, hidden: false };
 const dom = {
