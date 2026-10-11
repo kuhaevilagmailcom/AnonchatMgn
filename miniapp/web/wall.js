@@ -250,11 +250,12 @@
           <button class="wall-send" type="submit" aria-label="Отправить">${icon('send')}</button></div>
         </form>`;
       hydrateMedia(overlay);
+      const commentKey=uuid();
       $('#wallCommentForm').onsubmit=async e=>{
         e.preventDefault();const input=$('#wallCommentText'),send=$('.wall-send');if(!input.value.trim())return;
         send.disabled=true;
         try{
-          await api('/api/miniapp/wall/'+id+'/comments','POST',{body:input.value.trim(),parent_id:state.reply?.id||null});
+          await api('/api/miniapp/wall/'+id+'/comments','POST',{body:input.value.trim(),parent_id:state.reply?.id||null,client_key:commentKey});
           await openPost(id);feed();
         }catch(err){flash(err.message);send.disabled=false}
       };
