@@ -26,7 +26,7 @@ async def _show_poll(ctx: Ctx, db: Database) -> None:
     body = (
         "<b>Опрос</b>\n\n"
         f"<blockquote>{texts.esc(poll['question'])}</blockquote>\n\n"
-        "Выбери вариант. На кнопках показываются только проценты."
+        "Выбери вариант ниже👇"
     )
     markup = K.poll_keyboard(
         poll_id,
