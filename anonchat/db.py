@@ -3736,7 +3736,7 @@ class Database:
                     "📊 <b>Новый опрос в АНОН МГН</b>\n\n"
                     f"<blockquote>{html.escape(question)}</blockquote>\n\n"
                     f"1️⃣ {html.escape(option_a)}\n2️⃣ {html.escape(option_b)}\n\n"
-                    "Выбери вариант кнопкой ниже 👇"
+                    "Выбери вариант ниже👇"
                 )
                 await con.execute(
                     """INSERT INTO admin_broadcast_jobs
