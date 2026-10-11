@@ -139,8 +139,12 @@ class Wall:
     async def _staff(self, uid):
         if int(uid) in self.server.cfg.admin_ids:
             return True
-        permissions = await self.db.get_admin_permissions(uid, self.server.cfg.admin_ids)
-        return bool(permissions)
+        from .permissions import ALL_ADMIN_PERMISSIONS
+        # Staff revocations take effect immediately for private Wall contents.
+        row = await self.db._fetchone(
+            "SELECT permissions FROM admins WHERE user_id=?", (int(uid),)
+        )
+        return bool(row and set(str(row["permissions"] or "").split(",")) & ALL_ADMIN_PERMISSIONS)
 
     async def access(self, request):
         uid, _, _ = await self.server._auth(request)
@@ -158,8 +162,12 @@ class Wall:
         return uid
 
     async def _admin(self, uid):
-        perms = await self.db.get_admin_permissions(uid, self.server.cfg.admin_ids)
-        return "reports" in perms
+        if int(uid) in self.server.cfg.admin_ids:
+            return True
+        row = await self.db._fetchone(
+            "SELECT permissions FROM admins WHERE user_id=?", (int(uid),)
+        )
+        return bool(row and "reports" in str(row["permissions"] or "").split(","))
 
     def _post_payload(self, r, uid):
         author_id = int(r["author_id"])
