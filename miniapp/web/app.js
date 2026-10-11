@@ -280,7 +280,7 @@ if (typeof window === 'undefined') {
   function renderEvents(filter='all'){
     const list=$('#eventList');if(!list)return;
     const items=state.events.filter(x=>eventMatchesFilter(x,filter));
-    list.innerHTML=items.length?items.map(x=>`<button class="event ${x.unread?'unread':''}" data-event-id="${x.id}" data-event-action="${esc(x.action||'')}"><span>${svg(x.icon||'bell')}</span><div><strong>${esc(x.title)}</strong><p>${esc(x.text)}</p><small>${eventTime(x.created_at)}</small></div>${x.action?svg('chevron-right'):''}</button>`).join(''):'<div class="empty">Здесь пока тихо.</div>';
+    list.innerHTML=items.length?items.map(x=>`<button class="event ${x.unread?'unread':''}" data-event-id="${x.id}" data-event-action="${esc(x.action||'')}"><span>${svg(x.icon||'bell')}</span><div><strong>${esc(x.title)}</strong><p>${esc(x.text)}</p><small>${eventTime(x.created_at)}</small>${String(x.action||"").startsWith("wall:")?'<small class="wall-event-open">Открыть стену</small>':""}</div>${x.action?svg('chevron-right'):''}</button>`).join(''):'<div class="empty">Здесь пока тихо.</div>';
     const unread=state.events.some(x=>x.unread);$$('[data-event-dot]').forEach(el=>el.hidden=!unread);
     $$('[data-event-id]',list).forEach(el=>el.onclick=()=>openEvent(el.dataset.eventId,el.dataset.eventAction));
   }
@@ -304,6 +304,7 @@ if (typeof window === 'undefined') {
     else if(action==='profile:quests')openModal('quests','Цели дня');
     else if(action==='dialog:result')await loadDialogResult(true);
     else if(action==='events')go('events');
+    else if(/^wall:\d+$/.test(action)){go('wall');window.AnonWall?.openPost(Number(action.split(':')[1]));}
     await loadNotifications(false);
   }
   function topFallback(period){
@@ -373,6 +374,7 @@ if (typeof window === 'undefined') {
     $$('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===page));
     $$('#bottomNav button').forEach(b=>b.classList.toggle('active',b.dataset.nav===page));
     window.scrollTo({top:0,behavior:'auto'});
+    window.AnonWall?.onPage(page);
     haptic();
     if(page==='search')syncStatus(true);
     if(page==='top')loadTopPage(topPeriod);
@@ -1223,7 +1225,12 @@ if (typeof window === 'undefined') {
     window.addEventListener('focus',()=>{syncStatus(true);if(state.status==='paired')syncChat(true)});
     window.addEventListener('pageshow',()=>{syncStatus(true);if(state.status==='paired')syncChat(true)});
     document.addEventListener('visibilitychange',()=>{if(!document.hidden){syncStatus(true);if(state.status==='paired')syncChat(true)}});
-    try{if(tgAtLeast('6.1'))tg.BackButton.onClick(()=>state.modal?closeModal():state.page!=='home'?go('home'):tg.close())}catch(_){}
+    try{if(tgAtLeast('6.1'))tg.BackButton.onClick(()=>{
+      if(window.AnonWall?.isOpen?.())window.AnonWall.close();
+      else if(state.modal)closeModal();
+      else if(state.page!=='home')go('home');
+      else tg.close();
+    })}catch(_){} 
   }
   async function boot(){
     const bootEl=$('#boot'),appEl=$('#app');
@@ -1238,6 +1245,9 @@ if (typeof window === 'undefined') {
       startStatusSync();
       if(state.status==='paired')go('chat');
       else await loadDialogResult(true);
+      const start=String(tg?.initDataUnsafe?.start_param||new URLSearchParams(location.search).get('startapp')||'');
+      const wallMatch=/^wall_(\d{1,10})$/.exec(start);
+      if(wallMatch){go('wall');window.AnonWall?.openPost(Number(wallMatch[1]));}
     }catch(e){
       console.error('Mini App boot failed',e);
       if(tg?.initData)toast(e?.message||'Ошибка запуска Mini App');
