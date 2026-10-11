@@ -89,7 +89,7 @@
       else if(state.page==='ledger')result=await ledger();
       else if(state.page==='rankings')result=await rankings();
       else if(state.page==='reports')result=await reports();
-      else if(state.page==='wall')result=await window.AnonWallAdmin.render();
+      else if(state.page==='wall')result=await window.AnonWallAdmin.render(can('users'));
       else if(state.page==='ban'||state.page==='mute')result=await restrictions();
       else if(state.page==='chats')result=await chats();
       else if(state.page==='queue')result=await queue();
