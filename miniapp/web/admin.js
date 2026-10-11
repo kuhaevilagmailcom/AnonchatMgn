@@ -10,11 +10,11 @@
   const date = t => t ? new Date(Number(t)*1000).toLocaleString('ru-RU',{timeZone:'Asia/Yekaterinburg',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
   const localDateTimeInput = () => new Date(Date.now()+5*60*60*1000).toISOString().slice(0,16);
   const sourceNames = {opening_balance:'Начальный баланс',message:'Сообщения',dialog:'Диалог',rating:'Оценка',referral:'Реферал',battle:'Битва мнений',numbers:'Числа',word_game:'Объясни слово',geoguessr:'GeoGuessr',achievement:'Достижение',daily_quest:'Задание',subscription:'Подписка',report:'Жалоба',admin_award:'Выдал администратор',admin_debit:'Списал администратор',admin_legacy:'Старое начисление',other:'Другое',one_time_reward:'Разовая награда',referral_correction:'Корректировка реферала',game_bonus:'Бонус в диалоге'};
-  const labels = {dashboard:'Обзор',users:'Пользователи',user:'Карточка',ledger:'Начисления',rankings:'Топы',reports:'Жалобы',ban:'Бан-лист',mute:'Мут-лист',chats:'Диалоги',games:'Игры',analytics:'Аналитика',admins:'Администраторы',broadcast:'Рассылка',diagnostics:'Диагностика',audit:'Аудит',queue:'Очередь',polls:'Опрос'};
+  const labels = {dashboard:'Обзор',users:'Пользователи',user:'Карточка',ledger:'Начисления',rankings:'Топы',reports:'Жалобы',ban:'Бан-лист',mute:'Мут-лист',chats:'Диалоги',games:'Игры',analytics:'Аналитика',admins:'Администраторы',broadcast:'Рассылка',diagnostics:'Диагностика',audit:'Аудит',queue:'Очередь',polls:'Опрос',wall:'Стена'};
   const sections = [
     ['dashboard','Обзор',null],['users','Пользователи','users'],['ledger','Начисления','points'],
     ['queue','Очередь','queue'],
-    ['rankings','Топы','stats'],['reports','Жалобы','reports'],['ban','Бан-лист','ban'],
+    ['rankings','Топы','stats'],['reports','Жалобы','reports'],['wall','Стена','reports'],['ban','Бан-лист','ban'],
     ['mute','Мут-лист','mute'],['chats','Диалоги','monitor'],['games','Игры','monitor'],
     ['analytics','Аналитика','stats'],['broadcast','Рассылка','broadcast'],
     ['admins','Администраторы','owner'],['polls','Опрос','owner'],['audit','Аудит','stats'],
@@ -89,6 +89,7 @@
       else if(state.page==='ledger')result=await ledger();
       else if(state.page==='rankings')result=await rankings();
       else if(state.page==='reports')result=await reports();
+      else if(state.page==='wall')result=await window.AnonWallAdmin.render();
       else if(state.page==='ban'||state.page==='mute')result=await restrictions();
       else if(state.page==='chats')result=await chats();
       else if(state.page==='queue')result=await queue();
@@ -99,7 +100,7 @@
       else if(state.page==='broadcast')result=await broadcast();
       else if(state.page==='diagnostics')result=await diagnostics();
       else if(state.page==='audit')result=await audit();
-      if(token===state.nonce)target.innerHTML=result;
+      if(token===state.nonce){target.innerHTML=result;if(state.page==='wall')window.AnonWallAdmin.hydrate();}
     }catch(e){if(token===state.nonce)target.innerHTML='<div class="admin-error">'+escape(e.message)+'</div>'+navButton('Повторить','refresh')}
   }
   async function overview(){
