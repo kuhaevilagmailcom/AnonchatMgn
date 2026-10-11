@@ -3299,7 +3299,7 @@ class Database:
         """
         start = 1791140400  # Mon Oct 5, 00:00 Asia/Yekaterinburg
         cutoff = 1791730800  # Sun Oct 11, 20:00 Asia/Yekaterinburg
-        sunday = 1791656400  # Sun Oct 11, 00:00 Asia/Yekaterinburg
+        sunday = 1791658800  # Sun Oct 11, 00:00 Asia/Yekaterinburg
         next_day = 1791745200  # Mon Oct 12, 00:00 Asia/Yekaterinburg
         key = "giveaway:2026-10-11:2000:weekly_v1"
         if now() < cutoff:
