@@ -19,7 +19,7 @@ class FakeBot:
 class FakeServer:
     def __init__(self, db):
         self.db = db
-        self.cfg = SimpleNamespace(admin_ids=(101,))
+        self.cfg = SimpleNamespace(admin_ids=(101, 102))
         self.bot = FakeBot()
         self.events = []
 
@@ -52,10 +52,23 @@ async def check_wall():
         await wall.ensure_schema()
         await db.ensure_user(101, None, "Автор")
         await db.ensure_user(102, None, "Участник")
+        await db.ensure_user(103, None, "Посторонний")
+        allowed = json.loads((await wall.access(Req(101))).text)
+        denied = json.loads((await wall.access(Req(103))).text)
+        assert allowed["allowed"] is True and denied["allowed"] is False
+        from aiohttp import web
+        try:
+            await wall.feed(Req(103,sort="new"))
+            assert False, "Non-admin unexpectedly read Wall"
+        except web.HTTPForbidden:
+            pass
         await db.set_unique_nickname(101, "Автор МГН")
-        new_post = await wall.create(Req(101, {"body": "Какие у нас новости?"}))
+        new_post = await wall.create(Req(101, {"body": "Какие у нас новости?", "client_key": "post_create_demo_01"}))
         import json
         pid = json.loads(new_post.text)["id"]
+        duplicate = await wall.create(Req(101, {"body":"Какие у нас новости?", "client_key":"post_create_demo_01"}))
+        assert json.loads(duplicate.text)["id"] == pid
+        assert json.loads(duplicate.text)["existing"]
         listing = json.loads((await wall.feed(Req(102,sort="new"))).text)
         assert listing["items"][0]["nick"] == "Автор МГН", listing
         assert "author_id" not in listing["items"][0]
@@ -91,7 +104,7 @@ async def check_wall():
         await wall.moderate(Req(101,{"type":"post","id":pid,"hide":True}))
         hidden = json.loads((await wall.feed(Req(102,sort="new"))).text)
         assert hidden["items"] == []
-        print("Wall checks passed: post/likes/replies/notifications/nicks/moderation")
+        print("Wall checks passed: closed access, idempotent post, likes, replies, nicknames, moderation")
     finally:
         await db.close()
 
