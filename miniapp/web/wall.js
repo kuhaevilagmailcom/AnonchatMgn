@@ -124,27 +124,33 @@ function hydrateMedia(container=document){
   }
   async function uploadSelected(fileList){
     if(!draft)return;
+    const currentDraft=draft;
     const files=[...fileList];if(!files.length)return;
     const videos=files.filter(f=>f.type.startsWith('video/'));
-    if(videos.length>1 || (videos.length && (files.length>1||draft.items.length)) ||
-      (draft.items.some(m=>m.kind==='video')&&files.length)){
+    if(videos.length>1 || (videos.length && (files.length>1||currentDraft.items.length)) ||
+      (currentDraft.items.some(m=>m.kind==='video')&&files.length)){
       flash('Можно прикрепить одно видео отдельно');return;
     }
-    if(files.length+draft.items.length>4){flash('Можно прикрепить максимум четыре фото');return}
+    if(files.length+currentDraft.items.length>4){flash('Можно прикрепить максимум четыре фото');return}
     for(const file of files){
       const video=file.type.startsWith('video/');
       if(!video&&!['image/jpeg','image/png','image/webp'].includes(file.type)){flash('Допустимы JPEG, PNG, WebP и MP4');continue}
       if(video&&file.type!=='video/mp4'){flash('Поддерживается MP4, не MOV');continue}
       if(file.size>(video?50:10)*1024*1024){flash('Файл слишком большой');continue}
-      draft.uploading++;draftPreview();
+      if(draft!==currentDraft)return;
+      currentDraft.uploading++;draftPreview();
       const data=new FormData();data.append('file',file);
       try{
         const res=await fetch(base+'/api/miniapp/wall/upload',{method:'POST',headers:{'X-Telegram-Init-Data':tg?.initData||''},body:data,cache:'no-store'});
         const info=await res.json().catch(()=>({}));
         if(!res.ok)throw Error(info.message||'Не удалось загрузить файл');
-        draft.items.push({...info.media,localUrl:video?'':URL.createObjectURL(file),isNew:true});
+        if(draft!==currentDraft){
+          api('/api/miniapp/wall/media/'+info.media.id+'/delete','POST',{}).catch(()=>{});
+        }else{
+          currentDraft.items.push({...info.media,localUrl:video?'':URL.createObjectURL(file),isNew:true});
+        }
       }catch(err){flash(err.message)}
-      finally{draft.uploading--;draftPreview()}
+      finally{currentDraft.uploading--;if(draft===currentDraft)draftPreview()}
     }
   }
 
