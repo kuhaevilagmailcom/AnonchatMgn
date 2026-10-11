@@ -8,6 +8,9 @@ from __future__ import annotations
 import html
 import json
 import os
+import asyncio
+import re
+from .wall_media import WallMedia, MediaValidationError
 import logging
 import time
 
@@ -100,9 +103,37 @@ class Wall:
     def __init__(self, server):
         self.server = server
         self.db = server.db
+        self.media = WallMedia(self)
+        self._create_lock = asyncio.Lock()
+        self._comment_lock = asyncio.Lock()
+
+    @staticmethod
+    def _parse_id(value):
+        return _id(value)
+
+    @staticmethod
+    def _raise(code, message):
+        _error(code, message)
 
     async def ensure_schema(self):
         await self.db.db.executescript(WALL_SCHEMA)
+        await self.media.ensure_schema()
+        await self.db.db.executescript("""
+            CREATE TABLE IF NOT EXISTS wall_comment_keys(
+                owner_id INTEGER NOT NULL,
+                client_key TEXT NOT NULL,
+                comment_id INTEGER NOT NULL,
+                PRIMARY KEY(owner_id, client_key)
+            );
+            CREATE TABLE IF NOT EXISTS wall_admin_log(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                actor_id INTEGER NOT NULL, target_type TEXT NOT NULL,
+                target_id INTEGER NOT NULL, action TEXT NOT NULL,
+                note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_wall_admin_log_created
+                ON wall_admin_log(created_at DESC);
+        """)
 
     async def _staff(self, uid):
         if int(uid) in self.server.cfg.admin_ids:
@@ -189,8 +220,12 @@ class Wall:
                  WHERE {where} ORDER BY {order} LIMIT 21 OFFSET ?""",
             (*params, offset),
         )
+        items = [self._post_payload(r, uid) for r in rows[:20]]
+        assets = await self.media.for_posts([x["id"] for x in items])
+        for item in items:
+            item["media"] = assets.get(item["id"], [])
         return web.json_response({
-            "items": [self._post_payload(r, uid) for r in rows[:20]],
+            "items": items,
             "more": len(rows) > 20,
             "offset": offset + min(len(rows), 20),
             "is_admin": await self._admin(uid),
@@ -199,19 +234,51 @@ class Wall:
     async def create(self, request):
         uid = await self._user(request, write=True)
         data = await request.json()
-        body = _body(data.get("body"), 1000)
-        last = await self.db._fetchone(
-            "SELECT created_at FROM wall_posts WHERE author_id=? ORDER BY id DESC LIMIT 1",
-            (uid,),
-        )
-        now = int(time.time())
-        if last and now - int(last["created_at"]) < 60:
-            _error(429, "Новый пост можно опубликовать через минуту")
-        cur = await self.db.db.execute(
-            "INSERT INTO wall_posts(author_id,body,created_at,updated_at) VALUES(?,?,?,?)",
-            (uid, body, now, now),
-        )
-        return web.json_response({"ok": True, "id": cur.lastrowid}, status=201)
+        if not isinstance(data, dict):
+            _error(400, "Некорректная публикация")
+        body = str(data.get("body") or "").strip()
+        if len(body) > 1000:
+            _error(400, "Текст длиннее 1000 символов")
+        if body:
+            _body(body,1000)
+        try:
+            media_ids = await self.media.validate_ids(uid,data.get("media_ids",[]))
+        except MediaValidationError as exc:
+            _error(400,str(exc))
+        if not body and not media_ids:
+            _error(400, "Напиши текст или прикрепи фото/видео")
+        key = str(data.get("client_key") or "").strip()
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{12,80}",key):
+            _error(400, "Некорректный ключ публикации")
+        async with self._create_lock:
+            old = await self.db._fetchone(
+                "SELECT post_id FROM wall_create_keys WHERE owner_id=? AND client_key=?",
+                (uid,key),
+            )
+            if old:
+                return web.json_response({"ok":True,"id":int(old["post_id"]),"existing":True})
+            last = await self.db._fetchone(
+                "SELECT created_at FROM wall_posts WHERE author_id=? ORDER BY id DESC LIMIT 1", (uid,)
+            )
+            now=int(time.time())
+            if last and now-int(last["created_at"])<60:
+                _error(429,"Новый пост можно опубликовать через минуту")
+            # Re-check the ownership of pending files inside the creation lock.
+            try:
+                await self.media.validate_ids(uid,media_ids)
+            except MediaValidationError as exc:
+                _error(400,str(exc))
+            cur=await self.db.db.execute(
+                "INSERT INTO wall_posts(author_id,body,created_at,updated_at) VALUES(?,?,?,?)",
+                (uid,body,now,now),
+            )
+            pid=int(cur.lastrowid)
+            await self.media.attach(uid,pid,media_ids)
+            await self.db.db.execute(
+                "INSERT INTO wall_create_keys(owner_id,client_key,post_id) VALUES(?,?,?)",
+                (uid,key,pid),
+            )
+            return web.json_response({"ok":True,"id":pid},status=201)
 
     async def detail(self, request):
         uid = await self._user(request)
@@ -227,7 +294,7 @@ class Wall:
             (post_id,),
         )
         return web.json_response({
-            "post": self._post_payload(r, uid),
+            "post": {**self._post_payload(r, uid), "media": await self.media.for_post(post_id)},
             "comments": [{
                 "id": int(c["id"]), "parent_id": c["parent_id"],
                 "body": str(c["body"]), "mine": int(c["author_id"]) == uid,
@@ -319,12 +386,42 @@ class Wall:
         row = await self._post(post_id, uid)
         if not row or int(row["author_id"]) != uid:
             _error(404, "Свой пост не найден")
-        body = _body((await request.json()).get("body"), 1000)
+        data=await request.json()
+        body=str(data.get("body") or "").strip()
+        media_ids=data.get("media_ids",None)
+        if media_ids is not None:
+            try:
+                ids=await self.media.validate_ids(uid,media_ids,previous_post=post_id)
+            except MediaValidationError as exc:
+                _error(400,str(exc))
+        else:
+            ids=None
+        current_media=await self.media.for_post(post_id)
+        if not body and (not ids if ids is not None else not current_media):
+            _error(400, "Нельзя оставить публикацию пустой")
+        if body:
+            _body(body,1000)
+        if len(body)>1000:
+            _error(400, "Текст длиннее 1000 символов")
+        if ids is not None:
+            for attached in current_media:
+                if attached["id"] not in ids:
+                    await self._remove_media_post(uid,attached["id"])
+            await self.media.attach(uid,post_id,ids)
         await self.db.db.execute(
             "UPDATE wall_posts SET body=?,updated_at=? WHERE id=? AND author_id=? AND hidden=0",
             (body, int(time.time()), post_id, uid),
         )
         return web.json_response({"ok": True})
+
+    async def _remove_media_post(self, uid, mid):
+        row=await self.db._fetchone(
+            "SELECT * FROM wall_media WHERE owner_id=? AND id=?",(uid,mid)
+        )
+        if row:
+            await self.db.db.execute("DELETE FROM wall_media WHERE id=?",(mid,))
+            self.media._unlink(row["key"])
+            self.media._unlink(row["poster_key"])
 
     async def remove(self, request):
         uid = await self._user(request, write=True)
@@ -416,6 +513,9 @@ def install_wall_routes(app, server):
     server.wall = wall
     prefix = "/api/miniapp/wall"
     app.router.add_get(prefix + "/access", wall.access)
+    app.router.add_post(prefix + "/upload", wall.media.upload)
+    app.router.add_get(prefix + "/media/{media_id}", wall.media.read)
+    app.router.add_post(prefix + "/media/{media_id}/delete", wall.media.remove)
     app.router.add_get(prefix, wall.feed)
     app.router.add_post(prefix, wall.create)
     app.router.add_get(prefix + "/moderation", wall.moderation)
