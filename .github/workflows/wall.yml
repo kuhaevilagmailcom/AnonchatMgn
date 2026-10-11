@@ -20,9 +20,11 @@ jobs:
           python-version: '3.12'
       - run: pip install -r requirements.txt
       - run: python -m tests.wall
+      - run: python -m tests.wall_media
       - run: python -m compileall -q anonchat main.py tests
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - run: node --check miniapp/web/wall.js
+      - run: node --check miniapp/web/admin-wall.js
       - run: node --check miniapp/web/app.js
