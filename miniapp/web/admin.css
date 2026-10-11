@@ -361,3 +361,8 @@ body.admin-open{overflow:hidden}
 #adminWallViewer>img,#adminWallViewer>video{max-width:100%;max-height:100%;object-fit:contain}
 .admin-wall-viewer-close{position:absolute;top:20px;right:18px;width:44px;height:44px;display:grid;place-items:center;background:#292229;border-radius:50%;color:white;font-size:22px}
 @media(max-width:360px){.admin-wall-entry{padding:12px 10px}.admin-wall-entry-top{align-items:start;flex-wrap:wrap}.admin-wall-filters{margin-right:-9px}}
+
+/* The Wall moderation preview uses the same centered outline icon geometry. */
+.admin-wall-video{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.admin-wall-video .admin-wall-icon{width:17px;height:17px;display:block;flex:0 0 17px}
+.admin-wall-metrics .admin-wall-icon{display:block;vertical-align:middle}

@@ -8,13 +8,14 @@
   const date=ts=>new Date(Number(ts||0)*1000).toLocaleString('ru-RU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
   const icon=(name)=>{
     const paths={
-      heart:'<path d="M20.5 5.7a5 5 0 0 0-7.1 0L12 7l-1.4-1.3a5 5 0 1 0-7.1 7.1L12 21l8.5-8.2a5 5 0 0 0 0-7.1Z"/>',
-      comments:'<path d="M20 11.5a8 8 0 0 1-8 8H8l-4 2v-5a8 8 0 1 1 16-5Z"/>',
+      heart:'<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/>',
+      comments:'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
       hide:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
       trash:'<path d="M4 7h16M9 4h6M6 7l1 14h10l1-14M10 11v6m4-6v6"/>',
-      arrow:'<path d="m15 18-6-6 6-6"/>'
+      arrow:'<path d="m15 18-6-6 6-6"/>',
+      play:'<path d="m8 5 12 7-12 7V5Z"/>'
     };
-    return '<svg class="admin-wall-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(paths[name]||paths.comments)+'</svg>';
+    return '<svg class="admin-wall-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(paths[name]||paths.comments)+'</svg>';
   };
   const page=()=>document.querySelector('#adminCenter #adminContent');
   async function api(path,method='GET',payload){
@@ -29,7 +30,7 @@
   const metrics=(name,value)=>`<div class="admin-stat"><small>${name}</small><strong>${value}</strong></div>`;
   const mediaHtml=list=>(list||[]).length?'<div class="admin-wall-grid">'+list.map(m=>
     `<button type="button" class="admin-wall-asset" data-wa="viewmedia" data-url="${esc(m.url)}">${m.kind==='video'?
-      '<span class="admin-wall-video">▶ Видео</span><img data-wall-admin-thumb="'+esc(m.poster||'')+'" alt="Превью видео">':
+      '<span class="admin-wall-video">'+icon('play')+'Видео</span><img data-wall-admin-thumb="'+esc(m.poster||'')+'" alt="Превью видео">':
       '<img data-wall-admin-thumb="'+esc(m.poster||m.url)+'" alt="Фото публикации">'}</button>`
   ).join('')+'</div>':'';
   function actions(kind,id,hidden){
