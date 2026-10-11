@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import logging
 import time
 
@@ -103,11 +104,25 @@ class Wall:
     async def ensure_schema(self):
         await self.db.db.executescript(WALL_SCHEMA)
 
+    async def _staff(self, uid):
+        if int(uid) in self.server.cfg.admin_ids:
+            return True
+        permissions = await self.db.get_admin_permissions(uid, self.server.cfg.admin_ids)
+        return bool(permissions)
+
+    async def access(self, request):
+        uid, _, _ = await self.server._auth(request)
+        allowed = await self._staff(uid)
+        return web.json_response({"allowed": bool(allowed), "public": False})
+
     async def _user(self, request, *, write=False):
         uid, _tg, row = await self.server._auth(request)
-        if write:
-            if bool(row["banned"]) or int(row["mute_until"] or 0) > int(time.time()):
-                _error(403, "Публикации временно недоступны")
+        # Feature is in closed beta: never expose content based only on a
+        # client-side hidden navigation button or user-supplied uid.
+        if not await self._staff(uid):
+            _error(403, "Стена пока доступна только администраторам")
+        if write and (bool(row["banned"]) or int(row["mute_until"] or 0) > int(time.time())):
+            _error(403, "Публикации временно недоступны")
         return uid
 
     async def _admin(self, uid):
@@ -400,6 +415,7 @@ def install_wall_routes(app, server):
     wall = Wall(server)
     server.wall = wall
     prefix = "/api/miniapp/wall"
+    app.router.add_get(prefix + "/access", wall.access)
     app.router.add_get(prefix, wall.feed)
     app.router.add_post(prefix, wall.create)
     app.router.add_get(prefix + "/moderation", wall.moderation)
