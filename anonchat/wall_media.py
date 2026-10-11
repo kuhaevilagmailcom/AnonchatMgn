@@ -63,6 +63,7 @@ class WallMedia:
         self.db = wall.db
         default = Path(self.db.path).resolve().parent / "wall_media"
         self.base = Path(os.getenv("WALL_MEDIA_DIR", str(default))).resolve()
+        self._last_cleanup = 0
 
     async def ensure_schema(self):
         self.base.mkdir(parents=True, exist_ok=True)
@@ -76,6 +77,7 @@ class WallMedia:
         # Remove uploads abandoned for over 1 hour and assets whose parent posts
         # were removed during profile deletion. Do not erase moderated posts.
         cutoff = int(time.time()) - 3600
+        self._last_cleanup = int(time.time())
         rows = await self.db._fetchall(
             """SELECT m.id,m.key,m.poster_key FROM wall_media m
                  LEFT JOIN wall_posts p ON p.id=m.post_id
@@ -229,6 +231,8 @@ class WallMedia:
 
     async def upload(self, request):
         uid = await self.wall._user(request, write=True)
+        if int(time.time())-self._last_cleanup>3600:
+            await self.cleanup()
         if not request.content_type.startswith("multipart/form-data"):
             return self.wall._raise(400, "Выбери фотографию или видео")
         pending = await self.db._fetchone(
