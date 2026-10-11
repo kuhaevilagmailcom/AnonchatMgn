@@ -93,3 +93,6 @@ body.wall-sheet-open{overflow:hidden}
 .wall-report button:first-of-type{background:#8c355f}
 @media(max-width:360px){.wall-post-actions{gap:11px}.wall-post-open{font-size:11px}.wall-comment.wall-comment-reply{margin-left:14px}.wall-head-title h1{font-size:27px}}
 @media(prefers-reduced-motion:reduce){.wall-page *{animation:none!important;transition:none!important}}
+
+.wall-mod[hidden],.wall-more[hidden]{display:none!important}
+.wall-event-open{color:var(--accent)!important;font-weight:730;margin-top:5px;font-size:11px!important}
