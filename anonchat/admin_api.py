@@ -131,6 +131,15 @@ class MiniAppAdmin:
             "admin_permissions": sorted(permissions),
         })
 
+    async def user_stars_at(self, request):
+        await self.access(request, "users")
+        uid = _number(request.match_info["user_id"], low=1, high=9999999999999)
+        timestamp = _number(request.query.get("timestamp", ""), low=1, high=4102444800)
+        if timestamp > now():
+            raise _json_error(400, "Нельзя выбрать будущее время")
+        result = await self.s.db.xp_balance_at(uid, timestamp)
+        return web.json_response({"user_id": uid, "timestamp": timestamp, **result})
+
     async def transactions(self, request):
         uid, perms, _ = await self.access(request)
         q = request.query
@@ -401,9 +410,19 @@ class MiniAppAdmin:
         pairs=sorted({(min(uid, pair.partner_of(uid)),max(uid,pair.partner_of(uid)))
                      for uid,pair in self.s.mm._pairs.items()})
         selected=pairs[page*15:(page+1)*15]
+        ids=sorted({uid for pair in selected for uid in pair})
+        balances={}
+        if ids:
+            placeholders=",".join("?" for _ in ids)
+            users=await self.s.db._fetchall(
+                f"SELECT user_id,xp FROM users WHERE user_id IN ({placeholders})", ids
+            )
+            balances={int(row["user_id"]):int(row["xp"]) for row in users}
         return web.json_response({"total":len(pairs),"page":page,
               "pages":max(1,(len(pairs)+14)//15),
-              "items":[{"user_a":a,"user_b":b} for a,b in selected]})
+              "items":[{"user_a":a,"user_b":b,
+                        "stars_a":balances.get(a),"stars_b":balances.get(b)}
+                       for a,b in selected]})
 
     async def queue(self, request):
         await self.access(request,"queue")
@@ -722,7 +741,8 @@ def install_admin_routes(app: web.Application, server) -> MiniAppAdmin:
     prefix="/api/miniapp/admin"
     for path,handler in (
         ("/bootstrap",a.dashboard), ("/users",a.users),
-        ("/users/{user_id}",a.user), ("/transactions",a.transactions),
+        ("/users/{user_id}",a.user), ("/users/{user_id}/stars-at",a.user_stars_at),
+        ("/transactions",a.transactions),
         ("/sources",a.sources),("/rankings",a.rankings),
         ("/reports",a.reports), ("/restrictions",a.restrictions),
         ("/chats",a.chats),("/queue",a.queue),("/games",a.games),
