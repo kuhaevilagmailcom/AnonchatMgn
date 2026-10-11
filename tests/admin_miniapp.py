@@ -48,7 +48,7 @@ def test_admin_miniapp_endpoints() -> None:
             home=await client.get("/")
             assert home.status==200
             home_html=await home.text()
-            assert "admin.js?v=9" in home_html and "admin.css?v=9" in home_html
+            assert "admin.js?v=10" in home_html and "admin.css?v=10" in home_html
             assert 'data-game="numbers"' not in home_html
             assert "500 ⭐ в день" in home_html
             admin_bundle=await client.get("/admin.js")
@@ -126,7 +126,11 @@ def test_admin_miniapp_endpoints() -> None:
             assert any(t["source"]=="message" for t in items)
             rankings=await client.get("/api/miniapp/admin/rankings?period=week",
                                       headers=headers(1001))
-            assert rankings.status==200 and (await rankings.json())["items"]
+            assert rankings.status==200
+            ranking_data=await rankings.json()
+            assert ranking_data["items"]
+            assert ranking_data["giveaway"]["cutoff"]==1791730800
+            assert ranking_data["giveaway"]["status"] in ("confirmed","unavailable","pending")
             report_id,_=await db.add_report(1003,1002,"spam","Пример")
             moderation={"action":"report_mute","report_id":report_id,"user_id":1002,
                         "minutes":60,"reason":"подтверждённое нарушение",
