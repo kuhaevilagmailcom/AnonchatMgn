@@ -55,18 +55,30 @@
     if(!res.ok)throw Error('Медиа недоступно');
     return URL.createObjectURL(await res.blob());
   }
-  async function hydrateMedia(container=document){
-    for(const img of $('[data-wall-thumb]',container)){
-      if(img.dataset.loaded||img.dataset.loading)continue;
-      img.dataset.loading='1';
-      const path=img.dataset.wallThumb;
-      try{
-        let src=mediaCache.get(path);
-        if(!src){src=await authorizedBlob(path);mediaCache.set(path,src)}
-        if(img.isConnected){img.src=src;img.dataset.loaded='1'}
-      }catch(_){img.alt='Ошибка загрузки'}finally{delete img.dataset.loading}
+  const mediaObserver=typeof IntersectionObserver==='function'?new IntersectionObserver(entries=>{
+    for(const entry of entries){if(entry.isIntersecting){mediaObserver.unobserve(entry.target);loadImage(entry.target);}}
+  },{rootMargin:'220px'}):null;
+function loadImage(img){
+  if(!img||!img.isConnected||img.dataset.loaded||img.dataset.loading)return;
+  img.dataset.loading='1';
+  const path=img.dataset.wallThumb;
+  (async()=>{
+    try{
+      let src=mediaCache.get(path);
+      if(!src){src=await authorizedBlob(path);mediaCache.set(path,src);}
+      if(img.isConnected){img.src=src;img.dataset.loaded='1';}
+    }catch(_){img.alt='Ошибка загрузки'}
+    finally{delete img.dataset.loading}
+  })();
+}
+function hydrateMedia(container=document){
+  for(const img of $$('[data-wall-thumb]',container)){
+    if(!img.dataset.loaded){
+      if(mediaObserver)mediaObserver.observe(img);
+      else loadImage(img);
     }
   }
+}
   function mediaHtml(items=[]){
     if(!items.length)return '';
     const photos=items.every(m=>m.kind==='image');
