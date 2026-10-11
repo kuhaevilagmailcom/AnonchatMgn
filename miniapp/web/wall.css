@@ -23,11 +23,9 @@
 .wall-post-body{padding:13px 1px 12px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.55;color:var(--wall-fg)}
 .wall-post-actions{display:flex;align-items:center;gap:14px;min-height:31px}
 .wall-post-actions button{display:flex;align-items:center;gap:5px;padding:3px 0;color:#a39aa3;background:none;font-size:12px}
-.wall-post-actions button:active{transform:scale(.94)}
 .wall-post-actions svg{height:21px;width:21px;flex-shrink:0}
 .wall-post-actions .liked{color:#f087bc}
 .wall-post-actions .liked svg{fill:rgba(240,135,188,.18)}
-.wall-post-actions .wall-post-open{margin-left:auto;padding:7px 11px;border-radius:10px;color:#eab1d1;font-weight:680;background:#261b24}
 .wall-more{width:100%;margin:14px auto 4px;background:#231b21;color:#fff;border-radius:12px;min-height:44px;font-weight:650}
 .wall-empty{display:grid;justify-items:center;text-align:center;gap:8px;padding:48px 14px;color:var(--wall-muted);font-size:13px}
 .wall-empty svg{width:32px;height:32px;color:#ab7899;margin-bottom:7px}
@@ -91,7 +89,6 @@ body.wall-sheet-open{overflow:hidden}
 .wall-report p{font-size:13px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;color:#bdb3bc;margin:0}
 .wall-report button{min-height:42px;border-radius:10px;background:#252026;color:#fff;font-size:13px}
 .wall-report button:first-of-type{background:#8c355f}
-@media(max-width:360px){.wall-post-actions{gap:11px}.wall-post-open{font-size:11px}.wall-comment.wall-comment-reply{margin-left:14px}.wall-head-title h1{font-size:27px}}
 @media(prefers-reduced-motion:reduce){.wall-page *{animation:none!important;transition:none!important}}
 
 .wall-mod[hidden],.wall-more[hidden]{display:none!important}
@@ -109,10 +106,7 @@ body.wall-sheet-open{overflow:hidden}
 .wall-post-meta small{font-size:11px;line-height:14px}
 .wall-post-head .wall-icon-btn,.wall-sheet-header .wall-icon-btn{height:40px;width:40px;display:grid;place-items:center;padding:0}
 .wall-post-actions{display:flex;align-items:center;gap:12px;min-height:40px}
-.wall-post-actions button:not(.wall-post-open){display:inline-flex;align-items:center;justify-content:center;min-width:40px;min-height:40px;gap:5px;padding:0;line-height:20px}
-.wall-post-actions button:not(.wall-post-open) .wall-icon{width:21px;height:21px}
 .wall-post-actions button span{font-size:12px;line-height:20px;font-variant-numeric:tabular-nums}
-.wall-post-actions .wall-post-open{height:36px;align-items:center}
 .wall-post-body{padding:12px 0;line-height:1.5}
 .wall-sheet{height:100dvh;max-height:100dvh;justify-content:flex-start;overflow-y:auto;overscroll-behavior:contain}
 .wall-sheet-header{height:calc(57px + env(safe-area-inset-top));min-height:calc(57px + env(safe-area-inset-top));grid-template-columns:40px 1fr 40px;padding-left:14px;padding-right:14px}
@@ -163,3 +157,181 @@ body.wall-sheet-open{overflow:hidden}
 .wall-viewer-loading{font-size:12px;color:#999}
 @media(max-width:360px){.wall-post-actions{gap:8px}.wall-comment.wall-comment-reply{margin-left:12px}.wall-detail-scroll{padding:0 14px}.wall-post-media{border-radius:9px}}
 @media (prefers-reduced-motion:reduce){.wall-post-actions button:active{transform:none}}
+
+
+/* Wall v3 — restrained Reddit/Threads rhythm, single optical icon system.
+   The icon itself remains in a fixed slot; only its stroke animates. */
+.wall-page{
+  --wall-border:rgba(255,255,255,.095);
+  --wall-fg:#f4f2f4;
+  --wall-muted:#89838b;
+  color:var(--wall-fg);
+}
+.wall-post{
+  padding:15px 0 13px;
+  border-bottom:1px solid var(--wall-border);
+  contain:layout style;
+  min-width:0;
+}
+.wall-post-head{
+  grid-template-columns:38px minmax(0,1fr) 40px;
+  column-gap:11px;
+}
+.wall-avatar{
+  width:38px;height:38px;flex-basis:38px;
+  background:#272027;border:1px solid #42303d;
+  color:#eeb1d2;
+  font-weight:650;
+}
+.wall-post-meta strong{font-weight:680;letter-spacing:-.12px}
+.wall-post-meta small{color:var(--wall-muted);letter-spacing:.02em}
+.wall-post-body{padding:12px 1px 10px;line-height:1.48}
+.wall-icon-btn{transition:background 160ms ease,color 160ms ease}
+.wall-post-actions{
+  display:flex;
+  justify-content:flex-start;
+  align-items:center;
+  gap:10px;
+  min-height:43px;
+  padding:4px 0 0;
+}
+.wall-post-actions button.wall-action{
+  -webkit-tap-highlight-color:transparent;
+  touch-action:manipulation;
+  flex:0 0 auto;
+  box-sizing:border-box;
+  display:inline-flex;
+  gap:6px;
+  align-items:center;
+  justify-content:center;
+  height:38px;
+  min-height:38px;
+  min-width:42px;
+  padding:0 9px;
+  border:0;
+  border-radius:12px;
+  background:transparent;
+  color:#a6a0a8;
+  font-size:12px;
+  font-weight:550;
+  line-height:1;
+  transition:background-color 140ms ease,color 140ms ease;
+  cursor:pointer;
+}
+.wall-post-actions button.wall-action:hover{background:#ffffff0d;color:#f2edf1}
+.wall-post-actions button.wall-action:active{background:#ffffff17}
+.wall-post-actions button.wall-action:focus-visible,
+.wall-icon-btn:focus-visible,
+.wall-send:focus-visible{
+  outline:2px solid #ef83bb;
+  outline-offset:2px;
+}
+.wall-post-actions button.wall-action .wall-icon{
+  width:21px;
+  height:21px;
+  min-width:21px;
+  flex:0 0 21px;
+  display:block;
+  stroke-width:1.85;
+  stroke-linecap:round;
+  stroke-linejoin:round;
+  overflow:visible;
+}
+.wall-post-actions button.wall-action .wall-action-count{
+  min-width:0;
+  margin:0;
+  padding:0;
+  font-size:12px;
+  font-weight:550;
+  line-height:20px;
+  font-variant-numeric:tabular-nums;
+  color:inherit;
+}
+.wall-post-actions .wall-action-like.liked{color:#f67eb7}
+.wall-post-actions .wall-action-like.liked .wall-icon{
+  fill:currentColor;
+  stroke:currentColor;
+}
+.wall-post-actions button.wall-action-share{margin-left:0}
+.wall-post-actions button.wall-action-share .wall-icon{width:22px;height:22px}
+.wall-post-actions button.wall-action-comment .wall-icon{width:21px;height:21px}
+/* State changes are internal to the 21px box: no shifting siblings. */
+.wall-liked-pop .wall-icon--heart{animation:wall-heart-pop 340ms cubic-bezier(.2,.75,.2,1) both}
+.wall-liked-pop{position:relative;isolation:isolate}
+.wall-liked-pop::before{
+  content:"";
+  position:absolute;
+  left:50%;top:50%;
+  width:29px;height:29px;
+  transform:translate(-50%,-50%) scale(.45);
+  border:1px solid rgba(246,126,183,.65);
+  border-radius:50%;
+  pointer-events:none;
+  animation:wall-like-halo 340ms ease-out both;
+  z-index:-1;
+}
+@keyframes wall-heart-pop{
+  0%{transform:scale(.77)}
+  48%{transform:scale(1.16)}
+  75%{transform:scale(.96)}
+  100%{transform:scale(1)}
+}
+@keyframes wall-like-halo{
+  0%{opacity:.85;transform:translate(-50%,-50%) scale(.5)}
+  100%{opacity:0;transform:translate(-50%,-50%) scale(1.45)}
+}
+/* A light and short transition when a discussion or editor opens. */
+.wall-overlay{background:#090909}
+.wall-sheet{background:#090909;max-width:440px}
+.wall-sheet-enter{animation:wall-dialog-in 210ms cubic-bezier(.25,.8,.25,1) both}
+@keyframes wall-dialog-in{
+  from{opacity:.55;transform:translateY(9px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.wall-sheet-header{
+  border-bottom:1px solid var(--wall-border,#282328);
+  background:#090909;
+}
+.wall-sheet-header strong{font-size:15px;font-weight:720;letter-spacing:-.18px}
+.wall-detail-scroll .wall-post{contain:none}
+.wall-comments-title{border-bottom-color:var(--wall-border,#282328)}
+.wall-comment{border-bottom-color:var(--wall-border,#282328)}
+.wall-comment .wall-avatar{background:#282128;border-color:#42303d}
+.wall-comment-form{border-top-color:var(--wall-border,#282328)}
+.wall-comment-row{border-radius:13px;background:#1b191d;border-color:#342e34}
+.wall-comment-row textarea{line-height:1.4;min-height:23px}
+.wall-send{
+  display:grid;place-items:center;
+  background:var(--accent,#f071b4);
+  border-radius:11px;
+  transition:background 150ms ease;
+}
+.wall-send .wall-icon{display:block;width:19px;height:19px}
+.wall-send:active{background:#d760a5}
+.wall-sheet-header .wall-icon-btn .wall-icon,
+.wall-icon-btn .wall-icon{display:block;width:20px;height:20px}
+.wall-post-media .wall-photo-tile img{
+  transition:filter 180ms ease,transform 180ms ease;
+}
+.wall-photo-tile:active img{transform:scale(1.015)}
+.wall-new{border-radius:11px}
+.wall-new .ui-icon-svg{display:block}
+.wall-tabs{border-bottom-color:var(--wall-border)}
+.wall-tabs button{transition:color 140ms ease,background 140ms ease}
+.wall-tabs button:active{background:#ffffff08}
+.wall-menu .wall-icon{display:block;width:19px;height:19px}
+.wall-menu button{min-height:48px;border-radius:11px}
+.wall-menu button:active{background:#2b232a}
+@media(max-width:360px){
+  .wall-post-actions{gap:7px}
+  .wall-post-actions button.wall-action{min-width:40px;padding:0 8px}
+}
+@media(prefers-reduced-motion:reduce){
+  .wall-liked-pop .wall-icon--heart,
+  .wall-liked-pop::before,
+  .wall-sheet-enter{animation:none!important}
+  .wall-post-actions button.wall-action,
+  .wall-send,.wall-icon-btn,
+  .wall-post-media .wall-photo-tile img,
+  .wall-tabs button{transition:none!important}
+}
