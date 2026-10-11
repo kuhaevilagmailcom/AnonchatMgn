@@ -105,6 +105,7 @@ class Wall:
         self.db = server.db
         self.media = WallMedia(self)
         self._create_lock = asyncio.Lock()
+        self.public_enabled = os.getenv("WALL_PUBLIC_ENABLED","false").strip().lower() in {"1","true","yes","on"}
         self._comment_lock = asyncio.Lock()
 
     @staticmethod
@@ -143,14 +144,14 @@ class Wall:
 
     async def access(self, request):
         uid, _, _ = await self.server._auth(request)
-        allowed = await self._staff(uid)
-        return web.json_response({"allowed": bool(allowed), "public": False})
+        allowed = await self._staff(uid) or self.public_enabled
+        return web.json_response({"allowed": bool(allowed), "public": self.public_enabled})
 
     async def _user(self, request, *, write=False):
         uid, _tg, row = await self.server._auth(request)
         # Feature is in closed beta: never expose content based only on a
         # client-side hidden navigation button or user-supplied uid.
-        if not await self._staff(uid):
+        if not self.public_enabled and not await self._staff(uid):
             _error(403, "Стена пока доступна только администраторам")
         if write and (bool(row["banned"]) or int(row["mute_until"] or 0) > int(time.time())):
             _error(403, "Публикации временно недоступны")
@@ -306,11 +307,25 @@ class Wall:
             "is_admin": await self._admin(uid),
         })
 
-    async def comment(self, request):
+    async def comment(self,request):
+        async with self._comment_lock:
+            return await self._comment_locked(request)
+
+    async def _comment_locked(self, request):
         uid = await self._user(request, write=True)
         post_id = _id(request.match_info["post_id"])
         data = await request.json()
         body = _body(data.get("body"), 500)
+        key=str(data.get("client_key") or "").strip()
+        if key:
+            if not re.fullmatch(r"[a-zA-Z0-9_-]{12,80}",key):
+                _error(400,"Некорректный ключ комментария")
+            existing = await self.db._fetchone(
+                "SELECT comment_id FROM wall_comment_keys WHERE owner_id=? AND client_key=?",
+                (uid,key)
+            )
+            if existing:
+                return web.json_response({"ok":True,"id":int(existing["comment_id"]),"existing":True})
         post = await self._post(post_id, uid)
         if not post:
             _error(404, "Пост не найден")
@@ -336,6 +351,11 @@ class Wall:
             (post_id, parent_id, uid, body, now, now),
         )
         # Replies notify their comment's author; top-level messages notify post's author.
+        if key:
+            await self.db.db.execute(
+                "INSERT INTO wall_comment_keys(owner_id,client_key,comment_id) VALUES(?,?,?)",
+                (uid,key,int(cur.lastrowid))
+            )
         recipient = int(parent["author_id"]) if parent else int(post["author_id"])
         if recipient != uid:
             title = "Вам ответили на комментарий" if parent else "Новый комментарий к вашему посту"
