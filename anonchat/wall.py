@@ -511,6 +511,8 @@ class Wall:
 def install_wall_routes(app, server):
     wall = Wall(server)
     server.wall = wall
+    from .wall_admin import install_wall_admin_routes
+    install_wall_admin_routes(app,wall)
     prefix = "/api/miniapp/wall"
     app.router.add_get(prefix + "/access", wall.access)
     app.router.add_post(prefix + "/upload", wall.media.upload)
