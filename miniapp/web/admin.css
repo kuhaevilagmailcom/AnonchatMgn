@@ -88,6 +88,26 @@ body.admin-open{overflow:hidden}
  border-radius:15px;margin:0 0 15px}
 .admin-user-hero h2{font-size:24px;line-height:1.15;margin:7px 0}
 .admin-user-hero strong{font-size:24px;color:#ed88be}
+.admin-balance-history{
+  margin:14px 0;padding:16px 15px;background:#19161d;
+  border:1px solid #3b303d;border-radius:14px
+}
+.admin-balance-history h3{margin:0 0 12px;font-size:15px;font-weight:800}
+.admin-balance-history-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
+.admin-balance-history-form label{display:grid;gap:6px;font-size:11px;color:#b6adb9;font-weight:650;min-width:0}
+.admin-balance-history-form input{
+  min-width:0;width:100%;max-width:100%;min-height:44px;
+  border-radius:10px;border:1px solid #403743;background:#17151a;
+  color:#f9f8fa;color-scheme:dark;padding:9px;font-size:13px
+}
+.admin-balance-history-form button{min-height:44px}
+.admin-balance-result{margin-top:10px;font-size:20px;font-weight:850;color:#ed88be;overflow-wrap:anywhere}
+.admin-balance-result:empty{display:none}
+@media(max-width:440px){
+  .admin-balance-history-form{grid-template-columns:1fr}
+  .admin-balance-history-form button{width:100%}
+}
+
 .admin-details{display:grid;grid-template-columns:1fr;gap:0;background:#18161b;
  border:1px solid #353039;border-radius:14px;padding:4px 13px;overflow:hidden}
 .admin-details>div{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;
