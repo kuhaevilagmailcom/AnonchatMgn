@@ -335,3 +335,13 @@ body.wall-sheet-open{overflow:hidden}
   .wall-post-media .wall-photo-tile img,
   .wall-tabs button{transition:none!important}
 }
+
+/* Quiet tap feedback on the two secondary post actions. */
+.wall-action-comment:active .wall-icon--comment{animation:wall-comment-tap 180ms ease-out}
+.wall-action-share:active .wall-icon--share{animation:wall-share-tap 180ms ease-out}
+@keyframes wall-comment-tap{50%{transform:scale(.9)}100%{transform:scale(1)}}
+@keyframes wall-share-tap{50%{transform:translate(2px,-1px)}100%{transform:translate(0,0)}}
+@media(prefers-reduced-motion:reduce){
+  .wall-action-comment:active .wall-icon--comment,
+  .wall-action-share:active .wall-icon--share{animation:none!important}
+}
