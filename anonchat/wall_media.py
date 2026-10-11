@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 
 from aiohttp import web
-from PIL import Image, ImageFile, UnidentifiedImageError
+from PIL import Image, ImageFile, ImageOps, UnidentifiedImageError
 
 Image.MAX_IMAGE_PIXELS = 30_000_000
 ImageFile.LOAD_TRUNCATED_IMAGES = False
@@ -127,8 +127,14 @@ class WallMedia:
                LEFT JOIN wall_posts p ON p.id=m.post_id WHERE m.id=?""",
             (media_id,),
         )
-        if not row or row["post_id"] is None or int(row["post_hidden"] or 0) != 0:
+        if not row or row["post_id"] is None:
             raise web.HTTPNotFound()
+        if int(row["post_hidden"] or 0) != 0:
+            moderator = await self.wall._admin(
+                self.wall.server._telegram_user(request)[0]
+            )
+            if not moderator:
+                raise web.HTTPNotFound()
         poster = request.query.get("poster") == "1"
         key = row["poster_key"] if poster else row["key"]
         if not key or "/" in key or "\\" in key:
@@ -183,6 +189,22 @@ class WallMedia:
                 raise MediaValidationError("Нужно MP4 до 60 секунд с поддерживаемым кодеком")
         except (ValueError, KeyError, TypeError) as exc:
             raise MediaValidationError("Не удалось определить длительность видео") from exc
+
+    def _photo_thumb(self, src, key):
+        thumb_key=key+".poster.jpg"
+        dest=self.base/thumb_key
+        with Image.open(src) as photo:
+            photo=ImageOps.exif_transpose(photo)
+            photo.thumbnail((1200,1200))
+            if photo.mode != "RGB":
+                white=Image.new("RGB",photo.size,"#ffffff")
+                if photo.mode in ("RGBA","LA"):
+                    white.paste(photo,mask=photo.getchannel("A"))
+                else:
+                    white.paste(photo.convert("RGB"))
+                photo=white
+            photo.save(dest,format="JPEG",quality=82,optimize=True)
+        return thumb_key
 
     async def _poster(self, src, key):
         ffmpeg = shutil.which("ffmpeg")
@@ -245,6 +267,7 @@ class WallMedia:
                 target.rename(self.base/newkey)
                 key = newkey
                 target = self.base/newkey
+                poster = await asyncio.to_thread(self._photo_thumb,target,key)
             else:
                 with target.open("rb") as f:
                     head=f.read(32)
