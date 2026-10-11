@@ -249,7 +249,8 @@ class MiniAppAdmin:
         if period not in periods:
             raise _json_error(400, "Неподдерживаемый период")
         rows=await self.s.db.top_period(periods[period], 10)
-        return web.json_response({"period":period,"items":[
+        giveaway = await self.s.db.giveaway_results_2026_10_11()
+        return web.json_response({"period":period,"giveaway":giveaway,"items":[
             {"place":i,"user_id":int(row["user_id"]),"nickname":row["nickname"] or "",
              "xp":int(row["xp"] or 0),"messages":int(row["messages"] or 0),
              "dialogs":int(row["dialogs"] or 0)}
