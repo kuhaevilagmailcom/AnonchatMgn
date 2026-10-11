@@ -6,22 +6,24 @@
   const $$ = (s, p = document) => [...p.querySelectorAll(s)];
   const tg = window.Telegram?.WebApp;
   const base = (window.ANON_MGN_API_BASE || $('meta[name="api-base"]')?.content || '').replace(/\/$/, '');
+  // Consistent Lucide-family outline glyphs. Every icon uses the same 24px canvas.
+  // Do not add arbitrary paths/emoji to the action row.
   const paths = {
-    image:'<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m4 17 5-5 4 4 3-3 4 4"/>',
-    play:'<path d="m8 5 11 7-11 7V5Z"/>',
+    image:'<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>',
+    play:'<path d="m8 5 12 7-12 7V5Z"/>',
     plus:'<path d="M12 5v14M5 12h14"/>',
     back:'<path d="m15 18-6-6 6-6"/>',
-    heart:'<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l7.8-7.5a5.5 5.5 0 0 0 1-8.9Z"/>',
-    comment:'<path d="M20 11.5A7.5 7.5 0 0 1 12.5 19H8l-4 2v-5a7.5 7.5 0 1 1 16-4.5Z"/><path d="M8 11.5h8"/>',
-    share:'<path d="M12 16V3m0 0L7 8m5-5 5 5"/><path d="M5 13v6.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V13"/>',
-    menu:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
-    send:'<path d="m21 3-8 18-3.2-7.8L2 10 21 3Z"/><path d="m21 3-11.2 10.2"/>',
+    heart:'<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/>',
+    comment:'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
+    share:'<path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0-5 5v2"/>',
+    menu:'<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+    send:'<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
     x:'<path d="M18 6 6 18M6 6l12 12"/>',
     shield:'<path d="m12 22 7-4V6l-7-4-7 4v12l7 4Z"/><path d="M9 12h6"/>',
-    edit:'<path d="m14 4 6 6M3 21l4.3-1 12-12a3 3 0 0 0-4.2-4.2l-12 12L3 21Z"/>',
-    trash:'<path d="M4 7h16M10 4h4M6 7l1 14h10l1-14M10 11v6m4-6v6"/>'
+    edit:'<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.37 2.63a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/>',
+    trash:'<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5m4-5v5"/>'
   };
-  const icon = key => `<svg class="wall-icon" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[key] || paths.comment}</svg>`;
+  const icon = key => `<svg class="wall-icon wall-icon--${key}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths[key] || paths.comment}</svg>`;
   const esc = v => String(v ?? '').replace(/[&<>"']/g, a=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[a]));
   const time = ts => {
     const diff = Math.max(0, Date.now()/1000-Number(ts||0));
@@ -164,10 +166,9 @@ function hydrateMedia(container=document){
       ${p.body?'<div class="wall-post-body">'+esc(p.body)+'</div>':''}
       ${mediaHtml(p.media||[])}
       <footer class="wall-post-actions">
-        <button class="${p.liked?'liked':''}" data-wall-action="like" data-id="${p.id}" aria-label="Нравится">${icon('heart')}<span>${p.likes||''}</span></button>
-        <button data-wall-action="open" data-id="${p.id}" aria-label="Комментарии">${icon('comment')}<span>${p.comments||''}</span></button>
-        <button data-wall-action="share" data-id="${p.id}" aria-label="Поделиться">${icon('share')}</button>
-        ${detail?'':'<button class="wall-post-open" data-wall-action="open" data-id="'+p.id+'">Обсудить</button>'}
+        <button type="button" class="wall-action wall-action-like ${p.liked?'liked':''}" data-wall-action="like" data-id="${p.id}" aria-label="Нравится" aria-pressed="${Boolean(p.liked)}">${icon('heart')}<span class="wall-action-count">${p.likes||''}</span></button>
+        <button type="button" class="wall-action wall-action-comment" data-wall-action="open" data-id="${p.id}" aria-label="Комментарии: ${p.comments||0}">${icon('comment')}<span class="wall-action-count">${p.comments||''}</span></button>
+        <button type="button" class="wall-action wall-action-share" data-wall-action="share" data-id="${p.id}" aria-label="Поделиться">${icon('share')}</button>
       </footer></article>`;
   }
   async function feed(more=false){
@@ -187,7 +188,8 @@ function hydrateMedia(container=document){
     finally{state.busy=false;}
   }
   function sheet(title,html){
-    overlay.hidden=false;overlay.innerHTML=`<div class="wall-sheet" role="dialog" aria-label="${esc(title)}">${html}</div>`;
+    const opening=overlay.hidden;
+    overlay.hidden=false;overlay.innerHTML=`<div class="wall-sheet ${opening?'wall-sheet-enter':''}" role="dialog" aria-modal="true" aria-label="${esc(title)}">${html}</div>`;
     document.body.classList.add('wall-sheet-open');overlay.scrollTop=0;
   }
   function header(title){
@@ -274,6 +276,7 @@ function hydrateMedia(container=document){
         send.disabled=true;
         try{
           await api('/api/miniapp/wall/'+id+'/comments','POST',{body:input.value.trim(),parent_id:state.reply?.id||null,client_key:commentKey});
+          try{tg?.HapticFeedback?.notificationOccurred('success')}catch(_){}
           await openPost(id);feed();
         }catch(err){flash(err.message);send.disabled=false}
       };
@@ -282,11 +285,20 @@ function hydrateMedia(container=document){
   function reply(id,nick){
     state.reply={id,nick};const target=$('#wallReplyTo');if(!target)return;
     target.hidden=false;target.innerHTML=`<span>Ответ для <b>${esc(nick)}</b></span><button data-wall-action="cancel-reply" aria-label="Отменить">${icon('x')}</button>`;
+    try{tg?.HapticFeedback?.selectionChanged()}catch(_){}
     $('#wallCommentText')?.focus();
   }
   async function share(id){
     const url=link(id);
-    if(navigator.share){try{await navigator.share({title:'Стена АНОН МГН',url});return}catch(_){}}
+    try{tg?.HapticFeedback?.impactOccurred('soft')}catch(_){}
+    if(typeof navigator.share==='function'){
+      try{await navigator.share({title:'Стена АНОН МГН',url});return}
+      catch(err){if(err?.name==='AbortError')return}
+    }
+    if(typeof tg?.openTelegramLink==='function'){
+      tg.openTelegramLink('https://t.me/share/url?url='+encodeURIComponent(url));
+      return;
+    }
     try{await navigator.clipboard.writeText(url);flash('Ссылка скопирована')}
     catch(_){if(tg?.showAlert)tg.showAlert(url);else flash(url);}
   }
@@ -312,7 +324,10 @@ function hydrateMedia(container=document){
   }
   async function handle(el){
     const action=el.dataset.wallAction,id=Number(el.dataset.id);
-    if(action==='open')return openPost(id);
+    if(action==='open'){
+      try{tg?.HapticFeedback?.selectionChanged()}catch(_){}
+      return openPost(id);
+    }
     if(action==='photo'||action==='video')return viewMedia(Number(el.dataset.mediaId),action);
     if(action==='remove-media'&&draft){
       const mid=Number(el.dataset.mediaId),m=draft.items.find(x=>x.id===mid);
@@ -332,9 +347,21 @@ function hydrateMedia(container=document){
         const r=await api('/api/miniapp/wall/'+id+'/like','POST',{});
         const p=state.posts.find(p=>p.id===id);if(p){p.liked=r.liked;p.likes=r.likes;}
         if(state.current?.id===id){state.current.liked=r.liked;state.current.likes=r.likes;}
-        $$('[data-wall-action="like"][data-id="'+id+'"]').forEach(btn=>{
-          btn.classList.toggle('liked',r.liked);$('span',btn).textContent=r.likes||'';
+        $('[data-wall-action="like"][data-id="'+id+'"]').forEach(btn=>{
+          const wasLiked=btn.classList.contains('liked');
+          btn.classList.toggle('liked',r.liked);
+          btn.setAttribute('aria-pressed',String(Boolean(r.liked)));
+          const count=btn.querySelector('.wall-action-count');
+          if(count)count.textContent=r.likes||'';
+          // Animate only successful new likes; do not move neighboring actions.
+          if(r.liked&&!wasLiked){
+            btn.classList.remove('wall-liked-pop');
+            void btn.offsetWidth;
+            btn.classList.add('wall-liked-pop');
+            btn.addEventListener('animationend',()=>btn.classList.remove('wall-liked-pop'),{once:true});
+          }
         });
+        try{tg?.HapticFeedback?.impactOccurred(r.liked?'light':'soft')}catch(_){}
       }catch(err){flash(err.message)}finally{el.disabled=false;}
       return;
     }
