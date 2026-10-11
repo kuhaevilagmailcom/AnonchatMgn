@@ -2683,7 +2683,7 @@ class MiniAppServer:
             not self.web_dir.is_dir() or not (self.web_dir / "index.html").is_file()
         ):
             raise RuntimeError(f"MINIAPP_WEB_DIR не найден: {self.web_dir}")
-        app = web.Application(client_max_size=12 * 1024 * 1024, middlewares=[self.security_headers])
+        app = web.Application(client_max_size=53 * 1024 * 1024, middlewares=[self.security_headers])
         app.router.add_get("/api/miniapp/health", self.health)
         app.router.add_get("/api/miniapp/ws", self.websocket)
         app.router.add_get("/api/miniapp/me", self.me)
