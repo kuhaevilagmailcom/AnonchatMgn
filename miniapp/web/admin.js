@@ -199,9 +199,27 @@
       pageNav(state.ledgerPage,d.has_more,'ledgerPage')+
       '<div class="admin-actions">'+navButton('Экспорт CSV','exportLedger')+'</div>';
   }
+  function giveawaySummary(result){
+    if(!result)return '';
+    const stamp='<small>11 октября 2026 · 20:00 МГН · топ недели</small>';
+    if(result.status!=='confirmed'||!result.items?.length){
+      return '<section class="admin-giveaway"><h3>🎁 Итоги розыгрыша</h3>'+stamp+
+        '<p class="admin-muted">'+escape(result.reason||'Победители пока не определены')+'</p></section>';
+    }
+    const first=result.items[0];
+    return '<section class="admin-giveaway"><h3>🎁 Итоги розыгрыша NFT</h3>'+stamp+
+      '<p>В розыгрыше победил <strong>'+escape(first.nickname||'Аноним')+'</strong></p>'+
+      '<div class="admin-giveaway-winners">'+result.items.map(w=>
+        '<div class="admin-giveaway-winner"><span>'+escape(w.place)+' место</span>'+
+        navButton(w.nickname||'Аноним','openUser',w.user_id)+
+        '<strong>'+fmt(w.stars)+' ⭐</strong>'+
+        '<small>'+fmt(w.messages)+' сообщ.</small></div>').join('')+
+      '</div></section>';
+  }
   async function rankings(){
     const d=await api('/rankings',{}, {period:state.rankingPeriod});
     return wrapHeader('Telegram и Mini App · одна база')+
+      giveawaySummary(d.giveaway)+
       '<div class="admin-tabs">'+[['week','Неделя'],['month','Месяц'],['all','Всё время']].map(([id,label])=>navButton(label,'rankingPeriod',id,state.rankingPeriod===id?'selected':'')).join('')+'</div>'+
       '<div class="admin-list">'+(d.items?.length?d.items.map(i=>row('#'+i.place+' '+escape(i.nickname||'Аноним')+' · '+fmt(i.xp)+' ★',
       'ID '+i.user_id+' · '+fmt(i.messages)+' сообщений · '+fmt(i.dialogs)+' диалогов','openUser',i.user_id)).join(''):placeholder)+'</div>';
