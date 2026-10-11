@@ -8,6 +8,7 @@
   const escape = (v='') => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
   const fmt = n => Number(n||0).toLocaleString('ru-RU');
   const date = t => t ? new Date(Number(t)*1000).toLocaleString('ru-RU',{timeZone:'Asia/Yekaterinburg',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '—';
+  const localDateTimeInput = () => new Date(Date.now()+5*60*60*1000).toISOString().slice(0,16);
   const sourceNames = {opening_balance:'Начальный баланс',message:'Сообщения',dialog:'Диалог',rating:'Оценка',referral:'Реферал',battle:'Битва мнений',numbers:'Числа',word_game:'Объясни слово',geoguessr:'GeoGuessr',achievement:'Достижение',daily_quest:'Задание',subscription:'Подписка',report:'Жалоба',admin_award:'Выдал администратор',admin_debit:'Списал администратор',admin_legacy:'Старое начисление',other:'Другое',one_time_reward:'Разовая награда',referral_correction:'Корректировка реферала',game_bonus:'Бонус в диалоге'};
   const labels = {dashboard:'Обзор',users:'Пользователи',user:'Карточка',ledger:'Начисления',rankings:'Топы',reports:'Жалобы',ban:'Бан-лист',mute:'Мут-лист',chats:'Диалоги',games:'Игры',analytics:'Аналитика',admins:'Администраторы',broadcast:'Рассылка',diagnostics:'Диагностика',audit:'Аудит',queue:'Очередь',polls:'Опрос'};
   const sections = [
@@ -155,6 +156,12 @@
     return wrapHeader('Данные участника · только для администрации')+
       '<div class="admin-user-hero"><small>ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ</small><h2>'+escape(u.nickname||u.first_name||'Аноним')+'</h2><strong>'+fmt(u.xp)+' ★</strong></div>'+
       '<dl class="admin-details">'+parts.map(([k,v])=>'<div><dt>'+escape(k)+'</dt><dd>'+v+'</dd></div>').join('')+'</dl>'+
+      '<section class="admin-balance-history"><h3>⭐ Баланс на дату</h3>'+
+      '<form id="adminBalanceAtForm" class="admin-balance-history-form" data-user-id="'+u.user_id+'">'+
+      '<label>Выберите дату и время (МГН)<input type="datetime-local" name="when" required step="60"'+
+      ' max="'+localDateTimeInput()+'" value="'+localDateTimeInput()+'"></label>'+
+      '<button type="submit" class="admin-primary">Показать</button></form>'+
+      '<div class="admin-balance-result" data-balance-result role="status" aria-live="polite"></div></section>'+
       '<div class="admin-actions">'+buttons.join('')+'</div>'+
       '<div class="admin-subheading">История уведомлений</div><div class="admin-list">'+
       ((d.notices||[]).length?(d.notices||[]).map(n=>
@@ -224,8 +231,10 @@
   async function chats(){
     const d=await api('/chats',{}, {page:state.chatsPage});
     return wrapHeader('Активных пар: '+d.total)+'<div class="admin-note">Только служебные сведения об активных соединениях. Содержимое приватного общения здесь не публикуется.</div>'+
-      '<div class="admin-list">'+(d.items?.length?d.items.map(i=>'<div class="admin-pair"><span>💬 Пара</span>'+navButton('ID '+i.user_a,'openUser',i.user_a)+
-      '<b>↔</b>'+navButton('ID '+i.user_b,'openUser',i.user_b)+'</div>').join(''):placeholder)+'</div>'+
+      '<div class="admin-list">'+(d.items?.length?d.items.map(i=>'<div class="admin-pair"><span>💬 Пара</span>'+
+      navButton('ID '+i.user_a+' · '+(i.stars_a==null?'—':fmt(i.stars_a))+' ⭐','openUser',i.user_a)+
+      '<b>↔</b>'+navButton('ID '+i.user_b+' · '+(i.stars_b==null?'—':fmt(i.stars_b))+' ⭐','openUser',i.user_b)+
+      '</div>').join(''):placeholder)+'</div>'+
       pageNav(state.chatsPage,state.chatsPage+1<d.pages,'chatsPage');
   }
   async function queue(){
@@ -538,6 +547,26 @@
     const form=e.target,id=form.id,data=new FormData(form);
     try{
       if(id==='adminSearch'){state.query=String(data.get('q')||'').trim().slice(0,100);state.usersPage=0;render()}
+      else if(id==='adminBalanceAtForm'){
+        const chosen=String(data.get('when')||'');
+        if(!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(chosen))throw new Error('Выберите дату и время');
+        const parsed=Date.parse(chosen+':00+05:00');
+        if(!Number.isFinite(parsed)||parsed>Date.now())throw new Error('Укажите прошедшее время');
+        const ts=Math.min(Math.floor(parsed/1000)+59,Math.floor(Date.now()/1000));
+        const uid=Number(form.dataset.userId);
+        if(!uid||uid!==state.selectedId)throw new Error('Пользователь изменился');
+        const result=form.closest('.admin-balance-history').querySelector('[data-balance-result]');
+        const button=form.querySelector('button[type="submit"]');
+        button.disabled=true;
+        result.textContent='Проверяем…';
+        try{
+          const info=await api('/users/'+uid+'/stars-at',{}, {timestamp:ts});
+          if(uid!==state.selectedId||!form.isConnected)return;
+          if(info.status==='known')result.textContent=fmt(info.balance)+' ⭐';
+          else result.textContent='История за это время недоступна'+
+            (info.available_since?' · с '+date(info.available_since):'');
+        }finally{button.disabled=false}
+      }
       else if(id==='adminLedgerSearch'){state.ledgerUser=String(data.get('uid')||'').trim();state.ledgerPage=0;render()}
       else if(id==='adminAdjustForm'){
         const amount=Number(data.get('amount')),reason=String(data.get('reason')||'').trim(),a=state.adjust;
