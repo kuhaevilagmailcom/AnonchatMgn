@@ -195,6 +195,24 @@ body.admin-open{overflow:hidden}
  .admin-icon-button{height:33px;min-width:33px}
 }
 
+/* Private giveaway summary in administrator rankings. */
+.admin-giveaway{padding:16px;margin:0 0 19px;border-radius:14px;
+ background:#19161d;border:1px solid #493243}
+.admin-giveaway h3{margin:0 0 5px;font-size:16px;font-weight:850}
+.admin-giveaway>small{font-size:11px;color:#b4a6b2}
+.admin-giveaway>p{margin:12px 0;font-size:13px;overflow-wrap:anywhere}
+.admin-giveaway>p strong{color:#efa0cc}
+.admin-giveaway-winners{display:grid;gap:7px}
+.admin-giveaway-winner{display:grid;align-items:center;
+ grid-template-columns:57px minmax(0,1fr) auto;gap:4px 8px;
+ padding:10px 9px;background:#241e27;border:1px solid #382d3d;border-radius:10px}
+.admin-giveaway-winner>span{color:#b9a9b8;font-size:11px}
+.admin-giveaway-winner>button{padding:6px 3px;border:0;background:transparent;
+ color:#f5e3f0;text-align:left;font-weight:800;min-width:0;
+ overflow-wrap:anywhere}
+.admin-giveaway-winner>strong{white-space:nowrap;font-size:13px;color:#efa0cc;
+ font-variant-numeric:tabular-nums}
+.admin-giveaway-winner>small{grid-column:2/4;color:#a99ca9;font-size:10px}
 /* Compact 7 / 14 day and calendar-month activity chart for Telegram WebApp. */
 .admin-activity-card{
   margin:6px 0 23px;padding:19px 15px 16px;min-width:0;
