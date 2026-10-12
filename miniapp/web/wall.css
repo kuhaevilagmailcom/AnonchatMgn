@@ -511,3 +511,96 @@ body.wall-sheet-open{overflow:hidden}
 .wall-viewer-arrow.next svg{transform:rotate(180deg)}
 .wall-viewer-arrow svg{display:block;width:21px;height:21px}
 @media(max-width:360px){.wall-photo-viewer .wall-viewer-content{padding-left:3px;padding-right:3px}}
+
+
+/* Wall v5 — clean, instant likes. No pink blob and no counter collision. */
+.wall-post-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  gap:16px;
+  min-height:40px;
+  padding:6px 0 0;
+}
+.wall-post-actions button.wall-action{
+  display:inline-flex;
+  justify-content:center;
+  align-items:center;
+  gap:0;
+  flex:0 0 auto;
+  width:auto;
+  min-width:34px;
+  height:36px;
+  min-height:36px;
+  padding:0 3px;
+  margin:0;
+  border:none;
+  border-radius:8px;
+  background:transparent;
+  color:#a8a2aa;
+  box-shadow:none;
+  -webkit-tap-highlight-color:transparent;
+}
+.wall-post-actions button.wall-action:active,
+.wall-post-actions button.wall-action:hover{
+  background:transparent;
+}
+.wall-post-actions button.wall-action .wall-icon{
+  display:block;
+  flex:none;
+  width:22px;
+  height:22px;
+  min-width:22px;
+  fill:none;
+  stroke:currentColor;
+  stroke-width:1.8;
+  overflow:visible;
+  transform-origin:center;
+}
+.wall-post-actions button.wall-action-like.liked{
+  color:#f379b7;
+}
+.wall-post-actions button.wall-action-like.liked .wall-icon,
+.wall-post-actions button.wall-action-like.liked .wall-icon--heart{
+  fill:none!important;
+  stroke:#f379b7;
+  stroke-width:2;
+}
+.wall-post-actions button.wall-action .wall-action-count{
+  display:inline-block;
+  flex:0 0 auto;
+  min-width:8px;
+  margin:0 0 0 9px!important;
+  padding:0;
+  font-size:12px;
+  font-weight:600;
+  line-height:22px;
+  color:inherit;
+  font-variant-numeric:tabular-nums;
+}
+.wall-post-actions button.wall-action .wall-action-count[hidden]{
+  display:none!important;
+}
+.wall-post-actions button.wall-action-share .wall-icon{
+  width:22px;
+  height:22px;
+}
+.wall-liked-pop::before{display:none!important}
+.wall-liked-pop .wall-icon--heart{
+  animation:wall-subtle-heart 180ms cubic-bezier(.2,.6,.2,1) both;
+}
+@keyframes wall-subtle-heart{
+  0%{transform:scale(.91)}
+  65%{transform:scale(1.08)}
+  100%{transform:scale(1)}
+}
+@media(max-width:360px){
+  .wall-post-actions{gap:13px}
+  .wall-post-actions button.wall-action{
+    min-width:34px;
+    padding:0 2px;
+  }
+}
+@media(prefers-reduced-motion:reduce){
+  .wall-liked-pop .wall-icon--heart{animation:none!important}
+}
