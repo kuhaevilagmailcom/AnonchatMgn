@@ -102,14 +102,14 @@ context.fetch=async()=>({ok:true,json:async()=>({liked:true,likes:15})});
     assert.equal(btn.disabled,false);
     assert.ok(btn.classes.has('liked'));
     assert.equal(btn.attributes['aria-pressed'],'true');
-    assert.equal(btn.count.textContent,15);
+    assert.equal(btn.count.textContent,'15');
   }
   assert.equal(state.posts[0].likes,15);
   context.fetch=async()=>({ok:true,json:async()=>({liked:false,likes:14})});
   await handle(two);
   assert.ok(!one.classes.has('liked')&&!two.classes.has('liked'));
   assert.equal(two.attributes['aria-pressed'],'false');
-  assert.equal(one.count.textContent,14);
+  assert.equal(one.count.textContent,'14');
 
   assert.match(css,/\.wall-post-media\.photos\.wall-count-1 \.wall-photo-tile img\{/);
   assert.match(css,/object-fit:contain/);
