@@ -391,22 +391,43 @@ class Wall:
     async def like(self, request):
         uid = await self._user(request, write=True)
         post_id = _id(request.match_info["post_id"])
-        if not await self._post(post_id, uid):
-            _error(404, "Пост не найден")
-        found = await self.db._fetchone(
-            "SELECT 1 FROM wall_likes WHERE post_id=? AND user_id=?", (post_id, uid)
+        post = await self.db._fetchone(
+            "SELECT 1 FROM wall_posts WHERE id=? AND hidden=0", (post_id,)
         )
-        if found:
-            await self.db.db.execute(
-                "DELETE FROM wall_likes WHERE post_id=? AND user_id=?", (post_id, uid)
+        if not post:
+            _error(404, "Пост не найден")
+        data = await request.json()
+        desired = data.get("liked") if isinstance(data, dict) else None
+        if desired is not None and type(desired) is not bool:
+            _error(400, "Некорректное состояние лайка")
+        # Explicit desired state is idempotent, so rapid requests cannot
+        # accidentally toggle a like twice. Keep legacy empty-body toggle.
+        if desired is None:
+            found = await self.db._fetchone(
+                "SELECT 1 FROM wall_likes WHERE post_id=? AND user_id=?",
+                (post_id, uid),
             )
-        else:
+            desired = not bool(found)
+        if desired:
             await self.db.db.execute(
                 "INSERT OR IGNORE INTO wall_likes(post_id,user_id,created_at) VALUES(?,?,?)",
                 (post_id, uid, int(time.time())),
             )
-        row = await self._post(post_id, uid)
-        return web.json_response({"ok": True, "liked": bool(row["liked"]), "likes": int(row["likes"])})
+        else:
+            await self.db.db.execute(
+                "DELETE FROM wall_likes WHERE post_id=? AND user_id=?",
+                (post_id, uid),
+            )
+        result = await self.db._fetchone(
+            """SELECT COUNT(*) AS likes,
+                      COUNT(CASE WHEN user_id=? THEN 1 END) AS mine
+                 FROM wall_likes WHERE post_id=?""",
+            (uid, post_id),
+        )
+        return web.json_response({
+            "ok": True, "liked": bool(result["mine"]),
+            "likes": int(result["likes"]),
+        })
 
     async def edit(self, request):
         uid = await self._user(request, write=True)

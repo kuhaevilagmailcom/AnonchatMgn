@@ -78,6 +78,13 @@ async def check_wall():
         await wall.like(Req(102,{},pid))
         disliked = json.loads((await wall.detail(Req(102,post=pid))).text)["post"]
         assert disliked["likes"] == 0 and not disliked["liked"]
+        # Explicit like state must be idempotent across retries.
+        first = json.loads((await wall.like(Req(102,{"liked":True},pid))).text)
+        again = json.loads((await wall.like(Req(102,{"liked":True},pid))).text)
+        assert first["liked"] and again["liked"] and again["likes"] == 1
+        removed = json.loads((await wall.like(Req(102,{"liked":False},pid))).text)
+        repeated = json.loads((await wall.like(Req(102,{"liked":False},pid))).text)
+        assert not removed["liked"] and not repeated["liked"] and repeated["likes"] == 0
 
         top_comment = json.loads((await wall.comment(Req(
             102, {"body": "Привет, я отвечаю!", "client_key":"top_level_comment_demo_01"}, pid
