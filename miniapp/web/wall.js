@@ -240,6 +240,72 @@ function hydrateMedia(container=document){
     }
   }
 
+  // Instant UI, eventual server confirmation, rapid-tap coalescing.
+  const likeRequests=new Map();
+  const asCount=n=>Math.max(0,Number(n)||0);
+  const expectedCount=entry=>Math.max(0,entry.count+
+    (entry.desired===entry.confirmed?0:entry.desired?1:-1));
+  function paintLike(id,liked,count,animate=false){
+    count=asCount(count);
+    state.posts.forEach(p=>{if(p.id===id){p.liked=liked;p.likes=count;}});
+    if(state.current?.id===id){state.current.liked=liked;state.current.likes=count;}
+    const buttons=Array.from(document.querySelectorAll('[data-wall-action="like"][data-id="'+id+'"]'));
+    for(const btn of buttons){
+      const previous=btn.classList.contains('liked');
+      btn.classList.toggle('liked',liked);
+      btn.setAttribute('aria-pressed',String(liked));
+      btn.setAttribute('aria-label',liked?'Убрать лайк':'Поставить лайк');
+      const number=btn.querySelector('.wall-action-count');
+      if(number){number.textContent=count?String(count):'';number.hidden=count===0;}
+      if(animate&&liked&&!previous){
+        btn.classList.remove('wall-liked-pop');
+        void btn.offsetWidth;
+        btn.classList.add('wall-liked-pop');
+        btn.addEventListener('animationend',()=>btn.classList.remove('wall-liked-pop'),{once:true});
+      }
+    }
+  }
+  async function syncLike(id,entry){
+    if(entry.inflight)return;
+    entry.inflight=true;
+    try{
+      while(entry.desired!==entry.confirmed){
+        const answer=await api('/api/miniapp/wall/'+id+'/like','POST',{liked:entry.desired});
+        entry.confirmed=Boolean(answer.liked);
+        entry.count=asCount(answer.likes);
+        paintLike(id,entry.desired,expectedCount(entry));
+      }
+    }catch(err){
+      entry.desired=entry.confirmed;
+      paintLike(id,entry.confirmed,entry.count);
+      console.warn('Failed to save Wall like:',err);
+      flash('Не удалось сохранить лайк');
+    }finally{
+      entry.inflight=false;
+      if(likeRequests.get(id)===entry)likeRequests.delete(id);
+    }
+  }
+  function toggleLike(id){
+    let entry=likeRequests.get(id);
+    if(!entry){
+      const post=state.posts.find(p=>p.id===id)||
+        (state.current?.id===id?state.current:null);
+      if(!post)return;
+      entry={confirmed:Boolean(post.liked),desired:Boolean(post.liked),
+        count:asCount(post.likes),inflight:false};
+      likeRequests.set(id,entry);
+    }
+    entry.desired=!entry.desired;
+    paintLike(id,entry.desired,expectedCount(entry),true);
+    try{tg?.HapticFeedback?.impactOccurred('light')}catch(_){}
+    return syncLike(id,entry);
+  }
+  function applyPendingLike(post){
+    const pending=likeRequests.get(post.id);
+    if(pending){post.liked=pending.desired;post.likes=expectedCount(pending);}
+    return post;
+  }
+
   function postHtml(p,detail=false){
     return `<article class="wall-post" data-wall-post="${p.id}">
       <header class="wall-post-head">
@@ -250,7 +316,7 @@ function hydrateMedia(container=document){
       ${p.body?'<div class="wall-post-body">'+esc(p.body)+'</div>':''}
       ${mediaHtml(p.media||[])}
       <footer class="wall-post-actions">
-        <button type="button" class="wall-action wall-action-like ${p.liked?'liked':''}" data-wall-action="like" data-id="${p.id}" aria-label="Нравится" aria-pressed="${Boolean(p.liked)}">${icon('heart')}<span class="wall-action-count">${p.likes||''}</span></button>
+        <button type="button" class="wall-action wall-action-like ${p.liked?'liked':''}" data-wall-action="like" data-id="${p.id}" aria-label="${p.liked?'Убрать лайк':'Поставить лайк'}" aria-pressed="${Boolean(p.liked)}">${icon('heart')}<span class="wall-action-count" ${p.likes?"":'hidden'}>${p.likes||''}</span></button>
         <button type="button" class="wall-action wall-action-comment" data-wall-action="open" data-id="${p.id}" aria-label="Комментарии: ${p.comments||0}">${icon('comment')}<span class="wall-action-count">${p.comments||''}</span></button>
         <button type="button" class="wall-action wall-action-share" data-wall-action="share" data-id="${p.id}" aria-label="Поделиться">${icon('share')}</button>
       </footer></article>`;
@@ -262,7 +328,7 @@ function hydrateMedia(container=document){
     if(!more){state.offset=0;box.innerHTML='<div class="wall-loading">Загрузка обсуждений…</div>'}
     try{
       const data=await api('/api/miniapp/wall?sort='+state.mode+'&offset='+state.offset);
-      state.posts=more?state.posts.concat(data.items||[]):data.items||[];
+      state.posts=more?state.posts.concat((data.items||[]).map(applyPendingLike)):(data.items||[]).map(applyPendingLike);
       state.offset=data.offset;state.more=Boolean(data.more);state.isAdmin=Boolean(data.is_admin);
       $('#wallModeration').hidden=!state.isAdmin;
       box.innerHTML=state.posts.length?state.posts.map(p=>postHtml(p)).join(''):`<div class="wall-empty">${icon('comment')}<strong>Здесь пока тихо</strong><p>Стань первым, кто начнёт обсуждение.</p></div>`;
@@ -344,9 +410,9 @@ function hydrateMedia(container=document){
     sheet('Обсуждение',header('Обсуждение')+'<div class="wall-loading">Загружаем комментарии…</div>');
     try{
       const data=await api('/api/miniapp/wall/'+id);if(current!==ticket)return;
-      state.current=data.post;state.isAdmin=Boolean(data.is_admin);
+      state.current=applyPendingLike(data.post);state.isAdmin=Boolean(data.is_admin);
       $('.wall-sheet',overlay).innerHTML=`${header('Обсуждение')}<div class="wall-detail-scroll">
-        ${postHtml(data.post,true)}<div class="wall-comments-title"><strong>Ответы</strong><span>${data.comments.length}</span></div>
+        ${postHtml(state.current,true)}<div class="wall-comments-title"><strong>Ответы</strong><span>${data.comments.length}</span></div>
         ${commentsHtml(data.comments)}${data.truncated?'<div class="wall-note">Показаны первые 500 ответов.</div>':''}</div>
         <form id="wallCommentForm" class="wall-comment-form">
           <div id="wallReplyTo" hidden></div>
@@ -425,35 +491,7 @@ function hydrateMedia(container=document){
     if(action==='reply')return reply(Number(el.dataset.comment),el.dataset.nick);
     if(action==='cancel-reply'){state.reply=null;$('#wallReplyTo').hidden=true;return;}
     if(action==='edit')return compose(state.current);
-    if(action==='like'){
-      if(el.disabled)return;el.disabled=true;
-      try{
-        const r=await api('/api/miniapp/wall/'+id+'/like','POST',{});
-        const p=state.posts.find(p=>p.id===id);if(p){p.liked=r.liked;p.likes=r.likes;}
-        if(state.current?.id===id){state.current.liked=r.liked;state.current.likes=r.likes;}
-        const buttons=Array.from(document.querySelectorAll('[data-wall-action="like"][data-id="'+id+'"]'));
-        if(!buttons.includes(el))buttons.push(el);
-        buttons.forEach(btn=>{
-          const wasLiked=btn.classList.contains('liked');
-          btn.classList.toggle('liked',r.liked);
-          btn.setAttribute('aria-pressed',String(Boolean(r.liked)));
-          const count=btn.querySelector('.wall-action-count');
-          if(count)count.textContent=r.likes||'';
-          // Animate only successful new likes; do not move neighboring actions.
-          if(r.liked&&!wasLiked){
-            btn.classList.remove('wall-liked-pop');
-            void btn.offsetWidth;
-            btn.classList.add('wall-liked-pop');
-            btn.addEventListener('animationend',()=>btn.classList.remove('wall-liked-pop'),{once:true});
-          }
-        });
-        try{tg?.HapticFeedback?.impactOccurred(r.liked?'light':'soft')}catch(_){}
-      }catch(err){
-        console.warn('Wall like update failed:',err);
-        flash('Не удалось обновить лайк. Попробуй ещё раз.');
-      }finally{el.disabled=false;}
-      return;
-    }
+    if(action==='like')return toggleLike(id);
     if(action==='delete'&&window.confirm('Удалить публикацию?')){
       try{await api('/api/miniapp/wall/'+id+'/delete','POST',{});close();flash('Удалено');feed()}
       catch(err){flash(err.message)}return;
