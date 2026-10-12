@@ -347,7 +347,9 @@ function hydrateMedia(container=document){
         const r=await api('/api/miniapp/wall/'+id+'/like','POST',{});
         const p=state.posts.find(p=>p.id===id);if(p){p.liked=r.liked;p.likes=r.likes;}
         if(state.current?.id===id){state.current.liked=r.liked;state.current.likes=r.likes;}
-        $('[data-wall-action="like"][data-id="'+id+'"]').forEach(btn=>{
+        const buttons=$('[data-wall-action="like"][data-id="'+id+'"]');
+        if(!buttons.includes(el))buttons.push(el);
+        buttons.forEach(btn=>{
           const wasLiked=btn.classList.contains('liked');
           btn.classList.toggle('liked',r.liked);
           btn.setAttribute('aria-pressed',String(Boolean(r.liked)));
@@ -362,7 +364,10 @@ function hydrateMedia(container=document){
           }
         });
         try{tg?.HapticFeedback?.impactOccurred(r.liked?'light':'soft')}catch(_){}
-      }catch(err){flash(err.message)}finally{el.disabled=false;}
+      }catch(err){
+        console.warn('Wall like update failed:',err);
+        flash('Не удалось обновить лайк. Попробуй ещё раз.');
+      }finally{el.disabled=false;}
       return;
     }
     if(action==='delete'&&window.confirm('Удалить публикацию?')){
