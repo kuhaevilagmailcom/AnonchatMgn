@@ -90,25 +90,109 @@ function hydrateMedia(container=document){
       return `<button type="button" class="wall-photo-tile" data-wall-action="photo" data-media-id="${id}" aria-label="Открыть фото"><img data-wall-thumb="${thumb}" loading="lazy" alt="Фото публикации"></button>`;
     }).join('')+'</div>';
   }
-  function openViewer(inner){
+
+  let wallViewerURL=null, wallViewerRequest=0, wallGallery=[], wallGalleryIndex=0;
+  function closeViewer(){
+    wallViewerRequest++;
+    const viewer=$('#wallPhotoViewer');
+    if(!viewer)return;
+    viewer.querySelector('video')?.pause();
+    viewer.hidden=true;
+    viewer.innerHTML='';
+    if(wallViewerURL){URL.revokeObjectURL(wallViewerURL);wallViewerURL=null;}
+  }
+  function ensureViewer(){
     let viewer=$('#wallPhotoViewer');
-    if(!viewer){viewer=document.createElement('div');viewer.id='wallPhotoViewer';viewer.className='wall-photo-viewer';document.body.append(viewer)}
-    viewer.hidden=false;viewer.innerHTML=`<button class="wall-viewer-close" aria-label="Закрыть">${icon('x')}</button><div class="wall-viewer-content">${inner}</div>`;
-    viewer.querySelector('.wall-viewer-close').onclick=()=>{viewer.querySelector('video')?.pause();viewer.hidden=true;viewer.innerHTML=''};
+    if(viewer)return viewer;
+    viewer=document.createElement('div');
+    viewer.id='wallPhotoViewer';
+    viewer.className='wall-photo-viewer';
+    viewer.setAttribute('role','dialog');
+    viewer.setAttribute('aria-modal','true');
+    viewer.setAttribute('aria-label','Просмотр медиа');
+    document.body.append(viewer);
+    let touchX=null,touchY=null;
+    viewer.addEventListener('touchstart',e=>{
+      if(e.touches.length!==1)return;
+      touchX=e.touches[0].clientX;touchY=e.touches[0].clientY;
+    },{passive:true});
+    viewer.addEventListener('touchend',e=>{
+      if(touchX===null||e.changedTouches.length===0)return;
+      const deltaX=e.changedTouches[0].clientX-touchX;
+      const deltaY=e.changedTouches[0].clientY-touchY;
+      touchX=null;touchY=null;
+      if(wallGallery.length>1&&Math.abs(deltaX)>65&&Math.abs(deltaX)>Math.abs(deltaY)*1.4){
+        showGalleryPhoto(wallGalleryIndex+(deltaX<0?1:-1));
+      }
+    },{passive:true});
+    viewer.addEventListener('click',e=>{
+      const action=e.target.closest('[data-wall-viewer]')?.dataset.wallViewer;
+      if(action==='close')closeViewer();
+      if(action==='prev')showGalleryPhoto(wallGalleryIndex-1);
+      if(action==='next')showGalleryPhoto(wallGalleryIndex+1);
+    });
+    return viewer;
+  }
+  function openViewer(){
+    const viewer=ensureViewer();
+    viewer.hidden=false;
+    viewer.innerHTML='<div class="wall-viewer-top"><span class="wall-viewer-counter"></span>'+
+      '<button class="wall-viewer-close" type="button" data-wall-viewer="close" aria-label="Закрыть">'+icon('x')+'</button></div>'+
+      '<button class="wall-viewer-arrow prev" type="button" data-wall-viewer="prev" aria-label="Предыдущее фото" hidden>'+icon('back')+'</button>'+
+      '<div class="wall-viewer-content"></div>'+
+      '<button class="wall-viewer-arrow next" type="button" data-wall-viewer="next" aria-label="Следующее фото" hidden>'+icon('back')+'</button>';
+  }
+  async function displayViewerAsset(item,isPhoto){
+    const viewer=ensureViewer(),token=++wallViewerRequest,frame=viewer.querySelector('.wall-viewer-content');
+    viewer.querySelector('video')?.pause();
+    if(wallViewerURL){URL.revokeObjectURL(wallViewerURL);wallViewerURL=null;}
+    if(!frame)return;
+    frame.innerHTML='<div class="wall-viewer-loading" role="status">'+(isPhoto?'Загружаем фотографию…':'Загружаем видео…')+'</div>';
+    try{
+      const url=await authorizedBlob(item.url);
+      if(viewer.hidden||token!==wallViewerRequest){URL.revokeObjectURL(url);return;}
+      wallViewerURL=url;
+      frame.innerHTML=isPhoto?'<img alt="Фото публикации">':'<video controls playsinline preload="metadata"></video>';
+      const media=frame.querySelector(isPhoto?'img':'video');
+      media.src=url;
+      if(!isPhoto)media.load();
+    }catch(err){
+      console.warn('Wall media playback failed:',err);
+      if(token===wallViewerRequest&&frame.isConnected)frame.textContent='Не удалось открыть медиа';
+    }
+  }
+  function showGalleryPhoto(next){
+    if(wallGallery.length===0)return;
+    wallGalleryIndex=(next+wallGallery.length)%wallGallery.length;
+    const viewer=ensureViewer();
+    const counter=viewer.querySelector('.wall-viewer-counter');
+    if(counter)counter.textContent=(wallGalleryIndex+1)+' / '+wallGallery.length;
+    for(const button of viewer.querySelectorAll('.wall-viewer-arrow')){
+      button.hidden=wallGallery.length<2;
+    }
+    displayViewerAsset(wallGallery[wallGalleryIndex],true);
   }
   async function viewMedia(id,kind){
-    const item=[...(state.current?.media||[]),...state.posts.flatMap(p=>p.media||[])].find(m=>m.id===id);
-    if(!item){flash('Медиа не найдено');return}
-    openViewer('<div class="wall-viewer-loading">Загрузка медиа…</div>');
-    try{
-      const src=await authorizedBlob(item.url);
-      const content=$('#wallPhotoViewer .wall-viewer-content');
-      if(!content){URL.revokeObjectURL(src);return}
-      if(kind==='photo'){content.innerHTML='<img alt="Фото публикации">';content.querySelector('img').src=src}
-      else{content.innerHTML='<video controls playsinline preload="metadata" autoplay></video>';content.querySelector('video').src=src}
-      setTimeout(()=>URL.revokeObjectURL(src),180000);
-    }catch(err){flash(err.message)}
+    const post=(state.current?.media||[]).some(m=>m.id===id)?state.current:
+      state.posts.find(p=>(p.media||[]).some(m=>m.id===id));
+    const items=post?.media||[];
+    const item=items.find(m=>m.id===id);
+    if(!item){flash('Файл не найден');return;}
+    wallGallery=[];
+    openViewer();
+    if(kind==='video')displayViewerAsset(item,false);
+    else{
+      wallGallery=items.filter(m=>m.kind==='image');
+      showGalleryPhoto(wallGallery.findIndex(m=>m.id===id));
+    }
   }
+  document.addEventListener('keydown',e=>{
+    const viewer=$('#wallPhotoViewer');
+    if(!viewer||viewer.hidden)return;
+    if(e.key==='Escape')closeViewer();
+    if(e.key==='ArrowLeft'&&wallGallery.length>1)showGalleryPhoto(wallGalleryIndex-1);
+    if(e.key==='ArrowRight'&&wallGallery.length>1)showGalleryPhoto(wallGalleryIndex+1);
+  });
   let draft=null;
   const uuid=()=>{try{return crypto.randomUUID().replace(/-/g,'')}catch(_){return Date.now().toString(36)+Math.random().toString(36).slice(2)}};
   function draftPreview(){
