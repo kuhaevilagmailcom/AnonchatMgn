@@ -116,5 +116,35 @@ context.fetch=async()=>({ok:true,json:async()=>({liked:true,likes:15})});
   assert.match(css,/\.wall-viewer-arrow\[hidden\]/);
   assert.match(js,/function showGalleryPhoto/);
   assert.match(mediaHtml([{id:22,kind:'image',url:'/media/22'}]),/data-media-id="22"/);
-  console.log('Wall interaction checks passed: like/unlike across controls and uncropped gallery media.');
+
+  // A slow network must never delay the icon or number changing.
+  const pending=[];
+  context.fetch=(_url,options)=>new Promise(resolve=>{
+    pending.push({resolve,body:JSON.parse(options.body)});
+  });
+  state.posts=[makePost(false)];
+  const first=handle(one);
+  assert.equal(pending.length,1,'first tap sends one request');
+  assert.equal(pending[0].body.liked,true);
+  assert.ok(one.classes.has('liked'),'first tap updates the heart immediately');
+  assert.equal(one.count.textContent,'15','first tap updates the count before network response');
+
+  // Second tap while first request is pending is painted immediately, queued
+  // as an explicit desired state, and does not fire a second overlapping request.
+  await handle(two);
+  assert.ok(!one.classes.has('liked'),'rapid unlike is immediate');
+  assert.equal(one.count.textContent,'14');
+  assert.equal(pending.length,1,'rapid taps are serialized');
+  pending[0].resolve({ok:true,json:async()=>({liked:true,likes:15})});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(pending.length,2,'the final desired state is persisted');
+  assert.equal(pending[1].body.liked,false);
+  pending[1].resolve({ok:true,json:async()=>({liked:false,likes:14})});
+  await first;
+  assert.ok(!one.classes.has('liked'));
+  assert.equal(one.count.textContent,'14');
+  assert.equal(two.attributes['aria-pressed'],'false');
+  assert.match(css,/\.wall-liked-pop::before\{display:none!important\}/);
+  assert.match(css,/margin:0 0 0 9px!important/);
+  console.log('Wall interaction checks passed: optimistic likes, rapid taps and aligned counters.');
 })().catch(err=>{console.error(err);process.exitCode=1});
