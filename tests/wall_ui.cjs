@@ -14,6 +14,7 @@ const root = { addEventListener: noop, querySelectorAll: () => [] };
 const overlay = { addEventListener: noop, hidden: true };
 const basic = { addEventListener: noop, onclick: null, hidden: false };
 const dom = {
+  addEventListener: noop,
   querySelector(selector) {
     if (selector === '[data-page="wall"]') return root;
     if (selector === '#wallOverlay') return overlay;
