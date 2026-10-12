@@ -431,7 +431,7 @@ function hydrateMedia(container=document){
         const r=await api('/api/miniapp/wall/'+id+'/like','POST',{});
         const p=state.posts.find(p=>p.id===id);if(p){p.liked=r.liked;p.likes=r.likes;}
         if(state.current?.id===id){state.current.liked=r.liked;state.current.likes=r.likes;}
-        const buttons=$('[data-wall-action="like"][data-id="'+id+'"]');
+        const buttons=Array.from(document.querySelectorAll('[data-wall-action="like"][data-id="'+id+'"]'));
         if(!buttons.includes(el))buttons.push(el);
         buttons.forEach(btn=>{
           const wasLiked=btn.classList.contains('liked');
