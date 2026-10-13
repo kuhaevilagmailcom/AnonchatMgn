@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from anonchat.db import Database, month_period_start, number_reward_day_start, referral_day_start, week_period_start  # noqa: E402
 from anonchat.levels import RANKS, rank_for  # noqa: E402
 from anonchat.matching import Matchmaker  # noqa: E402
+from anonchat.permissions import ALL_ADMIN_PERMISSIONS  # noqa: E402
 
 
 # --------------------------------------------------------------------------------- levels
@@ -391,12 +392,15 @@ def test_database() -> None:
         assert created2 and extended == 11
 
         perms = await db.set_admin(11, {"reports", "mute"}, 10)
-        assert perms == {"reports", "mute"}
+        assert perms == ALL_ADMIN_PERMISSIONS
         assert await db.get_admin_permissions(11) == perms
-        assert "ban" not in await db.get_admin_permissions(11)
+        assert "ban" in await db.get_admin_permissions(11)
         assert await db.get_admin_permissions(10, (10,))
+        assert await db.is_protected_admin(10, (10,))
+        assert await db.is_protected_admin(11, (10,))
         assert await db.remove_admin(11) is True
         assert not await db.get_admin_permissions(11)
+        assert not await db.is_protected_admin(11, (10,))
         assert await db.adjust_xp(11, 50) == 50
         assert await db.adjust_xp(11, -80) == 0
 

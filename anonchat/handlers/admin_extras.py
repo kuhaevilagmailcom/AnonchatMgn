@@ -102,8 +102,8 @@ async def show_users(
     for i, u in enumerate(rows, 1+12*page):
         lines.append(
             f"<b>{i}. {texts.esc(_name(u))}</b> · {int(u['xp']):,} ⭐\n"
-            f"{texts.esc('@'+u['username'] if u['username'] else 'username отсутствует')} "
-            f"· ID <code>{u['user_id']}</code>\n"
+            + (f"{texts.esc('@'+u['username'])} · " if u['username'] else "")
+            + f"ID <code>{u['user_id']}</code>\n"
             f"{int(u['messages']):,} сообщений · {int(u['dialogs']):,} диалогов\n"
             f"Был: {_date(u['last_seen'])}\n"
         )
@@ -143,9 +143,12 @@ async def show_card(
     invited, earned = await db.referral_stats(uid)
     perms = await db.get_admin_permissions(uid, ctx.cfg.admin_ids)
     status = {"free": "Свободен", "queued": "В поиске", "paired": "В диалоге"}.get(mm.status(uid), "—")
+    username_line = (
+        f"Telegram: {texts.esc('@'+user['username'])}\n" if user['username'] else ""
+    )
     text = (
         f"👤 <b>{texts.esc(_name(user))}</b>\n"
-        f"Telegram: {texts.esc('@'+user['username'] if user['username'] else 'username отсутствует')}\n"
+        f"{username_line}"
         f"ID: <code>{uid}</code> · {texts.esc(user['first_name'] or '—')}\n"
         f"Регистрация: {_date(user['created_at'])}\n"
         f"Был: {_date(user['last_seen'])} · {status}\n"
@@ -543,10 +546,12 @@ async def extras_callback(
                 await do_ban(ctx,db,mm,ctx.cfg,uid,'решение администрации')
             elif op=='unban':
                 await db.set_ban(uid,False)
+                await db.log_admin_action(ctx.user_id,uid,'unban')
             elif op=='mute':
                 await do_mute(ctx,db,mm,ctx.cfg,uid,60)
             elif op=='unmute':
                 await db.set_mute(uid,0)
+                await db.log_admin_action(ctx.user_id,uid,'unmute')
             await show_card(ctx,db,mm,uid)
         elif action=='chat' and len(parts)==3:
             if not ctx.can('monitor'):

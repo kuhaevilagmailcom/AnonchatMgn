@@ -22,6 +22,9 @@ class FakeBot:
     async def send_message(self, chat_id: int, text: str, **kw):
         self.sent.append({"chat_id":chat_id,"text":text,**kw})
         return SimpleNamespace(message_id=len(self.sent))
+    async def send_photo(self, chat_id: int, photo: str, **kw):
+        self.sent.append({"chat_id":chat_id,"photo":photo,**kw})
+        return SimpleNamespace(message_id=len(self.sent))
 
 
 async def scenario() -> None:
@@ -176,6 +179,19 @@ async def poll_notifications_and_message_statistics() -> None:
             await run_once(bot, db)
             assert bot.sent[-1]["chat_id"] == 901
             assert bot.sent[-1]["text"] == "Only administrators"
+
+            media_job = "test-broadcast-media-queue-001"
+            assert await create_job(
+                db, key=media_job, actor=901, message="Photo caption",
+                photo_file_id="telegram-file-id", button_action="profile",
+                recipient_ids=[901],
+            )
+            assert await run_once(bot, db)
+            await run_once(bot, db)
+            assert (await job_status(db, media_job))["status"] == "completed"
+            assert bot.sent[-1]["photo"] == "telegram-file-id"
+            assert bot.sent[-1]["caption"] == "Photo caption"
+            assert bot.sent[-1]["reply_markup"] is not None
         finally:
             await db.close()
 

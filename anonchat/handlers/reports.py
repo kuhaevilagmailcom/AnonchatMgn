@@ -49,8 +49,8 @@ def format_report_card(row, day_count: int | None = None, *, is_new: bool = Fals
     reporter_nick = nicklib.display(
         row["reporter_nickname"] or "", reporter_id, int(row["reporter_support_stars"] or 0)
     )
-    target_username = f"@{row['target_username']}" if row["target_username"] else "нет username"
-    reporter_username = f"@{row['reporter_username']}" if row["reporter_username"] else "нет username"
+    target_username = f"├ Telegram: @{row['target_username']}\n" if row["target_username"] else ""
+    reporter_username = f" · @{row['reporter_username']}" if row["reporter_username"] else ""
     reason = REASON_TITLES.get(str(row["reason"]), str(row["reason"]))
     context = texts.esc(row["context"]) if row["context"] else "<i>Текстового контекста нет</i>"
     comment = texts.esc(row["comment"]) if row["comment"] else "<i>Без комментария</i>"
@@ -61,23 +61,23 @@ def format_report_card(row, day_count: int | None = None, *, is_new: bool = Fals
         f"🎯 <b>Нарушитель</b>\n"
         f"├ Ник: <b>{texts.esc(target_nick)}</b>\n"
         f"├ ID: <code>{target_id}</code>\n"
-        f"├ Telegram: {texts.esc(target_username)}\n"
+        f"{texts.esc(target_username)}"
         f"└ Имя: {texts.esc(row['target_name'] or '-')}\n\n"
         f"📝 <b>Причина:</b> {texts.esc(reason)}\n"
         f"💬 <b>Комментарий:</b> {comment}\n\n"
         f"📚 <b>Последние сообщения</b>\n<blockquote>{context}</blockquote>\n"
         f"🙋 <b>Отправитель:</b> {texts.esc(reporter_nick)} · "
-        f"<code>{reporter_id}</code> · {texts.esc(reporter_username)}"
+        f"<code>{reporter_id}</code>{texts.esc(reporter_username)}"
         f"{daily}\n\nВыбери действие кнопками ниже."
     )
 
 
 def _feedback_header(ctx: Ctx, message: Message) -> str:
-    username = f"@{message.from_user.username}" if message.from_user and message.from_user.username else "без username"
+    username = f" · @{message.from_user.username}" if message.from_user and message.from_user.username else ""
     first_name = message.from_user.first_name if message.from_user else "-"
     return (
         "💌 <b>Обратная связь</b>\n"
-        f"От: <code>{ctx.user_id}</code> · {texts.esc(username)} · {texts.esc(first_name)}"
+        f"От: <code>{ctx.user_id}</code>{texts.esc(username)} · {texts.esc(first_name)}"
     )
 
 

@@ -77,9 +77,9 @@ async def _anonymous_monitor_ids(db, owner_ids: tuple[int, ...]) -> tuple[int, .
 
 
 def _identity(row: Any, user_id: int) -> str:
-    username = f"@{row['username']}" if row is not None and row["username"] else "без username"
+    username = f" · @{row['username']}" if row is not None and row["username"] else ""
     nickname = row["nickname"] if row is not None and row["nickname"] else f"Аноним-{user_id}"
-    return f"{texts.esc(username)} · {texts.esc(nickname)} · <code>{int(user_id)}</code>"
+    return f"{texts.esc(nickname)}{texts.esc(username)} · <code>{int(user_id)}</code>"
 
 
 def _message_preview(message) -> str:

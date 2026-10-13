@@ -27,6 +27,7 @@ from anonchat import commands as commands_mod
 from anonchat import texts
 from anonchat.commands import register_common
 from anonchat.config import Config
+from anonchat.admin_broadcasts import run_once as run_broadcast_once
 from anonchat.db import Database
 from anonchat.handlers import get_routers
 from anonchat.matching import Matchmaker
@@ -755,19 +756,14 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
         button["text"] for row in dynamic_panel.get("inline_keyboard", []) for button in row
     ]
     check("Жалобы" in dynamic_labels and "Найти профиль" in dynamic_labels,
-          "владелец выдаёт администратору выбранные разделы")
-    check("Бан по id" not in dynamic_labels and "Рассылка" not in dynamic_labels,
-          "невыданные права скрыты из панели")
-    check("Чаты:" not in " ".join(dynamic_labels),
-          "мониторинг скрыт без отдельного права")
+          "назначенный администратор видит панель")
+    check("Бан по id" in dynamic_labels and "Рассылка" in dynamic_labels,
+          "все администраторы получают полный доступ")
+    check("Чаты:" in " ".join(dynamic_labels) and "Скачать базу" in dynamic_labels,
+          "мониторинг и резервная копия доступны всем админам")
     await press(D, "adm:panel:monitor")
-    check(await db.get_kv(f"chat_monitor:{D}") != "1",
-          "администратор без права monitor не включает слежение")
-    await press(D, "adm:panel:backup")
-    check(not any(item["method"] == "sendDocument" for item in session.to(D)),
-          "скачивание базы недоступно назначенному администратору")
-    await send(D, f"/ban {C} тест")
-    check("Нет доступа" in session.last_to(D), "сервер запрещает действие без права ban")
+    check(await db.get_kv(f"chat_monitor:{D}") == "1",
+          "любой администратор может включить мониторинг")
     await send(ADMIN, f"/points {A} +50")
     check(int((await db.get_user(A))["xp"]) == 0,
           "старая команда не начисляет очки без причины и подтверждения")
@@ -799,6 +795,9 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
           "список активных диалогов открывается")
     session.clear()
     await send(ADMIN, "/bc Тест рассылки")
+    for _ in range(20):
+        if not await run_broadcast_once(bot, db):
+            break
     broadcast = next(item for item in session.to(A) if item.get("text") == "Тест рассылки")
     check(not broadcast.get("reply_markup"), "рассылка отправляется без кнопок")
     session.clear()

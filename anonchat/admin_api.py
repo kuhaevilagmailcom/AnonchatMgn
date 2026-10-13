@@ -67,7 +67,7 @@ class MiniAppAdmin:
             raise _json_error(403, "Раздел доступен только администрации")
         if permission and permission not in perms:
             raise _json_error(403, "Недостаточно прав для этого действия")
-        return uid, perms, uid in self.s.cfg.admin_ids
+        return uid, perms, True
 
     async def body(self, request):
         try:
@@ -618,9 +618,12 @@ class MiniAppAdmin:
         p=data.get("permissions")
         permissions=parse_permissions(",".join(str(x) for x in p)) if isinstance(p,list) else parse_permissions(str(p or ""))
         if permissions:
-            await self.s.db.set_admin(target,permissions,actor)
+            permissions=await self.s.db.set_admin(target,permissions,actor)
+            await self.s.db.log_admin_action(actor,target,"admin_add","all permissions")
         else:
-            await self.s.db.remove_admin(target)
+            removed=await self.s.db.remove_admin(target)
+            if removed:
+                await self.s.db.log_admin_action(actor,target,"admin_remove")
         return web.json_response({"ok":True,"permissions":sorted(permissions)})
 
     async def diagnostics(self, request):
@@ -664,7 +667,9 @@ class MiniAppAdmin:
         value=_number(data.get("value"),low=1,high=3)
         if value not in (1,2,3):
             raise _json_error(400,"Множитель x1/x2/x3")
-        return web.json_response({"multiplier":await self.s.db.set_xp_multiplier(value)})
+        multiplier=await self.s.db.set_xp_multiplier(value)
+        await self.s.db.log_admin_action(actor,0,"multiplier",f"x{multiplier}")
+        return web.json_response({"multiplier":multiplier})
 
     async def broadcast(self, request):
         actor, _, _ = await self.access(request, "broadcast")
@@ -718,7 +723,7 @@ class MiniAppAdmin:
         return web.json_response(await job_status(self.s.db,key))
 
     async def backup(self, request):
-        _,_,owner=await self.access(request)
+        actor,_,owner=await self.access(request)
         if not owner:
             raise _json_error(403,"Только владелец скачивает базу")
         import aiofiles
@@ -727,6 +732,7 @@ class MiniAppAdmin:
         try:
             await self.s.db.flush_matchmaker(self.s.mm)
             await self.s.db.backup_to(path)
+            await self.s.db.log_admin_action(actor,0,"backup_download")
             resp=web.StreamResponse(headers={
                 "Content-Type":"application/octet-stream",
                 "Content-Disposition":'attachment; filename="anon_mgn_backup.db"',

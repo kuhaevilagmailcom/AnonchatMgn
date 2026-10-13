@@ -127,7 +127,7 @@
       '<form id="adminSearch" class="admin-search"><input name="q" placeholder="ID, @username, ник или имя" value="'+escape(state.query)+'" autocomplete="off"><button type="submit">Найти</button></form>'+
       '<div class="admin-filters"><select data-filter="sort" aria-label="Сортировка">'+opt(sorts,state.sort)+'</select><select data-filter="userFilter" aria-label="Фильтр">'+opt(filters,state.userFilter)+'</select></div>'+
       '<div class="admin-list">'+(d.items.length?d.items.map(u=>row(escape(u.nickname||u.first_name||'Пользователь')+' · '+fmt(u.xp)+' ★',
-       escape(u.username?'@'+u.username:'Нет username')+' · ID '+u.user_id+' · '+fmt(u.messages)+' сообщений · '+fmt(u.dialogs)+' диалогов'+
+       (u.username?escape('@'+u.username)+' · ':'')+'ID '+u.user_id+' · '+fmt(u.messages)+' сообщений · '+fmt(u.dialogs)+' диалогов'+
        '<br>Был: '+date(u.last_seen),'user',u.user_id,u.banned?pill('Бан','danger'):'' )).join(''):placeholder)+'</div>'+
       pageNav(state.usersPage,state.usersPage+1<d.pages,'usersPage');
   }
@@ -136,7 +136,7 @@
     const d=await api('/users/'+state.selectedId),u=d.user,ref=d.referrals||{};
     const parts=[
       ['Telegram ID','<code>'+escape(u.user_id)+'</code> '+navButton('Копировать','copy',u.user_id,'tiny')],
-      ['Username',escape(u.username?'@'+u.username:'Отсутствует')],['Имя Telegram',escape(u.first_name||'—')],
+      ...(u.username?[['Username',escape('@'+u.username)]]:[]),['Имя Telegram',escape(u.first_name||'—')],
       ['Зарегистрирован',date(u.created_at)],['Последний визит',date(u.last_seen)],
       ['Статус',escape(({free:'Свободен',queued:'В поиске',paired:'В диалоге'})[d.status]||d.status)],
       ['Возраст / район',escape(String(u.age||'—')+' / '+(u.district||'—'))],
@@ -242,7 +242,7 @@
     const kind=state.page;
     const d=await api('/restrictions',{}, {kind,page:state.restrictedPage});
     return wrapHeader('Всего '+d.total)+
-      '<div class="admin-list">'+(d.items?.length?d.items.map(u=>'<div class="admin-restriction"><div><b>'+escape(u.nickname||u.first_name||'Аноним')+'</b><small>ID '+u.user_id+' · '+escape(u.username||'нет username')+'</small><small>'+
+      '<div class="admin-list">'+(d.items?.length?d.items.map(u=>'<div class="admin-restriction"><div><b>'+escape(u.nickname||u.first_name||'Аноним')+'</b><small>ID '+u.user_id+(u.username?' · '+escape('@'+u.username):'')+'</small><small>'+
         (kind==='ban'?escape(u.ban_reason||'Без причины'):'До '+date(u.mute_until))+'</small></div>'+
         navButton('Профиль','openUser',u.user_id)+navButton(kind==='ban'?'Разбан':'Снять мут','openModerate',(kind==='ban'?'unban:':'unmute:')+u.user_id)+'</div>').join(''):placeholder)+'</div>'+
       pageNav(state.restrictedPage,state.restrictedPage+1<d.pages,'restrictedPage');

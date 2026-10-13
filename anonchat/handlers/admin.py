@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 import tempfile
 import time
 from pathlib import Path
@@ -33,6 +34,7 @@ from ..levels import rank_for
 from ..matching import Matchmaker
 from ..permissions import ALL_ADMIN_PERMISSIONS, PERMISSION_LABELS, parse_permissions
 from ..diagnostics import METRICS
+from ..admin_broadcasts import create_job
 from .. import relay_state
 from ..monitoring import invalidate_monitor_cache, pending_count
 from .reports import format_report_card
@@ -219,10 +221,11 @@ async def find_text(db: Database, query: str) -> str:
     lines = ["🔎 <b>Найдено</b>", ""]
     for r in rows:
         rank = rank_for(int(r["messages"]))
+        telegram_name = f" · @{r['username']}" if r["username"] else ""
         lines.append(
             f"<code>{r['user_id']}</code> · 🙋 "
             f"<b>{texts.esc(nicklib.display(r['nickname'], int(r['user_id']), r['support_stars']))}</b>"
-            f" · {texts.esc(r['first_name'])} ({texts.esc(r['username'] or '-')})\n"
+            f" · {texts.esc(r['first_name'])}{texts.esc(telegram_name)}\n"
             f"   {rank.name} · {rank.pretty(int(r['messages']))} сообщ. · ⭐ {rank.pretty(int(r['xp']))}"
             f" · диалогов {r['dialogs']} · жалоб {r['reports_received']}"
             + (" · ⛔ бан" if r["banned"] else "")
@@ -239,10 +242,11 @@ async def who_text(db: Database, uid: int) -> str | None:
     if row is None:
         return None
     rank = rank_for(int(row["messages"]))
+    telegram_name = f" · @{row['username']}" if row["username"] else ""
     return (
         f"👤 <code>{uid}</code> · 🙋 "
         f"<b>{texts.esc(nicklib.display(row['nickname'], uid, row['support_stars']))}</b>\n"
-        f"📛 {texts.esc(row['first_name'])} ({texts.esc(row['username'] or '-')})\n"
+        f"📛 {texts.esc(row['first_name'])}{texts.esc(telegram_name)}\n"
         f"{rank.name} · {rank.pretty(int(row['messages']))} сообщ. · ⭐ {rank.pretty(int(row['xp']))}\n"
         f"💬 диалогов: {row['dialogs']} · 👍 {row['good_ratings']} · 👎 {row['bad_ratings']}\n"
         f"🚩 жалоб: {row['reports_received']} · {texts.esc(row['district'] or 'район не указан')}\n"
@@ -256,9 +260,9 @@ async def users_text(db: Database, limit: int = 30, offset: int = 0) -> tuple[st
     rows = await db.list_users(limit, offset)
     lines = [f"👥 <b>Пользователи · {offset + 1}–{offset + len(rows)}</b>", ""]
     for row in rows:
-        username = f"@{row['username']}" if row["username"] else "без username"
+        username = f" · @{row['username']}" if row["username"] else ""
         lines.append(
-            f"<code>{row['user_id']}</code> · {texts.esc(username)} · "
+            f"<code>{row['user_id']}</code>{texts.esc(username)} · "
             f"{texts.esc(row['first_name'] or '-')} · {int(row['xp'])} ⭐"
         )
     return "\n".join(lines), len(rows)
@@ -273,9 +277,9 @@ async def restricted_text(
     for index, row in enumerate(rows, start=offset + 1):
         user_id = int(row["user_id"])
         nick = nicklib.display(row["nickname"], user_id, row["support_stars"])
-        username = f"@{row['username']}" if row["username"] else "нет username"
+        username = f" · @{row['username']}" if row["username"] else ""
         lines.append(
-            f"<b>{index}. {texts.esc(nick)}</b> · {texts.esc(username)}\n"
+            f"<b>{index}. {texts.esc(nick)}</b>{texts.esc(username)}\n"
             f"ID: <code>{user_id}</code>"
         )
         if kind == "ban":
@@ -307,8 +311,8 @@ def _game_user(row, side: str) -> str:
         row[f"user_{side}_nickname"] or "", user_id,
         int(row[f"user_{side}_support_stars"] or 0),
     )
-    username = f"@{row[f'user_{side}_username']}" if row[f"user_{side}_username"] else "нет username"
-    return f"<b>{texts.esc(nick)}</b> · {texts.esc(username)} · <code>{user_id}</code>"
+    username = f" · @{row[f'user_{side}_username']}" if row[f"user_{side}_username"] else ""
+    return f"<b>{texts.esc(nick)}</b>{texts.esc(username)} · <code>{user_id}</code>"
 
 
 async def game_watch_text(db: Database) -> str:
@@ -414,10 +418,10 @@ async def poll_voters_text(db: Database) -> str:
     for row in rows:
         uid = int(row["user_id"])
         nick = nicklib.display(row["nickname"] or "", uid, int(row["support_stars"] or 0))
-        username = f"@{row['username']}" if row["username"] else "без username"
+        username = f" · @{row['username']}" if row["username"] else ""
         answer = poll["option_a"] if int(row["choice"]) == 0 else poll["option_b"]
         lines.append(
-            f"<code>{uid}</code> · <b>{texts.esc(nick)}</b> · {texts.esc(username)}\n"
+            f"<code>{uid}</code> · <b>{texts.esc(nick)}</b>{texts.esc(username)}\n"
             f"↳ {texts.esc(answer)}"
         )
     if not rows:
@@ -429,14 +433,18 @@ async def poll_voters_text(db: Database) -> str:
 
 # ---------------------------------------------------------------------------------- санкции
 async def do_ban(ctx: Ctx, db: Database, mm: Matchmaker, cfg: Config, uid: int, reason: str) -> str:
+    if uid == ctx.user_id or await db.is_protected_admin(uid, cfg.admin_ids):
+        return "⛔ Нельзя забанить себя или администратора."
     await db.set_ban(uid, True, reason)
+    await db.log_admin_action(ctx.user_id, uid, "ban", reason)
     await break_pair(ctx.bot, cfg, mm, uid, texts.PARTNER_LEFT, ctx.pack, db)
     # Notification is queued transactionally in Database.set_ban().
     return f"⛔ <code>{uid}</code> забанен. Причина: {texts.esc(reason)}"
 
 
-async def do_unban(db: Database, uid: int) -> str:
+async def do_unban(ctx: Ctx, db: Database, uid: int) -> str:
     await db.set_ban(uid, False)
+    await db.log_admin_action(ctx.user_id, uid, "unban")
     return f"✅ <code>{uid}</code> разбанен, добро пожаловать обратно в город."
 
 
@@ -444,20 +452,21 @@ async def do_mute(
     ctx: Ctx, db: Database, mm: Matchmaker, cfg: Config, uid: int, mins: int,
     reason: str = "Решение модерации",
 ) -> str:
+    if uid == ctx.user_id or await db.is_protected_admin(uid, cfg.admin_ids):
+        return "⛔ Нельзя выдать мут себе или администратору."
     await db.set_mute(uid, mins, reason=reason)
+    await db.log_admin_action(ctx.user_id, uid, "mute", reason)
     await break_pair(ctx.bot, cfg, mm, uid, texts.MOD_CLOSED_DIALOG, ctx.pack, db)
     return f"🔇 <code>{uid}</code> заглушён на {mins} мин."
 
 
 async def do_broadcast(ctx: Ctx, db: Database, body: str) -> str:
     ids = await db.broadcast_ids()
-    await ctx.reply(texts.PANEL_BC_PROGRESS.format(total=len(ids)))
-    sent = 0
-    for uid in ids:
-        if await send_to(ctx.bot, uid, body, None, ctx.pack) is DeliveryResult.DELIVERED:
-            sent += 1
-        await asyncio.sleep(0.05)  # бережём лимиты Telegram
-    return texts.PANEL_BC_DONE.format(sent=sent, total=len(ids))
+    await create_job(
+        db, key=f"telegram-{ctx.user_id}-{secrets.token_hex(12)}",
+        actor=ctx.user_id, message=body, recipient_ids=ids,
+    )
+    return f"✅ Рассылка поставлена в очередь: <b>{len(ids)}</b> получателей."
 
 
 async def do_broadcast_message(ctx: Ctx, db: Database, message: Message) -> str:
@@ -491,37 +500,12 @@ async def do_simple_broadcast(
         await db.all_admin_ids(ctx.cfg.admin_ids)
         if audience == "admins" else await db.broadcast_ids()
     )
-    await ctx.reply(texts.PANEL_BC_PROGRESS.format(total=len(ids)))
-    sent = 0
-    markup = K.broadcast_simple_user_keyboard(action)
-    for uid in ids:
-        try:
-            if photo_file_id:
-                await ctx.bot.send_photo(
-                    chat_id=uid,
-                    photo=photo_file_id,
-                    caption=body,
-                    caption_entities=entities or None,
-                    parse_mode=None,
-                    reply_markup=markup,
-                )
-            else:
-                await ctx.bot.send_message(
-                    chat_id=uid,
-                    text=body,
-                    entities=entities or None,
-                    parse_mode=None,
-                    reply_markup=markup,
-                )
-            sent += 1
-        except TelegramAPIError:
-            pass
-        await asyncio.sleep(0.05)
-    failed = max(0, len(ids) - sent)
-    return (
-        f"✅ Рассылка завершена. Доставлено: <b>{sent}</b> из <b>{len(ids)}</b>. "
-        f"Не доставлено: <b>{failed}</b>."
+    await create_job(
+        db, key=f"telegram-{ctx.user_id}-{secrets.token_hex(12)}",
+        actor=ctx.user_id, message=body, button_action=action,
+        photo_file_id=photo_file_id, entities=entities, recipient_ids=ids,
     )
+    return f"✅ Рассылка поставлена в очередь: <b>{len(ids)}</b> получателей."
 
 
 _SIMPLE_BROADCAST_ACTIONS = {"feedback", "menu", "connect", "profile", "none"}
@@ -537,27 +521,13 @@ async def do_ad_broadcast(
 ) -> str:
     """Рекламная рассылка: фото + текст + URL-кнопка всем незаблокированным."""
     ids = await db.broadcast_ids()
-    await ctx.reply(texts.PANEL_BC_PROGRESS.format(total=len(ids)))
-    sent = 0
-    for uid in ids:
-        try:
-            await ctx.bot.send_photo(
-                chat_id=uid,
-                photo=photo_file_id,
-                caption=body,
-                caption_entities=caption_entities or None,
-                parse_mode=None,
-                reply_markup=K.broadcast_ad_keyboard(button_url),
-            )
-            sent += 1
-        except TelegramAPIError:
-            pass
-        await asyncio.sleep(0.05)
-    failed = max(0, len(ids) - sent)
-    return (
-        f"✅ Рассылка завершена. Доставлено: <b>{sent}</b> из <b>{len(ids)}</b>. "
-        f"Не доставлено: <b>{failed}</b>."
+    await create_job(
+        db, key=f"telegram-{ctx.user_id}-{secrets.token_hex(12)}",
+        actor=ctx.user_id, message=body, button_text="Подключить VPN",
+        button_url=button_url, photo_file_id=photo_file_id,
+        entities=caption_entities, recipient_ids=ids,
     )
+    return f"✅ Рассылка поставлена в очередь: <b>{len(ids)}</b> получателей."
 
 
 def _id_args(raw: str) -> tuple[int | None, str]:
@@ -720,7 +690,7 @@ async def cmd_unban(message: Message, ctx: Ctx, db: Database) -> None:
     if uid is None:
         await ctx.reply("Формат: <code>/unban 123456</code>")
         return
-    await ctx.reply(await do_unban(db, uid))
+    await ctx.reply(await do_unban(ctx, db, uid))
 
 
 @router.message(Command("mute"))
@@ -796,7 +766,8 @@ async def cmd_admin_add(message: Message, ctx: Ctx, db: Database) -> None:
     if uid in ctx.cfg.admin_ids:
         await ctx.reply("Это владелец из ADMIN_IDS — его права всегда полные.")
         return
-    await db.set_admin(uid, permissions, ctx.user_id)
+    permissions = await db.set_admin(uid, permissions, ctx.user_id)
+    await db.log_admin_action(ctx.user_id, uid, "admin_add", "all permissions")
     await ensure_for_admin(ctx.bot, ctx.cfg, uid, quiet=True, authorized=True)
     await ctx.reply(f"Администратор <code>{uid}</code> сохранён: {', '.join(sorted(permissions))}.")
 
@@ -815,6 +786,8 @@ async def cmd_admin_del(message: Message, ctx: Ctx, db: Database) -> None:
         await ctx.reply("Владельца из ADMIN_IDS нужно убирать через конфигурацию сервера.")
         return
     removed = await db.remove_admin(uid)
+    if removed:
+        await db.log_admin_action(ctx.user_id, uid, "admin_remove")
     await remove_admin_commands(ctx.bot, uid)
     await ctx.reply("Администратор снят." if removed else "Такого назначенного администратора нет.")
 
@@ -1074,6 +1047,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
             await ctx.ack("Кнопка устарела", alert=True)
             return
         value = await db.set_xp_multiplier(int(raw))
+        await db.log_admin_action(ctx.user_id, 0, "multiplier", f"x{value}")
         await ctx.ack(f"Множитель x{value} включён")
         await ctx.edit(
             f"⭐ <b>Множитель очков за сообщения</b>\n\nСейчас: <b>x{value}</b>",
@@ -1097,6 +1071,8 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
             return
         if action == "close":
             closed = await db.close_active_poll()
+            if closed:
+                await db.log_admin_action(ctx.user_id, 0, "poll_close")
             await ctx.ack("Опрос закрыт" if closed else "Активного опроса нет")
             await ctx.edit(await poll_admin_text(db), K.admin_poll_keyboard(False))
             return
@@ -1198,6 +1174,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         key = f"chat_monitor:{ctx.user_id}"
         enabled = await db.get_kv(key) != "1"
         await db.set_kv(key, "1" if enabled else "0")
+        await db.log_admin_action(ctx.user_id, 0, "chat_monitor", "on" if enabled else "off")
         invalidate_monitor_cache()
         await ctx.ack(f"Слежение за чатами {'включено' if enabled else 'выключено'}")
         await panel_screen(ctx, db, mm)
@@ -1206,6 +1183,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         key = f"anonq_monitor:{ctx.user_id}"
         enabled = await db.get_kv(key) != "1"
         await db.set_kv(key, "1" if enabled else "0")
+        await db.log_admin_action(ctx.user_id, 0, "anonymous_monitor", "on" if enabled else "off")
         invalidate_monitor_cache()
         await ctx.ack(f"Анонимные вопросы {'включены' if enabled else 'выключены'}")
         await panel_screen(ctx, db, mm)
@@ -1222,6 +1200,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
                     FSInputFile(backup_path, filename=f"anonchat_{time.strftime('%Y%m%d_%H%M%S')}.db"),
                     caption="Резервная копия базы AnonchatMgn.",
                 )
+            await db.log_admin_action(ctx.user_id, 0, "backup_download")
         finally:
             backup_path.unlink(missing_ok=True)
         return
@@ -1487,6 +1466,7 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
             return
         await state.clear()
         poll_id = await db.create_poll(question, options[0], options[1], ctx.user_id)
+        await db.log_admin_action(ctx.user_id, 0, "poll_create", question)
         await ctx.reply(
             f"✅ Опрос #{poll_id} опубликован для всех пользователей. "
             "Уведомления отправляются в очереди.",
@@ -1522,7 +1502,7 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
         )
     elif what == "unban":
         uid, _ = _id_args(raw)
-        await ctx.reply(texts.PANEL_NO_ID if uid is None else await do_unban(db, uid))
+        await ctx.reply(texts.PANEL_NO_ID if uid is None else await do_unban(ctx, db, uid))
     elif what == "mute":
         uid, tail = _id_args(raw)
         mins = int(tail.split(maxsplit=1)[0]) if tail and tail.split(maxsplit=1)[0].isdigit() else 60
@@ -1548,13 +1528,16 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
         elif uid in cfg.admin_ids:
             await ctx.reply("Это владелец из ADMIN_IDS — его права всегда полные.")
         elif remove:
-            await db.remove_admin(uid)
+            removed = await db.remove_admin(uid)
+            if removed:
+                await db.log_admin_action(ctx.user_id, uid, "admin_remove")
             await remove_admin_commands(ctx.bot, uid)
             await ctx.reply(f"Администратор <code>{uid}</code> снят.")
         else:
-            await db.set_admin(uid, permissions, ctx.user_id)
+            permissions = await db.set_admin(uid, permissions, ctx.user_id)
+            await db.log_admin_action(ctx.user_id, uid, "admin_add", "all permissions")
             await ensure_for_admin(ctx.bot, cfg, uid, quiet=True, authorized=True)
-            await ctx.reply(f"Администратор <code>{uid}</code> сохранён.")
+            await ctx.reply(f"Администратор <code>{uid}</code> сохранён с полным доступом.")
     else:
         await ctx.reply("Кнопку панели не помню — открой /admin заново.")
         return
@@ -1609,10 +1592,12 @@ async def cb_restricted_list(event: CallbackQuery, ctx: Ctx, db: Database) -> No
     user_id = int(value)
     if action == "unban":
         await db.set_ban(user_id, False)
+        await db.log_admin_action(ctx.user_id, user_id, "unban")
         await ctx.ack("Пользователь разбанен")
         await restriction_screen(ctx, db, "ban", offset)
     else:
         await db.set_mute(user_id, 0)
+        await db.log_admin_action(ctx.user_id, user_id, "unmute")
         await ctx.ack("Мут снят")
         await restriction_screen(ctx, db, "mute", offset)
 
@@ -1723,6 +1708,9 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         return
 
     if action == "mute":
+        if target == ctx.user_id or await db.is_protected_admin(target, cfg.admin_ids):
+            await ctx.ack("Нельзя выдать мут администратору", alert=True)
+            return
         await do_mute(ctx, db, mm, cfg, target, 60)
         resolved = await db.resolve_report(int(raw_id), ctx.user_id)
         if resolved:
@@ -1737,6 +1725,9 @@ async def cb_admin(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         return
 
     if action == "ban":
+        if target == ctx.user_id or await db.is_protected_admin(target, cfg.admin_ids):
+            await ctx.ack("Нельзя забанить администратора", alert=True)
+            return
         await do_ban(ctx, db, mm, cfg, target, f"жалоба #{raw_id}: {report['reason']}")
         resolved = await db.resolve_report(int(raw_id), ctx.user_id)
         if resolved:

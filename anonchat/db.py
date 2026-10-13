@@ -299,6 +299,9 @@ CREATE TABLE IF NOT EXISTS admin_broadcast_jobs (
     message      TEXT NOT NULL,
     button_text  TEXT NOT NULL DEFAULT '',
     button_url   TEXT NOT NULL DEFAULT '',
+    button_action TEXT NOT NULL DEFAULT '',
+    photo_file_id TEXT NOT NULL DEFAULT '',
+    entities_json TEXT NOT NULL DEFAULT '[]',
     status       TEXT NOT NULL DEFAULT 'running',
     created_at   INTEGER NOT NULL,
     finished_at  INTEGER NOT NULL DEFAULT 0
@@ -651,6 +654,15 @@ class Database:
         )
         for name, sql in _BATTLE_MIGRATIONS:
             if name not in battle_cols:
+                await self.db.execute(sql)
+        async with self.db.execute("PRAGMA table_info(admin_broadcast_jobs)") as cur:
+            broadcast_cols = {row[1] for row in await cur.fetchall()}
+        for name, sql in (
+            ("button_action", "ALTER TABLE admin_broadcast_jobs ADD COLUMN button_action TEXT NOT NULL DEFAULT ''"),
+            ("photo_file_id", "ALTER TABLE admin_broadcast_jobs ADD COLUMN photo_file_id TEXT NOT NULL DEFAULT ''"),
+            ("entities_json", "ALTER TABLE admin_broadcast_jobs ADD COLUMN entities_json TEXT NOT NULL DEFAULT '[]'"),
+        ):
+            if name not in broadcast_cols:
                 await self.db.execute(sql)
         await self.db.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_dialog_once "
@@ -1204,22 +1216,16 @@ class Database:
         if cached is not None and now_mono - cached[0] < 30:
             return cached[1]
         row = await self._fetchone("SELECT permissions FROM admins WHERE user_id = ?", (user_id,))
-        permissions = (
-            frozenset(
-                item for item in str(row["permissions"] or "").split(",")
-                if item in ALL_ADMIN_PERMISSIONS
-            )
-            if row is not None else frozenset()
-        )
+        permissions = ALL_ADMIN_PERMISSIONS if row is not None else frozenset()
         self._admin_permissions_cache[int(user_id)] = (now_mono, permissions)
         return permissions
 
     async def set_admin(
         self, user_id: int, permissions: set[str] | frozenset[str], granted_by: int
     ) -> frozenset[str]:
-        clean = frozenset(permissions) & ALL_ADMIN_PERMISSIONS
-        if not clean:
+        if not (frozenset(permissions) & ALL_ADMIN_PERMISSIONS):
             raise ValueError("Нужно выдать хотя бы одно право")
+        clean = ALL_ADMIN_PERMISSIONS
         await self._ensure_row(user_id)
         ts = now()
         await self.db.execute(
@@ -1251,13 +1257,31 @@ class Database:
     async def admin_ids_with_permission(
         self, permission: str, owner_ids: tuple[int, ...] = ()
     ) -> list[int]:
-        rows = await self._fetchall("SELECT user_id, permissions FROM admins")
-        result = set(owner_ids)
-        for row in rows:
-            perms = str(row["permissions"] or "").split(",")
-            if permission in perms:
-                result.add(int(row["user_id"]))
-        return sorted(result)
+        rows = await self._fetchall("SELECT user_id FROM admins")
+        return sorted(set(owner_ids) | {int(row["user_id"]) for row in rows})
+
+    async def is_protected_admin(
+        self, user_id: int, owner_ids: tuple[int, ...] = ()
+    ) -> bool:
+        if int(user_id) in owner_ids:
+            return True
+        return await self._fetchone(
+            "SELECT 1 FROM admins WHERE user_id = ?", (int(user_id),)
+        ) is not None
+
+    async def log_admin_action(
+        self, actor_id: int, target_id: int, action: str, reason: str = ""
+    ) -> None:
+        await self.db.execute(
+            """INSERT INTO admin_action_log
+               (action_key,actor_id,target_id,action,reason,created_at)
+               VALUES (?,?,?,?,?,?)""",
+            (
+                f"telegram:{secrets.token_hex(16)}",
+                int(actor_id), int(target_id), str(action), str(reason)[:500], now(),
+            ),
+        )
+        await self.db.commit()
 
     async def all_admin_ids(self, owner_ids: tuple[int, ...] = ()) -> list[int]:
         rows = await self._fetchall("SELECT user_id FROM admins")

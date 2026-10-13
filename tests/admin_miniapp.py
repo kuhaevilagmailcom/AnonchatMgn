@@ -78,11 +78,17 @@ def test_admin_miniapp_endpoints() -> None:
             users_only=await client.get("/api/miniapp/admin/users",headers=headers(1003))
             assert users_only.status==200
             no_ledger=await client.get("/api/miniapp/admin/transactions",headers=headers(1003))
-            assert no_ledger.status==403
+            assert no_ledger.status==200
             no_adjust=await client.post("/api/miniapp/admin/adjust",headers=headers(1003),
-                                        json={"user_id":1002,"amount":50,"reason":"test",
+                                        json={"user_id":1002,"amount":0,"reason":"test",
                                               "key":"already-long-confirm-token"})
-            assert no_adjust.status==403
+            assert no_adjust.status==400
+            delegated=await client.get("/api/miniapp/admin/bootstrap",headers=headers(1003))
+            delegated_data=await delegated.json()
+            assert delegated.status==200 and delegated_data["owner"]
+            assert set(delegated_data["permissions"])==set(data for data in (
+                "stats","reports","queue","users","broadcast","mute","ban","points","monitor"
+            ))
             owner=await client.get("/api/miniapp/admin/bootstrap",headers=headers(1001))
             assert owner.status==200
             data=await owner.json()
@@ -143,6 +149,10 @@ def test_admin_miniapp_endpoints() -> None:
             repeatmod=await client.post("/api/miniapp/admin/moderate",json=moderation,
                                         headers=headers(1001))
             assert repeatmod.status==200 and (await repeatmod.json())["applied"] is False
+            protected=await client.post("/api/miniapp/admin/moderate",headers=headers(1001),
+                json={"action":"ban","user_id":1003,"reason":"test",
+                      "key":"test-protected-admin-0001"})
+            assert protected.status==403
             assert (await db.get_report(report_id))["status"]=="done"
             assert (await db.get_user(1002))["mute_until"]>time.time()
             logs=await client.get("/api/miniapp/admin/actions",headers=headers(1001))

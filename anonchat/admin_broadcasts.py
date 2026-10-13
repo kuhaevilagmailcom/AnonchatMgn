@@ -6,19 +6,24 @@ accidental duplicate messages after a crash between send and acknowledgement.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 
 import aiosqlite
 from .diagnostics import METRICS
 from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError, TelegramRetryAfter, TelegramNetworkError
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, MessageEntity
+
+from . import keyboards as K
 
 log = logging.getLogger(__name__)
 
 
 async def create_job(db, *, key: str, actor: int, message: str, button_text: str = "",
-                     button_url: str = "", recipient_ids: list[int] | None = None) -> bool:
+                     button_url: str = "", button_action: str = "", photo_file_id: str = "",
+                     entities: list[MessageEntity] | None = None,
+                     recipient_ids: list[int] | None = None) -> bool:
     async with aiosqlite.connect(db.path, isolation_level=None) as con:
         await con.execute("PRAGMA busy_timeout=10000")
         await con.execute("BEGIN IMMEDIATE")
@@ -35,9 +40,13 @@ async def create_job(db, *, key: str, actor: int, message: str, button_text: str
                 return False
             await con.execute(
                 """INSERT INTO admin_broadcast_jobs
-                   (job_key,actor_id,message,button_text,button_url,status,created_at)
-                   VALUES (?,?,?,?,?,'running',?)""",
-                (key, int(actor), message, button_text, button_url, stamp),
+                   (job_key,actor_id,message,button_text,button_url,button_action,
+                    photo_file_id,entities_json,status,created_at)
+                   VALUES (?,?,?,?,?,?,?,?,'running',?)""",
+                (key, int(actor), message, button_text, button_url, button_action,
+                 photo_file_id, json.dumps([
+                     item.model_dump(mode="json") for item in (entities or [])
+                 ], ensure_ascii=False), stamp),
             )
             if recipient_ids is None:
                 await con.execute(
@@ -144,14 +153,24 @@ async def run_once(bot, db) -> bool:
     else:
         markup = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text=job["button_text"],url=job["button_url"])
-        ]]) if job["button_url"] else None
+        ]]) if job["button_url"] else K.broadcast_simple_user_keyboard(job["button_action"])
+    entities = [
+        MessageEntity.model_validate(item)
+        for item in json.loads(str(job["entities_json"] or "[]"))
+        if isinstance(item, dict)
+    ]
     try:
-        result = await bot.send_message(
-            uid, str(job["message"]),
-            parse_mode="HTML" if poll_url.startswith("poll:") and poll_url[5:].isdigit() else None,
-            reply_markup=markup,
-            disable_web_page_preview=True,
-        )
+        if job["photo_file_id"]:
+            result = await bot.send_photo(
+                uid, str(job["photo_file_id"]), caption=str(job["message"]),
+                caption_entities=entities or None, parse_mode=None, reply_markup=markup,
+            )
+        else:
+            result = await bot.send_message(
+                uid, str(job["message"]), entities=entities or None,
+                parse_mode="HTML" if poll_url.startswith("poll:") and poll_url[5:].isdigit() else None,
+                reply_markup=markup, disable_web_page_preview=True,
+            )
     except TelegramForbiddenError:
         state, error, retry_at = "failed", "blocked", 0
     except TelegramRetryAfter as exc:
