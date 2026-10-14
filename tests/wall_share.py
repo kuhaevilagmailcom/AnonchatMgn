@@ -32,8 +32,7 @@ async def check():
     assert "startapp=wall_24__utm_source_channel" in wall_link(
         24, source="channel", medium="post", campaign="october"
     )
-    assert len(share_caption({"title": "Тема", "body": "С" * 1200},
-                             wall_link(24))) <= 1024
+    assert len(share_caption({"title": "Тема", "body": "С" * 1200}, 24)) <= 1024
     db = await Database(":memory:").start()
     try:
         server = FakeServer(db)
@@ -61,7 +60,10 @@ async def check():
         assert "sig" in signed_query and "expires" in signed_query
         assert "Новости Магнитогорска" in result.caption
         assert "Текст публикации" in result.caption
-        assert f"startapp=wall_{post_id}__utm_" in result.caption
+        assert f"Пост №{post_id} · Стена" in result.caption
+        assert "<blockquote>" in result.caption and "</blockquote>" in result.caption
+        assert "startapp=" not in result.caption and "https://" not in result.caption
+        assert result.parse_mode == "HTML"
         assert result.reply_markup.inline_keyboard[0][0].url.startswith(
             "https://t.me/AnonChatMgn_Bot/anonmgn?startapp=wall_"
         )
