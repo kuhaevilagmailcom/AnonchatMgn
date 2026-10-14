@@ -13,8 +13,8 @@
   <title>АНОН МГН</title>
   <link rel="icon" href="./assets/anon-mgn-logo.png">
   <link rel="manifest" href="./manifest.json">
-  <link rel="stylesheet" href="./styles.css?v=50">
-  <link rel="stylesheet" href="./wall.css?v=8">
+  <link rel="stylesheet" href="./styles.css?v=51">
+  <link rel="stylesheet" href="./wall.css?v=9">
   <link rel="stylesheet" href="./admin.css?v=11">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -48,7 +48,7 @@
       <section class="page wall-page" data-page="wall">
         <div class="wall-head">
           <div class="wall-head-title"><h1>Стена</h1><p>О чём говорят в Магнитогорске?</p></div>
-          <button type="button" class="wall-new" id="wallComposeButton" aria-label="Новая публикация"><svg class="ui-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Написать</span></button>
+          <div class="wall-head-tools"><button type="button" class="wall-copy-link" id="wallCopyLink" aria-label="Скопировать ссылку на стену" title="Ссылка на стену"><svg class="ui-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1 0l2.1-2.1a5 5 0 0 0-7.1-7.1L10.9 5"/><path d="M14 11a5 5 0 0 0-7.1 0l-2.1 2.1a5 5 0 0 0 7.1 7.1l1.2-1.2"/></svg></button><button type="button" class="wall-new" id="wallComposeButton" aria-label="Новая публикация"><svg class="ui-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Написать</span></button></div>
         </div>
         <div class="wall-tabs" role="tablist" aria-label="Публикации">
           <button class="active" type="button" role="tab" aria-selected="true" data-wall-sort="new">Новые</button>
@@ -101,8 +101,7 @@
           <button type="button" class="composer-btn mic" id="micButton" aria-label="Голосовое"><span data-icon="mic"><svg class="ui-icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6.5C7 4.01472 9.01472 2 11.5 2C13.9853 2 16 4.01472 16 6.5V11.5C16 13.9853 13.9853 16 11.5 16C9.01472 16 7 13.9853 7 11.5V6.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M11.5 19H11.0828C7.57267 19 4.57706 16.4623 4 13M11.5 19H11.9172C15.4273 19 18.4229 16.4623 19 13M11.5 19V22" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button>
           <input type="file" id="voiceInput" accept="audio/*" capture="microphone" hidden>
-          <button type="submit" class="send-btn" id="chatSend" aria-label="Отправить"><span data-icon="send"><svg class="ui-icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.0477 3.05293C18.8697 0.707363 2.48648 6.4532 2.50001 8.551C2.51535 10.9299 8.89809 11.6617 10.6672 12.1581C11.7311 12.4565 12.016 12.7625 12.2613 13.8781C13.3723 18.9305 13.9301 21.4435 15.2014 21.4996C17.2278 21.5892 23.1733 5.342 21.0477 3.05293Z" stroke="currentColor" stroke-width="1.5"/>
-<path d="M11.4999 12.5L14.9999 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button>
+          <button type="submit" class="send-btn" id="chatSend" aria-label="Отправить"><span data-icon="send"><svg class="ui-icon-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button>
         </form>
       </section>
       <section class="page" data-page="games">
@@ -171,8 +170,8 @@
   <div class="photo-viewer" id="photoViewer" hidden><button type="button" id="photoViewerClose" aria-label="Закрыть"><span data-icon="x"><svg class="ui-icon-svg" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6L6.00081 17.9992M17.9992 18L6 6.00085" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button><img id="photoViewerImage" alt=""></div>
   <div class="toast" id="toast" role="status"></div>
   <script src="./realtime.js?v=2"></script>
-  <script src="./app.js?v=53"></script>
-  <script src="./wall.js?v=8"></script>
+  <script src="./app.js?v=54"></script>
+  <script src="./wall.js?v=9"></script>
   <script defer src="./admin-wall.js?v=3"></script>
   <script defer src="./admin.js?v=11"></script>
 </body>
