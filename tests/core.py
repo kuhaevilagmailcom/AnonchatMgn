@@ -1935,7 +1935,7 @@ def test_miniapp_health_static_and_origin_guard() -> None:
 
     async def scenario() -> None:
         web_dir = Path(__file__).resolve().parents[1] / "miniapp" / "web"
-        # Real temporary SQLite covers health and WallMedia's database path.
+        # Use a real SQLite database for the Mini App health integration test.
         healthy_db = await Database(Path(tempfile.mkdtemp()) / "miniapp-health.db").start()
         miniapp = MiniAppServer(
             None,
