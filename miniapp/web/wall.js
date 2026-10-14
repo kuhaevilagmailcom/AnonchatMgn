@@ -523,13 +523,12 @@ function hydrateMedia(container=document){
     }
   }
   async function share(id){
-    const url=link(id,{source:'wall',medium:'share',campaign:'post'});
     const post=state.current?.id===id?state.current:state.posts.find(p=>p.id===id);
-    const title=post?.title?.trim()||'Публикация на стене АНОН МГН';
-    const body=post?.body?.trim()||'';
-    const summary=[title,body].filter(Boolean).join('\n\n').slice(0,1000);
+    const heading='Пост №'+id+' · Стена АНОН МГН';
+    const quoted=[post?.title?.trim(),post?.body?.trim()].filter(Boolean).join('\n')||'Публикация с фото';
+    const summary=heading+'\n\n❝ '+quoted.slice(0,850)+' ❞';
     try{tg?.HapticFeedback?.impactOccurred('soft')}catch(_){}
-    // Telegram 8.0+: native dialog shares a real photo + caption + post button.
+    // Native Telegram sends the attached photo + numbered blockquote + one post button.
     if(typeof tg?.shareMessage==='function'){
       try{
         const saved=await api('/api/miniapp/wall/'+id+'/share','POST',{});
@@ -541,17 +540,16 @@ function hydrateMedia(container=document){
         }
       }catch(err){console.warn('Native Wall share unavailable:',err)}
     }
-    // Other browsers: share the actual JPEG preview when file sharing works.
+    // OS share sheets cannot attach Telegram inline buttons, but don't leak raw URLs.
     if(typeof navigator.share==='function'){
       try{
-        const payload={title:'АНОН МГН · Стена',text:summary+'\n\n'+url};
+        const payload={title:'АНОН МГН · Стена',text:summary};
         if(typeof File!=='undefined'&&typeof navigator.canShare==='function'){
           try{
             const shareData=await api('/api/miniapp/wall/'+id+'/share-details','POST',{});
             const response=await fetch(shareData.preview_url,{cache:'no-store'});
             if(response.ok){
-              const jpeg=await response.blob();
-              const file=new File([jpeg],'anon-mgn-'+id+'.jpg',{type:'image/jpeg'});
+              const file=new File([await response.blob()],'anon-mgn-'+id+'.jpg',{type:'image/jpeg'});
               if(navigator.canShare({files:[file]}))payload.files=[file];
             }
           }catch(_){}
@@ -560,11 +558,12 @@ function hydrateMedia(container=document){
         return;
       }catch(err){if(err?.name==='AbortError')return}
     }
-    // Older Telegram clients: at least include the post text, not a bare URL.
-    const target='https://t.me/share/url?url='+encodeURIComponent(url)+'&text='+encodeURIComponent(summary);
-    if(typeof tg?.openTelegramLink==='function'){tg.openTelegramLink(target);return;}
-    try{await navigator.clipboard.writeText(summary+'\n\n'+url);flash('Текст и ссылка скопированы')}
-    catch(_){if(tg?.showAlert)tg.showAlert(summary+'\n\n'+url);else flash('Не удалось поделиться');}
+    if(typeof tg?.showAlert==='function'){
+      tg.showAlert('Чтобы отправить пост с фотографией и кнопкой, обнови Telegram.');
+      return;
+    }
+    try{await navigator.clipboard.writeText(summary);flash('Текст публикации скопирован')}
+    catch(_){flash('Не удалось поделиться публикацией')}
   }
   function menu(id){
     const p=state.current?.id===id?state.current:state.posts.find(x=>x.id===id);
