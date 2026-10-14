@@ -1305,10 +1305,9 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await send(A, "/top")
     check("Топ · Неделя" in session.last_to(A), "топ по умолчанию открывается за неделю")
     check(
-        "Розыгрыш NFT" in session.last_to(A)
-        and "На данный момент выигрывает:" in session.last_to(A)
-        and "11 октября 2026 · 20:00" in session.last_to(A),
-        "недельный топ показывает текущего лидера NFT-розыгрыша",
+        "Розыгрыш NFT" not in session.last_to(A)
+        and "На данный момент выигрывает:" not in session.last_to(A),
+        "публичный недельный топ не показывает завершённый NFT-розыгрыш",
     )
     await press(A, "top:month")
     check("Топ · Месяц" in session.last_to(A), "топ переключается на месяц")
