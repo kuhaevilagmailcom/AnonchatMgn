@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import asyncio
 from types import SimpleNamespace
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+from anonchat.db import Database
 
 from anonchat import dice_duels as DD
 
@@ -17,6 +21,20 @@ class FakeMM:
 
     def dialog_stats(self, uid):
         return {"started_at": self.started}
+
+
+class FakeLedger:
+    def __init__(self, multiplier=1, used=0):
+        self.multiplier = multiplier
+        self.used = {101: used}
+        self.payouts = []
+
+    async def award_game_xp(self, uid, amount, *, source, **kwargs):
+        assert source == "emoji_dice"
+        paid = min(amount * self.multiplier, max(0, 500 - self.used.get(uid, 0)))
+        self.used[uid] = self.used.get(uid, 0) + paid
+        self.payouts.append((uid, amount, paid, kwargs))
+        return paid
 
 
 class FakeBot:
@@ -49,14 +67,29 @@ class FakeBot:
 
 async def scenario():
     mm, bot = FakeMM(), FakeBot()
+    ledger = FakeLedger()
     DD.reset()
     assert DD.display_value("slots", 1) == "BAR BAR BAR"
     assert DD.display_value("slots", 64) == "7️⃣ 7️⃣ 7️⃣"
     assert DD._score("slots", 1) == 3
-    assert DD._score("slots", 22) == 3
-    assert DD._score("slots", 43) == 3
+    assert DD._score("slots", 22) == 2
+    assert DD._score("slots", 43) == 2
     assert DD._score("slots", 64) == 4
-    assert DD._score("slots", 1) > DD._score("slots", 20)
+    assert DD._score("slots", 1) > DD._score("slots", 22)
+    assert DD.base_prize("slots", 2, 20) == 5
+    assert DD.base_prize("slots", 22, 20) == 7
+    assert DD.base_prize("slots", 1, 20) == 10
+    assert DD.base_prize("slots", 64, 1) == 15
+    assert DD.base_prize("slots", 20, 2) == 0
+    assert DD.base_prize("slots", 1, 1) == 0
+    assert DD.base_prize("basket", 5, 1) == 3
+    assert DD.base_prize("basket", 3, 1) == 0
+    assert DD.base_prize("football", 5, 1) == 2
+    assert DD.base_prize("football", 2, 1) == 0
+    for kind in ("darts", "dice", "bowling"):
+        assert DD.base_prize(kind, 6, 1) == 3
+        assert DD.base_prize(kind, 5, 1) == 2
+        assert DD.base_prize(kind, 4, 4) == 0
 
     for key, (emoji, title, max_value) in DD.KINDS.items():
         assert 1 <= max_value <= 64
@@ -83,21 +116,24 @@ async def scenario():
 
         await DD.respond(mm, bot, 202, 101, duel.id, True)
         assert DD.state_for(mm, 202, 101)["status"] == "active"
-        state, first = await DD.roll(mm, bot, 101, 202, duel.id)
+        state, first = await DD.roll(mm, bot, 101, 202, duel.id, db=ledger)
         assert first == max_value
         assert state.rolls == {101: max_value}
         assert bot.copied[-1][0:2] == (202, 101)
         assert DD.state_for(mm, 101, 202)["answered"] is True
 
         try:
-            await DD.roll(mm, bot, 101, 202, duel.id)
+            await DD.roll(mm, bot, 101, 202, duel.id, db=ledger)
         except DD.DuelError:
             pass
         else:
             raise AssertionError("Repeat roll accepted")
-        _, second = await DD.roll(mm, bot, 202, 101, duel.id)
+        _, second = await DD.roll(mm, bot, 202, 101, duel.id, db=ledger)
         assert second == 1
         assert DD.state_for(mm, 101, 202)["finished"]
+        expected = DD.base_prize(key, max_value, 1)
+        assert DD.state_for(mm, 101, 202)["reward_total"] == expected
+        assert ledger.payouts[-1][0:3] == (101, expected, expected)
         assert bot.messages[-1][0] in (101, 202)
         assert any("Победа" in msg for _, msg, _ in bot.messages[-2:]) or max_value == 1
 
@@ -106,18 +142,18 @@ async def scenario():
     duel = await DD.invite(mm, bot, 101, 202, "basket")
     await DD.respond(mm, bot, 202, 101, duel.id, True)
     msg = SimpleNamespace(message_id=777, dice=SimpleNamespace(value=5, emoji="🏀"))
-    assert await DD.try_manual_roll(mm, bot, 101, msg)
+    assert await DD.try_manual_roll(mm, bot, 101, msg, db=ledger)
     assert bot.copied[-1] == (202, 101, 777)
     assert duel.rolls[101] == 5
     # Wrong game emoji remains a regular chat message, not a game move.
     bad = SimpleNamespace(message_id=778, dice=SimpleNamespace(value=6, emoji="🎲"))
-    assert not await DD.try_manual_roll(mm, bot, 202, bad)
+    assert not await DD.try_manual_roll(mm, bot, 202, bad, db=ledger)
 
     # Failed copy does not consume a turn.
     bot.fail_copy = True
     bot.values = [4]
     try:
-        await DD.roll(mm, bot, 202, 101, duel.id)
+        await DD.roll(mm, bot, 202, 101, duel.id, db=ledger)
     except DD.DuelError:
         pass
     else:
@@ -125,7 +161,7 @@ async def scenario():
     assert 202 not in duel.rolls
     bot.fail_copy = False
     bot.values = [3]
-    await DD.roll(mm, bot, 202, 101, duel.id)
+    await DD.roll(mm, bot, 202, 101, duel.id, db=ledger)
 
     # Concurrent duplicate presses resolve to one valid turn.
     DD.reset()
@@ -133,8 +169,8 @@ async def scenario():
     duel = await DD.invite(mm, bot, 101, 202, "dice")
     await DD.respond(mm, bot, 202, 101, duel.id, True)
     replies = await asyncio.gather(
-        DD.roll(mm, bot, 101, 202, duel.id),
-        DD.roll(mm, bot, 101, 202, duel.id),
+        DD.roll(mm, bot, 101, 202, duel.id, db=ledger),
+        DD.roll(mm, bot, 101, 202, duel.id, db=ledger),
         return_exceptions=True,
     )
     assert sum(isinstance(x, tuple) for x in replies) == 1
@@ -165,10 +201,43 @@ async def scenario():
     await DD.respond(mm, slow, 202, 101, first.id, True)
     await DD.respond(mm, slow, 404, 303, second.id, True)
     await asyncio.gather(
-        DD.roll(mm, slow, 101, 202, first.id),
-        DD.roll(mm, slow, 303, 404, second.id),
+        DD.roll(mm, slow, 101, 202, first.id, db=ledger),
+        DD.roll(mm, slow, 303, 404, second.id, db=ledger),
     )
     assert slow.max_sends == 2, "Unrelated conversations blocked each other's dice rolls"
+
+    # Scheduled multiplier applies before the shared 500-star cap.
+    DD.reset()
+    limited = FakeLedger(multiplier=2, used=498)
+    bot.values = [5, 1]
+    duel = await DD.invite(mm, bot, 101, 202, "basket")
+    await DD.respond(mm, bot, 202, 101, duel.id, True)
+    await DD.roll(mm, bot, 101, 202, duel.id, db=limited)
+    await DD.roll(mm, bot, 202, 101, duel.id, db=limited)
+    assert duel.rewards == {101: 2}
+    assert limited.used[101] == 500
+
+    # Verify real SQLite ledger, daily quota, and the source category.
+    with TemporaryDirectory() as temp:
+        db = await Database(Path(temp) / "duels.sqlite").start()
+        try:
+            await db.ensure_user(101, "tester", "One")
+            before = await db.game_xp_today(101)
+            credited = await db.award_game_xp(
+                101, 3, source="emoji_dice", reason="Тест дуэли",
+                reference_type="dice_duel", reference_id="123",
+            )
+            assert credited == 3 * await db.xp_multiplier()
+            assert await db.game_xp_today(101) == before + credited
+            assert int((await db.get_user(101))["xp"]) == credited
+            journal = await db._fetchone(
+                "SELECT source, amount FROM xp_transactions WHERE user_id=? ORDER BY id DESC LIMIT 1",
+                (101,),
+            )
+            assert journal["source"] == "emoji_dice"
+            assert int(journal["amount"]) == credited
+        finally:
+            await db.close()
 
     # Re-matching the same two IDs invalidates callbacks from their old session.
     mm.started += 100
