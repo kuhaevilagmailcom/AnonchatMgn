@@ -59,19 +59,22 @@ const server = http.createServer((req, res) => {
           const sections = Array.from(document.querySelectorAll('.page[data-page]'));
           const original = sections.filter(p => p.classList.contains('active'));
           const widths = [];
+          let chatButton = null;
           for (const section of sections) {
             sections.forEach(p => p.classList.toggle('active', p === section));
             widths.push({ page: section.dataset.page, width: document.documentElement.scrollWidth });
+            if (section.dataset.page === 'chat') {
+              const r = document.querySelector('#chatSend')?.getBoundingClientRect();
+              chatButton = r ? { width: r.width, height: r.height } : null;
+            }
           }
           sections.forEach(p => p.classList.toggle('active', original.includes(p)));
-          const chatSend = document.querySelector('#chatSend');
-          const r = chatSend?.getBoundingClientRect();
           return {
             widths,
             navs: Array.from(document.querySelectorAll('#bottomNav [data-nav]')).map(x => x.dataset.nav),
             hasRetiredDOM: Boolean(document.querySelector('[data-page="wall"],[data-nav="wall"],#wallOverlay')),
             hasRetiredAssets: Array.from(document.scripts).some(s => /(?:wall\.js|admin-wall\.js)/.test(s.src)),
-            chatButton: r ? { width:r.width,height:r.height } : null,
+            chatButton,
           };
         });
         assert.ok(!measurements.hasRetiredDOM, 'retired UI is still mounted');
