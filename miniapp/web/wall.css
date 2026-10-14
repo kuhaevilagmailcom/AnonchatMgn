@@ -681,3 +681,124 @@ body.wall-sheet-open{overflow:hidden}
 @keyframes wall-action-up{from{transform:translateY(28px)}to{transform:translateY(0)}}
 @media(min-width:700px){.wall-action-layer{align-items:center}.wall-action-sheet{max-width:390px}}
 @media(prefers-reduced-motion:reduce){.wall-action-layer,.wall-action-sheet,.wall-action-layer.closing{animation:none!important}}
+
+/* Wall v8 — stable discussion + composer in Telegram's changing viewport. */
+.wall-overlay{
+  top:var(--wall-viewport-top,0px);
+  bottom:auto;
+  height:var(--wall-viewport-height,100dvh);
+  min-height:0;
+  overflow:hidden;
+}
+.wall-sheet{
+  display:flex;
+  flex-direction:column;
+  height:100%!important;
+  min-height:0;
+  max-height:100%!important;
+  overflow:hidden!important;
+}
+.wall-sheet-header{flex:0 0 auto;position:relative;z-index:1}
+.wall-detail-scroll{
+  flex:1 1 auto!important;
+  min-height:0!important;
+  max-height:none!important;
+  overflow-x:hidden;
+  overflow-y:auto!important;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:none!important;
+  padding:0 16px 16px!important;
+}
+.wall-detail-scroll::-webkit-scrollbar{display:none}
+.wall-detail-scroll>.wall-post{
+  margin:0;
+  padding:16px 0 12px;
+  border:0;
+  border-bottom:1px solid #292629;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+}
+.wall-detail-scroll>.wall-post:active{background:transparent}
+.wall-detail-scroll .wall-post-media.photos.wall-count-1 .wall-photo-tile img{
+  max-height:min(440px,52dvh);
+  object-fit:contain;
+}
+.wall-comment-form{
+  position:relative!important;
+  bottom:auto!important;
+  flex:0 0 auto;
+  width:100%;
+  min-width:0;
+  margin:0;
+  padding:9px 12px calc(9px + env(safe-area-inset-bottom))!important;
+  border-top:1px solid #2b292b!important;
+  background:#0d0d0e;
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
+}
+.wall-comment-row{
+  display:flex;
+  min-height:46px;
+  align-items:flex-end;
+  gap:8px;
+  padding:5px 5px 5px 13px;
+  background:#1c1c1e;
+  border:1px solid #38383a;
+  border-radius:23px;
+}
+.wall-comment-row textarea{
+  display:block;
+  flex:1 1 auto;
+  width:100%;
+  min-width:0;
+  min-height:26px;
+  height:26px;
+  max-height:104px;
+  padding:3px 0;
+  margin:0;
+  line-height:20px;
+  font-size:16px;
+  resize:none;
+  overflow-y:auto;
+}
+.wall-send{
+  display:grid;
+  place-items:center;
+  width:36px;
+  height:36px;
+  flex:0 0 36px;
+  padding:0;
+  margin:0;
+  border-radius:50%;
+  background:var(--accent,#e57ac6);
+  color:#171016;
+  box-shadow:none;
+}
+.wall-send .wall-icon--send{
+  display:block;
+  width:20px;
+  height:20px;
+  stroke-width:2.5;
+}
+#wallReplyTo:not([hidden]){
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-width:0;
+  padding:2px 4px 9px;
+  color:#b7afb8;
+}
+#wallReplyTo>span{
+  min-width:0;
+  flex:1 1 auto;
+  overflow:hidden;
+  white-space:nowrap;
+  text-overflow:ellipsis;
+}
+#wallReplyTo button{flex:0 0 26px}
+@media(max-width:360px){
+  .wall-detail-scroll{padding-left:12px!important;padding-right:12px!important}
+  .wall-comment-form{padding-left:10px!important;padding-right:10px!important}
+}
