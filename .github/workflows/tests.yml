@@ -31,6 +31,7 @@ jobs:
           - admin_reliability
           - load_smoke
           - game_resilience
+          - dice_duels
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
