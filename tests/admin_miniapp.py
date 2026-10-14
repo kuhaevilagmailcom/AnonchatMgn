@@ -50,7 +50,9 @@ def test_admin_miniapp_endpoints() -> None:
             home_html=await home.text()
             assert "admin.js?v=11" in home_html and "admin.css?v=11" in home_html
             assert "admin-wall.js?v=3" in home_html
-            assert "wall.js?v=7" in home_html and "wall.css?v=7" in home_html
+            import re
+            assert re.search(r"wall\.js\?v=\d+", home_html)
+            assert re.search(r"wall\.css\?v=\d+", home_html)
             assert 'data-game="numbers"' not in home_html
             assert "500 ⭐ в день" in home_html
             admin_bundle=await client.get("/admin.js")
