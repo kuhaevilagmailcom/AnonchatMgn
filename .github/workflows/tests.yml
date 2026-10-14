@@ -4,11 +4,31 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
+permissions:
+  contents: read
+
+# Independent suites: one hanging SQLite test must not hide other failures.
 jobs:
-  test:
+  python:
+    name: Python · ${{ matrix.suite }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 6
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - core
+          - flow
+          - moderation_channel
+          - admin_miniapp
+          - admin_reliability
+          - load_smoke
+          - game_resilience
+          - wall
+          - wall_media
+          - wall_share
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -16,19 +36,33 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -r requirements.txt
-      - run: python -m tests.core
-      - run: python -m tests.flow
-      - run: python -m tests.moderation_channel
-      - run: python -m tests.admin_miniapp
-      - run: python -m tests.admin_reliability
-      - run: python -m tests.load_smoke
-      - run: python -m tests.game_resilience
-      - run: python -m tests.wall
-      - run: python -m tests.wall_media
-      - run: python -m tests.wall_share
-      - run: node tests/wall_ui.cjs
-      - run: python -m compileall -q .
-      - run: node --check miniapp/web/app.js
-      - run: node --check miniapp/web/wall.js
-      - run: node --check miniapp/web/admin-wall.js
-      - run: node --check miniapp/web/admin.js
+      - name: Run isolated test suite with hang protection
+        run: timeout --signal=TERM --kill-after=5s 240s python -u -m tests.${{ matrix.suite }}
+
+  python-syntax:
+    name: Python syntax
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m compileall -q anonchat tests main.py
+
+  browser-js:
+    name: Mini App JavaScript and UI
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: |
+          node --check miniapp/web/app.js
+          node --check miniapp/web/wall.js
+          node --check miniapp/web/admin-wall.js
+          node --check miniapp/web/admin.js
+          node --check miniapp/web/realtime.js
+          node tests/wall_ui.cjs
