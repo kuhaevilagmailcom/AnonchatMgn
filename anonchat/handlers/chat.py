@@ -23,6 +23,7 @@ from ..engagement import collect_progress_notifications
 from .. import relay_state
 from .. import live_chat
 from .. import word_game as WG
+from .. import dice_duels as DD
 
 router = Router(name="chat")
 
@@ -101,6 +102,11 @@ async def relay_to_partner(
         return
 
     current_partner = mm.partner(ctx.user_id)
+    # Native Telegram dice messages count as a turn in the active emoji duel.
+    # Without a duel they still pass through the ordinary anonymous relay.
+    if message.dice is not None:
+        if await DD.try_manual_roll(mm, ctx.bot, ctx.user_id, message):
+            return
     if (
         message.text
         and current_partner is not None
