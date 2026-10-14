@@ -543,7 +543,8 @@ function hydrateMedia(container=document){
         const payload={title:'АНОН МГН · Стена',text:summary+'\n\n'+url};
         if(typeof File!=='undefined'&&typeof navigator.canShare==='function'){
           try{
-            const response=await fetch(base+'/api/miniapp/wall/share-preview/'+id+'.jpg',{cache:'no-store'});
+            const shareData=await api('/api/miniapp/wall/'+id+'/share-details','POST',{});
+            const response=await fetch(shareData.preview_url,{cache:'no-store'});
             if(response.ok){
               const jpeg=await response.blob();
               const file=new File([jpeg],'anon-mgn-'+id+'.jpg',{type:'image/jpeg'});
