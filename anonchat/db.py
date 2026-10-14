@@ -485,7 +485,7 @@ GAME_INACTIVE_TTL_SECONDS = 2 * 24 * 60 * 60
 GAME_XP_DAILY_LIMIT = 500
 # Overall cap across the games available in the bot. Legacy Numbers rewards from
 # earlier today also count, so removal cannot reset a user's daily allowance.
-GAME_XP_SOURCES = ("battle", "numbers", "geoguessr", "word_game")
+GAME_XP_SOURCES = ("battle", "numbers", "geoguessr", "word_game", "emoji_dice")
 
 
 # Магнитогорск живёт по UTC+5. Фиксированный сдвиг не зависит от часового пояса хостинга.
@@ -1517,7 +1517,7 @@ class Database:
             """SELECT COALESCE(SUM(amount), 0) AS earned
                  FROM xp_transactions
                 WHERE user_id=? AND created_at>=?
-                  AND source IN ('battle','numbers','geoguessr','word_game')
+                  AND source IN ('battle','numbers','geoguessr','word_game','emoji_dice')
                   AND amount>0""",
             (int(user_id), referral_day_start(timestamp)),
         )
