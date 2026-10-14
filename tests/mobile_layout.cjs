@@ -53,6 +53,7 @@ const server = http.createServer((req, res) => {
     ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium'].find(fs.existsSync);
   assert.ok(chrome, 'Chromium/Google Chrome is required for mobile layout tests');
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
   const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
   try {
     for (const width of [320, 360, 390, 430]) {
