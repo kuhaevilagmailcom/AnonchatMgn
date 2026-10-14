@@ -1962,7 +1962,7 @@ class MiniAppServer:
         data = await request.json()
         try:
             game_id = int(data.get("game_id") or 0)
-            _, value = await DD.roll(self.mm, self.bot, uid, partner, game_id)
+            _, value = await DD.roll(self.mm, self.bot, uid, partner, game_id, db=self.db)
         except (ValueError, DD.DuelError) as exc:
             raise _json_error(409, str(exc)) from exc
         return web.json_response({"ok": True, "value": value, "game": DD.state_for(self.mm, uid, partner)})
