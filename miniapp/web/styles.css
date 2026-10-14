@@ -1122,3 +1122,7 @@ body[data-theme="mono"] .premium-overlay-button{color:#000}
   .chat-game-picker .chat-game-emoji-grid button{padding:8px 9px;gap:6px;font-size:19px}
   .chat-game-picker .chat-game-emoji-grid button>span{font-size:11px}
 }
+
+/* Slot outcomes are three short reel symbols rather than a single number. */
+.dice-duel-score.slots{gap:4px;padding:10px 7px}
+.dice-duel-score.slots b{font-size:11px;letter-spacing:-.3px;white-space:nowrap}
