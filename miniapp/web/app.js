@@ -882,7 +882,7 @@ if (typeof window === 'undefined') {
         ?(mineScore===otherScore?'🤝 Ничья':mineScore>otherScore?'🏆 Ты победил!':'Победил собеседник')
         :game.answered?'Ждём бросок собеседника':'Брось один раз — результат определит Telegram';
       root.innerHTML=top+`<div class="active-game-body dice-duel">
-        <div class="dice-duel-score">
+        <div class="dice-duel-score ${game.emoji==='🎰'?'slots':''}">
           <span>Ты <b>${mine==null?'—':esc(game.my_display||String(mine))}</b></span><span>${esc(game.emoji)}</span><span>Собеседник <b>${other==null?'—':esc(game.partner_display||String(other))}</b></span>
         </div>
         <p>${description}</p>
