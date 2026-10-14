@@ -364,8 +364,9 @@ def test_database() -> None:
 
         await db.ensure_user(11, "friend", "Друг")
         assert await db.award_referral(11, 10, 50) is True
-        assert await db.referral_stats(10) == (1, 50)
-        assert (await db.get_user(10))["xp"] == 120
+        referral_credit = 50 * await db.xp_multiplier()
+        assert await db.referral_stats(10) == (1, referral_credit)
+        assert (await db.get_user(10))["xp"] == 70 + referral_credit
         assert await db.award_referral(11, 10, 50) is False
         assert await db.award_referral(21, 21, 50) is False
 
