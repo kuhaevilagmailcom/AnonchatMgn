@@ -24,6 +24,30 @@ KINDS: dict[str, tuple[str, str, int]] = {
     "bowling": ("🎳", "Боулинг", 6),
     "slots": ("🎰", "Автомат", 64),
 }
+# Telegram encodes each slot reel in two bits of (dice.value - 1).
+_SLOT_SYMBOLS = ("BAR", "🍒", "🍋", "7️⃣")
+
+
+def display_value(kind: str, value: int) -> str:
+    if kind != "slots":
+        return str(value)
+    bits = value - 1
+    return " ".join(_SLOT_SYMBOLS[(bits >> offset) & 3] for offset in (0, 2, 4))
+
+
+def _score(kind: str, value: int) -> int:
+    if kind != "slots":
+        return value
+    parts = [(value - 1 >> offset) & 3 for offset in (0, 2, 4)]
+    if parts == [3, 3, 3]:
+        return 4  # 777
+    if len(set(parts)) == 1:
+        return 3  # Three matching symbols
+    if len(set(parts)) == 2:
+        return 2  # Pair
+    return 1  # No match
+
+
 TTL = 10 * 60
 RESULT_TTL = 30
 
@@ -97,6 +121,10 @@ def state_for(mm: Any, uid: int, partner: int | None) -> dict | None:
         "answered": uid in game.rolls,
         "my_roll": game.rolls.get(uid),
         "partner_roll": game.rolls.get(partner),
+        "my_display": display_value(game.kind, game.rolls[uid]) if uid in game.rolls else "",
+        "partner_display": display_value(game.kind, game.rolls[partner]) if partner in game.rolls else "",
+        "my_score": _score(game.kind, game.rolls[uid]) if uid in game.rolls else None,
+        "partner_score": _score(game.kind, game.rolls[partner]) if partner in game.rolls else None,
         "total": 1, "round": 1, "finished": game.status == "finished",
     }
 
@@ -129,10 +157,13 @@ async def invite(mm: Any, bot: Any, uid: int, partner: int, kind: str) -> Duel:
         )
         _GAMES[game.pair] = game
     emoji, name, _ = KINDS[kind]
+    rule = ("Три одинаковых символа сильнее пары, 777 — лучше всех."
+            if kind == "slots" else
+            "Каждый делает один бросок. Чей результат выше — тот победил.")
     try:
         await bot.send_message(
             partner, f"{emoji} <b>Собеседник зовёт в «{name}»</b>\n"
-            "Каждый делает один бросок. Чей результат выше — тот победил.",
+            + rule,
             parse_mode="HTML", reply_markup=invite_markup(game),
         )
     except Exception:
@@ -211,18 +242,20 @@ async def roll(mm: Any, bot: Any, uid: int, partner: int, game_id: int,
         if finished:
             game.status = "finished"
             game.finished_at = time.monotonic()
-    live_chat.private(uid, f"{game.emoji} Твой бросок: {value}", kind="game_round")
-    live_chat.private(partner, f"{game.emoji} Бросок собеседника: {value}", kind="game_round")
+    display = display_value(game.kind, value)
+    live_chat.private(uid, f"{game.emoji} Твой бросок: {display}", kind="game_round")
+    live_chat.private(partner, f"{game.emoji} Бросок собеседника: {display}", kind="game_round")
     if finished:
-        first, second = game.pair
-        a, b = game.rolls[first], game.rolls[second]
         for player in game.pair:
             other = partner if player == uid else uid
             mine = game.rolls[player]
             theirs = game.rolls[other]
-            outcome = "🤝 Ничья!" if mine == theirs else ("🏆 Победа!" if mine > theirs else "Собеседник победил.")
+            mine_score, their_score = _score(game.kind, mine), _score(game.kind, theirs)
+            outcome = ("🤝 Ничья!" if mine_score == their_score
+                       else "🏆 Победа!" if mine_score > their_score else "Собеседник победил.")
             text = (f"{game.emoji} <b>{outcome}</b>\n"
-                    f"Ты: <b>{mine}</b> · Собеседник: <b>{theirs}</b>\n"
+                    f"Ты: <b>{display_value(game.kind, mine)}</b> · "
+                    f"Собеседник: <b>{display_value(game.kind, theirs)}</b>\n"
                     "Ещё раз? Игры → выбери эмодзи.")
             try:
                 await bot.send_message(player, text, parse_mode="HTML")
