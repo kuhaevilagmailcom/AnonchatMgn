@@ -38,6 +38,7 @@ CB_SUPPORT_SBP_CHECK_PREFIX = "act:support:sbpcheck:"
 CB_CONTINUE = "onboard:continue"
 CB_NICK = "cfg:nick:ask"
 CB_GAMES = "game:menu"
+CB_DICE = "game:dice:menu"
 CB_BATTLE = "game:battle"
 CB_NUMBERS = "game:numbers"
 CB_WORDS = "game:words"
@@ -313,8 +314,25 @@ def games_keyboard(*, admin: bool = False) -> InlineKeyboardMarkup:
     _button(b, "Битва мнений", callback_data=CB_BATTLE, icon="bonus", style="primary")
     _button(b, "Объясни слово", callback_data=CB_WORDS, icon="ticket", style="primary")
     _button(b, "GeoGuessr📍", callback_data=CB_GEO, icon="geo", style="success")
+    _button(b, "🎲 Эмодзи-дуэли", callback_data=CB_DICE, style="primary")
     _button(b, "Вернуться в чат", callback_data="game:return", icon="home")
     b.adjust(1)
+    return b.as_markup()
+
+
+def dice_kinds_keyboard() -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    for key, emoji, title in [
+        ("dice", "🎲", "Кости"),
+        ("basket", "🏀", "Баскетбол"),
+        ("darts", "🎯", "Дартс"),
+        ("football", "⚽", "Футбол"),
+        ("bowling", "🎳", "Боулинг"),
+        ("slots", "🎰", "Автомат"),
+    ]:
+        _button(b, f"{emoji} {title}", callback_data=f"game:dice:choose:{key}")
+    _button(b, "Назад", callback_data=CB_GAMES, icon="home")
+    b.adjust(2, 2, 2, 1)
     return b.as_markup()
 
 
