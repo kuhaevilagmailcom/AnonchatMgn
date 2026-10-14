@@ -71,6 +71,23 @@ async def check_wall():
         assert listing["items"][0]["nick"] == "Автор МГН", listing
         assert listing["items"][0]["title"] == "Что сегодня происходит?"
         assert listing["items"][0]["show_nick"] is True
+        assert listing["items"][0]["views"] == 0
+        # Count a unique authenticated viewer only once across refreshes.
+        first_view=json.loads((await wall.view(Req(102,{"ids":[pid]}))).text)
+        assert first_view["views"][str(pid)] == 1
+        repeat=json.loads((await wall.view(Req(102,{"ids":[pid,pid]}))).text)
+        assert repeat["views"][str(pid)] == 1
+        detail_once=json.loads((await wall.detail(Req(102,post=pid))).text)["post"]
+        assert detail_once["views"] == 1
+        # A separate visitor has one additional view even when opening a deep link.
+        detail_other=json.loads((await wall.detail(Req(103,post=pid))).text)["post"]
+        assert detail_other["views"] == 2
+        assert json.loads((await wall.feed(Req(101,sort="new"))).text)["items"][0]["views"] == 2
+        await asyncio.gather(
+            wall.view(Req(101,{"ids":[pid]})),
+            wall.view(Req(101,{"ids":[pid]})),
+        )
+        assert json.loads((await wall.feed(Req(102,sort="new"))).text)["items"][0]["views"] == 3
         assert "author_id" not in listing["items"][0]
         await wall.like(Req(102,{},pid))
         liked = json.loads((await wall.detail(Req(102,post=pid))).text)["post"]
@@ -126,6 +143,9 @@ async def check_wall():
         assert int(still_hidden["hidden"]) == 1
         hidden = json.loads((await wall.feed(Req(102,sort="new"))).text)
         assert hidden["items"] == []
+        assert json.loads((await wall.view(Req(103,{"ids":[pid]}))).text)["views"] == {}
+        count_hidden=await db._fetchone("SELECT views FROM wall_posts WHERE id=?", (pid,))
+        assert int(count_hidden["views"]) == 3
         print("Wall checks passed: public access, anonymous topics, idempotency, replies and moderation")
     finally:
         await db.close()
