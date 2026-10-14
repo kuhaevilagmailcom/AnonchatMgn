@@ -1972,6 +1972,8 @@ class MiniAppServer:
         partner = self.mm.partner(uid)
         if partner is None:
             raise _json_error(409, "Сначала найди собеседника")
+        if DD.active_for_pair(self.mm, uid, partner):
+            raise _json_error(409, "Сначала заверши эмодзи-дуэль")
         data = await request.json()
         try:
             total = int(data.get("total", 10) or 10)
@@ -2015,6 +2017,8 @@ class MiniAppServer:
         partner = self.mm.partner(uid)
         if partner is None:
             raise _json_error(409, "Сначала найди собеседника")
+        if DD.active_for_pair(self.mm, uid, partner):
+            raise _json_error(409, "Сначала заверши эмодзи-дуэль")
         data = await request.json()
         try:
             total = int(data.get("rounds", 0) or 0)
@@ -2068,6 +2072,8 @@ class MiniAppServer:
         partner = self.mm.partner(uid)
         if partner is None:
             raise _json_error(409, "Сначала найди собеседника")
+        if DD.active_for_pair(self.mm, uid, partner):
+            raise _json_error(409, "Сначала заверши эмодзи-дуэль")
         if WG.active_for_pair(uid, partner):
             raise _json_error(409, "У вас уже есть активная игра «Объясни слово»")
         if await self.db.game_for_pair(uid, partner) is not None:
