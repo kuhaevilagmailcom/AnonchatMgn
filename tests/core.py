@@ -1020,6 +1020,9 @@ def test_keyboard_styles_and_icons() -> None:
     emoji_labels = {
         "👨 М", "👩 Д", "👨 Ищу М", "👩 Ищу Д", "🤷 Без разницы",
         "GeoGuessr📍",
+        "🎲 Эмодзи-дуэли",
+        "🎲 Кости", "🏀 Баскетбол", "🎯 Дартс",
+        "⚽ Футбол", "🎳 Боулинг", "🎰 Автомат",
     }
     for markup in markups:
         for row in markup.inline_keyboard:
@@ -1042,10 +1045,14 @@ def test_keyboard_styles_and_icons() -> None:
         ["Следующий"], ["Стоп", "Жалоба"], ["Игры"],
     ]
     assert texts_of(K.games_keyboard()) == [
-        "Битва мнений", "Объясни слово", "GeoGuessr📍", "Вернуться в чат",
+        "Битва мнений", "Объясни слово", "GeoGuessr📍", "🎲 Эмодзи-дуэли", "Вернуться в чат",
     ]
     assert texts_of(K.games_keyboard(admin=True)) == [
-        "Битва мнений", "Объясни слово", "GeoGuessr📍", "Вернуться в чат",
+        "Битва мнений", "Объясни слово", "GeoGuessr📍", "🎲 Эмодзи-дуэли", "Вернуться в чат",
+    ]
+    assert texts_of(K.dice_kinds_keyboard()) == [
+        "🎲 Кости", "🏀 Баскетбол", "🎯 Дартс", "⚽ Футбол",
+        "🎳 Боулинг", "🎰 Автомат", "Назад",
     ]
     assert texts_of(K.geo_rounds_keyboard()) == [
         "3 раунда", "5 раундов", "10 раундов", "Назад к играм",
