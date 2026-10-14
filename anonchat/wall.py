@@ -31,10 +31,18 @@ CREATE TABLE IF NOT EXISTS wall_posts (
     show_nick INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
-    hidden INTEGER NOT NULL DEFAULT 0
+    hidden INTEGER NOT NULL DEFAULT 0,
+    views INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_wall_posts_feed ON wall_posts(hidden, created_at DESC, id DESC);
 CREATE INDEX IF NOT EXISTS idx_wall_posts_author ON wall_posts(author_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS wall_post_views (
+    post_id INTEGER NOT NULL,
+    viewer_id INTEGER NOT NULL,
+    viewed_at INTEGER NOT NULL,
+    PRIMARY KEY(post_id, viewer_id)
+);
+CREATE INDEX IF NOT EXISTS idx_wall_post_views_viewer ON wall_post_views(viewer_id);
 CREATE TABLE IF NOT EXISTS wall_comments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     post_id INTEGER NOT NULL REFERENCES wall_posts(id),
@@ -107,6 +115,7 @@ class Wall:
         self.db = server.db
         self.media = WallMedia(self)
         self._create_lock = asyncio.Lock()
+        self._view_lock = asyncio.Lock()
         self.public_enabled = os.getenv("WALL_PUBLIC_ENABLED","true").strip().lower() in {"1","true","yes","on"}
         self._comment_lock = asyncio.Lock()
 
@@ -129,6 +138,10 @@ class Wall:
         if "show_nick" not in columns:
             await self.db.db.execute(
                 "ALTER TABLE wall_posts ADD COLUMN show_nick INTEGER NOT NULL DEFAULT 1"
+            )
+        if "views" not in columns:
+            await self.db.db.execute(
+                "ALTER TABLE wall_posts ADD COLUMN views INTEGER NOT NULL DEFAULT 0"
             )
         await self.media.ensure_schema()
         await self.db.db.executescript("""
@@ -195,6 +208,7 @@ class Wall:
             "updated_at": int(r["updated_at"]),
             "likes": int(r["likes"]),
             "comments": int(r["comments"]),
+            "views": int(r["views"] or 0),
             "liked": bool(r["liked"]),
         }
 
@@ -254,6 +268,44 @@ class Wall:
             "offset": offset + min(len(rows), 20),
             "is_admin": await self._admin(uid),
         })
+
+    async def _record_views(self, uid, post_ids):
+        """Unique viewers only: refreshes and duplicate in-flight requests never inflate views."""
+        ids = list(dict.fromkeys(int(pid) for pid in post_ids if int(pid) > 0))[:30]
+        if not ids:
+            return {}
+        async with self._view_lock:
+            for pid in ids:
+                cur = await self.db.db.execute(
+                    """INSERT OR IGNORE INTO wall_post_views(post_id,viewer_id,viewed_at)
+                       SELECT id,?,? FROM wall_posts WHERE id=? AND hidden=0""",
+                    (uid, int(time.time()), pid),
+                )
+                if cur.rowcount:
+                    await self.db.db.execute(
+                        "UPDATE wall_posts SET views=views+1 WHERE id=? AND hidden=0",
+                        (pid,),
+                    )
+            await self.db.db.commit()
+            placeholders = ",".join("?" for _ in ids)
+            rows = await self.db._fetchall(
+                f"SELECT id,views FROM wall_posts WHERE hidden=0 AND id IN ({placeholders})",
+                ids,
+            )
+            return {int(row["id"]): int(row["views"]) for row in rows}
+
+    async def view(self, request):
+        uid = await self._user(request)
+        data = await request.json()
+        if not isinstance(data, dict) or not isinstance(data.get("ids"), list):
+            _error(400, "Некорректные публикации")
+        supplied = data["ids"]
+        if not supplied or len(supplied) > 30 or any(
+            type(pid) is not int or pid <= 0 for pid in supplied
+        ):
+            _error(400, "Можно отметить не больше 30 публикаций")
+        counts = await self._record_views(uid, supplied)
+        return web.json_response({"views": counts})
 
     async def create(self, request):
         uid = await self._user(request, write=True)
@@ -317,6 +369,8 @@ class Wall:
     async def detail(self, request):
         uid = await self._user(request)
         post_id = _id(request.match_info["post_id"])
+        # A deep link to a post must count as a view even without a feed impression.
+        await self._record_views(uid, [post_id])
         r = await self._post(post_id, uid)
         if not r:
             _error(404, "Пост не найден или скрыт")
@@ -633,6 +687,7 @@ def install_wall_routes(app, server):
     app.router.add_get(prefix + "/moderation", wall.moderation)
     app.router.add_post(prefix + "/moderate", wall.moderate)
     app.router.add_post(prefix + "/report", wall.report)
+    app.router.add_post(prefix + "/views", wall.view)
     app.router.add_post(prefix + "/comments/{comment_id}/delete", wall.remove_comment)
     app.router.add_get(prefix + "/{post_id}", wall.detail)
     app.router.add_post(prefix + "/{post_id}/comments", wall.comment)
