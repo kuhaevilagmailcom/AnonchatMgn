@@ -62,7 +62,7 @@ async def check():
         )
         image = await preview(wall, Req(101, post=post_id))
         assert image.content_type == "image/jpeg"
-        assert image.body[:2] == b"\\xff\\xd8"
+        assert image.body[:2] == bytes((0xff, 0xd8))
         await db.db.execute(
             "UPDATE wall_posts SET hidden=1 WHERE id=?", (post_id,))
         try:
