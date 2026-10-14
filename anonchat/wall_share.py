@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import io
 import logging
-import os
 import re
 import uuid
 from urllib.parse import urlsplit
@@ -40,15 +39,6 @@ def share_caption(post, link):
     if len(text) > room:
         text = text[:max(1, room - 1)].rstrip() + "…"
     return f"{text}\n\n{link}"
-
-
-def _jpeg_preview(wall, post_id):
-    canvas = Image.new("RGB", (1000, 620), "#000000")
-    logo = wall.server.web_dir / "assets" / "anon-mgn-logo.png"
-    row = None
-    # Public posts may be shared; private unattached/hidden media may not.
-    # Caller has already checked wall_posts.hidden and public_enabled.
-    return canvas, logo
 
 
 async def preview(wall, request):
