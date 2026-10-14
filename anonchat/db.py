@@ -4220,6 +4220,17 @@ class Database:
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wall_posts'"
         )
         if wall_exists:
+            # Keep historical aggregate counts but erase viewer identities on /forget.
+            views_exist = await self._fetchone(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='wall_post_views'"
+            )
+            if views_exist:
+                await self.db.execute(
+                    """DELETE FROM wall_post_views
+                       WHERE viewer_id=? OR post_id IN
+                             (SELECT id FROM wall_posts WHERE author_id=?)""",
+                    (user_id, user_id),
+                )
             authored = "(SELECT id FROM wall_posts WHERE author_id=?)"
             await self.db.execute(
                 f"""DELETE FROM wall_reports
