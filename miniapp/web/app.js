@@ -280,7 +280,7 @@ if (typeof window === 'undefined') {
   function renderEvents(filter='all'){
     const list=$('#eventList');if(!list)return;
     const items=state.events.filter(x=>eventMatchesFilter(x,filter));
-    list.innerHTML=items.length?items.map(x=>`<button class="event ${x.unread?'unread':''}" data-event-id="${x.id}" data-event-action="${esc(x.action||'')}"><span>${svg(x.icon||'bell')}</span><div><strong>${esc(x.title)}</strong><p>${esc(x.text)}</p><small>${eventTime(x.created_at)}</small>${String(x.action||"").startsWith("wall:")?'<small class="wall-event-open">Открыть стену</small>':""}</div>${x.action?svg('chevron-right'):''}</button>`).join(''):'<div class="empty">Здесь пока тихо.</div>';
+    list.innerHTML=items.length?items.map(x=>`<button class="event ${x.unread?'unread':''}" data-event-id="${x.id}" data-event-action="${esc(x.action||'')}"><span>${svg(x.icon||'bell')}</span><div><strong>${esc(x.title)}</strong><p>${esc(x.text)}</p><small>${eventTime(x.created_at)}</small></div>${x.action?svg('chevron-right'):''}</button>`).join(''):'<div class="empty">Здесь пока тихо.</div>';
     const unread=state.events.some(x=>x.unread);$$('[data-event-dot]').forEach(el=>el.hidden=!unread);
     $$('[data-event-id]',list).forEach(el=>el.onclick=()=>openEvent(el.dataset.eventId,el.dataset.eventAction));
   }
@@ -304,7 +304,6 @@ if (typeof window === 'undefined') {
     else if(action==='profile:quests')openModal('quests','Цели дня');
     else if(action==='dialog:result')await loadDialogResult(true);
     else if(action==='events')go('events');
-    else if(/^wall:\d+$/.test(action)){go('wall');window.AnonWall?.openPost(Number(action.split(':')[1]));}
     await loadNotifications(false);
   }
   function topFallback(period){
@@ -369,13 +368,11 @@ if (typeof window === 'undefined') {
   }
   function go(page){
     if(page==='chat' && state.status!=='paired')page=state.status==='queued'?'search':'home';
-    if(page==="wall" && !state.wallAllowed){toast("Стена сейчас недоступна");return}
     state.page=page;
     document.body.classList.toggle('chat-open',page==='chat');
     $$('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===page));
     $$('#bottomNav button').forEach(b=>b.classList.toggle('active',b.dataset.nav===page));
     window.scrollTo({top:0,behavior:'auto'});
-    window.AnonWall?.onPage(page);
     haptic();
     if(page==='search')syncStatus(true);
     if(page==='top')loadTopPage(topPeriod);
@@ -1227,8 +1224,7 @@ if (typeof window === 'undefined') {
     window.addEventListener('pageshow',()=>{syncStatus(true);if(state.status==='paired')syncChat(true)});
     document.addEventListener('visibilitychange',()=>{if(!document.hidden){syncStatus(true);if(state.status==='paired')syncChat(true)}});
     try{if(tgAtLeast('6.1'))tg.BackButton.onClick(()=>{
-      if(window.AnonWall?.isOpen?.())window.AnonWall.close();
-      else if(state.modal)closeModal();
+      if(state.modal)closeModal();
       else if(state.page!=='home')go('home');
       else tg.close();
     })}catch(_){} 
@@ -1240,27 +1236,12 @@ if (typeof window === 'undefined') {
       icons();
       try{tg?.ready();tg?.expand();if(tgAtLeast('6.1')){tg.setHeaderColor?.('#050506');tg.setBackgroundColor?.('#050506')}if(tgAtLeast('7.7'))tg.disableVerticalSwipes?.()}catch(_){}
       bind();
-      // Fail closed until the server confirms this is an administrator.
-      state.wallAllowed=false;
-      try{
-        const access=await request('/api/miniapp/wall/access');
-        state.wallAllowed=access.allowed===true;
-      }catch(_){state.wallAllowed=false}
-      const wallNav=document.querySelector('#bottomNav [data-nav="wall"]');
-      if(wallNav)wallNav.hidden=!state.wallAllowed;
       await load();
       await syncStatus(true);
       startRealtime();
       startStatusSync();
       if(state.status==='paired')go('chat');
       else await loadDialogResult(true);
-      const start=String(tg?.initDataUnsafe?.start_param||new URLSearchParams(location.search).get('startapp')||'');
-      // Telegram startapp preserves the UTM tags; both Wall and post links work.
-      const wallMatch=/^wall(?:_(\d{1,10}))?(?:__utm_source_([a-z0-9-]{1,24}))?(?:__utm_medium_([a-z0-9-]{1,24}))?(?:__utm_campaign_([a-z0-9-]{1,32}))?$/i.exec(start);
-      if(wallMatch && state.wallAllowed){
-        go('wall');
-        if(wallMatch[1])window.AnonWall?.openPost(Number(wallMatch[1]));
-      }
     }catch(e){
       console.error('Mini App boot failed',e);
       if(tg?.initData)toast(e?.message||'Ошибка запуска Mini App');
