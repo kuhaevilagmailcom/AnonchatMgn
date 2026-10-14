@@ -31,9 +31,6 @@ jobs:
           - admin_reliability
           - load_smoke
           - game_resilience
-          - wall
-          - wall_media
-          - wall_share
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -66,11 +63,8 @@ jobs:
           node-version: "22"
       - run: |
           node --check miniapp/web/app.js
-          node --check miniapp/web/wall.js
-          node --check miniapp/web/admin-wall.js
           node --check miniapp/web/admin.js
           node --check miniapp/web/realtime.js
-          node tests/wall_ui.cjs
 
   mobile-layout:
     name: Mobile layout · Chromium
@@ -82,5 +76,5 @@ jobs:
         with:
           node-version: "22"
       - run: npm install --no-save --no-package-lock playwright-core@1.56.0
-      - name: Verify wall and reply placement at 320–430px
+      - name: Check all active Mini App screens at 320–430px
         run: node tests/mobile_layout.cjs
