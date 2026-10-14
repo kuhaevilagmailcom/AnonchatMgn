@@ -140,6 +140,36 @@ async def scenario():
     assert sum(isinstance(x, tuple) for x in replies) == 1
     assert sum(isinstance(x, DD.DuelError) for x in replies) == 1
 
+    # Different pairs roll in parallel, without waiting for each other's network sends.
+    class SlowBot(FakeBot):
+        def __init__(self):
+            super().__init__()
+            self.active_sends = 0
+            self.max_sends = 0
+
+        async def send_dice(self, *, chat_id, emoji):
+            self.active_sends += 1
+            self.max_sends = max(self.max_sends, self.active_sends)
+            try:
+                await asyncio.sleep(0.03)
+                return await super().send_dice(chat_id=chat_id, emoji=emoji)
+            finally:
+                self.active_sends -= 1
+
+    DD.reset()
+    mm.pairs.update({303: 404, 404: 303})
+    slow = SlowBot()
+    slow.values = [5, 3]
+    first = await DD.invite(mm, slow, 101, 202, "basket")
+    second = await DD.invite(mm, slow, 303, 404, "darts")
+    await DD.respond(mm, slow, 202, 101, first.id, True)
+    await DD.respond(mm, slow, 404, 303, second.id, True)
+    await asyncio.gather(
+        DD.roll(mm, slow, 101, 202, first.id),
+        DD.roll(mm, slow, 303, 404, second.id),
+    )
+    assert slow.max_sends == 2, "Unrelated conversations blocked each other's dice rolls"
+
     # Re-matching the same two IDs invalidates callbacks from their old session.
     mm.started += 100
     assert DD.state_for(mm, 101, 202) is None
