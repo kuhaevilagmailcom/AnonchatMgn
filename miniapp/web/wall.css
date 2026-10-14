@@ -878,3 +878,56 @@ body.wall-sheet-open{overflow:hidden}
   .wall-post-actions{gap:12px}
   .wall-post-actions button.wall-action-share{padding:0}
 }
+
+/* Wall v13: compact original-brand monogram and balanced view counter. */
+.wall-avatar--brand{
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  flex-shrink:0;
+  padding:0;
+  border:1px solid #3b3038!important;
+  border-radius:50%;
+  background:#000!important;
+}
+.wall-avatar--brand img{
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  object-position:center;
+  transform:none!important;
+  image-rendering:auto;
+}
+.wall-post-actions .wall-post-views{
+  display:inline-flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:5px;
+  flex:0 0 auto;
+  min-height:36px;
+  margin-left:auto;
+  color:#89848c;
+  font-size:11px;
+  font-weight:500;
+  line-height:16px;
+  white-space:nowrap;
+  font-variant-numeric:tabular-nums;
+}
+.wall-post-actions .wall-post-views .wall-icon--eye{
+  display:block;
+  width:15px;
+  height:15px;
+  flex:0 0 15px;
+  stroke-width:1.65;
+  color:#99939d;
+}
+.wall-post-actions .wall-post-views .wall-views-count{
+  font-size:11px;
+  line-height:16px;
+  letter-spacing:0;
+}
+@media(max-width:360px){
+  .wall-post-actions{gap:8px}
+  .wall-post-actions .wall-post-views{gap:4px}
+}
