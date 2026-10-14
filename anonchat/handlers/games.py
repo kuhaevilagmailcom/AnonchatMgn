@@ -376,7 +376,7 @@ async def cb_dice_roll(event: CallbackQuery, ctx: Ctx) -> None:
         return
     try:
         game_id = int((event.data or "").rsplit(":", 1)[-1])
-        await DD.roll(ctx.mm, ctx.bot, ctx.user_id, partner, game_id)
+        await DD.roll(ctx.mm, ctx.bot, ctx.user_id, partner, game_id, db=ctx.db)
     except (ValueError, DD.DuelError) as exc:
         await ctx.ack(str(exc), alert=True)
         return
