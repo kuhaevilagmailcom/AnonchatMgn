@@ -611,8 +611,15 @@ def install_wall_routes(app, server):
     install_wall_admin_routes(app,wall)
     prefix = "/api/miniapp/wall"
     from .wall_share import prepare_share, preview
-    app.router.add_get(prefix + "/share-preview/{post_id}.jpg", lambda request: preview(wall, request))
-    app.router.add_post(prefix + "/{post_id}/share", lambda request: prepare_share(wall, request))
+
+    async def share_preview(request):
+        return await preview(wall, request)
+
+    async def share_post(request):
+        return await prepare_share(wall, request)
+
+    app.router.add_get(prefix + "/share-preview/{post_id}.jpg", share_preview)
+    app.router.add_post(prefix + "/{post_id}/share", share_post)
     app.router.add_get(prefix + "/access", wall.access)
     app.router.add_post(prefix + "/upload", wall.media.upload)
     app.router.add_get(prefix + "/media/{media_id}", wall.media.read)
