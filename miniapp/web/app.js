@@ -877,12 +877,13 @@ if (typeof window === 'undefined') {
 
     if(game.type==='dice'){
       const mine=game.my_roll,other=game.partner_roll;
+      const mineScore=game.my_score??mine,otherScore=game.partner_score??other;
       const description=game.status==='finished'
-        ?(mine===other?'🤝 Ничья':mine>other?'🏆 Ты победил!':'Победил собеседник')
+        ?(mineScore===otherScore?'🤝 Ничья':mineScore>otherScore?'🏆 Ты победил!':'Победил собеседник')
         :game.answered?'Ждём бросок собеседника':'Брось один раз — результат определит Telegram';
       root.innerHTML=top+`<div class="active-game-body dice-duel">
         <div class="dice-duel-score">
-          <span>Ты <b>${mine??'—'}</b></span><span>${esc(game.emoji)}</span><span>Собеседник <b>${other??'—'}</b></span>
+          <span>Ты <b>${mine==null?'—':esc(game.my_display||String(mine))}</b></span><span>${esc(game.emoji)}</span><span>Собеседник <b>${other==null?'—':esc(game.partner_display||String(other))}</b></span>
         </div>
         <p>${description}</p>
         ${game.status==='active'&&!game.answered?'<button class="game-next dice-roll-btn" type="button" data-dice-roll>Бросить '+esc(game.emoji)+'</button>':''}
