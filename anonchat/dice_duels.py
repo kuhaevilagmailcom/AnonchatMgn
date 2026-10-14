@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import secrets
 import time
+import weakref
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -74,7 +75,25 @@ class Duel:
 
 
 _GAMES: dict[tuple[int, int], Duel] = {}
-_LOCK = asyncio.Lock()
+# Separate locks ensure a slow Telegram API request for one couple never blocks
+# other couples. Weak references automatically discard unused pair locks.
+_LOCKS: weakref.WeakValueDictionary[tuple[int, int], asyncio.Lock] = weakref.WeakValueDictionary()
+
+
+def _lock_for(uid: int, partner: int) -> asyncio.Lock:
+    key = _key(uid, partner)
+    lock = _LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _LOCKS[key] = lock
+    return lock
+
+
+def _prune_expired() -> None:
+    now = time.monotonic()
+    for key, game in list(_GAMES.items()):
+        if now - game.created_at > TTL or (game.finished_at and now - game.finished_at > RESULT_TTL):
+            _GAMES.pop(key, None)
 
 
 def _key(a: int, b: int) -> tuple[int, int]:
@@ -145,7 +164,8 @@ def roll_markup(game: Duel) -> InlineKeyboardMarkup:
 async def invite(mm: Any, bot: Any, uid: int, partner: int, kind: str) -> Duel:
     if kind not in KINDS:
         raise DuelError("Неизвестная игра")
-    async with _LOCK:
+    async with _lock_for(uid, partner):
+        _prune_expired()
         old = _current(mm, uid, partner)
         if old is not None and old.status != "finished":
             raise DuelError("У вас уже есть приглашение или активная дуэль")
@@ -167,7 +187,7 @@ async def invite(mm: Any, bot: Any, uid: int, partner: int, kind: str) -> Duel:
             parse_mode="HTML", reply_markup=invite_markup(game),
         )
     except Exception:
-        async with _LOCK:
+        async with _lock_for(uid, partner):
             if _GAMES.get(game.pair) is game:
                 _GAMES.pop(game.pair, None)
         raise DuelError("Не удалось отправить приглашение") from None
@@ -176,7 +196,7 @@ async def invite(mm: Any, bot: Any, uid: int, partner: int, kind: str) -> Duel:
 
 
 async def respond(mm: Any, bot: Any, uid: int, partner: int, game_id: int, accept: bool) -> Duel:
-    async with _LOCK:
+    async with _lock_for(uid, partner):
         game = _current(mm, uid, partner)
         if game is None or game.id != game_id or game.status != "invited":
             raise DuelError("Приглашение уже недоступно")
@@ -211,7 +231,7 @@ async def roll(mm: Any, bot: Any, uid: int, partner: int, game_id: int,
                *, original: Any = None) -> tuple[Duel, int]:
     # Network sends stay under the pair's turn lock so parallel button taps
     # cannot get two valid throws. This is intentionally a very short duel.
-    async with _LOCK:
+    async with _lock_for(uid, partner):
         game = _current(mm, uid, partner)
         if game is None or game.id != game_id or game.status != "active":
             raise DuelError("Дуэль уже закончилась")
