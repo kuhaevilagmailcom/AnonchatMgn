@@ -23,6 +23,7 @@ from .. import word_game as WG
 from .. import geoquest as GQ
 from .. import geo_runtime as GR
 from .. import live_chat
+from .. import dice_duels as DD
 
 router = Router(name="games")
 
@@ -315,6 +316,71 @@ async def _open_games(ctx: Ctx) -> None:
         "После лимита играть можно без начислений.\n\nВыбери игру.",
         K.games_keyboard(admin=ctx.is_admin),
     )
+
+
+@router.callback_query(F.data == K.CB_DICE)
+async def cb_dice_menu(event: CallbackQuery, ctx: Ctx) -> None:
+    if ctx.mm.partner(ctx.user_id) is None:
+        await ctx.ack("Сначала найди собеседника", alert=True)
+        return
+    await ctx.ack()
+    await ctx.reply(
+        "🎲 <b>Эмодзи-дуэли</b>\n\n"
+        "Выбери игру. Один бросок у каждого. Результат определяет Telegram.",
+        K.dice_kinds_keyboard(),
+    )
+
+
+@router.callback_query(F.data.startswith("game:dice:choose:"))
+async def cb_dice_choose(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    partner = ctx.mm.partner(ctx.user_id)
+    if partner is None:
+        await ctx.ack("Диалог уже завершён", alert=True)
+        return
+    if await ctx.restricted():
+        await ctx.ack("Игры сейчас недоступны", alert=True)
+        return
+    if WG.active_for_pair(ctx.user_id, partner) or await db.game_for_pair(ctx.user_id, partner):
+        await ctx.ack("Сначала заверши текущую игру", alert=True)
+        return
+    kind = (event.data or "").rsplit(":", 1)[-1]
+    try:
+        game = await DD.invite(ctx.mm, ctx.bot, ctx.user_id, partner, kind)
+    except DD.DuelError as exc:
+        await ctx.ack(str(exc), alert=True)
+        return
+    await ctx.ack()
+    await ctx.reply(f"{game.emoji} Приглашение отправлено. Ждём ответ собеседника.")
+
+
+@router.callback_query(F.data.startswith("game:dice:yes:") | F.data.startswith("game:dice:no:"))
+async def cb_dice_respond(event: CallbackQuery, ctx: Ctx) -> None:
+    partner = ctx.mm.partner(ctx.user_id)
+    if partner is None:
+        await ctx.ack("Диалог уже завершён", alert=True)
+        return
+    try:
+        game_id = int((event.data or "").rsplit(":", 1)[-1])
+        game = await DD.respond(ctx.mm, ctx.bot, ctx.user_id, partner, game_id, ":yes:" in (event.data or ""))
+    except (ValueError, DD.DuelError) as exc:
+        await ctx.ack(str(exc), alert=True)
+        return
+    await ctx.ack("Игра началась" if game.status == "active" else "Отклонено")
+
+
+@router.callback_query(F.data.startswith("game:dice:roll:"))
+async def cb_dice_roll(event: CallbackQuery, ctx: Ctx) -> None:
+    partner = ctx.mm.partner(ctx.user_id)
+    if partner is None:
+        await ctx.ack("Диалог уже завершён", alert=True)
+        return
+    try:
+        game_id = int((event.data or "").rsplit(":", 1)[-1])
+        await DD.roll(ctx.mm, ctx.bot, ctx.user_id, partner, game_id)
+    except (ValueError, DD.DuelError) as exc:
+        await ctx.ack(str(exc), alert=True)
+        return
+    await ctx.ack("Бросок принят")
 
 
 @router.message(Command("game", "games"))
