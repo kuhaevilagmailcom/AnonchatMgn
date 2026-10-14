@@ -1043,10 +1043,10 @@ if (typeof window === 'undefined') {
     const close=$('[data-game-collapse]',root);if(close)close.onclick=()=>{root.hidden=true};
   }
 
-  async function syncChat(force=false){
+  async function fetchChatState(force=false){
     if(!tg?.initData||state.status!=='paired')return false;
     try{
-      const data=await request(`/api/miniapp/chat/state?after=${force?chat.latest:chat.latest}&_=${Date.now()}`);
+      const data=await request(`/api/miniapp/chat/state?after=${chat.latest}&_=${Date.now()}`);
       if(data.status!=='paired'){
         applyStatusSnapshot(data);
         return false;
@@ -1068,9 +1068,30 @@ if (typeof window === 'undefined') {
       return false;
     }
   }
+  // Single-flight synchronization: bursts of Telegram realtime events share
+  // a request; one extra fetch catches messages arriving while it was pending.
+  let chatSyncInFlight=null;
+  let chatSyncQueued=false;
+  async function syncChat(force=false){
+    if(!tg?.initData||state.status!=='paired')return false;
+    if(chatSyncInFlight){chatSyncQueued=true;return chatSyncInFlight;}
+    const work=(async()=>{
+      let success=false;
+      for(let pass=0;pass<2;pass++){
+        chatSyncQueued=false;
+        success=await fetchChatState(force);
+        force=false;
+        if(!chatSyncQueued||state.status!=='paired')break;
+      }
+      return success;
+    })();
+    chatSyncInFlight=work;
+    try{return await work}
+    finally{if(chatSyncInFlight===work)chatSyncInFlight=null}
+  }
   function startChatSync(){
     if(chat.timer||!tg?.initData)return;
-    chat.timer=setInterval(()=>{if(!document.hidden&&state.status==='paired'){formatChatDuration();if(!realtimeConnected)syncChat(false)}},8000);
+    chat.timer=setInterval(()=>{if(!document.hidden&&state.status==='paired'){formatChatDuration();if(!realtimeConnected)syncChat(false)}},5000);
   }
   function stopChatSync(){if(chat.timer){clearInterval(chat.timer);chat.timer=null}}
   async function sendChatText(){
