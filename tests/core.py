@@ -374,7 +374,7 @@ def test_database() -> None:
         before_reward = int((await db.get_user(10))["xp"])
         assert await db.claim_one_time_reward(10, "channel_subscription_v1", 100) is True
         after_reward = int((await db.get_user(10))["xp"])
-        assert after_reward == before_reward + 100
+        assert after_reward == before_reward + 100 * await db.xp_multiplier()
         assert await db.reward_claimed(10, "channel_subscription_v1") is True
         assert await db.claim_one_time_reward(10, "channel_subscription_v1", 100) is False
         assert int((await db.get_user(10))["xp"]) == after_reward
