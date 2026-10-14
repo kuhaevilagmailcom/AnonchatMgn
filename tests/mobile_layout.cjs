@@ -12,7 +12,7 @@ const post = {
   title: 'Длинное название публикации для проверки мобильного экрана',
   body: 'Привет, Магнитогорск! '.repeat(9),
   created_at: 1700000000, updated_at: 1700000000,
-  comments: 2, likes: 32, liked: false, mine: false,
+  comments: 2, likes: 32, views: 128, liked: false, mine: false,
   show_nick: true, media: [],
 };
 const detail = {
@@ -100,6 +100,7 @@ const server = http.createServer((req, res) => {
         const share = r(document.querySelector('.wall-action-share'));
         const heart = r(document.querySelector('.wall-action-like'));
         const comment = r(document.querySelector('.wall-action-comment'));
+        const views = r(document.querySelector('.wall-post-views'));
         const article = r(document.querySelector('[data-wall-post="17"]'));
         const copy = document.querySelector('#wallCopyLink');
         return {
@@ -108,6 +109,7 @@ const server = http.createServer((req, res) => {
           heartCY: heart.y + heart.height / 2,
           commentCY: comment.y + comment.height / 2,
           articleRight: article.right,
+          viewsLeft: views.left, viewsRight: views.right, viewsCY: views.y + views.height / 2,
           hiddenCopy: getComputedStyle(copy).display === 'none',
         };
       });
@@ -117,6 +119,9 @@ const server = http.createServer((req, res) => {
       assert.ok(Math.abs(wall.share.cy - wall.heartCY) <= 2, width + 'px: share/like centers differ');
       assert.ok(Math.abs(wall.share.cy - wall.commentCY) <= 2, width + 'px: share/comment centers differ');
       assert.ok(wall.hiddenCopy, width + 'px: admin-only copy link visible');
+      assert.ok(wall.viewsLeft > wall.share.right, width + 'px: view count collides with buttons');
+      assert.ok(wall.viewsRight <= width + 1, width + 'px: view count outside viewport');
+      assert.ok(Math.abs(wall.viewsCY-wall.share.cy)<=2, width + 'px: eye count vertically off-center');
 
       await page.click('[data-wall-action="open"][data-id="17"]');
       await page.waitForSelector('#wallCommentText', { timeout: 8000 });
