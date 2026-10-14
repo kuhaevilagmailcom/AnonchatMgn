@@ -27,6 +27,7 @@ from . import texts
 from . import relay_state
 from . import live_chat
 from . import word_game as WG
+from . import dice_duels as DD
 from . import geoquest as GQ
 from . import geo_runtime as GR
 from .diagnostics import METRICS
@@ -528,6 +529,9 @@ class MiniAppServer:
         word = self._word_state(uid, partner)
         if word is not None:
             return word
+        duel = DD.state_for(self.mm, uid, partner)
+        if duel is not None:
+            return duel
         row = await self.db.game_for_pair(uid, partner)
         if row is None:
             return None
@@ -1931,6 +1935,38 @@ class MiniAppServer:
             except Exception:
                 await asyncio.sleep(5)
 
+    async def game_dice_invite(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        partner = self.mm.partner(uid)
+        if partner is None:
+            raise _json_error(409, "Сначала найди собеседника")
+        if await self.db.is_restricted(uid):
+            raise _json_error(403, "Игры сейчас недоступны")
+        data = await request.json()
+        kind = str(data.get("kind") or "")
+        if kind not in DD.KINDS:
+            raise _json_error(400, "Неизвестная игра")
+        if WG.active_for_pair(uid, partner) or await self.db.game_for_pair(uid, partner):
+            raise _json_error(409, "Сначала заверши текущую игру")
+        try:
+            game = await DD.invite(self.mm, self.bot, uid, partner, kind)
+        except DD.DuelError as exc:
+            raise _json_error(409, str(exc)) from exc
+        return web.json_response({"ok": True, "message": "Приглашение отправлено", "game_id": game.id})
+
+    async def game_dice_roll(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        partner = self.mm.partner(uid)
+        if partner is None:
+            raise _json_error(409, "Диалог уже завершён")
+        data = await request.json()
+        try:
+            game_id = int(data.get("game_id") or 0)
+            _, value = await DD.roll(self.mm, self.bot, uid, partner, game_id)
+        except (ValueError, DD.DuelError) as exc:
+            raise _json_error(409, str(exc)) from exc
+        return web.json_response({"ok": True, "value": value, "game": DD.state_for(self.mm, uid, partner)})
+
     async def game_battle(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
         partner = self.mm.partner(uid)
@@ -2074,6 +2110,14 @@ class MiniAppServer:
         partner = self.mm.partner(uid)
         if partner is None:
             raise _json_error(409, "Диалог уже завершён")
+
+        if game_type == "dice":
+            try:
+                await DD.respond(self.mm, self.bot, uid, partner, game_id, accept)
+            except DD.DuelError as exc:
+                raise _json_error(409, str(exc)) from exc
+            return web.json_response({"ok": True, "status": "accepted" if accept else "declined",
+                                      "game": DD.state_for(self.mm, uid, partner)})
 
         if game_type == "words":
             game = WG.get_by_id(game_id)
@@ -2721,6 +2765,8 @@ class MiniAppServer:
         app.router.add_get(
             "/api/miniapp/payments/sbp/{payment_id}", self.sbp_check
         )
+        app.router.add_post("/api/miniapp/games/dice/invite", self.game_dice_invite)
+        app.router.add_post("/api/miniapp/games/dice/roll", self.game_dice_roll)
         app.router.add_post("/api/miniapp/games/battle/invite", self.game_battle)
         app.router.add_post("/api/miniapp/games/numbers/invite", self.game_numbers)
         app.router.add_post("/api/miniapp/games/geo/invite", self.game_geo)
