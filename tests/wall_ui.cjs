@@ -24,7 +24,7 @@ const dom = {
 };
 const context = {
   document: dom,
-  window: { Telegram: { WebApp: { initData: '' } } },
+  window: { Telegram: { WebApp: { initData: '' } }, addEventListener: noop },
   navigator: {},
   setTimeout,
   clearTimeout,
@@ -62,18 +62,20 @@ assert.match(regular, /aria-pressed="false"/);
 assert.match(active, /aria-pressed="true"/);
 assert.match(active, /wall-action-like liked/);
 assert.match(js, /navigator\.share/);
-assert.match(regular,/anon-mgn-wall-avatar\.jpg/,'wall posts use the attached logo');
-assert.match(html,/id="wallCopyLink"/,'wall has a direct link copy button');
+assert.match(regular,/anon-mgn-logo\.png/,'wall posts use the attached logo');
+assert.match(html,/id="wallCopyLink" hidden/,'copy Wall link is hidden before admin authorization');
+assert.match(js, /wallCopyLink'\)\.hidden=!state\.isAdmin/, 'only admins can access copy Wall link');
+assert.match(css,/\.wall-comment-row\{min-height:48px;align-items:center/, 'reply placeholder centered');
 assert.match(js,/tg\.shareMessage/,'Telegram native prepared share is preferred');
 assert.match(js,/share-details/,'photo share fallback is available');
 assert.match(link(null,{source:'tg',medium:'post',campaign:'october'}),/startapp=wall__utm_source_tg__utm_medium_post__utm_campaign_october/);
 assert.match(link(42,{source:'channel',medium:'post',campaign:'test'}),/startapp=wall_42__utm_source_channel__utm_medium_post__utm_campaign_test/);
-assert.match(js, /tg\.openTelegramLink/);
+assert.doesNotMatch(js, /t\.me\/share\/url\?url=/, 'do not share a bare URL');
 assert.match(css, /@keyframes wall-heart-pop/);
 assert.match(css, /@keyframes wall-dialog-in/);
 assert.match(css, /prefers-reduced-motion:reduce/);
-assert.match(html, /wall\.js\?v=9/);
-assert.match(html, /wall\.css\?v=9/);
+assert.match(html, /wall\.js\?v=10/);
+assert.match(html, /wall\.css\?v=10/);
 assert.match(html, /data-nav="wall" hidden/);
 assert.match(js, /id="wallShowNick"/);
 assert.match(js, /wall-title-input/);
