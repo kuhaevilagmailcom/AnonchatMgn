@@ -53,6 +53,9 @@ def test_admin_miniapp_endpoints() -> None:
             assert "wall.js" not in home_html and "wall.css" not in home_html
             assert 'data-nav="wall"' not in home_html
             assert 'data-page="wall"' not in home_html
+            retired_endpoint = await client.get("/api/miniapp/wall", headers=headers(1001))
+            assert retired_endpoint.status == 404
+            assert (await client.get("/wall.js")).status == 404
             assert 'data-game="numbers"' not in home_html
             assert "500 ⭐ в день" in home_html
             admin_bundle=await client.get("/admin.js")
