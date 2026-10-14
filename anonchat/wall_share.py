@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import io
+import hashlib
+import hmac
+import time
 import logging
 import re
 import uuid
@@ -29,6 +32,22 @@ def wall_link(post_id=None, *, source="anonmgn", medium="share", campaign="wall"
     return f"{BOT_APP}?startapp={start}"
 
 
+def share_preview_url(wall, post_id):
+    parsed = urlsplit(str(wall.server.cfg.miniapp_url))
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise web.HTTPServiceUnavailable(text="HTTPS-адрес Mini App не настроен")
+    expires = int(time.time()) + 12 * 3600
+    mac = _preview_mac(wall, post_id, expires)
+    return (f"{parsed.scheme}://{parsed.netloc}"
+            f"/api/miniapp/wall/share-preview/{post_id}.jpg"
+            f"?expires={expires}&sig={mac}")
+
+
+def _preview_mac(wall, post_id, expires):
+    data = f"wall-photo:{post_id}:{expires}".encode()
+    return hmac.new(wall.server.cfg.bot_token.encode(), data, hashlib.sha256).hexdigest()
+
+
 def share_caption(post, link):
     title = str(post["title"] or "").strip()
     body = str(post["body"] or "").strip()
@@ -45,6 +64,15 @@ async def preview(wall, request):
     if not wall.public_enabled:
         raise web.HTTPNotFound()
     post_id = wall._parse_id(request.match_info["post_id"])
+    try:
+        expires = int(request.query.get("expires", "0"))
+    except ValueError:
+        raise web.HTTPNotFound() from None
+    if expires < time.time() or expires > time.time() + 12 * 3600:
+        raise web.HTTPNotFound()
+    signature = str(request.query.get("sig", ""))
+    if not hmac.compare_digest(signature, _preview_mac(wall, post_id, expires)):
+        raise web.HTTPNotFound()
     post = await wall.db._fetchone(
         "SELECT id FROM wall_posts WHERE id=? AND hidden=0", (post_id,)
     )
@@ -82,11 +110,7 @@ async def prepare_share(wall, request):
     post = await wall._post(post_id, uid)
     if post is None:
         raise web.HTTPNotFound()
-    origin_parts = urlsplit(str(wall.server.cfg.miniapp_url))
-    if origin_parts.scheme != "https" or not origin_parts.netloc:
-        raise web.HTTPServiceUnavailable(text="HTTPS-адрес Mini App не настроен")
-    image_url = (f"{origin_parts.scheme}://{origin_parts.netloc}"
-                 f"/api/miniapp/wall/share-preview/{post_id}.jpg")
+    image_url = share_preview_url(wall, post_id)
     target_url = wall_link(post_id, source="wall", medium="share", campaign="post")
     result = InlineQueryResultPhoto(
         id=uuid.uuid4().hex,
@@ -119,6 +143,22 @@ async def prepare_share(wall, request):
         ) from exc
     return web.json_response({
         "prepared_id":saved.id,
+        "preview_url":image_url,
+        "url":target_url,
+        "caption":share_caption(post, target_url),
+    })
+
+
+async def share_details(wall, request):
+    """Return a temporary signed JPEG URL for native Web Share without Bot API."""
+    uid = await wall._user(request)
+    post_id = wall._parse_id(request.match_info["post_id"])
+    post = await wall._post(post_id, uid)
+    if post is None:
+        raise web.HTTPNotFound()
+    target_url = wall_link(post_id, source="wall", medium="share", campaign="post")
+    return web.json_response({
+        "preview_url":share_preview_url(wall, post_id),
         "url":target_url,
         "caption":share_caption(post, target_url),
     })
