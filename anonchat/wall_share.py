@@ -116,7 +116,7 @@ async def preview(wall, request):
         if key and "/" not in key and "\\" not in key:
             candidate = wall.media.base / key
     if not candidate or not candidate.is_file():
-        candidate = wall.server.web_dir / "assets" / "anon-mgn-logo.png"
+        candidate = wall.server.web_dir / "assets" / "anon-mgn-wall-avatar.jpg"
     canvas = Image.new("RGB", (1000, 620), "#000000")
     try:
         with Image.open(candidate) as opened:
