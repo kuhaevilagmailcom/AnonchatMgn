@@ -81,17 +81,14 @@ async def test():
 
             stranger=Req(103,post=pid)
             stranger.match_info["media_id"]=str(attachment["id"])
-            try:
-                await wall.media.read(stranger)
-                assert False,"Media leaked to non-admin"
-            except web.HTTPForbidden:
-                pass
+            assert isinstance(await wall.media.read(stranger),web.FileResponse)
 
             admin=WallAdmin(wall)
             stats=json.loads((await admin.overview(Req(101))).text)
             assert stats["total"]==1
             items=json.loads((await admin.posts(Req(101))).text)
             assert items["items"][0]["author_id"]==101
+            assert items["items"][0]["show_nick"] is True
             assert items["items"][0]["media"][0]["id"]==attachment["id"]
             await admin.action(Req(101,{"type":"post","id":pid,"action":"hide"}))
             hidden=json.loads((await admin.posts(Req(101,filter="hidden"))).text)

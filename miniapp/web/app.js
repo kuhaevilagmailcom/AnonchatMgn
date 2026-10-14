@@ -369,7 +369,7 @@ if (typeof window === 'undefined') {
   }
   function go(page){
     if(page==='chat' && state.status!=='paired')page=state.status==='queued'?'search':'home';
-    if(page==="wall" && !state.wallAllowed){toast("Стена только для администраторов");return}
+    if(page==="wall" && !state.wallAllowed){toast("Стена сейчас недоступна");return}
     state.page=page;
     document.body.classList.toggle('chat-open',page==='chat');
     $$('.page').forEach(p=>p.classList.toggle('active',p.dataset.page===page));

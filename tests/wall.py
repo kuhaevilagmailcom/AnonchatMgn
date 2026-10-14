@@ -55,22 +55,22 @@ async def check_wall():
         await db.ensure_user(102, None, "Участник")
         await db.ensure_user(103, None, "Посторонний")
         allowed = json.loads((await wall.access(Req(101))).text)
-        denied = json.loads((await wall.access(Req(103))).text)
-        assert allowed["allowed"] is True and denied["allowed"] is False
-        from aiohttp import web
-        try:
-            await wall.feed(Req(103,sort="new"))
-            assert False, "Non-admin unexpectedly read Wall"
-        except web.HTTPForbidden:
-            pass
+        public = json.loads((await wall.access(Req(103))).text)
+        assert allowed["allowed"] is True and public == {"allowed": True, "public": True}
+        assert json.loads((await wall.feed(Req(103,sort="new"))).text)["items"] == []
         await db.set_unique_nickname(101, "Автор МГН")
-        new_post = await wall.create(Req(101, {"body": "Какие у нас новости?", "client_key": "post_create_demo_01"}))
+        new_post = await wall.create(Req(101, {
+            "title":"Что сегодня происходит?", "body":"Какие у нас новости?",
+            "show_nick":True, "client_key":"post_create_demo_01"
+        }))
         pid = json.loads(new_post.text)["id"]
         duplicate = await wall.create(Req(101, {"body":"Какие у нас новости?", "client_key":"post_create_demo_01"}))
         assert json.loads(duplicate.text)["id"] == pid
         assert json.loads(duplicate.text)["existing"]
         listing = json.loads((await wall.feed(Req(102,sort="new"))).text)
         assert listing["items"][0]["nick"] == "Автор МГН", listing
+        assert listing["items"][0]["title"] == "Что сегодня происходит?"
+        assert listing["items"][0]["show_nick"] is True
         assert "author_id" not in listing["items"][0]
         await wall.like(Req(102,{},pid))
         liked = json.loads((await wall.detail(Req(102,post=pid))).text)["post"]
@@ -111,13 +111,22 @@ async def check_wall():
         refreshed = json.loads((await wall.feed(Req(102,sort="new"))).text)
         assert refreshed["items"][0]["nick"] == "Новый Ник"
 
+        await wall.edit(Req(101,{"title":"Тема без имени","body":"Обновлено","show_nick":False},pid))
+        anonymous = json.loads((await wall.feed(Req(103,sort="new"))).text)["items"][0]
+        assert anonymous["nick"] == "Аноним" and anonymous["show_nick"] is False
+        assert anonymous["title"] == "Тема без имени"
+
         await wall.report(Req(102,{"type":"post","id":pid}))
         reports = json.loads((await wall.moderation(Req(101))).text)
         assert len(reports["items"]) == 1
-        await wall.moderate(Req(101,{"type":"post","id":pid,"hide":True}))
+        # Rejecting a complaint never restores a previously hidden material.
+        await db.db.execute("UPDATE wall_posts SET hidden=1 WHERE id=?",(pid,))
+        await wall.moderate(Req(101,{"type":"post","id":pid,"hide":False}))
+        still_hidden = await db._fetchone("SELECT hidden FROM wall_posts WHERE id=?",(pid,))
+        assert int(still_hidden["hidden"]) == 1
         hidden = json.loads((await wall.feed(Req(102,sort="new"))).text)
         assert hidden["items"] == []
-        print("Wall checks passed: closed access, idempotent post, likes, replies, nicknames, moderation")
+        print("Wall checks passed: public access, anonymous topics, idempotency, replies and moderation")
     finally:
         await db.close()
 

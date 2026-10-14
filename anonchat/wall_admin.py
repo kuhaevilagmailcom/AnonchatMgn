@@ -6,6 +6,7 @@ from __future__ import annotations
 import time
 from aiohttp import web
 from .nick import display
+from .db import referral_day_start
 
 
 def err(code, msg):
@@ -37,7 +38,7 @@ class WallAdmin:
     async def overview(self, request):
         await self.access(request)
         now=int(time.time())
-        day=now-now%86400
+        day=referral_day_start(now)
         stats=await self.db._fetchone("""
             SELECT COUNT(*) AS total,
                    SUM(CASE WHEN created_at>=? THEN 1 ELSE 0 END) AS today,
@@ -54,7 +55,7 @@ class WallAdmin:
           "comments":int(comments["n"] or 0),"reports":int(reports["n"] or 0)})
 
     def _post_sql(self, where):
-        return f"""SELECT p.id,p.author_id,p.body,p.hidden,p.created_at,p.updated_at,
+        return f"""SELECT p.id,p.author_id,p.title,p.body,p.show_nick,p.hidden,p.created_at,p.updated_at,
                    u.nickname,u.username,u.first_name,u.support_stars,
                    (SELECT COUNT(*) FROM wall_likes l WHERE l.post_id=p.id) AS likes,
                    (SELECT COUNT(*) FROM wall_comments c WHERE c.post_id=p.id AND c.hidden=0) AS comments
@@ -68,7 +69,8 @@ class WallAdmin:
             "nick": display(
                 row["nickname"],int(row["author_id"]),int(row["support_stars"] or 0)
             ),
-            "body":row["body"],"hidden":int(row["hidden"]),
+            "title":row["title"] or "","body":row["body"],
+            "show_nick":bool(row["show_nick"]),"hidden":int(row["hidden"]),
             "likes":int(row["likes"]),"comments":int(row["comments"]),
             "created_at":int(row["created_at"]), "updated_at":int(row["updated_at"]),
         }
@@ -89,8 +91,8 @@ class WallAdmin:
         elif state=="reports":
             where+=" AND EXISTS (SELECT 1 FROM wall_reports r WHERE r.resolved_at IS NULL AND ((r.target_type='post' AND r.target_id=p.id) OR (r.target_type='comment' AND r.target_id IN (SELECT id FROM wall_comments WHERE post_id=p.id))))"
         if q:
-            where+=" AND (CAST(p.id AS TEXT)=? OR CAST(p.author_id AS TEXT)=? OR LOWER(COALESCE(u.username,'')) LIKE ? OR LOWER(COALESCE(u.nickname,'')) LIKE ? OR LOWER(p.body) LIKE ?)"
-            values.extend([q.lstrip("#"),q.lstrip("#"),"%"+q.lower().lstrip("@")+"%","%"+q.lower()+"%","%"+q.lower()+"%"])
+            where+=" AND (CAST(p.id AS TEXT)=? OR CAST(p.author_id AS TEXT)=? OR LOWER(COALESCE(u.username,'')) LIKE ? OR LOWER(COALESCE(u.nickname,'')) LIKE ? OR LOWER(p.title) LIKE ? OR LOWER(p.body) LIKE ?)"
+            values.extend([q.lstrip("#"),q.lstrip("#"),"%"+q.lower().lstrip("@")+"%","%"+q.lower()+"%","%"+q.lower()+"%","%"+q.lower()+"%"])
         rows=await self.db._fetchall(
             self._post_sql(where)+" ORDER BY p.created_at DESC,p.id DESC LIMIT 21 OFFSET ?",
             (*values,page*20),
@@ -162,14 +164,25 @@ class WallAdmin:
         status={"hide":1,"restore":0,"delete":2}.get(action)
         if status is not None:
             await self.db.db.execute(f"UPDATE {table} SET hidden=? WHERE id=?",(status,target))
-        await self.db.db.execute(
-            "UPDATE wall_reports SET resolved_at=? WHERE target_type=? AND target_id=? AND resolved_at IS NULL",
-            (int(time.time()),typ,target),
-        )
+        stamp=int(time.time())
+        if typ=="post":
+            await self.db.db.execute(
+                """UPDATE wall_reports SET resolved_at=? WHERE resolved_at IS NULL
+                   AND ((target_type='post' AND target_id=?) OR
+                        (target_type='comment' AND target_id IN
+                         (SELECT id FROM wall_comments WHERE post_id=?)))""",
+                (stamp,target,target),
+            )
+        else:
+            await self.db.db.execute(
+                """UPDATE wall_reports SET resolved_at=?
+                   WHERE target_type='comment' AND target_id=? AND resolved_at IS NULL""",
+                (stamp,target),
+            )
         await self.db.db.execute(
             """INSERT INTO wall_admin_log(actor_id,target_type,target_id,action,note,created_at)
                VALUES(?,?,?,?,?,?)""",
-            (uid,typ,target,action,str(data.get("note") or "")[:200],int(time.time())),
+            (uid,typ,target,action,str(data.get("note") or "")[:200],stamp),
         )
         return web.json_response({"ok":True})
 

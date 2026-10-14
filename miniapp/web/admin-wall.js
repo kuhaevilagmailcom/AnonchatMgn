@@ -78,8 +78,8 @@
       '<div class="admin-wall-filters">'+filters.map(([id,title])=>'<button class="'+(state.filter===id?'active':'')+'" data-wa="filter" data-filter="'+id+'">'+title+'</button>').join('')+'</div>'+
       (list.items.length?list.items.map(p=>`<article class="admin-wall-entry">
         <div class="admin-wall-entry-top"><strong>#${p.id} · ${esc(p.nick)}</strong><small>${date(p.created_at)}</small></div>
-        <p>${esc(p.body||'Публикация с медиа')}</p>${mediaHtml(p.media)}
-        <div class="admin-wall-meta">ID ${p.author_id} · ${esc(p.username?'@'+p.username:'без username')}
+        ${p.title?'<h3>'+esc(p.title)+'</h3>':''}<p>${esc(p.body||'Публикация с медиа')}</p>${mediaHtml(p.media)}
+        <div class="admin-wall-meta">ID ${p.author_id}${p.username?' · '+esc('@'+p.username):''} · ${p.show_nick?'С ником':'Анонимно'}
           · ${p.hidden===0?'Опубликован':p.hidden===1?'Скрыт':'Удалён'}</div>
         <div class="admin-wall-metrics">${icon('heart')}${p.likes} ${icon('comments')}${p.comments}</div>
         <button class="admin-wall-open" data-wa="open" data-id="${p.id}">Открыть публикацию</button>
@@ -91,13 +91,13 @@
     const data=await api('/posts/'+state.post),p=data.post;
     return '<div class="admin-wall-links"><button data-wa="tab" data-tab="posts">'+icon('arrow')+'К публикациям</button></div>'+
       '<article class="admin-wall-entry"><h2>Публикация #'+p.id+'</h2>'+
-      '<strong>'+esc(p.nick)+'</strong><div class="admin-wall-meta">ID '+p.author_id+' · '+esc(p.username?'@'+p.username:'без username')+' · '+date(p.created_at)+'</div>'+
-      '<p>'+esc(p.body||'Без текста')+'</p>'+mediaHtml(p.media)+
+      '<strong>'+esc(p.nick)+'</strong><div class="admin-wall-meta">ID '+p.author_id+(p.username?' · '+esc('@'+p.username):'')+' · '+(p.show_nick?'С ником':'Анонимно')+' · '+date(p.created_at)+'</div>'+
+      (p.title?'<h3>'+esc(p.title)+'</h3>':'')+'<p>'+esc(p.body||'Без текста')+'</p>'+mediaHtml(p.media)+
       (canSeeUsers?'<button class="admin-wall-open" data-action="openUser" data-value="'+p.author_id+'">Карточка автора</button>':'')+
       actions('post',p.id,p.hidden)+'</article>'+
       '<h3 class="admin-wall-subheading">Комментарии · '+data.comments.length+'</h3>'+
       (data.comments.length?data.comments.map(c=>'<article class="admin-wall-entry"><strong>'+esc(c.nick)+'</strong>'+
-        '<div class="admin-wall-meta">ID '+c.author_id+' · '+esc(c.username?'@'+c.username:'без username')+' · '+date(c.created_at)+' · '+(c.hidden?'Скрыт':'Виден')+'</div>'+
+        '<div class="admin-wall-meta">ID '+c.author_id+(c.username?' · '+esc('@'+c.username):'')+' · '+date(c.created_at)+' · '+(c.hidden?'Скрыт':'Виден')+'</div>'+
         '<p>'+esc(c.body)+'</p>'+(canSeeUsers?'<button data-action="openUser" data-value="'+c.author_id+'">Карточка автора</button>':'')+
         actions('comment',c.id,c.hidden)+'</article>').join(''):
         '<div class="admin-empty">Комментариев ещё нет</div>')+

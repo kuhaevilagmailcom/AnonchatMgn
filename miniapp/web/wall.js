@@ -313,6 +313,7 @@ function hydrateMedia(container=document){
         <div class="wall-post-meta"><strong>${esc(p.nick||'Аноним')}</strong><small>${time(p.created_at)}${p.updated_at>p.created_at?' · изменён':''}</small></div>
         <button class="wall-icon-btn" data-wall-action="menu" data-id="${p.id}" aria-label="Меню публикации">${icon('menu')}</button>
       </header>
+      ${p.title?'<h2 class="wall-post-title">'+esc(p.title)+'</h2>':''}
       ${p.body?'<div class="wall-post-body">'+esc(p.body)+'</div>':''}
       ${mediaHtml(p.media||[])}
       <footer class="wall-post-actions">
@@ -355,8 +356,10 @@ function hydrateMedia(container=document){
   draft={items:[...(post?.media||[])],uploading:0,clientKey:uuid()};
   const title=post?'Редактировать':'Новая публикация';
   sheet(title,header(title)+`<form class="wall-compose" id="wallPostForm">
-    <div class="wall-compose-user"><span class="wall-avatar">${esc(($('[data-nick]')?.textContent||'А').slice(0,1).toUpperCase())}</span><strong>${esc($('[data-nick]')?.textContent||'Аноним')}</strong></div>
+    <div class="wall-compose-user"><span class="wall-avatar">${esc(($('[data-nick]')?.textContent||'А').slice(0,1).toUpperCase())}</span><div><strong>${esc($('[data-nick]')?.textContent||'Аноним')}</strong><small>Автор публикации</small></div></div>
+    <input class="wall-title-input" id="wallPostTitle" maxlength="100" placeholder="Заголовок темы (необязательно)" value="${esc(post?.title||'')}">
     <textarea id="wallPostText" maxlength="1000" placeholder="Что нового? Напиши что-нибудь…">${esc(post?.body||'')}</textarea>
+    <label class="wall-privacy-row"><span><b>Показывать мой ник</b><small>Если выключить, все увидят «Аноним»</small></span><input type="checkbox" id="wallShowNick" ${post?.show_nick===false?'':'checked'}><i aria-hidden="true"></i></label>
     <div class="wall-media-preview" id="wallMediaPreview"></div>
     <input type="file" id="wallFileInput" accept="image/jpeg,image/png,image/webp,video/mp4" multiple hidden>
     <div class="wall-compose-foot">
@@ -364,7 +367,7 @@ function hydrateMedia(container=document){
       <small id="wallCount"></small></div>
       <button class="wall-publish" type="submit">${post?'Сохранить':'Опубликовать'}</button>
     </div></form>`);
-  const input=$('#wallPostText'),counter=$('#wallCount'),submit=$('.wall-publish');
+  const input=$('#wallPostText'),titleInput=$('#wallPostTitle'),counter=$('#wallCount'),submit=$('.wall-publish');
   input.addEventListener('input',()=>counter.textContent=input.value.length+' / 1000');
   counter.textContent=input.value.length+' / 1000';input.focus();
   $('#wallAttach').onclick=()=>$('#wallFileInput').click();
@@ -377,7 +380,8 @@ function hydrateMedia(container=document){
     submit.disabled=true;
     try{
       const result=await api(post?'/api/miniapp/wall/'+post.id+'/edit':'/api/miniapp/wall','POST',{
-        body:text,media_ids:ids,client_key:draft.clientKey
+        title:titleInput.value.trim(),body:text,show_nick:$('#wallShowNick').checked,
+        media_ids:ids,client_key:draft.clientKey
       });
       draft.items.forEach(m=>m.localUrl&&URL.revokeObjectURL(m.localUrl));draft=null;
       close();flash(post?'Изменено':'Опубликовано');

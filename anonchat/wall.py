@@ -26,7 +26,9 @@ WALL_SCHEMA = """
 CREATE TABLE IF NOT EXISTS wall_posts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     author_id INTEGER NOT NULL REFERENCES users(user_id),
+    title TEXT NOT NULL DEFAULT '',
     body TEXT NOT NULL,
+    show_nick INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     hidden INTEGER NOT NULL DEFAULT 0
@@ -105,7 +107,7 @@ class Wall:
         self.db = server.db
         self.media = WallMedia(self)
         self._create_lock = asyncio.Lock()
-        self.public_enabled = os.getenv("WALL_PUBLIC_ENABLED","false").strip().lower() in {"1","true","yes","on"}
+        self.public_enabled = os.getenv("WALL_PUBLIC_ENABLED","true").strip().lower() in {"1","true","yes","on"}
         self._comment_lock = asyncio.Lock()
 
     @staticmethod
@@ -118,6 +120,16 @@ class Wall:
 
     async def ensure_schema(self):
         await self.db.db.executescript(WALL_SCHEMA)
+        async with self.db.db.execute("PRAGMA table_info(wall_posts)") as cursor:
+            columns = {row[1] for row in await cursor.fetchall()}
+        if "title" not in columns:
+            await self.db.db.execute(
+                "ALTER TABLE wall_posts ADD COLUMN title TEXT NOT NULL DEFAULT ''"
+            )
+        if "show_nick" not in columns:
+            await self.db.db.execute(
+                "ALTER TABLE wall_posts ADD COLUMN show_nick INTEGER NOT NULL DEFAULT 1"
+            )
         await self.media.ensure_schema()
         await self.db.db.executescript("""
             CREATE TABLE IF NOT EXISTS wall_comment_keys(
@@ -139,12 +151,11 @@ class Wall:
     async def _staff(self, uid):
         if int(uid) in self.server.cfg.admin_ids:
             return True
-        from .permissions import ALL_ADMIN_PERMISSIONS
         # Staff revocations take effect immediately for private Wall contents.
         row = await self.db._fetchone(
             "SELECT permissions FROM admins WHERE user_id=?", (int(uid),)
         )
-        return bool(row and set(str(row["permissions"] or "").split(",")) & ALL_ADMIN_PERMISSIONS)
+        return row is not None
 
     async def access(self, request):
         uid, _, _ = await self.server._auth(request)
@@ -153,8 +164,6 @@ class Wall:
 
     async def _user(self, request, *, write=False):
         uid, _tg, row = await self.server._auth(request)
-        # Feature is in closed beta: never expose content based only on a
-        # client-side hidden navigation button or user-supplied uid.
         if not self.public_enabled and not await self._staff(uid):
             _error(403, "Стена пока доступна только администраторам")
         if write and (bool(row["banned"]) or int(row["mute_until"] or 0) > int(time.time())):
@@ -167,14 +176,20 @@ class Wall:
         row = await self.db._fetchone(
             "SELECT permissions FROM admins WHERE user_id=?", (int(uid),)
         )
-        return bool(row and "reports" in str(row["permissions"] or "").split(","))
+        return row is not None
 
     def _post_payload(self, r, uid):
         author_id = int(r["author_id"])
+        show_nick = bool(r["show_nick"])
         return {
             "id": int(r["id"]),
+            "title": str(r["title"] or ""),
             "body": str(r["body"]),
-            "nick": nicklib.display(r["nickname"], author_id, r["support_stars"]),
+            "nick": (
+                nicklib.display(r["nickname"], author_id, r["support_stars"])
+                if show_nick else "Аноним"
+            ),
+            "show_nick": show_nick,
             "mine": uid == author_id,
             "created_at": int(r["created_at"]),
             "updated_at": int(r["updated_at"]),
@@ -246,6 +261,14 @@ class Wall:
         if not isinstance(data, dict):
             _error(400, "Некорректная публикация")
         body = str(data.get("body") or "").strip()
+        title = str(data.get("title") or "").strip()
+        if len(title) > 100:
+            _error(400, "Заголовок длиннее 100 символов")
+        if title:
+            _body(title, 100)
+        show_nick = data.get("show_nick", True)
+        if type(show_nick) is not bool:
+            _error(400, "Некорректная настройка имени")
         if len(body) > 1000:
             _error(400, "Текст длиннее 1000 символов")
         if body:
@@ -278,8 +301,10 @@ class Wall:
             except MediaValidationError as exc:
                 _error(400,str(exc))
             cur=await self.db.db.execute(
-                "INSERT INTO wall_posts(author_id,body,created_at,updated_at) VALUES(?,?,?,?)",
-                (uid,body,now,now),
+                """INSERT INTO wall_posts
+                   (author_id,title,body,show_nick,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?)""",
+                (uid,title,body,1 if show_nick else 0,now,now),
             )
             pid=int(cur.lastrowid)
             await self.media.attach(uid,pid,media_ids)
@@ -367,7 +392,7 @@ class Wall:
         recipient = int(parent["author_id"]) if parent else int(post["author_id"])
         if recipient != uid:
             title = "Вам ответили на комментарий" if parent else "Новый комментарий к вашему посту"
-            snippet = str(post["body"]).replace("\n", " ")[:85]
+            snippet = str(post["title"] or post["body"] or "Публикация с медиа").replace("\n", " ")[:85]
             await self.server._push_event(
                 recipient, "personal", title, f"Под постом: {snippet}",
                 icon="message-circle", action=f"wall:{post_id}",
@@ -436,6 +461,14 @@ class Wall:
         if not row or int(row["author_id"]) != uid:
             _error(404, "Свой пост не найден")
         data=await request.json()
+        title=str(data.get("title",row["title"] or "")).strip()
+        if len(title)>100:
+            _error(400, "Заголовок длиннее 100 символов")
+        if title:
+            _body(title,100)
+        show_nick=data.get("show_nick",bool(row["show_nick"]))
+        if type(show_nick) is not bool:
+            _error(400, "Некорректная настройка имени")
         body=str(data.get("body") or "").strip()
         media_ids=data.get("media_ids",None)
         if media_ids is not None:
@@ -458,8 +491,9 @@ class Wall:
                     await self._remove_media_post(uid,attached["id"])
             await self.media.attach(uid,post_id,ids)
         await self.db.db.execute(
-            "UPDATE wall_posts SET body=?,updated_at=? WHERE id=? AND author_id=? AND hidden=0",
-            (body, int(time.time()), post_id, uid),
+            """UPDATE wall_posts SET title=?,body=?,show_nick=?,updated_at=?
+               WHERE id=? AND author_id=? AND hidden=0""",
+            (title,body,1 if show_nick else 0,int(time.time()),post_id,uid),
         )
         return web.json_response({"ok": True})
 
@@ -546,13 +580,26 @@ class Wall:
             _error(400, "Неизвестный тип")
         table = "wall_posts" if target_type == "post" else "wall_comments"
         hide = bool(data.get("hide", True))
-        await self.db.db.execute(
-            f"UPDATE {table} SET hidden=? WHERE id=? AND hidden<>2",
-            (1 if hide else 0, target_id),
+        target = await self.db._fetchone(
+            f"SELECT id,hidden FROM {table} WHERE id=?", (target_id,)
         )
+        if not target:
+            _error(404, "Материал не найден")
+        # Dismissing a report must not restore content that another moderator
+        # has hidden. Only the explicit hide action changes the material.
+        if hide and int(target["hidden"]) != 2:
+            await self.db.db.execute(
+                f"UPDATE {table} SET hidden=1 WHERE id=?", (target_id,)
+            )
         await self.db.db.execute(
             "UPDATE wall_reports SET resolved_at=? WHERE target_type=? AND target_id=?",
             (int(time.time()), target_type, target_id),
+        )
+        await self.db.db.execute(
+            """INSERT INTO wall_admin_log
+               (actor_id,target_type,target_id,action,note,created_at)
+               VALUES(?,?,?,?,?,?)""",
+            (uid,target_type,target_id,"hide" if hide else "dismiss","",int(time.time())),
         )
         return web.json_response({"ok": True})
 
