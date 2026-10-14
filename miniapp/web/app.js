@@ -509,12 +509,12 @@ if (typeof window === 'undefined') {
           <button data-chat-game="battle"><span>⚔️</span><div><strong>Битва мнений</strong><small>5 или 10 вопросов</small></div></button>
           <button data-chat-game="geo"><span>🗺</span><div><strong>GeoGuessr📍</strong><small>Угадай место в Магнитогорске</small></div></button>
           <div class="chat-game-emoji-grid">
-            <button type="button" data-chat-game="dice-dice">🎲 <span>Кости</span></button>
-            <button type="button" data-chat-game="dice-basket">🏀 <span>Баскетбол</span></button>
-            <button type="button" data-chat-game="dice-darts">🎯 <span>Дартс</span></button>
-            <button type="button" data-chat-game="dice-football">⚽ <span>Футбол</span></button>
-            <button type="button" data-chat-game="dice-bowling">🎳 <span>Боулинг</span></button>
-            <button type="button" data-chat-game="dice-slots">🎰 <span>Автомат</span></button>
+            <button type="button" data-chat-game="dice-dice">🎲 <span>Кости<small>2–3 ⭐</small></span></button>
+            <button type="button" data-chat-game="dice-basket">🏀 <span>Баскетбол<small>3 ⭐</small></span></button>
+            <button type="button" data-chat-game="dice-darts">🎯 <span>Дартс<small>2–3 ⭐</small></span></button>
+            <button type="button" data-chat-game="dice-football">⚽ <span>Футбол<small>2 ⭐</small></span></button>
+            <button type="button" data-chat-game="dice-bowling">🎳 <span>Боулинг<small>2–3 ⭐</small></span></button>
+            <button type="button" data-chat-game="dice-slots">🎰 <span>Автомат<small>5–15 ⭐</small></span></button>
           </div>
         </div>`;
       $$('[data-chat-game]',body).forEach(b=>b.onclick=()=>{
