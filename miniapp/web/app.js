@@ -880,6 +880,7 @@ if (typeof window === 'undefined') {
       const mineScore=game.my_score??mine,otherScore=game.partner_score??other;
       const description=game.status==='finished'
         ?(mineScore===otherScore?'🤝 Ничья':mineScore>otherScore?'🏆 Ты победил!':'Победил собеседник')
+        :game.status==='resolving'?'Оба броска сделаны · смотрим анимацию…'
         :game.answered?'Ждём бросок собеседника':'Брось один раз — результат определит Telegram';
       root.innerHTML=top+`<div class="active-game-body dice-duel">
         <div class="dice-duel-score ${game.emoji==='🎰'?'slots':''}">
@@ -887,9 +888,22 @@ if (typeof window === 'undefined') {
         </div>
         <p>${description}</p>
         ${game.finished&&game.reward_total?'<div class="dice-duel-reward">+'+Number(game.reward_total)+' ⭐</div>':''}
+        ${game.finished?'<button class="game-next game-repeat dice-replay-btn" type="button" data-dice-replay>Ещё раз · '+esc(game.emoji)+'</button>':''}
         ${game.status==='active'&&!game.answered?'<button class="game-next dice-roll-btn" type="button" data-dice-roll>Бросить '+esc(game.emoji)+'</button>':''}
         ${game.status==='active'?'<small>Анимированный бросок появится в Telegram.</small>':''}
       </div>`;
+      const replay=$('[data-dice-replay]',root);
+      if(replay)replay.onclick=async()=>{
+        replay.disabled=true;
+        try{
+          const response=await request('/api/miniapp/games/dice/replay',{
+            method:'POST',body:JSON.stringify({game_id:game.id})
+          });
+          if(response?.game)renderActiveGame(response.game);
+          toast('Предложение сыграть ещё раз отправлено');
+          notify();await syncChat(false);
+        }catch(err){toast(err.message);replay.disabled=false}
+      };
       const btn=$('[data-dice-roll]',root);
       if(btn)btn.onclick=async()=>{
         btn.disabled=true;
