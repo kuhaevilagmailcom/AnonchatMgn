@@ -56,17 +56,35 @@ def share_plain_caption(post, post_id=None):
     title = str(post["title"] or "").strip()
     body = str(post["body"] or "").strip()
     quote = "\n".join(part for part in (title, body) if part) or "Публикация с фото"
-    # Reserve room for Telegram's 1024-character photo caption limit.
-    space = min(850, 1024 - len(heading) - 5)
-    if len(quote) > space:
-        quote = quote[:space - 1].rstrip() + "…"
+    if len(quote) > 850:
+        quote = quote[:849].rstrip() + "…"
     return heading, quote
 
 
 def share_caption(post, post_id=None):
-    """Formatted Telegram caption: post number + quote, never a naked URL."""
+    """Caption fits Telegram's 1024 UTF-16-unit limit even after HTML escaping."""
     heading, quote = share_plain_caption(post, post_id)
-    return f"<b>{html.escape(heading)}</b>\n\n<blockquote>{html.escape(quote)}</blockquote>"
+    prefix = f"<b>{html.escape(heading)}</b>\n\n<blockquote>"
+    suffix = "</blockquote>"
+
+    def units(value):
+        return len(value.encode("utf-16-le")) // 2
+
+    available = 1024 - units(prefix) - units(suffix)
+    # Escape user text before counting: a wall post may contain hundreds of &<>.
+    lo, hi = 0, len(quote)
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if units(html.escape(quote[:mid])) <= available:
+            lo = mid
+        else:
+            hi = mid - 1
+    if lo < len(quote):
+        clipped = quote[:lo]
+        while clipped and units(html.escape(clipped + "…")) > available:
+            clipped = clipped[:-1]
+        quote = clipped.rstrip() + "…"
+    return prefix + html.escape(quote) + suffix
 
 
 async def preview(wall, request):
