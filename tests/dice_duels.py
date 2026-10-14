@@ -50,6 +50,13 @@ class FakeBot:
 async def scenario():
     mm, bot = FakeMM(), FakeBot()
     DD.reset()
+    assert DD.display_value("slots", 1) == "BAR BAR BAR"
+    assert DD.display_value("slots", 64) == "7️⃣ 7️⃣ 7️⃣"
+    assert DD._score("slots", 1) == 3
+    assert DD._score("slots", 22) == 3
+    assert DD._score("slots", 43) == 3
+    assert DD._score("slots", 64) == 4
+    assert DD._score("slots", 1) > DD._score("slots", 20)
 
     for key, (emoji, title, max_value) in DD.KINDS.items():
         assert 1 <= max_value <= 64
