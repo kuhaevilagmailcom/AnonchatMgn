@@ -1954,6 +1954,26 @@ class MiniAppServer:
             raise _json_error(409, str(exc)) from exc
         return web.json_response({"ok": True, "message": "Приглашение отправлено", "game_id": game.id})
 
+    async def game_dice_replay(self, request: web.Request) -> web.Response:
+        uid, _, _ = await self._auth(request)
+        partner = self.mm.partner(uid)
+        if partner is None:
+            raise _json_error(409, "Диалог уже завершён")
+        if await self.db.is_restricted(uid):
+            raise _json_error(403, "Игры сейчас недоступны")
+        if WG.active_for_pair(uid, partner) or await self.db.game_for_pair(uid, partner):
+            raise _json_error(409, "Сначала заверши текущую игру")
+        data = await request.json()
+        try:
+            game_id = int(data.get("game_id") or 0)
+            game = await DD.replay(self.mm, self.bot, uid, partner, game_id)
+        except (TypeError, ValueError, DD.DuelError) as exc:
+            raise _json_error(409, str(exc)) from exc
+        return web.json_response({
+            "ok": True, "message": "Приглашение повторить игру отправлено",
+            "game_id": game.id, "game": DD.state_for(self.mm, uid, partner),
+        })
+
     async def game_dice_roll(self, request: web.Request) -> web.Response:
         uid, _, _ = await self._auth(request)
         partner = self.mm.partner(uid)
@@ -2773,6 +2793,7 @@ class MiniAppServer:
         )
         app.router.add_post("/api/miniapp/games/dice/invite", self.game_dice_invite)
         app.router.add_post("/api/miniapp/games/dice/roll", self.game_dice_roll)
+        app.router.add_post("/api/miniapp/games/dice/replay", self.game_dice_replay)
         app.router.add_post("/api/miniapp/games/battle/invite", self.game_battle)
         app.router.add_post("/api/miniapp/games/numbers/invite", self.game_numbers)
         app.router.add_post("/api/miniapp/games/geo/invite", self.game_geo)
