@@ -482,68 +482,69 @@ def test_battle_game_persists_and_synchronizes() -> None:
     async def scenario() -> None:
         path = Path(tempfile.mkdtemp()) / "battle.db"
         db = await Database(path).start()
-        await db.ensure_user(101, "first", "First")
-        await db.ensure_user(202, "second", "Second")
-        invite, created = await db.create_battle_invite(101, 202)
-        assert created
-        game_id = int(invite["id"])
-        duplicate, duplicate_created = await db.create_battle_invite(202, 101)
-        assert not duplicate_created and int(duplicate["id"]) == game_id
-        game = await db.accept_battle(game_id, 202, [1, 2, 3, 4, 5])
-        assert game is not None and game["status"] == "active"
-        await db.close()
+        try:
+            await db.ensure_user(101, "first", "First")
+            await db.ensure_user(202, "second", "Second")
+            invite, created = await db.create_battle_invite(101, 202)
+            assert created
+            game_id = int(invite["id"])
+            duplicate, duplicate_created = await db.create_battle_invite(202, 101)
+            assert not duplicate_created and int(duplicate["id"]) == game_id
+            game = await db.accept_battle(game_id, 202, [1, 2, 3, 4, 5])
+            assert game is not None and game["status"] == "active"
+            await db.close()
 
-        db = await Database(path).start()
-        restored = await db.get_battle(game_id)
-        assert restored is not None and restored["status"] == "active"
-        assert restored["question_ids"] == "[1, 2, 3, 4, 5]"
-        active_games, active_total = await db.list_battles()
-        assert active_total == 1 and int(active_games[0]["id"]) == game_id
+            db = await Database(path).start()
+            restored = await db.get_battle(game_id)
+            assert restored is not None and restored["status"] == "active"
+            assert restored["question_ids"] == "[1, 2, 3, 4, 5]"
+            active_games, active_total = await db.list_battles()
+            assert active_total == 1 and int(active_games[0]["id"]) == game_id
 
-        for index in range(5):
-            state, _ = await db.answer_battle(game_id, 101, index, 0)
-            assert state == "waiting"
-            state, _ = await db.answer_battle(game_id, 101, index, 1)
-            assert state == "already", "ответ нельзя изменять"
-            state, game = await db.answer_battle(game_id, 202, index, 0)
-            assert state == "resolved" and game is not None
-            if index < 4:
-                assert game["status"] == "round_done"
-                game = await db.advance_battle(game_id, 202, index)
-                assert game is not None and int(game["question_index"]) == index + 1
-            else:
-                assert game["status"] == "finished" and int(game["matches"]) == 5
+            for index in range(5):
+                state, _ = await db.answer_battle(game_id, 101, index, 0)
+                assert state == "waiting"
+                state, _ = await db.answer_battle(game_id, 101, index, 1)
+                assert state == "already", "ответ нельзя изменять"
+                state, game = await db.answer_battle(game_id, 202, index, 0)
+                assert state == "resolved" and game is not None
+                if index < 4:
+                    assert game["status"] == "round_done"
+                    game = await db.advance_battle(game_id, 202, index)
+                    assert game is not None and int(game["question_index"]) == index + 1
+                else:
+                    assert game["status"] == "finished" and int(game["matches"]) == 5
 
-        assert await db.get_battle(game_id) is None, "завершённая игра удаляется из БД"
-        history, history_total = await db.list_battles(history=True)
-        assert history == [] and history_total == 0
+            assert await db.get_battle(game_id) is None, "завершённая игра удаляется из БД"
+            history, history_total = await db.list_battles(history=True)
+            assert history == [] and history_total == 0
 
-        assert int((await db.get_user(101))["xp"]) == 25
-        assert int((await db.get_user(202))["xp"]) == 25
-        perfect, created = await db.create_battle_invite(202, 101, 10)
-        assert created and int(perfect["total_questions"]) == 10
-        perfect_id = int(perfect["id"])
-        game = await db.accept_battle(perfect_id, 101, list(range(1, 11)))
-        assert game is not None
-        for index in range(10):
-            assert (await db.answer_battle(perfect_id, 202, index, 1))[0] == "waiting"
-            state, game = await db.answer_battle(perfect_id, 101, index, 1)
-            assert state == "resolved" and game is not None
-            if index < 9:
-                game = await db.advance_battle(perfect_id, 101, index)
-                assert game is not None
-        assert game["status"] == "finished" and int(game["matches"]) == 10
-        assert int(game["reward_awarded"]) == 1
-        assert int((await db.get_user(101))["xp"]) == 50
-        assert int((await db.get_user(202))["xp"]) == 50
-        assert await db.get_battle(perfect_id) is None
-        assert (await db.answer_battle(perfect_id, 101, 9, 0))[0] == "missing"
-        assert int((await db.get_user(101))["xp"]) == 50, "награда выдаётся только один раз"
-        await db.close()
+            multiplier = await db.xp_multiplier()
+            assert int((await db.get_user(101))["xp"]) == 25 * multiplier
+            assert int((await db.get_user(202))["xp"]) == 25 * multiplier
+            perfect, created = await db.create_battle_invite(202, 101, 10)
+            assert created and int(perfect["total_questions"]) == 10
+            perfect_id = int(perfect["id"])
+            game = await db.accept_battle(perfect_id, 101, list(range(1, 11)))
+            assert game is not None
+            for index in range(10):
+                assert (await db.answer_battle(perfect_id, 202, index, 1))[0] == "waiting"
+                state, game = await db.answer_battle(perfect_id, 101, index, 1)
+                assert state == "resolved" and game is not None
+                if index < 9:
+                    game = await db.advance_battle(perfect_id, 101, index)
+                    assert game is not None
+            assert game["status"] == "finished" and int(game["matches"]) == 10
+            assert int(game["reward_awarded"]) == 1
+            assert int((await db.get_user(101))["xp"]) == 50 * multiplier
+            assert int((await db.get_user(202))["xp"]) == 50 * multiplier
+            assert await db.get_battle(perfect_id) is None
+            assert (await db.answer_battle(perfect_id, 101, 9, 0))[0] == "missing"
+            assert int((await db.get_user(101))["xp"]) == 50 * multiplier, "награда выдаётся только один раз"
+        finally:
+            await db.close()
 
     asyncio.run(scenario())
-
-
 
 def test_number_game_three_rounds_and_rewards() -> None:
     from anonchat.number_game import (
