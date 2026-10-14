@@ -61,7 +61,25 @@
     const el=document.createElement('div');el.className='wall-toast';el.textContent=message;
     document.body.append(el);setTimeout(()=>el.remove(),2600);
   };
-  const link=id=>'https://t.me/AnonChatMgn_Bot/anonmgn?startapp=wall_'+id;
+  const trackSlug=(value,length=24)=>String(value||'').toLowerCase().replace(/[^a-z0-9-]/g,'-').replace(/^-+|-+$/g,'').slice(0,length);
+  // Telegram reliably passes startapp to Mini Apps. Keep UTM markers inside it.
+  const link=(id=null,{source='anonmgn',medium='post',campaign='wall'}={})=>{
+    let start='wall'+(id==null?'':'_'+Number(id));
+    for(const [name,value,max] of [['source',source,24],['medium',medium,24],['campaign',campaign,32]]){
+      const clean=trackSlug(value,max);
+      if(clean)start+='__utm_'+name+'_'+clean;
+    }
+    return 'https://t.me/AnonChatMgn_Bot/anonmgn?startapp='+start;
+  };
+  const wallAvatar=()=>'<span class="wall-avatar wall-avatar--brand" aria-hidden="true"><img src="./assets/anon-mgn-logo.png" alt="" loading="lazy"></span>';
+  async function copyWallLink(id=null){
+    const url=link(id,{source:'anonmgn',medium:'post',campaign:id==null?'wall':'post'});
+    try{await navigator.clipboard.writeText(url);flash('Ссылка скопирована')}
+    catch(_){
+      if(typeof tg?.showAlert==='function')tg.showAlert(url);
+      else flash('Скопируй ссылку: '+url);
+    }
+  }
 
   const mediaCache=new Map();
   async function authorizedBlob(path){
@@ -321,7 +339,7 @@ function hydrateMedia(container=document){
   function postHtml(p,detail=false){
     return `<article class="wall-post" data-wall-post="${p.id}">
       <header class="wall-post-head">
-        <span class="wall-avatar" aria-hidden="true">${esc((p.nick||'А').slice(0,1).toUpperCase())}</span>
+        ${wallAvatar()}
         <div class="wall-post-meta"><strong>${esc(p.nick||'Аноним')}</strong><small>${time(p.created_at)}${p.updated_at>p.created_at?' · изменён':''}</small></div>
         <button class="wall-icon-btn" data-wall-action="menu" data-id="${p.id}" aria-label="Меню публикации">${icon('menu')}</button>
       </header>
@@ -401,7 +419,7 @@ function hydrateMedia(container=document){
   draft={items:[...(post?.media||[])],uploading:0,clientKey:uuid()};
   const title=post?'Редактировать':'Новая публикация';
   sheet(title,header(title)+`<form class="wall-compose" id="wallPostForm">
-    <div class="wall-compose-user"><span class="wall-avatar">${esc(($('[data-nick]')?.textContent||'А').slice(0,1).toUpperCase())}</span><div><strong>${esc($('[data-nick]')?.textContent||'Аноним')}</strong><small>Автор публикации</small></div></div>
+    <div class="wall-compose-user">${wallAvatar()}<div><strong>${esc($('[data-nick]')?.textContent||'Аноним')}</strong><small>Автор публикации</small></div></div>
     <input class="wall-title-input" id="wallPostTitle" maxlength="100" placeholder="Заголовок темы (необязательно)" value="${esc(post?.title||'')}">
     <textarea id="wallPostText" maxlength="1000" placeholder="Что нового? Напиши что-нибудь…">${esc(post?.body||'')}</textarea>
     <label class="wall-privacy-row"><span><b>Показывать мой ник</b><small>Если выключить, все увидят «Аноним»</small></span><input type="checkbox" id="wallShowNick" ${post?.show_nick===false?'':'checked'}><i aria-hidden="true"></i></label>
@@ -443,7 +461,7 @@ function hydrateMedia(container=document){
       for(const c of map.get(parent)||[]){
         if(seen.has(c.id))continue;seen.add(c.id);
         html+=`<article class="wall-comment ${depth?'wall-comment-reply':''}">
-          <span class="wall-avatar">${esc((c.nick||'А').slice(0,1).toUpperCase())}</span>
+          ${wallAvatar()}
           <div class="wall-comment-main"><div class="wall-comment-top"><strong>${esc(c.nick)}</strong>${c.is_author?'<b class="wall-author-label">Автор</b>':''}<small>${time(c.created_at)}</small></div>
           <p>${esc(c.body)}</p><div class="wall-comment-opts">
           <button data-wall-action="reply" data-comment="${c.id}" data-nick="${esc(c.nick)}">Ответить</button>
@@ -501,18 +519,47 @@ function hydrateMedia(container=document){
     }
   }
   async function share(id){
-    const url=link(id);
+    const url=link(id,{source:'wall',medium:'share',campaign:'post'});
+    const post=state.current?.id===id?state.current:state.posts.find(p=>p.id===id);
+    const title=post?.title?.trim()||'Публикация на стене АНОН МГН';
+    const body=post?.body?.trim()||'';
+    const summary=[title,body].filter(Boolean).join('\n\n').slice(0,1000);
     try{tg?.HapticFeedback?.impactOccurred('soft')}catch(_){}
+    // Telegram 8.0+: native dialog shares a real photo + caption + post button.
+    if(typeof tg?.shareMessage==='function'){
+      try{
+        const saved=await api('/api/miniapp/wall/'+id+'/share','POST',{});
+        if(saved.prepared_id){
+          tg.shareMessage(saved.prepared_id,ok=>{
+            if(ok===false)flash('Публикация не отправлена');
+          });
+          return;
+        }
+      }catch(err){console.warn('Native Wall share unavailable:',err)}
+    }
+    // Other browsers: share the actual JPEG preview when file sharing works.
     if(typeof navigator.share==='function'){
-      try{await navigator.share({title:'Стена АНОН МГН',url});return}
-      catch(err){if(err?.name==='AbortError')return}
+      try{
+        const payload={title:'АНОН МГН · Стена',text:summary+'\n\n'+url};
+        if(typeof File!=='undefined'&&typeof navigator.canShare==='function'){
+          try{
+            const response=await fetch(base+'/api/miniapp/wall/share-preview/'+id+'.jpg',{cache:'no-store'});
+            if(response.ok){
+              const jpeg=await response.blob();
+              const file=new File([jpeg],'anon-mgn-'+id+'.jpg',{type:'image/jpeg'});
+              if(navigator.canShare({files:[file]}))payload.files=[file];
+            }
+          }catch(_){}
+        }
+        await navigator.share(payload);
+        return;
+      }catch(err){if(err?.name==='AbortError')return}
     }
-    if(typeof tg?.openTelegramLink==='function'){
-      tg.openTelegramLink('https://t.me/share/url?url='+encodeURIComponent(url));
-      return;
-    }
-    try{await navigator.clipboard.writeText(url);flash('Ссылка скопирована')}
-    catch(_){if(tg?.showAlert)tg.showAlert(url);else flash(url);}
+    // Older Telegram clients: at least include the post text, not a bare URL.
+    const target='https://t.me/share/url?url='+encodeURIComponent(url)+'&text='+encodeURIComponent(summary);
+    if(typeof tg?.openTelegramLink==='function'){tg.openTelegramLink(target);return;}
+    try{await navigator.clipboard.writeText(summary+'\n\n'+url);flash('Текст и ссылка скопированы')}
+    catch(_){if(tg?.showAlert)tg.showAlert(summary+'\n\n'+url);else flash('Не удалось поделиться');}
   }
   function menu(id){
     const p=state.current?.id===id?state.current:state.posts.find(x=>x.id===id);
@@ -520,7 +567,7 @@ function hydrateMedia(container=document){
     const actions=p.mine?`<button class="wall-action-cell" data-wall-action="edit" data-id="${id}">${icon('edit')}<span>Редактировать</span></button>
       <button class="wall-action-cell danger" data-wall-action="ask-delete" data-id="${id}">${icon('trash')}<span>Удалить публикацию</span></button>`:
       `<button class="wall-action-cell" data-wall-action="report" data-id="${id}">${icon('shield')}<span>Пожаловаться</span></button>`;
-    actionSheet('Публикация','Выберите действие',actions+(state.isAdmin?`<button class="wall-action-cell danger" data-wall-action="ask-hide" data-id="${id}">${icon('shield')}<span>Скрыть как модератор</span></button>`:''));
+    actionSheet('Публикация','Выберите действие',actions+`<button type="button" class="wall-action-cell" data-wall-action="copy-link" data-id="${id}">${icon('share')}<span>Скопировать ссылку</span></button>`+(state.isAdmin?`<button class="wall-action-cell danger" data-wall-action="ask-hide" data-id="${id}">${icon('shield')}<span>Скрыть как модератор</span></button>`:''));
   }
   function reportMenu(type,id){
     actionSheet('Причина жалобы','Автор жалобы не показывается пользователю',[
@@ -557,6 +604,7 @@ function hydrateMedia(container=document){
       draftPreview();return;
     }
     if(action==='share')return share(id);
+    if(action==='copy-link')return copyWallLink(id);
     if(action==='menu')return menu(id);
     if(action==='reply')return reply(Number(el.dataset.comment),el.dataset.nick);
     if(action==='cancel-reply'){state.reply=null;$('#wallReplyTo').hidden=true;return;}
@@ -596,6 +644,7 @@ function hydrateMedia(container=document){
     const b=e.target.closest('[data-wall-action]');if(b){e.preventDefault();handle(b)}
   });
   $('#wallComposeButton').onclick=()=>compose();
+  $('#wallCopyLink').onclick=()=>copyWallLink();
   $('#wallMore').onclick=()=>feed(true);
   $('#wallModeration').onclick=moderation;
   $$('[data-wall-sort]',root).forEach(b=>b.onclick=()=>{
@@ -605,5 +654,5 @@ function hydrateMedia(container=document){
     feed();
   });
   function closeTop(){if($('#wallActionLayer'))closeActionSheet();else close()}
-  window.AnonWall={onPage(page){if(page==='wall')feed()},openPost,close:closeTop,isOpen(){return Boolean($('#wallActionLayer'))||!overlay.hidden}};
+  window.AnonWall={onPage(page){if(page==='wall')feed()},openPost,makeLink:link,copyLink:copyWallLink,close:closeTop,isOpen(){return Boolean($('#wallActionLayer'))||!overlay.hidden}};
 })();
