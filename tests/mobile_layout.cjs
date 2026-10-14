@@ -81,6 +81,17 @@ const server = http.createServer((req, res) => {
         assert.ok(!measurements.hasRetiredAssets, 'retired JS bundle is loaded');
         assert.ok(measurements.navs.includes('home') && measurements.navs.includes('search'), 'main navigation missing');
         assert.ok(measurements.chatButton && measurements.chatButton.width >= 30, 'chat send button missing');
+        await page.evaluate(() => document.querySelector('#chatGames')?.click());
+        await page.waitForSelector('[data-chat-game="dice-slots"]', { timeout: 4000 });
+        const emojiButtons = await page.evaluate(() =>
+          Array.from(document.querySelectorAll('.chat-game-emoji-grid button')).map(button => {
+            const rect = button.getBoundingClientRect();
+            return { name: button.dataset.chatGame, left: rect.left, right: rect.right, width: rect.width };
+          }));
+        assert.equal(emojiButtons.length, 6, 'all six Telegram emoji games must be visible');
+        for (const item of emojiButtons)
+          assert.ok(item.width > 90 && item.left >= 0 && item.right <= width + 1,
+            width + 'px: emoji game button overflows: ' + item.name);
         for (const item of measurements.widths)
           assert.ok(item.width <= width + 1, width + 'px: ' + item.page + ' overflows: ' + item.width);
         process.stdout.write('Mini App screens OK: ' + width + 'px\n');
