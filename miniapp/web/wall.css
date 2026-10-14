@@ -816,7 +816,7 @@ body.wall-sheet-open{overflow:hidden}
 
 /* Wall v10: original logo fitted without cropping; reply placeholder centered. */
 .wall-avatar--brand{background:#000!important;border-color:#302e30!important}
-.wall-avatar--brand img{width:96%;height:96%;object-fit:contain;transform:none!important}
+.wall-avatar--brand img{width:100%;height:100%;object-fit:contain;transform:none!important}
 .wall-comment-row{min-height:48px;align-items:center;padding:5px 5px 5px 13px}
 .wall-comment-row textarea{height:28px;min-height:28px;max-height:104px;padding:2px 0;margin:0;line-height:24px;font-size:16px;resize:none;align-self:center}
 .wall-comment-row textarea::placeholder{line-height:24px}
