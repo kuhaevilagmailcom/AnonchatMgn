@@ -78,7 +78,11 @@ def reward_rules(kind: str) -> str:
 
 
 TTL = 10 * 60
-RESULT_TTL = 30
+# Keep result/replay buttons usable during the active anonymous conversation.
+RESULT_TTL = 6 * 60 * 60
+# Telegram visually animates the dice even after Bot API has returned its value.
+# Avoid announcing a winner before the second animation finishes.
+REVEAL_DELAY_SECONDS = 4.0
 
 
 class DuelError(ValueError):
@@ -121,7 +125,8 @@ def _lock_for(uid: int, partner: int) -> asyncio.Lock:
 def _prune_expired() -> None:
     now = time.monotonic()
     for key, game in list(_GAMES.items()):
-        if now - game.created_at > TTL or (game.finished_at and now - game.finished_at > RESULT_TTL):
+        if ((game.status not in ("finished", "restarting") and now - game.created_at > TTL)
+                or (game.finished_at and now - game.finished_at > RESULT_TTL)):
             _GAMES.pop(key, None)
 
 
@@ -143,7 +148,7 @@ def _current(mm: Any, uid: int, partner: int) -> Duel | None:
     if (
         mm.partner(uid) != partner or mm.partner(partner) != uid
         or game.session != _session(mm, uid)
-        or now - game.created_at > TTL
+        or (game.status not in ("finished", "restarting") and now - game.created_at > TTL)
         or (game.finished_at and now - game.finished_at > RESULT_TTL)
     ):
         _GAMES.pop(key, None)
@@ -153,7 +158,7 @@ def _current(mm: Any, uid: int, partner: int) -> Duel | None:
 
 def active_for_pair(mm: Any, uid: int, partner: int) -> bool:
     game = _current(mm, uid, partner)
-    return game is not None and game.status in ("invited", "active")
+    return game is not None and game.status in ("invited", "active", "resolving", "restarting")
 
 
 def state_for(mm: Any, uid: int, partner: int | None) -> dict | None:
@@ -165,6 +170,7 @@ def state_for(mm: Any, uid: int, partner: int | None) -> dict | None:
     return {
         "type": "dice", "id": game.id, "emoji": game.emoji,
         "title": KINDS[game.kind][1], "status": game.status,
+        "kind": game.kind,
         "inviter": game.inviter == uid,
         "answered": uid in game.rolls,
         "my_roll": game.rolls.get(uid),
@@ -182,6 +188,15 @@ def invite_markup(game: Duel) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="Играть", callback_data=f"game:dice:yes:{game.id}"),
         InlineKeyboardButton(text="Не сейчас", callback_data=f"game:dice:no:{game.id}"),
+    ]])
+
+
+def replay_markup(game: Duel) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text=f"🔄 Ещё раз · {game.emoji}",
+            callback_data=f"game:dice:again:{game.id}",
+        ),
     ]])
 
 
@@ -256,6 +271,19 @@ async def respond(mm: Any, bot: Any, uid: int, partner: int, game_id: int, accep
     return game
 
 
+async def replay(mm: Any, bot: Any, uid: int, partner: int, game_id: int) -> Duel:
+    """Repeat the completed game type without returning to the game picker."""
+    async with _lock_for(uid, partner):
+        old = _current(mm, uid, partner)
+        if old is None or old.id != game_id or old.status != "finished":
+            raise DuelError("Эта игра уже повторена или завершена")
+        kind = old.kind
+        # Claim the replay exactly once, even if both players tap together.
+        old.status = "restarting"
+        _GAMES.pop(old.pair, None)
+    return await invite(mm, bot, uid, partner, kind)
+
+
 async def roll(mm: Any, bot: Any, uid: int, partner: int, game_id: int,
                *, db: Any, original: Any = None) -> tuple[Duel, int]:
     # Network sends stay under the pair's turn lock so parallel button taps
@@ -287,28 +315,47 @@ async def roll(mm: Any, bot: Any, uid: int, partner: int, game_id: int,
         if not 1 <= value <= KINDS[game.kind][2]:
             raise DuelError("Некорректный результат Telegram")
         game.rolls[uid] = value
-        finished = len(game.rolls) == 2
-        if finished:
-            game.status = "finished"
-            game.finished_at = time.monotonic()
-            # Only the winner gets a prize. A missed goal / basket doesn't pay.
-            # This is inside the pair lock: two simultaneous requests can't
-            # award twice for the same Telegram-generated round.
-            first, second = game.pair
-            first_prize = base_prize(game.kind, game.rolls[first], game.rolls[second])
-            second_prize = base_prize(game.kind, game.rolls[second], game.rolls[first])
-            winner = first if first_prize else second if second_prize else None
-            amount = first_prize or second_prize
-            if winner is not None:
-                game.rewards[winner] = await db.award_game_xp(
-                    winner, amount, source="emoji_dice",
-                    reason=f"{game.emoji} Победа в эмодзи-дуэли «{KINDS[game.kind][1]}»",
-                    reference_type="dice_duel", reference_id=str(game.id),
-                )
+        second_roll = len(game.rolls) == 2
+        if second_roll:
+            game.status = "resolving"
     display = display_value(game.kind, value)
     live_chat.private(uid, f"{game.emoji} Твой бросок: {display}", kind="game_round")
     live_chat.private(partner, f"{game.emoji} Бросок собеседника: {display}", kind="game_round")
-    if finished:
+    if not second_roll:
+        # The first roll never creates a winner or any star payout.
+        live_chat.private(uid, "⏳ Ждём бросок собеседника…", kind="game_round")
+        try:
+            await bot.send_message(uid, "⏳ Ждём бросок собеседника…")
+        except Exception:
+            pass
+        return game, value
+
+    live_chat.game_status(set(game.pair), "dice", game.id, "resolving",
+                          "Оба броска приняты · смотрим анимацию…")
+    if REVEAL_DELAY_SECONDS > 0:
+        await asyncio.sleep(REVEAL_DELAY_SECONDS)
+
+    async with _lock_for(uid, partner):
+        # Someone may have ended their chat while Telegram showed the dice.
+        if _current(mm, uid, partner) is not game or game.status != "resolving":
+            return game, value
+        # Both actual Telegram dice values are required, not only one.
+        if len(game.rolls) != 2 or set(game.rolls) != set(game.pair):
+            raise DuelError("Ожидаем бросок второго игрока")
+        first, second = game.pair
+        first_prize = base_prize(game.kind, game.rolls[first], game.rolls[second])
+        second_prize = base_prize(game.kind, game.rolls[second], game.rolls[first])
+        winner = first if first_prize else second if second_prize else None
+        amount = first_prize or second_prize
+        if winner is not None:
+            game.rewards[winner] = await db.award_game_xp(
+                winner, amount, source="emoji_dice",
+                reason=f"{game.emoji} Победа в эмодзи-дуэли «{KINDS[game.kind][1]}»",
+                reference_type="dice_duel", reference_id=str(game.id),
+            )
+        game.status = "finished"
+        game.finished_at = time.monotonic()
+    if game.status == "finished":
         for player in game.pair:
             other = partner if player == uid else uid
             mine = game.rolls[player]
@@ -321,10 +368,12 @@ async def roll(mm: Any, bot: Any, uid: int, partner: int, game_id: int,
             text = (f"{game.emoji} <b>{outcome}</b>\n"
                     f"Ты: <b>{display_value(game.kind, mine)}</b> · "
                     f"Собеседник: <b>{display_value(game.kind, theirs)}</b>"
-                    f"{reward_line}\n"
-                    "Ещё раз? Игры → выбери эмодзи.")
+                    f"{reward_line}")
             try:
-                await bot.send_message(player, text, parse_mode="HTML")
+                await bot.send_message(
+                    player, text, parse_mode="HTML",
+                    reply_markup=replay_markup(game),
+                )
             except Exception:
                 pass
             live_chat.private(player, text, kind="game_round")
