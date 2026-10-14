@@ -17,7 +17,7 @@
     comment:'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
     share:'<path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0-5 5v2"/>',
     menu:'<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
-    send:'<path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/>',
+    send:'<path d="M12 19V5M5 12l7-7 7 7"/>',
     x:'<path d="M18 6 6 18M6 6l12 12"/>',
     shield:'<path d="m12 22 7-4V6l-7-4-7 4v12l7 4Z"/><path d="M9 12h6"/>',
     edit:'<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.37 2.63a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/>',
@@ -31,6 +31,18 @@
   };
   const state = {mode:'new',posts:[],offset:0,more:false,busy:false,current:null,reply:null,isAdmin:false};
   const overlay = $('#wallOverlay');
+  // The keyboard changes the visual viewport without always changing 100dvh.
+  // Size the dialog to the actually visible area so its composer stays accessible.
+  const syncWallViewport = () => {
+    if (overlay.hidden) return;
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    overlay.style.setProperty('--wall-viewport-height', Math.round(viewport.height) + 'px');
+    overlay.style.setProperty('--wall-viewport-top', Math.max(0, Math.round(viewport.offsetTop)) + 'px');
+  };
+  window.visualViewport?.addEventListener('resize', syncWallViewport);
+  window.visualViewport?.addEventListener('scroll', syncWallViewport);
+  window.addEventListener('resize', syncWallViewport);
   let ticket=0;
   const api = async(path,method='GET',data) => {
     const control=new AbortController(),timeout=setTimeout(()=>control.abort(),15000);
@@ -341,7 +353,7 @@ function hydrateMedia(container=document){
   function sheet(title,html){
     const opening=overlay.hidden;
     overlay.hidden=false;overlay.innerHTML=`<div class="wall-sheet ${opening?'wall-sheet-enter':''}" role="dialog" aria-modal="true" aria-label="${esc(title)}">${html}</div>`;
-    document.body.classList.add('wall-sheet-open');overlay.scrollTop=0;
+    document.body.classList.add('wall-sheet-open');overlay.scrollTop=0;syncWallViewport();
   }
   function header(title){
     return `<header class="wall-sheet-header"><span></span><strong>${esc(title)}</strong><button class="wall-icon-btn" data-wall-close aria-label="Закрыть">${icon('x')}</button></header>`;
@@ -351,6 +363,8 @@ function hydrateMedia(container=document){
     closeActionSheet();
     ++ticket;overlay.hidden=true;overlay.innerHTML='';state.reply=null;
     document.body.classList.remove('wall-sheet-open');
+    overlay.style.removeProperty('--wall-viewport-height');
+    overlay.style.removeProperty('--wall-viewport-top');
   }
 
   function closeActionSheet(){
@@ -439,7 +453,7 @@ function hydrateMedia(container=document){
     }walk(0,0);
     return html;
   }
-  async function openPost(id){
+  async function openPost(id,{scrollToReplies=false}={}){
     id=Number(id);if(!Number.isInteger(id)||id<1)return;
     const current=++ticket;state.reply=null;
     sheet('Обсуждение',header('Обсуждение')+'<div class="wall-loading">Загружаем комментарии…</div>');
@@ -455,6 +469,10 @@ function hydrateMedia(container=document){
           <button class="wall-send" type="submit" aria-label="Отправить">${icon('send')}</button></div>
         </form>`;
       hydrateMedia(overlay);
+      if(scrollToReplies){
+        const scroller=$('.wall-detail-scroll',overlay);
+        requestAnimationFrame(()=>{if(scroller)scroller.scrollTop=scroller.scrollHeight;});
+      }
       const commentKey=uuid();
       const resizeComment=()=>{
         const input=$('#wallCommentText');if(!input)return;
@@ -467,7 +485,7 @@ function hydrateMedia(container=document){
         try{
           await api('/api/miniapp/wall/'+id+'/comments','POST',{body:input.value.trim(),parent_id:state.reply?.id||null,client_key:commentKey});
           try{tg?.HapticFeedback?.notificationOccurred('success')}catch(_){}
-          await openPost(id);feed();
+          await openPost(id,{scrollToReplies:true});feed();
         }catch(err){flash(err.message);send.disabled=false}
       };
     }catch(err){if(current===ticket)$('.wall-sheet',overlay).innerHTML=header('Обсуждение')+'<div class="wall-empty">'+esc(err.message)+'</div>';}
@@ -476,7 +494,11 @@ function hydrateMedia(container=document){
     state.reply={id,nick};const target=$('#wallReplyTo');if(!target)return;
     target.hidden=false;target.innerHTML=`<span>Ответ для <b>${esc(nick)}</b></span><button data-wall-action="cancel-reply" aria-label="Отменить">${icon('x')}</button>`;
     try{tg?.HapticFeedback?.selectionChanged()}catch(_){}
-    $('#wallCommentText')?.focus();
+    const input=$('#wallCommentText');
+    if(input){
+      try{input.focus({preventScroll:true})}catch(_){input.focus()}
+      requestAnimationFrame(syncWallViewport);
+    }
   }
   async function share(id){
     const url=link(id);
