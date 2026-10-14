@@ -1,7 +1,7 @@
-"""Tiny, non-monetary duels with Telegram's *real* animated dice.
+"""Fast one-round Telegram animated emoji duels with capped star prizes.
 
-One invitation, one roll per person. Telegram supplies the random value.
-Matches exist only for the current anonymous chat, not in permanent history.
+One invitation, one Telegram-generated roll per player. Winners receive modest
+in-bot XP/stars through the same 500-star daily cap used by other games.
 """
 from __future__ import annotations
 
@@ -42,11 +42,39 @@ def _score(kind: str, value: int) -> int:
     parts = [(value - 1 >> offset) & 3 for offset in (0, 2, 4)]
     if parts == [3, 3, 3]:
         return 4  # 777
+    if parts == [0, 0, 0]:
+        return 3  # Three BAR
     if len(set(parts)) == 1:
-        return 3  # Three matching symbols
+        return 2  # Three cherries or lemons
     if len(set(parts)) == 2:
-        return 2  # Pair
-    return 1  # No match
+        return 1  # Pair
+    return 0  # No winning combination
+
+
+def base_prize(kind: str, winning_value: int, losing_value: int) -> int:
+    """Base star reward for an actual win, before x2/x3 and the daily cap."""
+    mine, other = _score(kind, winning_value), _score(kind, losing_value)
+    if mine <= other:
+        return 0
+    if kind == "basket":
+        return 3 if winning_value >= 4 else 0  # Ball reached the basket
+    if kind == "football":
+        return 2 if winning_value >= 3 else 0  # Scored a goal
+    if kind == "slots":
+        return {0: 0, 1: 5, 2: 7, 3: 10, 4: 15}[mine]
+    # Darts, dice, bowling: 3 stars for a perfect maximum, otherwise 2.
+    return 3 if winning_value == KINDS[kind][2] else 2
+
+
+def reward_rules(kind: str) -> str:
+    return {
+        "basket": "За победное попадание: +3 ⭐.",
+        "football": "За победный гол: +2 ⭐.",
+        "slots": "Пара — 5 ⭐; три 🍒/🍋 — 7 ⭐; три BAR — 10 ⭐; 777 — 15 ⭐.",
+        "darts": "Победителю 2 ⭐, за яблочко 3 ⭐.",
+        "dice": "Победителю 2 ⭐, за шестёрку 3 ⭐.",
+        "bowling": "Победителю 2 ⭐, за страйк 3 ⭐.",
+    }[kind]
 
 
 TTL = 10 * 60
@@ -67,6 +95,7 @@ class Duel:
     created_at: float
     status: str = "invited"
     rolls: dict[int, int] = field(default_factory=dict)
+    rewards: dict[int, int] = field(default_factory=dict)
     finished_at: float = 0
 
     @property
@@ -144,6 +173,7 @@ def state_for(mm: Any, uid: int, partner: int | None) -> dict | None:
         "partner_display": display_value(game.kind, game.rolls[partner]) if partner in game.rolls else "",
         "my_score": _score(game.kind, game.rolls[uid]) if uid in game.rolls else None,
         "partner_score": _score(game.kind, game.rolls[partner]) if partner in game.rolls else None,
+        "reward_total": game.rewards.get(uid, 0),
         "total": 1, "round": 1, "finished": game.status == "finished",
     }
 
@@ -177,9 +207,8 @@ async def invite(mm: Any, bot: Any, uid: int, partner: int, kind: str) -> Duel:
         )
         _GAMES[game.pair] = game
     emoji, name, _ = KINDS[kind]
-    rule = ("Три одинаковых символа сильнее пары, 777 — лучше всех."
-            if kind == "slots" else
-            "Каждый делает один бросок. Чей результат выше — тот победил.")
+    rule = "Один раунд: каждый делает по одному броску. " + reward_rules(kind) + "\n" \
+           "x2/x3 и дневной лимит 500 ⭐ действуют как в остальных играх."
     try:
         await bot.send_message(
             partner, f"{emoji} <b>Собеседник зовёт в «{name}»</b>\n"
@@ -228,7 +257,7 @@ async def respond(mm: Any, bot: Any, uid: int, partner: int, game_id: int, accep
 
 
 async def roll(mm: Any, bot: Any, uid: int, partner: int, game_id: int,
-               *, original: Any = None) -> tuple[Duel, int]:
+               *, db: Any, original: Any = None) -> tuple[Duel, int]:
     # Network sends stay under the pair's turn lock so parallel button taps
     # cannot get two valid throws. This is intentionally a very short duel.
     async with _lock_for(uid, partner):
@@ -262,6 +291,20 @@ async def roll(mm: Any, bot: Any, uid: int, partner: int, game_id: int,
         if finished:
             game.status = "finished"
             game.finished_at = time.monotonic()
+            # Only the winner gets a prize. A missed goal / basket doesn't pay.
+            # This is inside the pair lock: two simultaneous requests can't
+            # award twice for the same Telegram-generated round.
+            first, second = game.pair
+            first_prize = base_prize(game.kind, game.rolls[first], game.rolls[second])
+            second_prize = base_prize(game.kind, game.rolls[second], game.rolls[first])
+            winner = first if first_prize else second if second_prize else None
+            amount = first_prize or second_prize
+            if winner is not None:
+                game.rewards[winner] = await db.award_game_xp(
+                    winner, amount, source="emoji_dice",
+                    reason=f"{game.emoji} Победа в эмодзи-дуэли «{KINDS[game.kind][1]}»",
+                    reference_type="dice_duel", reference_id=str(game.id),
+                )
     display = display_value(game.kind, value)
     live_chat.private(uid, f"{game.emoji} Твой бросок: {display}", kind="game_round")
     live_chat.private(partner, f"{game.emoji} Бросок собеседника: {display}", kind="game_round")
@@ -273,9 +316,12 @@ async def roll(mm: Any, bot: Any, uid: int, partner: int, game_id: int,
             mine_score, their_score = _score(game.kind, mine), _score(game.kind, theirs)
             outcome = ("🤝 Ничья!" if mine_score == their_score
                        else "🏆 Победа!" if mine_score > their_score else "Собеседник победил.")
+            actual_reward = game.rewards.get(player, 0)
+            reward_line = f"\n+{actual_reward} ⭐" if actual_reward else ""
             text = (f"{game.emoji} <b>{outcome}</b>\n"
                     f"Ты: <b>{display_value(game.kind, mine)}</b> · "
-                    f"Собеседник: <b>{display_value(game.kind, theirs)}</b>\n"
+                    f"Собеседник: <b>{display_value(game.kind, theirs)}</b>"
+                    f"{reward_line}\n"
                     "Ещё раз? Игры → выбери эмодзи.")
             try:
                 await bot.send_message(player, text, parse_mode="HTML")
@@ -286,7 +332,7 @@ async def roll(mm: Any, bot: Any, uid: int, partner: int, game_id: int,
     return game, value
 
 
-async def try_manual_roll(mm: Any, bot: Any, uid: int, message: Any) -> bool:
+async def try_manual_roll(mm: Any, bot: Any, uid: int, message: Any, *, db: Any) -> bool:
     partner = mm.partner(uid)
     if partner is None:
         return False
@@ -296,7 +342,7 @@ async def try_manual_roll(mm: Any, bot: Any, uid: int, message: Any) -> bool:
     if message.dice is None or message.dice.emoji != game.emoji:
         return False
     try:
-        await roll(mm, bot, uid, partner, game.id, original=message)
+        await roll(mm, bot, uid, partner, game.id, db=db, original=message)
     except DuelError as exc:
         try:
             await bot.send_message(uid, str(exc))
