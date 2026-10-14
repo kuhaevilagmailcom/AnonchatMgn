@@ -848,8 +848,9 @@ def test_referral_daily_limit_and_mass_cleanup() -> None:
             for number in range(30):
                 assert await db.award_referral(9_000_000 + number, referrer, 50) is True
             assert await db.award_referral(9_000_030, referrer, 50) is False
-            assert await db.referral_stats(referrer) == (30, 1_500)
-            assert int((await db.get_user(referrer))["xp"]) == 1_500
+            referral_multiplier = await db.xp_multiplier()
+            assert await db.referral_stats(referrer) == (30, 1_500 * referral_multiplier)
+            assert int((await db.get_user(referrer))["xp"]) == 1_500 * referral_multiplier
 
             # На следующие магнитогорские сутки начисление снова доступно.
             await db.db.execute(
@@ -899,7 +900,8 @@ def test_referral_daily_limit_and_mass_cleanup() -> None:
             assert result["referrals_removed"] == 1_033
             assert result["users_deleted"] == 1_000
             assert result["protected_users"] == 2
-            assert int((await db.get_user(referrer))["xp"]) == 948_349
+            expected_refund = 999_999 - (1_002 * 50 + 31 * 50 * referral_multiplier)
+            assert int((await db.get_user(referrer))["xp"]) == expected_refund
             assert await db.referral_stats(referrer) == (0, 0)
             assert await db.get_user(ordinary_id) is None
             assert await db.number_pair_reward_available(ordinary_id, referrer) is True
