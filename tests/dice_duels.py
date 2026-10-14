@@ -69,6 +69,8 @@ async def scenario():
     mm, bot = FakeMM(), FakeBot()
     ledger = FakeLedger()
     DD.reset()
+    # Keep ordinary regression runs fast; a separate test verifies the reveal delay.
+    DD.REVEAL_DELAY_SECONDS = 0
     assert DD.display_value("slots", 1) == "BAR BAR BAR"
     assert DD.display_value("slots", 64) == "7️⃣ 7️⃣ 7️⃣"
     assert DD._score("slots", 1) == 3
@@ -121,6 +123,10 @@ async def scenario():
         assert state.rolls == {101: max_value}
         assert bot.copied[-1][0:2] == (202, 101)
         assert DD.state_for(mm, 101, 202)["answered"] is True
+        assert DD.state_for(mm, 101, 202)["partner_roll"] is None
+        assert DD.state_for(mm, 101, 202)["finished"] is False
+        assert duel.rewards == {}
+        assert not any("Победа!" in msg or "победил" in msg.lower() for _, msg, _ in bot.messages[-1:])
 
         try:
             await DD.roll(mm, bot, 101, 202, duel.id, db=ledger)
@@ -136,6 +142,57 @@ async def scenario():
         assert ledger.payouts[-1][0:3] == (101, expected, expected)
         assert bot.messages[-1][0] in (101, 202)
         assert any("Победа" in msg for _, msg, _ in bot.messages[-2:]) or max_value == 1
+        # Under each result a Telegram inline button repeats this exact game.
+        for _, result_text, kwargs in bot.messages[-2:]:
+            assert "reply_markup" in kwargs
+            button = kwargs["reply_markup"].inline_keyboard[0][0]
+            assert "Ещё раз" in button.text
+            assert button.callback_data == f"game:dice:again:{duel.id}"
+
+    # One-tap replay keeps the same game kind and requires acceptance again.
+    DD.reset()
+    bot.values = [5, 1]
+    basketball = await DD.invite(mm, bot, 101, 202, "basket")
+    await DD.respond(mm, bot, 202, 101, basketball.id, True)
+    await DD.roll(mm, bot, 101, 202, basketball.id, db=ledger)
+    await DD.roll(mm, bot, 202, 101, basketball.id, db=ledger)
+    again = await DD.replay(mm, bot, 202, 101, basketball.id)
+    assert again.kind == "basket" and again.emoji == "🏀" and again.id != basketball.id
+    assert again.status == "invited" and again.inviter == 202
+    assert bot.messages[-1][0] == 101
+    try:
+        await DD.replay(mm, bot, 101, 202, basketball.id)
+    except DD.DuelError:
+        pass
+    else:
+        raise AssertionError("A completed round can only be replayed once")
+
+    # A real second roll should show 'resolving' during Telegram's animation.
+    DD.reset()
+    bot.values = [5, 1]
+    DD.REVEAL_DELAY_SECONDS = 0.08
+    pending = await DD.invite(mm, bot, 101, 202, "basket")
+    await DD.respond(mm, bot, 202, 101, pending.id, True)
+    await DD.roll(mm, bot, 101, 202, pending.id, db=ledger)
+    assert pending.status == "active" and pending.rewards == {}
+    outcomes_before = sum("Победа!" in text for _, text, _ in bot.messages)
+    second_task = asyncio.create_task(DD.roll(mm, bot, 202, 101, pending.id, db=ledger))
+    await asyncio.sleep(0.02)
+    assert pending.status == "resolving" and len(pending.rolls) == 2
+    assert DD.state_for(mm, 101, 202)["finished"] is False
+    assert pending.rewards == {}
+    assert sum("Победа!" in text for _, text, _ in bot.messages) == outcomes_before
+    try:
+        await DD.replay(mm, bot, 101, 202, pending.id)
+    except DD.DuelError:
+        pass
+    else:
+        raise AssertionError("Replay must wait for the second dice animation")
+    await second_task
+    assert pending.status == "finished"
+    assert DD.state_for(mm, 101, 202)["finished"] is True
+    assert len(pending.rolls) == 2
+    DD.REVEAL_DELAY_SECONDS = 0
 
     # Manual real Telegram dice rolled by the user must be relayed unchanged.
     DD.reset()
