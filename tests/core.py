@@ -1407,7 +1407,7 @@ def test_engagement_activity_streak_achievements_and_quests() -> None:
                 db.unlock_achievement(502, "race_unique", 50),
             )
             assert sorted(results) == [False, True]
-            assert int((await db.get_user(502))["xp"]) == 50
+            assert int((await db.get_user(502))["xp"]) == 50 * await db.xp_multiplier()
 
             assert await db.claim_daily_quest(501, day, "quest_test", 25) is True
             assert await db.claim_daily_quest(501, day, "quest_test", 25) is False
