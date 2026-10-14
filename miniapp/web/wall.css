@@ -821,3 +821,60 @@ body.wall-sheet-open{overflow:hidden}
 .wall-comment-row textarea{height:28px;min-height:28px;max-height:104px;padding:2px 0;margin:0;line-height:24px;font-size:16px;resize:none;align-self:center}
 .wall-comment-row textarea::placeholder{line-height:24px}
 .wall-send{align-self:center}
+
+/* Wall v11: symmetric share glyph and locked alignment of all action buttons.
+   Earlier v2/v3/v5 rules disagreed on widths and padding. */
+.wall-post-actions{
+  display:flex;
+  align-items:center;
+  justify-content:flex-start;
+  gap:14px;
+  min-height:45px;
+  padding:8px 0 0;
+}
+.wall-post-actions button.wall-action{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  height:36px;
+  min-height:36px;
+  padding-block:0;
+  vertical-align:middle;
+}
+.wall-post-actions button.wall-action-share{
+  display:grid;
+  place-items:center;
+  flex:0 0 36px;
+  width:36px;
+  min-width:36px;
+  height:36px;
+  min-height:36px;
+  padding:0;
+  margin:0;
+  border:0;
+  border-radius:9px;
+  background:transparent;
+  line-height:0;
+  align-self:center;
+}
+.wall-post-actions button.wall-action-share .wall-icon,
+.wall-post-actions button.wall-action-share .wall-icon--share{
+  display:block;
+  position:static;
+  width:21px;
+  height:21px;
+  min-width:21px;
+  flex:0 0 21px;
+  margin:0;
+  transform:none;
+  stroke-width:1.85;
+  transform-origin:center;
+}
+.wall-action-share:active .wall-icon--share{
+  animation:none!important;
+  transform:none!important;
+}
+@media(max-width:360px){
+  .wall-post-actions{gap:12px}
+  .wall-post-actions button.wall-action-share{padding:0}
+}
