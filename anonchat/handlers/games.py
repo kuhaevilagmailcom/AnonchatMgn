@@ -416,6 +416,9 @@ async def cb_geo(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     if partner is None:
         await ctx.ack("Сначала найди собеседника", alert=True)
         return
+    if DD.active_for_pair(ctx.mm, ctx.user_id, partner):
+        await ctx.ack("Сначала заверши эмодзи-дуэль", alert=True)
+        return
     if WG.active_for_pair(ctx.user_id, partner):
         await ctx.ack("Сначала заверши игру «Объясни слово»", alert=True)
         return
@@ -482,6 +485,9 @@ async def cb_geo_rounds(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     partner = ctx.mm.partner(ctx.user_id)
     if partner is None:
         await ctx.ack("Диалог уже завершён", alert=True)
+        return
+    if DD.active_for_pair(ctx.mm, ctx.user_id, partner):
+        await ctx.ack("Сначала заверши эмодзи-дуэль", alert=True)
         return
     if WG.active_for_pair(ctx.user_id, partner):
         await ctx.ack("Сначала заверши игру «Объясни слово»", alert=True)
@@ -689,6 +695,9 @@ async def cb_battle(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     if partner is None:
         await ctx.ack("Сначала найди собеседника", alert=True)
         return
+    if DD.active_for_pair(ctx.mm, ctx.user_id, partner):
+        await ctx.ack("Сначала заверши эмодзи-дуэль", alert=True)
+        return
     if WG.active_for_pair(ctx.user_id, partner):
         await ctx.ack("Сначала заверши игру «Объясни слово»", alert=True)
         return
@@ -740,6 +749,9 @@ async def cb_battle_length(event: CallbackQuery, ctx: Ctx, db: Database) -> None
     partner = ctx.mm.partner(ctx.user_id)
     if partner is None:
         await ctx.ack("Сначала найди собеседника", alert=True)
+        return
+    if DD.active_for_pair(ctx.mm, ctx.user_id, partner):
+        await ctx.ack("Сначала заверши эмодзи-дуэль", alert=True)
         return
     if WG.active_for_pair(ctx.user_id, partner):
         await ctx.ack("Сначала заверши игру «Объясни слово»", alert=True)
@@ -880,6 +892,9 @@ async def cb_words(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         await ctx.ack("Сначала найди собеседника", alert=True)
         return
 
+    if DD.active_for_pair(ctx.mm, ctx.user_id, partner):
+        await ctx.ack("Сначала заверши эмодзи-дуэль", alert=True)
+        return
     if await db.game_for_pair(ctx.user_id, partner) is not None:
         await ctx.ack("Сначала заверши текущую игру", alert=True)
         return
