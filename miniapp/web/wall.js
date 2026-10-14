@@ -367,7 +367,7 @@ function hydrateMedia(container=document){
     const post=state.posts.find(p=>p.id===id);
     if(post)post.views=value;
     if(state.current?.id===id)state.current.views=value;
-    $('[data-wall-views="'+id+'"]').forEach(el=>{
+    document.querySelectorAll('[data-wall-views="'+id+'"]').forEach(el=>{
       el.textContent=value.toLocaleString('ru-RU');
       el.closest('.wall-post-views')?.setAttribute('aria-label','Просмотров: '+value);
     });
@@ -394,7 +394,7 @@ function hydrateMedia(container=document){
     impressionObserver?.disconnect();
     impressionTimers.forEach(timer=>clearTimeout(timer));
     impressionTimers.clear();
-    const posts=$('[data-wall-post]',$('#wallFeed'));
+    const posts=Array.from($('#wallFeed').querySelectorAll('[data-wall-post]'));
     if(typeof IntersectionObserver==='undefined')return;
     impressionObserver=new IntersectionObserver(entries=>{
       for(const entry of entries){
