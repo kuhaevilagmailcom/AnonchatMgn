@@ -71,7 +71,7 @@
     }
     return 'https://t.me/AnonChatMgn_Bot/anonmgn?startapp='+start;
   };
-  const wallAvatar=()=>'<span class="wall-avatar wall-avatar--brand" aria-hidden="true"><img src="./assets/anon-mgn-logo.png" alt="" loading="lazy"></span>';
+  const wallAvatar=()=>'<span class="wall-avatar wall-avatar--brand" aria-hidden="true"><img src="./assets/anon-mgn-wall-avatar.jpg" alt="" loading="lazy"></span>';
   async function copyWallLink(id=null){
     if(!state.isAdmin)return;
     const url=link(id,{source:'anonmgn',medium:'post',campaign:id==null?'wall':'post'});
