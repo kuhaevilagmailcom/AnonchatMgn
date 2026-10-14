@@ -80,6 +80,21 @@ const server = http.createServer((req, res) => {
         window.AnonWall.onPage('wall');
       });
       await page.waitForSelector('[data-wall-post="17"]', { timeout: 8000 });
+      // Cover every top-level page, not only the Wall. Force each layout to render
+      // without relying on a live Telegram account or backend session.
+      const pageWidths = await page.evaluate(() => {
+        const pages = Array.from(document.querySelectorAll('section.page[data-page]'));
+        const active = pages.filter(p => p.classList.contains('active'));
+        const widths = [];
+        for (const target of pages) {
+          for (const el of pages) el.classList.toggle('active', el === target);
+          widths.push({ section: target.dataset.page, actual: document.documentElement.scrollWidth });
+        }
+        for (const el of pages) el.classList.toggle('active', active.includes(el));
+        return widths;
+      });
+      for (const item of pageWidths)
+        assert.ok(item.actual <= width + 1, width + 'px: ' + item.section + ' page overflows horizontally: ' + item.actual);
       const wall = await page.evaluate(() => {
         const r = el => el.getBoundingClientRect();
         const share = r(document.querySelector('.wall-action-share'));
