@@ -886,6 +886,7 @@ if (typeof window === 'undefined') {
           <span>Ты <b>${mine==null?'—':esc(game.my_display||String(mine))}</b></span><span>${esc(game.emoji)}</span><span>Собеседник <b>${other==null?'—':esc(game.partner_display||String(other))}</b></span>
         </div>
         <p>${description}</p>
+        ${game.finished&&game.reward_total?'<div class="dice-duel-reward">+'+Number(game.reward_total)+' ⭐</div>':''}
         ${game.status==='active'&&!game.answered?'<button class="game-next dice-roll-btn" type="button" data-dice-roll>Бросить '+esc(game.emoji)+'</button>':''}
         ${game.status==='active'?'<small>Анимированный бросок появится в Telegram.</small>':''}
       </div>`;
