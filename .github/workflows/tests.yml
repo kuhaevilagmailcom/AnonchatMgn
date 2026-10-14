@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# During rapid fixes only the newest run per branch needs runners.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # Independent suites: one hanging SQLite test must not hide other failures.
 jobs:
   python:
