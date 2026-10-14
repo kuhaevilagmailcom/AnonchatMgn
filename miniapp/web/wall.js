@@ -71,8 +71,9 @@
     }
     return 'https://t.me/AnonChatMgn_Bot/anonmgn?startapp='+start;
   };
-  const wallAvatar=()=>'<span class="wall-avatar wall-avatar--brand" aria-hidden="true"><img src="./assets/anon-mgn-wall-avatar.jpg" alt="" loading="lazy"></span>';
+  const wallAvatar=()=>'<span class="wall-avatar wall-avatar--brand" aria-hidden="true"><img src="./assets/anon-mgn-logo.png" alt="" loading="lazy"></span>';
   async function copyWallLink(id=null){
+    if(!state.isAdmin)return;
     const url=link(id,{source:'anonmgn',medium:'post',campaign:id==null?'wall':'post'});
     try{await navigator.clipboard.writeText(url);flash('Ссылка скопирована')}
     catch(_){
@@ -362,6 +363,7 @@ function hydrateMedia(container=document){
       state.posts=more?state.posts.concat((data.items||[]).map(applyPendingLike)):(data.items||[]).map(applyPendingLike);
       state.offset=data.offset;state.more=Boolean(data.more);state.isAdmin=Boolean(data.is_admin);
       $('#wallModeration').hidden=!state.isAdmin;
+      $('#wallCopyLink').hidden=!state.isAdmin;
       box.innerHTML=state.posts.length?state.posts.map(p=>postHtml(p)).join(''):`<div class="wall-empty">${icon('comment')}<strong>Здесь пока тихо</strong><p>Стань первым, кто начнёт обсуждение.</p></div>`;
       $('#wallMore').hidden=!state.more;
       hydrateMedia(box);
@@ -478,6 +480,7 @@ function hydrateMedia(container=document){
     try{
       const data=await api('/api/miniapp/wall/'+id);if(current!==ticket)return;
       state.current=applyPendingLike(data.post);state.isAdmin=Boolean(data.is_admin);
+      $('#wallCopyLink').hidden=!state.isAdmin;
       $('.wall-sheet',overlay).innerHTML=`${header('Обсуждение')}<div class="wall-detail-scroll">
         ${postHtml(state.current,true)}<div class="wall-comments-title"><strong>Ответы</strong><span>${data.comments.length}</span></div>
         ${commentsHtml(data.comments)}${data.truncated?'<div class="wall-note">Показаны первые 500 ответов.</div>':''}</div>
@@ -494,9 +497,10 @@ function hydrateMedia(container=document){
       const commentKey=uuid();
       const resizeComment=()=>{
         const input=$('#wallCommentText');if(!input)return;
-        input.style.height='0';input.style.height=Math.min(104,Math.max(24,input.scrollHeight))+'px';
+        input.style.height='0';input.style.height=Math.min(104,Math.max(28,input.scrollHeight))+'px';
       };
       $('#wallCommentText').addEventListener('input',resizeComment);
+      resizeComment();
       $('#wallCommentForm').onsubmit=async e=>{
         e.preventDefault();const input=$('#wallCommentText'),send=$('.wall-send');if(!input.value.trim())return;
         send.disabled=true;
@@ -568,7 +572,7 @@ function hydrateMedia(container=document){
     const actions=p.mine?`<button class="wall-action-cell" data-wall-action="edit" data-id="${id}">${icon('edit')}<span>Редактировать</span></button>
       <button class="wall-action-cell danger" data-wall-action="ask-delete" data-id="${id}">${icon('trash')}<span>Удалить публикацию</span></button>`:
       `<button class="wall-action-cell" data-wall-action="report" data-id="${id}">${icon('shield')}<span>Пожаловаться</span></button>`;
-    actionSheet('Публикация','Выберите действие',actions+`<button type="button" class="wall-action-cell" data-wall-action="copy-link" data-id="${id}">${icon('share')}<span>Скопировать ссылку</span></button>`+(state.isAdmin?`<button class="wall-action-cell danger" data-wall-action="ask-hide" data-id="${id}">${icon('shield')}<span>Скрыть как модератор</span></button>`:''));
+    actionSheet('Публикация','Выберите действие',actions+(state.isAdmin?`<button type="button" class="wall-action-cell" data-wall-action="copy-link" data-id="${id}">${icon('share')}<span>Скопировать ссылку</span></button>`:'')+(state.isAdmin?`<button class="wall-action-cell danger" data-wall-action="ask-hide" data-id="${id}">${icon('shield')}<span>Скрыть как модератор</span></button>`:''));
   }
   function reportMenu(type,id){
     actionSheet('Причина жалобы','Автор жалобы не показывается пользователю',[
