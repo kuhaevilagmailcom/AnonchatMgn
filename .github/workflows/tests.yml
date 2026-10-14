@@ -25,6 +25,8 @@ jobs:
       - run: python -m tests.game_resilience
       - run: python -m tests.wall
       - run: python -m tests.wall_media
+      - run: python -m tests.wall_share
+      - run: node tests/wall_ui.cjs
       - run: python -m compileall -q .
       - run: node --check miniapp/web/app.js
       - run: node --check miniapp/web/wall.js
