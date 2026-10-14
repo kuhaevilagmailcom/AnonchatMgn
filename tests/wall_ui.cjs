@@ -34,12 +34,12 @@ const context = {
 };
 const injected = js.replace(
   'window.AnonWall={onPage(page)',
-  'window.__wallTest={icon,postHtml,handle,state,mediaHtml};window.AnonWall={onPage(page)',
+  'window.__wallTest={icon,postHtml,handle,state,mediaHtml,link};window.AnonWall={onPage(page)',
 );
 assert.notEqual(injected, js, 'Test hook insertion must find the Wall public API');
 vm.runInNewContext(injected, context, { filename: 'wall.js' });
 
-const { icon, postHtml, handle, state, mediaHtml } = context.window.__wallTest;
+const { icon, postHtml, handle, state, mediaHtml, link } = context.window.__wallTest;
 const makePost = (liked = false) => ({
   id: 7, nick: 'Аноним', body: 'Тест', created_at: 100,
   updated_at: 100, likes: 14, comments: 3, liked, media: [],
@@ -62,12 +62,18 @@ assert.match(regular, /aria-pressed="false"/);
 assert.match(active, /aria-pressed="true"/);
 assert.match(active, /wall-action-like liked/);
 assert.match(js, /navigator\.share/);
+assert.match(regular,/anon-mgn-wall-avatar\\.jpg/,'wall posts use the attached logo');
+assert.match(html,/id="wallCopyLink"/,'wall has a direct link copy button');
+assert.match(js,/tg\\.shareMessage/,'Telegram native prepared share is preferred');
+assert.match(js,/share-preview/,'photo share fallback is available');
+assert.match(link(null,{source:'tg',medium:'post',campaign:'october'}),/startapp=wall__utm_source_tg__utm_medium_post__utm_campaign_october/);
+assert.match(link(42,{source:'channel',medium:'post',campaign:'test'}),/startapp=wall_42__utm_source_channel__utm_medium_post__utm_campaign_test/);
 assert.match(js, /tg\.openTelegramLink/);
 assert.match(css, /@keyframes wall-heart-pop/);
 assert.match(css, /@keyframes wall-dialog-in/);
 assert.match(css, /prefers-reduced-motion:reduce/);
-assert.match(html, /wall\.js\?v=7/);
-assert.match(html, /wall\.css\?v=7/);
+assert.match(html, /wall\.js\?v=9/);
+assert.match(html, /wall\.css\?v=9/);
 assert.match(html, /data-nav="wall" hidden/);
 assert.match(js, /id="wallShowNick"/);
 assert.match(js, /wall-title-input/);
