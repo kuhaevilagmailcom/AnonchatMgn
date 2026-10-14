@@ -71,3 +71,16 @@ jobs:
           node --check miniapp/web/admin.js
           node --check miniapp/web/realtime.js
           node tests/wall_ui.cjs
+
+  mobile-layout:
+    name: Mobile layout · Chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --no-save --no-package-lock playwright-core@1.56.0
+      - name: Verify wall and reply placement at 320–430px
+        run: node tests/mobile_layout.cjs
