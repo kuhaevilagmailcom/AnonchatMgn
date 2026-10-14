@@ -73,9 +73,11 @@ assert.match(link(42,{source:'channel',medium:'post',campaign:'test'}),/startapp
 assert.doesNotMatch(js, /t\.me\/share\/url\?url=/, 'do not share a bare URL');
 assert.match(css, /@keyframes wall-heart-pop/);
 assert.match(css, /@keyframes wall-dialog-in/);
+assert.match(css, /\.wall-post-actions button\.wall-action-share\{[\s\S]*?place-items:center;[\s\S]*?width:36px;/, 'share button is optically centered in a stable 36px slot');
+assert.match(icon('share'), /M12 16V3/, 'share icon has a symmetric vertical axis');
 assert.match(css, /prefers-reduced-motion:reduce/);
-assert.match(html, /wall\.js\?v=10/);
-assert.match(html, /wall\.css\?v=10/);
+assert.match(html, /wall\.js\?v=11/);
+assert.match(html, /wall\.css\?v=11/);
 assert.match(html, /data-nav="wall" hidden/);
 assert.match(js, /id="wallShowNick"/);
 assert.match(js, /wall-title-input/);
