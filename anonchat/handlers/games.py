@@ -383,6 +383,28 @@ async def cb_dice_roll(event: CallbackQuery, ctx: Ctx) -> None:
     await ctx.ack("Бросок принят")
 
 
+@router.callback_query(F.data.startswith("game:dice:again:"))
+async def cb_dice_again(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    partner = ctx.mm.partner(ctx.user_id)
+    if partner is None:
+        await ctx.ack("Диалог уже завершён", alert=True)
+        return
+    if await ctx.restricted():
+        await ctx.ack("Игры сейчас недоступны", alert=True)
+        return
+    if WG.active_for_pair(ctx.user_id, partner) or await db.game_for_pair(ctx.user_id, partner):
+        await ctx.ack("Сначала заверши текущую игру", alert=True)
+        return
+    try:
+        game_id = int((event.data or "").rsplit(":", 1)[-1])
+        game = await DD.replay(ctx.mm, ctx.bot, ctx.user_id, partner, game_id)
+    except (ValueError, DD.DuelError) as exc:
+        await ctx.ack(str(exc), alert=True)
+        return
+    await ctx.ack("Приглашение отправлено")
+    await ctx.reply(f"{game.emoji} Предложили сыграть ещё раз. Ждём собеседника.")
+
+
 @router.message(Command("game", "games"))
 async def cmd_game(message: Message, ctx: Ctx) -> None:
     await _open_games(ctx)
