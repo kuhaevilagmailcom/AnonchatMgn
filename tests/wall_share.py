@@ -33,6 +33,14 @@ async def check():
         24, source="channel", medium="post", campaign="october"
     )
     assert len(share_caption({"title": "Тема", "body": "С" * 1200}, 24)) <= 1024
+    # Escaped HTML (& -> &amp;) and emoji (2 UTF-16 units) must not exceed the Bot API limit.
+    import html as _html
+    for original in ("&<>" * 500, "😀" * 600, "<b>&" * 500, "Слово " * 250):
+        caption = share_caption({"title": "Тема", "body": original}, 24)
+        assert len(caption.encode("utf-16-le")) // 2 <= 1024
+        assert "<blockquote>" in caption and "</blockquote>" in caption
+        assert "https://" not in caption and "startapp=" not in caption
+        assert _html.unescape(caption).count("Пост №24") == 1
     db = await Database(":memory:").start()
     try:
         server = FakeServer(db)
