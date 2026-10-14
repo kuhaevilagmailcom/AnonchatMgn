@@ -508,10 +508,19 @@ if (typeof window === 'undefined') {
           <button data-chat-game="words"><span>🗣</span><div><strong>Объясни слово</strong><small>Один объясняет, второй угадывает</small></div></button>
           <button data-chat-game="battle"><span>⚔️</span><div><strong>Битва мнений</strong><small>5 или 10 вопросов</small></div></button>
           <button data-chat-game="geo"><span>🗺</span><div><strong>GeoGuessr📍</strong><small>Угадай место в Магнитогорске</small></div></button>
+          <div class="chat-game-emoji-grid">
+            <button type="button" data-chat-game="dice-dice">🎲 <span>Кости</span></button>
+            <button type="button" data-chat-game="dice-basket">🏀 <span>Баскетбол</span></button>
+            <button type="button" data-chat-game="dice-darts">🎯 <span>Дартс</span></button>
+            <button type="button" data-chat-game="dice-football">⚽ <span>Футбол</span></button>
+            <button type="button" data-chat-game="dice-bowling">🎳 <span>Боулинг</span></button>
+            <button type="button" data-chat-game="dice-slots">🎰 <span>Автомат</span></button>
+          </div>
         </div>`;
       $$('[data-chat-game]',body).forEach(b=>b.onclick=()=>{
         const game=b.dataset.chatGame;
         if(game==='words')inviteWords();
+        else if(game.startsWith('dice-'))inviteDice(game.slice(5));
         else if(game==='battle'){closeModal();openModal('battle','Битва мнений','ИГРА ВДВОЁМ')}
         else if(game==='geo'){closeModal();openModal('geo','GeoGuessr📍','МАГНИТОГОРСК')}
         else toast('Эта игра недоступна')
@@ -683,7 +692,7 @@ if (typeof window === 'undefined') {
   function renderGameInvite(event,list){
     const data=event.data||{},key=gameKey(data);
     const card=document.createElement('div');card.className=`game-invite ${event.mine?'mine':''}`;card.dataset.gameKey=key;
-    const icon=document.createElement('div');icon.className='game-invite-icon';icon.textContent=({geo:'📍',battle:'⚔️',numbers:'🔢',words:'🗣️'}[String(data.game_type||'')]||'🎮');
+    const icon=document.createElement('div');icon.className='game-invite-icon';icon.textContent=({geo:'📍',battle:'⚔️',numbers:'🔢',words:'🗣️',dice:'🎲'}[String(data.game_type||'')]||'🎮');
     const copy=document.createElement('div');copy.className='game-invite-copy';
     const title=document.createElement('strong');title.textContent=(event.text||'Игра').replace(/^[^\p{L}\p{N}]+/u,'').trim()||'Игра';
     const sub=document.createElement('small');sub.textContent=data.subtitle||'Игра с собеседником';
@@ -858,7 +867,7 @@ if (typeof window === 'undefined') {
     chat.game=game;
     if(game.finished)chat.gameHoldUntil=Date.now()+6000;
     root.hidden=false;
-    const top=`<header><span><small>${game.type==='battle'?'БИТВА МНЕНИЙ':game.type==='numbers'?'ЧИСЛА':game.type==='geo'?'GeoGuessr📍':'ОБЪЯСНИ СЛОВО'}</small><strong>Раунд ${game.round||1}/${game.total||1}</strong></span><button type="button" data-game-collapse>×</button></header>`;
+    const top=`<header><span><small>${game.type==='dice'?esc(game.emoji+' '+game.title):game.type==='battle'?'БИТВА МНЕНИЙ':game.type==='numbers'?'ЧИСЛА':game.type==='geo'?'GeoGuessr📍':'ОБЪЯСНИ СЛОВО'}</small><strong>Раунд ${game.round||1}/${game.total||1}</strong></span><button type="button" data-game-collapse>×</button></header>`;
 
     if(game.status==='invited'){
       root.innerHTML=top+`<div class="active-game-body"><p>${game.inviter?'Ждём ответ собеседника…':'Собеседник предлагает сыграть. Ответь на карточке приглашения выше.'}</p></div>`;
@@ -866,7 +875,30 @@ if (typeof window === 'undefined') {
       return;
     }
 
-    if(game.type==='battle'){
+    if(game.type==='dice'){
+      const mine=game.my_roll,other=game.partner_roll;
+      const description=game.status==='finished'
+        ?(mine===other?'🤝 Ничья':mine>other?'🏆 Ты победил!':'Победил собеседник')
+        :game.answered?'Ждём бросок собеседника':'Брось один раз — результат определит Telegram';
+      root.innerHTML=top+`<div class="active-game-body dice-duel">
+        <div class="dice-duel-score">
+          <span>Ты <b>${mine??'—'}</b></span><span>${esc(game.emoji)}</span><span>Собеседник <b>${other??'—'}</b></span>
+        </div>
+        <p>${description}</p>
+        ${game.status==='active'&&!game.answered?'<button class="game-next dice-roll-btn" type="button" data-dice-roll>Бросить '+esc(game.emoji)+'</button>':''}
+        ${game.status==='active'?'<small>Анимированный бросок появится в Telegram.</small>':''}
+      </div>`;
+      const btn=$('[data-dice-roll]',root);
+      if(btn)btn.onclick=async()=>{
+        btn.disabled=true;
+        try{
+          const result=await request('/api/miniapp/games/dice/roll',{method:'POST',body:JSON.stringify({game_id:game.id})});
+          if(result?.game)renderActiveGame(result.game);
+          await syncChat(false);haptic('medium');
+          toast('Бросок отправлен в Telegram');
+        }catch(err){toast(err.message);btn.disabled=false}
+      };
+    }else if(game.type==='battle'){
       const opts=game.options||[];
       let body=`<div class="active-game-body"><h3>${esc(game.question||'Вопрос')}</h3>`;
       if(game.status==='active'){
@@ -1190,6 +1222,11 @@ if (typeof window === 'undefined') {
       searchBusy=false;
       renderSearch();
     }
+  }
+  async function inviteDice(kind){
+    const result=await safe('/api/miniapp/games/dice/invite',
+      {method:'POST',body:JSON.stringify({kind})},null);
+    if(result){closeModal();toast('Приглашение отправлено');notify();syncChat(false)}
   }
   async function inviteWords(){
     const r=await safe('/api/miniapp/games/words/invite',{method:'POST',body:'{}'},null);
