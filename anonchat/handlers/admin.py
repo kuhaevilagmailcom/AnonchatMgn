@@ -131,24 +131,16 @@ async def reward_reporter_for_action(
 # ---------------------------------------------------------------------------------- тексты экранов
 async def stats_text(db: Database, mm: Matchmaker, cfg: Config) -> str:
     s = await db.stats()
-    pay = await db.payment_stats()
     return (
-        f"📈 <b>Анончат {texts.esc(cfg.city_short)} · сводка</b>\n\n"
+        f"📊 <b>Статистика Анончата</b>\n\n"
         f"👥 Пользователей: <b>{s['users']}</b>\n"
         f"🆕 Пришло сегодня: <b>{s['new_today']}</b>\n"
         f"🟢 Активны за 7 дней: <b>{s['active_week']}</b>\n"
         f"💬 Диалогов сыграно: <b>{s['dialogs']}</b>\n"
         f"✉️ Сообщений сегодня: <b>{s['messages_today']}</b>\n"
-        f"📆 За 7 дней: <b>{s['messages_week']}</b>\n"
-        f"📚 За всё время: <b>{s['messages']}</b>\n"
-        f"⏳ В очереди: <b>{mm.queue_size()}</b> · в парах: <b>{mm.online_pairs()}</b>\n"
-        f"🚩 Открытых жалоб: <b>{s['open_reports']}</b>\n\n"
-        f"💖 Донаты Stars: <b>{pay['support_stars_count']}</b> · "
-        f"{pay['support_stars_total']} ★\n"
-        f"💖 Донаты СБП: <b>{pay['support_sbp_count']}</b> · "
-        f"{pay['support_sbp_total']} ₽"
+        f"📚 Сообщений за всё время: <b>{s['messages']}</b>\n"
+        f"⏳ В очереди: <b>{mm.queue_size()}</b> · в парах: <b>{mm.online_pairs()}</b>"
     )
-
 
 
 async def diagnostics_text(db: Database, mm: Matchmaker) -> str:
