@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import html
 import hashlib
 import hmac
 import time
@@ -48,16 +49,24 @@ def _preview_mac(wall, post_id, expires):
     return hmac.new(wall.server.cfg.bot_token.encode(), data, hashlib.sha256).hexdigest()
 
 
-def share_caption(post, link):
+def share_plain_caption(post, post_id=None):
+    """Human-readable post text; the link exists only in the button."""
+    pid = int(post_id if post_id is not None else post["id"])
+    heading = f"Пост №{pid} · Стена АНОН МГН"
     title = str(post["title"] or "").strip()
     body = str(post["body"] or "").strip()
-    # Inline photo captions have a strict 1024-character Telegram limit.
-    header = "АНОН МГН · Стена"
-    text = "\n\n".join(x for x in (header, title, body) if x)
-    room = 1024 - len(link) - 4
-    if len(text) > room:
-        text = text[:max(1, room - 1)].rstrip() + "…"
-    return f"{text}\n\n{link}"
+    quote = "\n".join(part for part in (title, body) if part) or "Публикация с фото"
+    # Reserve room for Telegram's 1024-character photo caption limit.
+    space = min(850, 1024 - len(heading) - 5)
+    if len(quote) > space:
+        quote = quote[:space - 1].rstrip() + "…"
+    return heading, quote
+
+
+def share_caption(post, post_id=None):
+    """Formatted Telegram caption: post number + quote, never a naked URL."""
+    heading, quote = share_plain_caption(post, post_id)
+    return f"<b>{html.escape(heading)}</b>\n\n<blockquote>{html.escape(quote)}</blockquote>"
 
 
 async def preview(wall, request):
@@ -119,8 +128,8 @@ async def prepare_share(wall, request):
         photo_width=1000,
         photo_height=620,
         title=str(post["title"] or "Публикация АНОН МГН")[:100],
-        caption=share_caption(post, target_url),
-        parse_mode=None,
+        caption=share_caption(post, post_id),
+        parse_mode="HTML",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="Открыть публикацию", url=target_url)
         ]]),
@@ -145,7 +154,7 @@ async def prepare_share(wall, request):
         "prepared_id":saved.id,
         "preview_url":image_url,
         "url":target_url,
-        "caption":share_caption(post, target_url),
+        "caption":share_caption(post, post_id),
     })
 
 
@@ -160,5 +169,5 @@ async def share_details(wall, request):
     return web.json_response({
         "preview_url":share_preview_url(wall, post_id),
         "url":target_url,
-        "caption":share_caption(post, target_url),
+        "caption":"\n".join(share_plain_caption(post, post_id)),
     })
