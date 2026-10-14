@@ -16,6 +16,7 @@
     heart:'<path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78Z"/>',
     comment:'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
     share:'<path d="M12 16V3"/><path d="m7 8 5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>',
+    eye:'<path d="M2 12s3.7-7 10-7 10 7 10 7-3.7 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>',
     menu:'<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
     send:'<path d="M12 19V5M5 12l7-7 7 7"/>',
     x:'<path d="M18 6 6 18M6 6l12 12"/>',
@@ -71,7 +72,7 @@
     }
     return 'https://t.me/AnonChatMgn_Bot/anonmgn?startapp='+start;
   };
-  const wallAvatar=()=>'<span class="wall-avatar wall-avatar--brand" aria-hidden="true"><img src="./assets/anon-mgn-wall-avatar.jpg" alt="" loading="lazy"></span>';
+  const wallAvatar=()=>'<span class="wall-avatar wall-avatar--brand" aria-hidden="true"><img src="./assets/anon-mgn-compact-avatar.png?v=1" alt="" loading="lazy"></span>';
   async function copyWallLink(id=null){
     if(!state.isAdmin)return;
     const url=link(id,{source:'anonmgn',medium:'post',campaign:id==null?'wall':'post'});
@@ -351,8 +352,72 @@ function hydrateMedia(container=document){
         <button type="button" class="wall-action wall-action-like ${p.liked?'liked':''}" data-wall-action="like" data-id="${p.id}" aria-label="${p.liked?'Убрать лайк':'Поставить лайк'}" aria-pressed="${Boolean(p.liked)}">${icon('heart')}<span class="wall-action-count" ${p.likes?"":'hidden'}>${p.likes||''}</span></button>
         <button type="button" class="wall-action wall-action-comment" data-wall-action="open" data-id="${p.id}" aria-label="Комментарии: ${p.comments||0}">${icon('comment')}<span class="wall-action-count">${p.comments||''}</span></button>
         <button type="button" class="wall-action wall-action-share" data-wall-action="share" data-id="${p.id}" aria-label="Поделиться">${icon('share')}</button>
+        <span class="wall-post-views" title="Уникальные просмотры" aria-label="Просмотров: ${Number(p.views||0)}">${icon('eye')}<span class="wall-views-count" data-wall-views="${p.id}">${Number(p.views||0).toLocaleString('ru-RU')}</span></span>
       </footer></article>`;
   }
+  // Count an impression only when a post was actually visible, not on a feed refresh.
+  const viewedThisSession=new Set();
+  const pendingViews=new Set();
+  const impressionTimers=new Map();
+  let impressionObserver=null;
+  let flushViewsTimer=null;
+
+  function updateViewCount(id,count){
+    const value=Math.max(0,Number(count)||0);
+    const post=state.posts.find(p=>p.id===id);
+    if(post)post.views=value;
+    if(state.current?.id===id)state.current.views=value;
+    $('[data-wall-views="'+id+'"]').forEach(el=>{
+      el.textContent=value.toLocaleString('ru-RU');
+      el.closest('.wall-post-views')?.setAttribute('aria-label','Просмотров: '+value);
+    });
+  }
+  function queueView(id){
+    if(viewedThisSession.has(id))return;
+    viewedThisSession.add(id);
+    pendingViews.add(id);
+    if(flushViewsTimer)return;
+    flushViewsTimer=setTimeout(async()=>{
+      flushViewsTimer=null;
+      const ids=[...pendingViews];
+      pendingViews.clear();
+      try{
+        const data=await api('/api/miniapp/wall/views','POST',{ids});
+        Object.entries(data.views||{}).forEach(([pid,count])=>updateViewCount(Number(pid),count));
+      }catch(err){
+        ids.forEach(pid=>viewedThisSession.delete(pid));
+        console.warn('Wall view tracking failed:',err);
+      }
+    },250);
+  }
+  function watchPostViews(){
+    impressionObserver?.disconnect();
+    impressionTimers.forEach(timer=>clearTimeout(timer));
+    impressionTimers.clear();
+    const posts=$('[data-wall-post]',$('#wallFeed'));
+    if(typeof IntersectionObserver==='undefined')return;
+    impressionObserver=new IntersectionObserver(entries=>{
+      for(const entry of entries){
+        const id=Number(entry.target.dataset.wallPost);
+        if(!Number.isInteger(id)||viewedThisSession.has(id))continue;
+        if(entry.isIntersecting && entry.intersectionRatio>=0.08 && !document.hidden){
+          if(impressionTimers.has(id))continue;
+          const timer=setTimeout(()=>{
+            impressionTimers.delete(id);
+            if(!entry.target.isConnected||document.hidden||!root.classList.contains('active'))return;
+            const bounds=entry.target.getBoundingClientRect();
+            if(bounds.bottom>0 && bounds.top<window.innerHeight)queueView(id);
+          },650);
+          impressionTimers.set(id,timer);
+        }else if(impressionTimers.has(id)){
+          clearTimeout(impressionTimers.get(id));
+          impressionTimers.delete(id);
+        }
+      }
+    },{threshold:[0,0.08,0.5]});
+    posts.forEach(post=>impressionObserver.observe(post));
+  }
+
   async function feed(more=false){
     if(state.busy)return;
     state.busy=true;
@@ -367,6 +432,7 @@ function hydrateMedia(container=document){
       box.innerHTML=state.posts.length?state.posts.map(p=>postHtml(p)).join(''):`<div class="wall-empty">${icon('comment')}<strong>Здесь пока тихо</strong><p>Стань первым, кто начнёт обсуждение.</p></div>`;
       $('#wallMore').hidden=!state.more;
       hydrateMedia(box);
+      watchPostViews();
     }catch(err){if(!more)box.innerHTML='<div class="wall-empty">Не удалось загрузить стену</div>';flash(err.message)}
     finally{state.busy=false;}
   }
@@ -480,6 +546,7 @@ function hydrateMedia(container=document){
     try{
       const data=await api('/api/miniapp/wall/'+id);if(current!==ticket)return;
       state.current=applyPendingLike(data.post);state.isAdmin=Boolean(data.is_admin);
+      updateViewCount(id,state.current.views);
       $('#wallCopyLink').hidden=!state.isAdmin;
       $('.wall-sheet',overlay).innerHTML=`${header('Обсуждение')}<div class="wall-detail-scroll">
         ${postHtml(state.current,true)}<div class="wall-comments-title"><strong>Ответы</strong><span>${data.comments.length}</span></div>
