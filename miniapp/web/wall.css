@@ -649,3 +649,35 @@ body.wall-sheet-open{overflow:hidden}
 .wall-compose-foot,.wall-comment-form{background:rgba(18,18,18,.9);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
 .wall-comment{border-color:#2c2c2e}
 @media(max-width:360px){.wall-post{padding-left:12px;padding-right:12px;border-radius:15px}}
+
+/* Wall v7 — native-feeling iOS sheets and a stable comment composer. */
+.wall-sheet{overflow:hidden!important;height:100dvh;max-height:100dvh}
+.wall-detail-scroll{flex:1!important;min-height:0!important;max-height:none!important;overflow-y:auto!important;padding:0 16px 14px!important;-webkit-overflow-scrolling:touch}
+.wall-comment-form{position:relative!important;bottom:auto!important;flex:0 0 auto;padding:9px 12px calc(9px + env(safe-area-inset-bottom))!important;border-top:1px solid rgba(84,84,88,.55)!important}
+.wall-comment-row{min-height:46px;padding:6px 6px 6px 13px;border:1px solid #38383a;border-radius:18px;background:#1c1c1e;align-items:flex-end}
+.wall-comment-row textarea{height:24px;min-height:24px;max-height:104px;line-height:20px;padding:2px 0;resize:none;font-size:15px}
+.wall-send{width:34px;height:34px;flex-basis:34px;border-radius:50%}
+.wall-send .wall-icon{width:17px;height:17px}
+.wall-comment-opts{gap:20px}
+.wall-comment-opts button{min-height:32px;padding:6px 0;font-size:12px}
+.wall-action-layer{position:fixed;inset:0;z-index:260;display:flex;align-items:flex-end;justify-content:center;padding:10px 10px calc(10px + env(safe-area-inset-bottom));animation:wall-action-fade .18s ease both}
+.wall-action-layer.closing{animation:wall-action-out .16s ease both;pointer-events:none}
+.wall-action-backdrop{position:absolute;inset:0;width:100%;height:100%;border:0;background:rgba(0,0,0,.58);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.wall-action-sheet{position:relative;width:min(100%,430px);display:grid;gap:8px;animation:wall-action-up .24s cubic-bezier(.22,.8,.24,1) both}
+.wall-action-group{overflow:hidden;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(35,35,37,.96);box-shadow:0 18px 45px rgba(0,0,0,.42)}
+.wall-action-heading{display:grid;gap:4px;padding:14px 18px 13px;text-align:center;border-bottom:1px solid rgba(84,84,88,.55)}
+.wall-action-heading strong{font-size:13px;color:#f2f2f7}
+.wall-action-heading small{font-size:11px;line-height:1.35;color:#98989f}
+.wall-action-cell,.wall-action-cancel{width:100%;min-height:55px;border:0;background:transparent;color:#f2f2f7;font-size:16px;font-weight:500}
+.wall-action-cell{display:flex;align-items:center;justify-content:center;gap:10px;padding:11px 16px;border-bottom:1px solid rgba(84,84,88,.55)}
+.wall-action-cell:last-child{border-bottom:0}
+.wall-action-cell .wall-icon{width:20px;height:20px}
+.wall-action-cell.danger{color:#ff6b78}
+.wall-action-cell:active{background:rgba(255,255,255,.08)}
+.wall-action-cancel{border-radius:14px;background:#252527;color:#f071b4;font-weight:650;box-shadow:0 12px 32px rgba(0,0,0,.3)}
+.wall-action-cancel:active{background:#303033}
+@keyframes wall-action-fade{from{opacity:0}to{opacity:1}}
+@keyframes wall-action-out{from{opacity:1}to{opacity:0}}
+@keyframes wall-action-up{from{transform:translateY(28px)}to{transform:translateY(0)}}
+@media(min-width:700px){.wall-action-layer{align-items:center}.wall-action-sheet{max-width:390px}}
+@media(prefers-reduced-motion:reduce){.wall-action-layer,.wall-action-sheet,.wall-action-layer.closing{animation:none!important}}

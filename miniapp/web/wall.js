@@ -348,8 +348,39 @@ function hydrateMedia(container=document){
   }
   function close(){
     if(draft){draft.items.forEach(m=>m.localUrl&&URL.revokeObjectURL(m.localUrl));draft=null}
+    closeActionSheet();
     ++ticket;overlay.hidden=true;overlay.innerHTML='';state.reply=null;
     document.body.classList.remove('wall-sheet-open');
+  }
+
+  function closeActionSheet(){
+    const layer=$('#wallActionLayer');
+    if(!layer)return;
+    layer.classList.add('closing');
+    setTimeout(()=>layer.remove(),160);
+  }
+  function actionSheet(title,subtitle,buttons){
+    $('#wallActionLayer')?.remove();
+    const layer=document.createElement('div');
+    layer.id='wallActionLayer';layer.className='wall-action-layer';
+    layer.innerHTML=`<button type="button" class="wall-action-backdrop" data-wall-action-close aria-label="Закрыть"></button>
+      <section class="wall-action-sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+        <div class="wall-action-group"><div class="wall-action-heading"><strong>${esc(title)}</strong>${subtitle?'<small>'+esc(subtitle)+'</small>':''}</div>
+        ${buttons}</div>
+        <button type="button" class="wall-action-cancel" data-wall-action-close>Отмена</button>
+      </section>`;
+    document.body.append(layer);
+    try{tg?.HapticFeedback?.selectionChanged()}catch(_){}
+    layer.addEventListener('click',e=>{
+      if(e.target.closest('[data-wall-action-close]')){closeActionSheet();return;}
+      const button=e.target.closest('[data-wall-action]');
+      if(!button)return;
+      e.preventDefault();closeActionSheet();handle(button);
+    });
+  }
+  function confirmAction(title,message,action,id,extra=''){
+    const glyph=action==='hide'?'shield':'trash';
+    actionSheet(title,message,`<button type="button" class="wall-action-cell danger" data-wall-action="${action}" data-id="${id}" ${extra}>${icon(glyph)}<span>Подтвердить</span></button>`);
   }
   function compose(post=null){
   state.current=post||null;
@@ -418,13 +449,18 @@ function hydrateMedia(container=document){
       $('.wall-sheet',overlay).innerHTML=`${header('Обсуждение')}<div class="wall-detail-scroll">
         ${postHtml(state.current,true)}<div class="wall-comments-title"><strong>Ответы</strong><span>${data.comments.length}</span></div>
         ${commentsHtml(data.comments)}${data.truncated?'<div class="wall-note">Показаны первые 500 ответов.</div>':''}</div>
-        <form id="wallCommentForm" class="wall-comment-form">
+        <form id="wallCommentForm" class="wall-comment-form" novalidate>
           <div id="wallReplyTo" hidden></div>
-          <div class="wall-comment-row"><textarea id="wallCommentText" rows="1" maxlength="500" placeholder="Написать ответ…" required></textarea>
+          <div class="wall-comment-row"><textarea id="wallCommentText" rows="1" maxlength="500" placeholder="Написать ответ…"></textarea>
           <button class="wall-send" type="submit" aria-label="Отправить">${icon('send')}</button></div>
         </form>`;
       hydrateMedia(overlay);
       const commentKey=uuid();
+      const resizeComment=()=>{
+        const input=$('#wallCommentText');if(!input)return;
+        input.style.height='0';input.style.height=Math.min(104,Math.max(24,input.scrollHeight))+'px';
+      };
+      $('#wallCommentText').addEventListener('input',resizeComment);
       $('#wallCommentForm').onsubmit=async e=>{
         e.preventDefault();const input=$('#wallCommentText'),send=$('.wall-send');if(!input.value.trim())return;
         send.disabled=true;
@@ -459,10 +495,18 @@ function hydrateMedia(container=document){
   function menu(id){
     const p=state.current?.id===id?state.current:state.posts.find(x=>x.id===id);
     if(!p)return;state.current=p;
-    const actions=p.mine?`<button data-wall-action="edit" data-id="${id}">${icon('edit')}Редактировать</button>
-      <button class="danger" data-wall-action="delete" data-id="${id}">${icon('trash')}Удалить пост</button>`:
-      `<button data-wall-action="report" data-id="${id}">${icon('shield')}Пожаловаться</button>`;
-    sheet('Действия',header('Действия')+`<div class="wall-menu">${actions}${state.isAdmin?`<button class="danger" data-wall-action="hide" data-id="${id}">${icon('shield')}Скрыть</button>`:''}</div>`);
+    const actions=p.mine?`<button class="wall-action-cell" data-wall-action="edit" data-id="${id}">${icon('edit')}<span>Редактировать</span></button>
+      <button class="wall-action-cell danger" data-wall-action="ask-delete" data-id="${id}">${icon('trash')}<span>Удалить публикацию</span></button>`:
+      `<button class="wall-action-cell" data-wall-action="report" data-id="${id}">${icon('shield')}<span>Пожаловаться</span></button>`;
+    actionSheet('Публикация','Выберите действие',actions+(state.isAdmin?`<button class="wall-action-cell danger" data-wall-action="ask-hide" data-id="${id}">${icon('shield')}<span>Скрыть как модератор</span></button>`:''));
+  }
+  function reportMenu(type,id){
+    actionSheet('Причина жалобы','Автор жалобы не показывается пользователю',[
+      ['Спам или реклама','Спам или реклама'],
+      ['Оскорбления или травля','Оскорбления или травля'],
+      ['Личные данные','Публикация личных данных'],
+      ['Другое нарушение','Нарушение правил'],
+    ].map(([label,reason])=>`<button class="wall-action-cell" data-wall-action="submit-report" data-kind="${type}" data-id="${id}" data-reason="${esc(reason)}"><span>${esc(label)}</span></button>`).join(''));
   }
   async function moderation(){
     sheet('Жалобы',header('Жалобы')+'<div class="wall-loading">Загрузка…</div>');
@@ -496,20 +540,27 @@ function hydrateMedia(container=document){
     if(action==='cancel-reply'){state.reply=null;$('#wallReplyTo').hidden=true;return;}
     if(action==='edit')return compose(state.current);
     if(action==='like')return toggleLike(id);
-    if(action==='delete'&&window.confirm('Удалить публикацию?')){
+    if(action==='ask-delete')return confirmAction('Удалить публикацию?','Вернуть её после удаления не получится.','delete',id);
+    if(action==='delete'){
       try{await api('/api/miniapp/wall/'+id+'/delete','POST',{});close();flash('Удалено');feed()}
       catch(err){flash(err.message)}return;
     }
-    if(action==='delete-comment'&&window.confirm('Удалить комментарий?')){
-      try{await api('/api/miniapp/wall/comments/'+el.dataset.comment+'/delete','POST',{});openPost(state.current.id);feed()}
+    if(action==='delete-comment')return confirmAction('Удалить комментарий?','Он исчезнет из обсуждения.','confirm-delete-comment',Number(el.dataset.comment));
+    if(action==='confirm-delete-comment'){
+      try{await api('/api/miniapp/wall/comments/'+id+'/delete','POST',{});openPost(state.current.id);feed()}
       catch(err){flash(err.message)}return;
     }
     if(action==='report'||action==='report-comment'){
+      return reportMenu(action==='report'?'post':'comment',action==='report'?id:Number(el.dataset.comment));
+    }
+    if(action==='submit-report'){
       try{
-        await api('/api/miniapp/wall/report','POST',{type:action==='report'?'post':'comment',id:action==='report'?id:Number(el.dataset.comment),reason:'Нарушение правил'});
-        flash('Жалоба отправлена');if(action==='report')close();
+        await api('/api/miniapp/wall/report','POST',{type:el.dataset.kind,id,reason:el.dataset.reason||'Нарушение правил'});
+        try{tg?.HapticFeedback?.notificationOccurred('success')}catch(_){}
+        flash('Жалоба отправлена');
       }catch(err){flash(err.message)}return;
     }
+    if(action==='ask-hide')return confirmAction('Скрыть публикацию?','Она сразу пропадёт со стены для всех пользователей.','hide',id);
     if(action==='hide'||action==='moderate'||action==='dismiss'){
       try{
         await api('/api/miniapp/wall/moderate','POST',{type:action==='hide'?'post':el.dataset.kind,id,hide:action!=='dismiss'});
@@ -531,5 +582,6 @@ function hydrateMedia(container=document){
     $$('[data-wall-sort]',root).forEach(x=>{x.classList.toggle('active',x===b);x.setAttribute('aria-selected',x===b?'true':'false')});
     feed();
   });
-  window.AnonWall={onPage(page){if(page==='wall')feed()},openPost,close,isOpen(){return !overlay.hidden}};
+  function closeTop(){if($('#wallActionLayer'))closeActionSheet();else close()}
+  window.AnonWall={onPage(page){if(page==='wall')feed()},openPost,close:closeTop,isOpen(){return Boolean($('#wallActionLayer'))||!overlay.hidden}};
 })();

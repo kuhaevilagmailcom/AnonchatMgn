@@ -66,13 +66,18 @@ assert.match(js, /tg\.openTelegramLink/);
 assert.match(css, /@keyframes wall-heart-pop/);
 assert.match(css, /@keyframes wall-dialog-in/);
 assert.match(css, /prefers-reduced-motion:reduce/);
-assert.match(html, /wall\.js\?v=6/);
-assert.match(html, /wall\.css\?v=6/);
+assert.match(html, /wall\.js\?v=7/);
+assert.match(html, /wall\.css\?v=7/);
 assert.match(html, /data-nav="wall" hidden/);
 assert.match(js, /id="wallShowNick"/);
 assert.match(js, /wall-title-input/);
 assert.match(css, /Wall v6 — iOS dark grouped surfaces/);
 assert.match(css, /\.wall-privacy-row/);
+assert.doesNotMatch(js, /window\.confirm/);
+assert.match(js, /id="wallCommentForm" class="wall-comment-form" novalidate/);
+assert.match(js, /function actionSheet/);
+assert.match(js, /data-wall-action="submit-report"/);
+assert.match(css, /\.wall-action-layer/);
 console.log('Wall UI checks passed: icons, actions, iOS compose privacy and accessibility.');
 
 
