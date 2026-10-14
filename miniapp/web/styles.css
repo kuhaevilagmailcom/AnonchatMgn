@@ -1083,7 +1083,7 @@ body[data-theme="mono"] .premium-overlay-button{color:#000}
 .poll-question{border-left:3px solid #f07ab8;background:rgba(239,105,170,.08);border-radius:0 11px 11px 0;margin:13px 0 16px;padding:12px 13px;font-size:17px;font-weight:750;line-height:1.55}
 @media(max-width:370px){.profile-records{padding:12px}.profile-records-grid{gap:6px}.profile-records-grid strong{font-size:13px}.profile-records-grid small{font-size:10px}}
 
-/* Wall/chat v9: same clean, centered up-arrow in both composers. */
+/* Keep the compact chat send arrow aligned with its composer. */
 .send-btn{display:grid;place-items:center;width:40px;height:40px;min-width:40px;align-self:end;border-radius:50%;color:#191019;background:var(--accent);padding:0}
 .send-btn>span{display:grid;place-items:center;width:100%;height:100%}
 .send-btn svg,.send-btn .ui-icon-svg{display:block;width:20px;height:20px;stroke-width:2.5}
