@@ -105,7 +105,7 @@ async def relay_to_partner(
     # Native Telegram dice messages count as a turn in the active emoji duel.
     # Without a duel they still pass through the ordinary anonymous relay.
     if message.dice is not None:
-        if await DD.try_manual_roll(mm, ctx.bot, ctx.user_id, message):
+        if await DD.try_manual_roll(mm, ctx.bot, ctx.user_id, message, db=ctx.db):
             return
     if (
         message.text
