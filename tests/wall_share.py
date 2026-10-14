@@ -4,13 +4,14 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 from types import SimpleNamespace
 
 from aiohttp import web
 
 from anonchat.db import Database
 from anonchat.wall import Wall
-from anonchat.wall_share import wall_link, share_caption, preview, prepare_share
+from anonchat.wall_share import wall_link, share_caption, preview, prepare_share, share_details
 from tests.wall import FakeServer, FakeBot, Req
 
 
@@ -39,6 +40,7 @@ async def check():
         server.bot = PreparedBot()
         server.web_dir = Path("miniapp/web")
         server.cfg.miniapp_url = "https://example.org"
+        server.cfg.bot_token = "test-token-for-wall-share"
         wall = Wall(server)
         await wall.ensure_schema()
         await db.ensure_user(101, None, "Автор")
@@ -52,21 +54,32 @@ async def check():
             wall, Req(101, post=post_id))).text)
         assert prepared["prepared_id"] == "test-prepared-message"
         result = server.bot.prepared["result"]
-        assert result.photo_url.endswith(
+        parts = urlsplit(result.photo_url)
+        assert parts.path.endswith(
             f"/api/miniapp/wall/share-preview/{post_id}.jpg")
+        signed_query = {k: v[0] for k, v in parse_qs(parts.query).items()}
+        assert "sig" in signed_query and "expires" in signed_query
         assert "Новости Магнитогорска" in result.caption
         assert "Текст публикации" in result.caption
         assert f"startapp=wall_{post_id}__utm_" in result.caption
         assert result.reply_markup.inline_keyboard[0][0].url.startswith(
             "https://t.me/AnonChatMgn_Bot/anonmgn?startapp=wall_"
         )
-        image = await preview(wall, Req(101, post=post_id))
+        details = json.loads((await share_details(
+            wall, Req(101, post=post_id))).text)
+        assert "sig=" in details["preview_url"]
+        try:
+            await preview(wall, Req(101, post=post_id))
+            assert False, "JPEG previews require a valid signature"
+        except web.HTTPNotFound:
+            pass
+        image = await preview(wall, Req(101, post=post_id, **signed_query))
         assert image.content_type == "image/jpeg"
         assert image.body[:2] == bytes((0xff, 0xd8))
         await db.db.execute(
             "UPDATE wall_posts SET hidden=1 WHERE id=?", (post_id,))
         try:
-            await preview(wall, Req(101, post=post_id))
+            await preview(wall, Req(101, post=post_id, **signed_query))
             assert False, "hidden posts must not expose public previews"
         except web.HTTPNotFound:
             pass
