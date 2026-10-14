@@ -45,7 +45,8 @@ async def scenario() -> None:
                 else:
                     assert game["status"] == "finished"
             assert (await db.answer_battle(battle, 991001, 4, 0))[0] == "missing"
-            assert int((await db.get_user(991001))["xp"]) == 25
+            battle_reward = 25 * await db.xp_multiplier()
+            assert int((await db.get_user(991001))["xp"]) == battle_reward
 
             # Mid-game /next: clear live game, disallow stale answers or rewards.
             invite, created = await db.create_battle_invite(991001, 991002, 5)
@@ -54,7 +55,7 @@ async def scenario() -> None:
             assert await db.accept_battle(battle, 991002, [1, 2, 3, 4, 5])
             assert await db.close_battles_for_users(991001, 991002) == 1
             assert (await db.answer_battle(battle, 991001, 0, 0))[0] == "missing"
-            assert int((await db.get_user(991001))["xp"]) == 25
+            assert int((await db.get_user(991001))["xp"]) == battle_reward
 
             # GeoGuessr: timeout is resolved once, with no phantom rewards.
             invite, created = await db.create_geo_invite(991001, 991002, [11, 22, 33])
