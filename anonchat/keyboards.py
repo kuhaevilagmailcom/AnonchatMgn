@@ -692,7 +692,7 @@ def admin_panel_keyboard(
         _button(b, "Начисления", callback_data="ax:ledger:0", icon="stars")
     if "stats" in permissions:
         _button(b, "Проверка топов", callback_data="ax:t:w", icon="bonus")
-        _button(b, "🏆 Розыгрыш сообщений", callback_data="ax:g", icon="bonus", style="primary")
+        _button(b, "Розыгрыш сообщений", callback_data="ax:g", icon="bonus", style="primary")
     if owner:
         _button(
             b, f"Множитель: x{int(xp_multiplier)}",
