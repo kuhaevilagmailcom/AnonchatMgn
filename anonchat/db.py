@@ -1098,9 +1098,7 @@ class Database:
             return False
         now_ts = now()
         tz = ZoneInfo("Asia/Yekaterinburg")
-        today_start = int(datetime.fromtimestamp(now_ts, tz).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        ).timestamp())
+        today_start = int(datetime(2026, 10, 16, 0, 0, tzinfo=tz).timestamp())
         # Persist the campaign start once so a restart or date change cannot move it.
         async with self.db.execute("SELECT value FROM kv WHERE key='giveaway_2026_start'") as cur:
             row = await cur.fetchone()
@@ -1151,9 +1149,7 @@ class Database:
     async def giveaway_leaderboard(self) -> dict[str, Any]:
         tz = ZoneInfo("Asia/Yekaterinburg")
         now_ts = now()
-        today_start = int(datetime.fromtimestamp(now_ts, tz).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        ).timestamp())
+        today_start = int(datetime(2026, 10, 16, 0, 0, tzinfo=tz).timestamp())
         async with self.db.execute("SELECT value FROM kv WHERE key='giveaway_2026_start'") as cur:
             row = await cur.fetchone()
         start_ts = int(row[0]) if row else today_start

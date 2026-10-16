@@ -439,6 +439,38 @@ async def reason_message(message:Message,ctx:Ctx,db:Database,state:FSMContext) -
     await _preview(ctx,state,db,uid,delta,reason)
 
 
+async def show_giveaway(ctx: Ctx, db: Database) -> None:
+    if not (ctx.can("stats") or ctx.is_owner):
+        await ctx.ack("Нет доступа к статистике", alert=True)
+        return
+    data = await db.giveaway_leaderboard()
+    rows = data["rows"]
+    totals = data["total"]
+    lines = [
+        "🏆 <b>Розыгрыш Chat MGN</b>",
+        f"Период: <b>{_date(data['start']).split()[0]}</b> — <b>23.10.2026 23:59</b>",
+        f"Засчитано: <b>{int(totals.get('accepted') or 0):,}</b> · отклонено как спам: <b>{int(totals.get('rejected') or 0):,}</b>",
+        "",
+        "🥇🥈🥉 <b>Текущий рейтинг</b>",
+        "",
+    ]
+    if not rows:
+        lines.append("Пока нет засчитанных сообщений. Рейтинг обновится после первых успешных сообщений.")
+    for idx, row in enumerate(rows[:20], 1):
+        uid = int(row["user_id"])
+        name = nicklib.display(row["nickname"], uid, row["support_stars"])
+        medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(idx, f"{idx}.")
+        lines.append(
+            f"{medal} <b>{texts.esc(name)}</b> — <b>{int(row['accepted'] or 0):,}</b> сообщений"
+            f" · отклонено: {int(row['rejected'] or 0):,}"
+        )
+    b = InlineKeyboardBuilder()
+    _button(b, "🔄 Обновить", "ax:g")
+    _button(b, "В админку", K.CB_PANEL_BACK)
+    b.adjust(1)
+    await _screen(ctx, "\\n".join(lines)[:3900], b.as_markup())
+
+
 @router.callback_query(F.data.startswith("ax:"))
 async def extras_callback(
     event:CallbackQuery,ctx:Ctx,db:Database,mm:Matchmaker,state:FSMContext,
@@ -449,7 +481,9 @@ async def extras_callback(
     parts=(event.data or '').split(':')
     action=parts[1] if len(parts)>1 else ''
     try:
-        if action == 'ledger' and len(parts)==3:
+        if action == 'g':
+            await show_giveaway(ctx, db)
+        elif action == 'ledger' and len(parts)==3:
             await show_global_ledger(ctx, db, int(parts[2]))
         elif action == 'chats' and len(parts)==3:
             await show_active_chats(ctx, db, mm, int(parts[2]))
