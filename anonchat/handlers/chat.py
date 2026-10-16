@@ -163,6 +163,17 @@ async def relay_to_partner(
             markup=K.menu_keyboard(),
         )
         return
+    # Розыгрыш: считаем только сообщения, успешно доставленные собеседнику.
+    if copied is not None and message.message_id:
+        giveaway_body = (
+            message.text if message.text is not None else
+            message.caption if message.caption is not None else
+            " ".join((message.sticker.emoji or "стикер",)) if message.sticker else
+            "фото" if message.photo else "голосовое" if message.voice else
+            "видео" if message.video else "медиа"
+        )
+        await ctx.db.record_giveaway_message(ctx.user_id, message.message_id, giveaway_body)
+
     METRICS.note_chat_relay()
     if copied is not None:
         relay_state.remember(ctx.user_id, message.message_id, partner, copied.message_id)
