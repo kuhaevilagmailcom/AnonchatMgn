@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import hashlib
 import html
 import logging
 import math
@@ -12,6 +13,8 @@ import secrets
 import sqlite3
 import time
 from pathlib import Path
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Any, Sequence
 
 import aiosqlite
@@ -384,6 +387,19 @@ CREATE TABLE IF NOT EXISTS poll_votes (
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (poll_id, user_id)
 );
+
+CREATE TABLE IF NOT EXISTS giveaway_message_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    content_hash TEXT NOT NULL DEFAULT '',
+    accepted INTEGER NOT NULL DEFAULT 0,
+    reason TEXT NOT NULL DEFAULT '',
+    UNIQUE(user_id, message_id)
+);
+CREATE INDEX IF NOT EXISTS idx_giveaway_events_created ON giveaway_message_events(created_at, accepted);
+CREATE INDEX IF NOT EXISTS idx_giveaway_events_user_created ON giveaway_message_events(user_id, created_at, accepted);
 
 CREATE TABLE IF NOT EXISTS kv (
     key   TEXT PRIMARY KEY,
@@ -1074,6 +1090,96 @@ class Database:
         if self._db is None:
             raise RuntimeError("Database не инициализирован — сначала await Database.start()")
         return self._db
+
+    async def record_giveaway_message(self, user_id: int, message_id: int, body: str) -> bool:
+        """Count delivered chat messages for the October giveaway, filtering spam."""
+        uid, mid = int(user_id), int(message_id)
+        if uid <= 0 or mid <= 0:
+            return False
+        now_ts = now()
+        tz = ZoneInfo("Asia/Yekaterinburg")
+        today_start = int(datetime.fromtimestamp(now_ts, tz).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ).timestamp())
+        # Persist the campaign start once so a restart or date change cannot move it.
+        async with self.db.execute("SELECT value FROM kv WHERE key='giveaway_2026_start'") as cur:
+            row = await cur.fetchone()
+        if row is None:
+            await self.db.execute(
+                "INSERT OR IGNORE INTO kv(key,value) VALUES('giveaway_2026_start',?)",
+                (str(today_start),),
+            )
+            async with self.db.execute("SELECT value FROM kv WHERE key='giveaway_2026_start'") as cur:
+                row = await cur.fetchone()
+        start_ts = int(row[0]) if row else today_start
+        end_ts = int(datetime(2026, 10, 24, 0, 0, tzinfo=tz).timestamp())
+        if now_ts < start_ts or now_ts >= end_ts:
+            return False
+        normalized = " ".join(str(body or "").casefold().split())[:2000]
+        # Store only a digest, never the actual private message.
+        digest = hashlib.sha256(normalized.encode("utf-8", "ignore")).hexdigest() if normalized else ""
+        accepted, reason = 1, ""
+        if not normalized:
+            accepted, reason = 0, "empty"
+        else:
+            duplicate = await self._fetchone(
+                """SELECT 1 FROM giveaway_message_events
+                   WHERE user_id=? AND content_hash=? AND accepted=1 AND created_at>=?
+                   LIMIT 1""", (uid, digest, now_ts - 30)
+            )
+            if duplicate:
+                accepted, reason = 0, "duplicate"
+            else:
+                recent = await self._fetchone(
+                    """SELECT COUNT(*) AS n FROM giveaway_message_events
+                       WHERE user_id=? AND accepted=1 AND created_at>=?""",
+                    (uid, now_ts - 60)
+                )
+                if int(recent["n"] or 0) >= 8:
+                    accepted, reason = 0, "rate_limit"
+        try:
+            await self.db.execute(
+                """INSERT INTO giveaway_message_events
+                   (user_id,message_id,created_at,content_hash,accepted,reason)
+                   VALUES(?,?,?,?,?,?)""",
+                (uid, mid, now_ts, digest, accepted, reason),
+            )
+        except aiosqlite.IntegrityError:
+            return False
+        return bool(accepted)
+
+    async def giveaway_leaderboard(self) -> dict[str, Any]:
+        tz = ZoneInfo("Asia/Yekaterinburg")
+        now_ts = now()
+        today_start = int(datetime.fromtimestamp(now_ts, tz).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ).timestamp())
+        async with self.db.execute("SELECT value FROM kv WHERE key='giveaway_2026_start'") as cur:
+            row = await cur.fetchone()
+        start_ts = int(row[0]) if row else today_start
+        end_ts = int(datetime(2026, 10, 24, 0, 0, tzinfo=tz).timestamp())
+        rows = await self._fetchall(
+            """SELECT u.user_id, u.nickname, u.support_stars,
+                      SUM(CASE WHEN e.accepted=1 THEN 1 ELSE 0 END) AS accepted,
+                      SUM(CASE WHEN e.accepted=0 THEN 1 ELSE 0 END) AS rejected
+                 FROM giveaway_message_events e
+                 JOIN users u ON u.user_id=e.user_id
+                WHERE e.created_at>=? AND e.created_at<?
+                GROUP BY u.user_id
+                ORDER BY accepted DESC, MIN(e.created_at) ASC, u.user_id ASC
+                LIMIT 100""", (start_ts, end_ts)
+        )
+        total = await self._fetchone(
+            """SELECT COUNT(*) AS total,
+                      SUM(CASE WHEN accepted=1 THEN 1 ELSE 0 END) AS accepted,
+                      SUM(CASE WHEN accepted=0 THEN 1 ELSE 0 END) AS rejected
+                 FROM giveaway_message_events WHERE created_at>=? AND created_at<?""",
+            (start_ts, end_ts)
+        )
+        return {
+            "start": start_ts, "end": end_ts, "rows": rows,
+            "total": dict(total) if total else {"total": 0, "accepted": 0, "rejected": 0},
+        }
 
     async def _fetchone(self, sql: str, params: Sequence[Any] = ()) -> aiosqlite.Row | None:
         async with self.db.execute(sql, params) as cur:
