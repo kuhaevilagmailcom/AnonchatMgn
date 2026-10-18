@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from ..actions import Ctx
@@ -124,6 +124,7 @@ async def show_users(
     _button(b, "🔎 Поиск", "ax:q")
     if query:
         _button(b, "Сбросить поиск", "ax:clear")
+    _button(b, "📥 Скачать все ID (.txt)", "ax:download_users")
     _button(b, "В админку", K.CB_PANEL_BACK)
     b.adjust(*([1] * len(rows)), 2, 2, 1, 2, 2, 2, 2, 2, 1, 1)
     await _screen(ctx, "\n".join(lines)[:4000], b.as_markup())
@@ -498,6 +499,25 @@ async def extras_callback(
             await show_active_chats(ctx, db, mm, int(parts[2]))
         elif action == 'l' and len(parts)==5:
             await show_users(ctx,db,mm,state,parts[2],parts[3],int(parts[4]))
+        elif action == 'download_users':
+            if not ctx.can("users"):
+                raise PermissionError
+            rows = await db._fetchall("SELECT user_id FROM users ORDER BY user_id")
+            ids_text = "\\n".join(str(int(row["user_id"])) for row in rows)
+            if ids_text:
+                ids_text += "\\n"
+            document = BufferedInputFile(
+                ids_text.encode("utf-8"),
+                filename="users_ids.txt",
+            )
+            if event.message is None:
+                await ctx.ack("Не удалось отправить файл: сообщение недоступно", alert=True)
+                return
+            await event.bot.send_document(
+                chat_id=event.message.chat.id,
+                document=document,
+                caption=f"📥 ID всех пользователей: {len(rows)}",
+            )
         elif action == 'q':
             if not ctx.can("users"):
                 raise PermissionError
