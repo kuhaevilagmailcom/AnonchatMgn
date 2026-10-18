@@ -503,9 +503,9 @@ async def extras_callback(
             if not ctx.can("users"):
                 raise PermissionError
             rows = await db._fetchall("SELECT user_id FROM users ORDER BY user_id")
-            ids_text = "\\n".join(str(int(row["user_id"])) for row in rows)
+            ids_text = "\n".join(str(int(row["user_id"])) for row in rows)
             if ids_text:
-                ids_text += "\\n"
+                ids_text += "\n"
             document = BufferedInputFile(
                 ids_text.encode("utf-8"),
                 filename="users_ids.txt",
