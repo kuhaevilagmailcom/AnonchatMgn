@@ -477,7 +477,7 @@ async def show_giveaway(ctx: Ctx, db: Database) -> None:
     _button(b, "🔄 Обновить рейтинг", "ax:g")
     _button(b, "← В админку", K.CB_PANEL_BACK)
     b.adjust(2)
-    await _screen(ctx, "\\n".join(lines)[:3900], b.as_markup())
+    await _screen(ctx, "\n".join(lines)[:3900], b.as_markup())
 
 
 @router.callback_query(F.data.startswith("ax:"))
