@@ -440,34 +440,43 @@ async def reason_message(message:Message,ctx:Ctx,db:Database,state:FSMContext) -
 
 
 async def show_giveaway(ctx: Ctx, db: Database) -> None:
+    """Показывает компактный рейтинг розыгрыша с нормальными переносами и кнопками."""
     if not (ctx.can("stats") or ctx.is_owner):
         await ctx.ack("Нет доступа к статистике", alert=True)
         return
     data = await db.giveaway_leaderboard()
     rows = data["rows"]
     totals = data["total"]
+    accepted_total = int(totals.get("accepted") or 0)
+    rejected_total = int(totals.get("rejected") or 0)
     lines = [
         "🏆 <b>Розыгрыш Chat MGN</b>",
-        f"Период: <b>{_date(data['start']).split()[0]}</b> — <b>23.10.2026 23:59</b>",
-        f"Засчитано: <b>{int(totals.get('accepted') or 0):,}</b> · отклонено как спам: <b>{int(totals.get('rejected') or 0):,}</b>",
+        f"📅 Период: <b>{_date(data['start']).split()[0]} — 23.10.2026 23:59</b>",
         "",
-        "🥇🥈🥉 <b>Текущий рейтинг</b>",
+        f"✅ Засчитано: <b>{accepted_total:,}</b>",
+        f"🚫 Отклонено как спам: <b>{rejected_total:,}</b>",
+        "",
+        "🏆 <b>Текущий рейтинг</b>",
+        "<i>Победители — первые три места по числу засчитанных сообщений.</i>",
         "",
     ]
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     if not rows:
         lines.append("Пока нет засчитанных сообщений. Рейтинг обновится после первых успешных сообщений.")
     for idx, row in enumerate(rows[:20], 1):
         uid = int(row["user_id"])
-        name = nicklib.display(row["nickname"], uid, row["support_stars"])
-        medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(idx, f"{idx}.")
+        name = texts.esc(nicklib.display(row["nickname"], uid, row["support_stars"]))
+        accepted = int(row["accepted"] or 0)
+        rejected = int(row["rejected"] or 0)
+        rank = medals.get(idx, f"<b>{idx}.</b>")
         lines.append(
-            f"{medal} <b>{texts.esc(name)}</b> — <b>{int(row['accepted'] or 0):,}</b> сообщений"
-            f" · отклонено: {int(row['rejected'] or 0):,}"
+            f"{rank} <b>{name}</b>\n"
+            f"   💬 Засчитано: <b>{accepted:,}</b> · 🚫 Спам: {rejected:,}"
         )
     b = InlineKeyboardBuilder()
-    _button(b, "🔄 Обновить", "ax:g")
-    _button(b, "В админку", K.CB_PANEL_BACK)
-    b.adjust(1)
+    _button(b, "🔄 Обновить рейтинг", "ax:g")
+    _button(b, "← В админку", K.CB_PANEL_BACK)
+    b.adjust(2)
     await _screen(ctx, "\\n".join(lines)[:3900], b.as_markup())
 
 
