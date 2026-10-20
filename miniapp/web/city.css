@@ -71,7 +71,7 @@ a{color:inherit;text-decoration:none}
   border-radius:16px 16px 0 0;transition:height .18s ease;
 }
 .bottom-sheet:not(.has-selection):not(.is-expanded):not([data-tab=top]):not([data-tab=rules]){
-  height:calc(150px + env(safe-area-inset-bottom,0px));
+  height:calc(116px + env(safe-area-inset-bottom,0px));
 }
 .bottom-sheet.is-expanded,.bottom-sheet[data-tab=top],.bottom-sheet[data-tab=rules]{
   height:min(54dvh,425px);
@@ -210,7 +210,7 @@ body[data-map-theme=light] .zone-pin.is-free .zone-pin-inner{background:#fff}
   bottom:calc(181px + env(safe-area-inset-bottom,0px) + 8px);right:8px;z-index:1000;
 }
 body:has(#panel:not(.has-selection):not(.is-expanded):not([data-tab=top]):not([data-tab=rules])) .leaflet-bottom.leaflet-right{
-  bottom:calc(150px + env(safe-area-inset-bottom,0px) + 8px);
+  bottom:calc(116px + env(safe-area-inset-bottom,0px) + 8px);
 }
 body:has(#panel.is-expanded) .leaflet-bottom.leaflet-right,
 body:has(#panel[data-tab="top"]) .leaflet-bottom.leaflet-right,
