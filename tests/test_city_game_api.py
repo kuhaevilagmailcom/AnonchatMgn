@@ -17,7 +17,7 @@ class GeometryTests(unittest.TestCase):
         zones = city.STARTER_ZONES
         self.assertEqual(len(zones), 16)
         zone_names = {row[1] for row in zones}
-        self.assertTrue({"Ашик", "Гостинка", "Контик", "Джазик", "Ленинский район", "Площадь Победы", "Соцгород", "Комсомольская площадь"}.issubset(zone_names))
+        self.assertTrue({"Ашик", "Гостинка", "Контик", "Джазик", "Ленинский район", "Площадь Победы", "Соцгород", "Комсомольская площадь", "Левобережный ДК"}.issubset(zone_names))
         self.assertEqual(city.ZONE_META[6][1], "ТРК «Семейный парк»")
         self.assertEqual(city.ZONE_META[7][1], "ТРК «Гостиный двор»")
         self.assertEqual(city.ZONE_META[8][1], "ТРК «Континент»")
