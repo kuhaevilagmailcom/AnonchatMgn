@@ -102,7 +102,7 @@ class RoadGeometry:
         self.lock = asyncio.Lock()
         try:
             cached = json.loads(self.cache_path.read_text(encoding="utf-8"))
-            if cached.get("version") == 1 and isinstance(cached.get("shapes"), dict):
+            if cached.get("version") == 2 and isinstance(cached.get("shapes"), dict):
                 self.data = cached["shapes"]
         except (OSError, ValueError, TypeError):
             pass
@@ -144,7 +144,7 @@ class RoadGeometry:
                         try:
                             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
                             tmp = self.cache_path.with_suffix(".tmp")
-                            tmp.write_text(json.dumps({"version": 1, "shapes": found}, ensure_ascii=False),
+                            tmp.write_text(json.dumps({"version": 2, "shapes": found}, ensure_ascii=False),
                                            encoding="utf-8")
                             os.replace(tmp, self.cache_path)
                         except OSError as err:
