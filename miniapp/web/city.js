@@ -32,7 +32,8 @@
     canCapture: false, radius: 100, maxAccuracy: 75, cooldownEnd: 0,
     activeTab: 'map', toastTimer: null, hasFramed: false, expanded: false, theme: 'dark',
     baseLayer: null, basemapType: null,
-    gpsWatchId: null, telegramPollId: null, gpsEnabled: false, autoCentered: false
+    gpsWatchId: null, telegramPollId: null, gpsEnabled: false, autoCentered: false,
+    roadPolygons: new Map(), roadTimer: null, roadSignature: ""
   };
 
   function safeText(value, fallback = '') {
@@ -204,7 +205,8 @@
           vectorReady = true;
           const gl = layer.getMaplibreMap();
           if (gl) {
-            gl.on('load', () => { vectorLoaded = true; });
+            gl.on('load', () => { vectorLoaded = true; scheduleRoadPolygons(gl); });
+            gl.on('idle', () => scheduleRoadPolygons(gl));
             // If the vector provider is unreachable, remove the blank canvas.
             window.setTimeout(() => {
               if (state.map !== map || state.baseLayer !== layer || vectorLoaded) return;
@@ -239,6 +241,48 @@
     return true;
   }
 
+  function scheduleRoadPolygons(gl) {
+    if (!window.MGNRoadBlocks || !state.zones.length ||
+        !gl?.querySourceFeatures || state.map?.getZoom?.() < 13) return;
+    clearTimeout(state.roadTimer);
+    state.roadTimer = setTimeout(() => {
+      if (!state.zones.length || state.basemapType !== 'vector') return;
+      try {
+        const features = gl.querySourceFeatures('openmaptiles', {
+          sourceLayer: 'transportation'
+        });
+        if (!Array.isArray(features) || features.length < 4) return;
+        const center = state.map.getCenter?.();
+        const signature = [
+          Math.round(state.map.getZoom() * 2),
+          center ? Math.round(center.lat * 150) : 0,
+          center ? Math.round(center.lng * 150) : 0,
+          features.length
+        ].join(':');
+        if (signature === state.roadSignature) return;
+        state.roadSignature = signature;
+        const bounds = state.map.getBounds?.()?.pad?.(.5);
+        const visibleZones = bounds ? state.zones.filter(z =>
+          bounds.contains([z.lat, z.lon])) : state.zones;
+        const matched = window.MGNRoadBlocks.matchZonePolygons(
+          features, visibleZones, {latitude: center?.lat || CITY[0], maxSegments: 24000}
+        );
+        let changed = false;
+        for (const zone of visibleZones) {
+          const shape = matched[zone.id];
+          if (!shape || !Array.isArray(shape.polygon) || shape.polygon.length < 3) continue;
+          // The server may have a complete, persisted OSM polygon already.
+          if (state.roadPolygons.get(zone.id)?.source === 'server') continue;
+          state.roadPolygons.set(zone.id, shape);
+          changed = true;
+        }
+        if (changed) drawTerritories();
+      } catch (error) {
+        console.warn('Street polygons not available at this zoom', error);
+      }
+    }, 700);
+  }
+
   function drawTerritories() {
     if (!state.map) return;
     state.territoryGroup.clearLayers();
@@ -251,9 +295,10 @@
     for (const zone of ordered) {
       const selected = state.selectedId === zone.id;
       let polygon = null;
-      if (Array.isArray(zone.polygon) && zone.polygon.length >= 4) {
+      const roadOutline = state.roadPolygons.get(zone.id)?.polygon || zone.polygon;
+      if (Array.isArray(roadOutline) && roadOutline.length >= 3) {
         const color = ownerColor(zone);
-        polygon = L.polygon(zone.polygon, {
+        polygon = L.polygon(roadOutline, {
           color, weight: selected ? 3 : 2,
           opacity: zone.kind === 'district' ? .85 : 1,
           dashArray: zone.occupied ? null : '7 5',
@@ -303,8 +348,9 @@
       let updated = 0;
       for (const zone of state.zones) {
         const shape = shapes[String(zone.id)];
-        if (Array.isArray(shape) && shape.length>=4) {
+        if (Array.isArray(shape) && shape.length>=3) {
           zone.polygon=shape;
+          state.roadPolygons.set(zone.id, {polygon: shape, source: 'server'});
           updated++;
         }
       }
@@ -627,6 +673,9 @@
     try {
       const data = await api('/api/city/state');
       state.zones = Array.isArray(data.zones) ? data.zones : [];
+      if (state.basemapType === 'vector' && state.baseLayer?.getMaplibreMap) {
+        scheduleRoadPolygons(state.baseLayer.getMaplibreMap());
+      }
       state.leaderboard = Array.isArray(data.leaderboard) ? data.leaderboard : [];
       state.canCapture = !!data.can_capture;
       state.radius = number(data.capture_radius_m, 100);
