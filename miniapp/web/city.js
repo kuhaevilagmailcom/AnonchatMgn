@@ -40,6 +40,7 @@
     roadPolygons: new Map(), roadTimer: null, roadSignature: "",
     catalog: [], myPets: [], guards: [], wallet: 0, hp: 100, pendingStars: 0,
     actionBusy: false, petGroup: null, petAgents: [], lastPresenceAt: 0,
+    pendingPurchase: {},
     lastAttackedZone: null
   };
 
@@ -448,12 +449,19 @@
     }
     state.actionBusy = true;
     renderMarket();
+    // Stable token for a retried request: a lost response cannot charge twice.
+    if (action === 'buy') {
+      state.pendingPurchase[values.kind] ||= String(Date.now()) + '-' +
+        Math.random().toString(36).slice(2, 13);
+      values.request_id = state.pendingPurchase[values.kind];
+    }
     try {
       const result = await api('/api/city/pets/' + action, {
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify(values)
       });
       await load();
+      if (action === 'buy') delete state.pendingPurchase[values.kind];
       if (action === 'buy') feedback('Питомец куплен. Выбери свой район!', 'success');
       else if (action === 'place') feedback('Защитник отправлен на район', 'success');
       else if (action === 'recall') feedback('Питомец вернулся в запас', 'success');
