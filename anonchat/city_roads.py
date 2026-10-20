@@ -83,7 +83,7 @@ def build_shapes(ways, zones):
                     continue
             # Require a reasonably bounded urban block, not huge rural space.
             approx_area_m2 = candidate.area * 111320 * 111320 * math.cos(math.radians(latitude))
-            if not 500 <= approx_area_m2 <= 700_000:
+            if not 700 <= approx_area_m2 <= 90_000:
                 continue
             # Preserve street corners, with only small simplification.
             simple = candidate.simplify(0.000008, preserve_topology=True)
@@ -195,7 +195,7 @@ class RoadGeometry:
         self.lock = asyncio.Lock()
         try:
             cached = json.loads(self.cache_path.read_text(encoding="utf-8"))
-            if cached.get("version") == 3 and isinstance(cached.get("shapes"), dict):
+            if cached.get("version") == 4 and isinstance(cached.get("shapes"), dict):
                 self.data = cached["shapes"]
                 self.extra_zones = cached.get("extra_zones", [])
         except (OSError, ValueError, TypeError):
@@ -242,7 +242,7 @@ class RoadGeometry:
                         try:
                             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
                             tmp = self.cache_path.with_suffix(".tmp")
-                            tmp.write_text(json.dumps({"version": 3, "shapes": found, "extra_zones": extra}, ensure_ascii=False),
+                            tmp.write_text(json.dumps({"version": 4, "shapes": found, "extra_zones": extra}, ensure_ascii=False),
                                            encoding="utf-8")
                             os.replace(tmp, self.cache_path)
                         except OSError as err:
