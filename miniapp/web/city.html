@@ -9,7 +9,7 @@
   <link rel="icon" href="./assets/anon-mgn-logo.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
-  <link rel="stylesheet" href="./city.css?v=5">
+  <link rel="stylesheet" href="./city.css?v=6">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -43,19 +43,14 @@
   <main class="bottom-sheet" id="panel">
     <button class="sheet-grip" id="sheetToggle" type="button" aria-label="Развернуть или свернуть нижнюю панель"><span class="sheet-handle" aria-hidden="true"></span></button>
     <section id="mapView" class="sheet-content">
-      <div class="sheet-overline"><span id="sectorCode">Территория</span><span class="sheet-id" id="sectorSize">Выбери на карте</span></div>
-      <h1 id="zone">Выбери место на карте</h1><p id="zoneDetails" class="zone-details" hidden></p>
-      <div class="owner-card">
-        <div class="owner-icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 8 4v5c0 5-3.2 8.7-8 11-4.8-2.3-8-6-8-11V6l8-4Z"/><path d="m9.5 12 2 2 3.5-4"/></svg></div>
-        <div class="owner-data"><small>Владелец</small><strong id="owner">Пока не выбран</strong></div>
-        <span class="owner-state" id="zoneState">—</span>
+      <h1 id="zone">Выбери место на карте</h1>
+      <p id="zoneDetails" class="zone-details" hidden></p>
+      <div class="owner-card" id="ownerCard" hidden>
+        <div class="owner-data"><small>Владелец</small><strong id="owner">Никого</strong></div>
+        <span class="owner-state" id="zoneState">Свободно</span>
       </div>
-      <div class="game-readings">
-        <div class="reading"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg><span id="distance">Расстояние: —</span></div>
-        <div class="reading"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg><span id="gpsQuality">GPS не определён</span></div>
-      </div>
-      <p id="status" class="game-status" role="status">Выбери цветную территорию на карте. Для захвата нужно подойти к точке и подтвердить GPS.</p>
-      <button class="capture-button" id="capture" type="button" disabled><span id="captureLabel">Выбери территорию</span></button>
+      <p id="status" class="screenreader-status" role="status" aria-live="polite"></p>
+      <button class="capture-button" id="capture" type="button" disabled><span id="captureLabel">Выбери место</span></button>
     </section>
 
     <section id="leaderboard" class="sheet-content leaderboard" hidden>
@@ -83,6 +78,6 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
-  <script src="./city.js?v=12"></script>
+  <script src="./city.js?v=13"></script>
 </body>
 </html>
