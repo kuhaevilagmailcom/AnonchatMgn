@@ -3,12 +3,21 @@ from aiohttp import web
 from . import city_capture as game
 import sqlite3
 import time
+import os
 
 def routes(database_path, authenticate, is_admin):
     """authenticate(request) must validate Telegram initData and return Telegram user ID."""
+    async def check_access(uid):
+        if os.getenv("CITY_GAME_TEST_ADMINS_ONLY", "1") != "0" and not await is_admin(uid):
+            raise web.HTTPForbidden(text="Игра пока доступна только администраторам для тестирования")
+
+    async def access(request):
+        uid = await authenticate(request)
+        return web.json_response({"allowed": os.getenv("CITY_GAME_TEST_ADMINS_ONLY", "1") == "0" or await is_admin(uid)})
+
     async def state(request):
         uid = await authenticate(request)
-        admin = await is_admin(uid)
+        await check_access(uid)
         with sqlite3.connect(database_path, timeout=10) as db:
             game.init_db(db)
             db.executemany("INSERT OR IGNORE INTO city_zones(id,name,lat,lon,enabled) VALUES(?,?,?,?,1)", [
@@ -22,13 +31,12 @@ def routes(database_path, authenticate, is_admin):
                 "LEFT JOIN city_ownership o ON z.id=o.zone_id LEFT JOIN users u ON u.user_id=o.user_id WHERE z.enabled=1"
             ).fetchall()
             top = db.execute("""SELECT o.user_id, COUNT(*) AS wins, COALESCE(NULLIF(u.nickname,''),'Аноним') FROM city_ownership o LEFT JOIN users u ON u.user_id=o.user_id GROUP BY o.user_id ORDER BY wins DESC LIMIT 20""").fetchall()
-        return web.json_response({"user_id":uid,"can_capture":admin,"leaderboard":[{"name":p[2],"zones":p[1],"mine":p[0]==uid} for p in top],"zones":[
+        return web.json_response({"user_id":uid,"can_capture":True,"leaderboard":[{"name":p[2],"zones":p[1],"mine":p[0]==uid} for p in top],"zones":[
             {"id":z[0],"name":z[1],"lat":z[2],"lon":z[3],
              "mine":z[4]==uid,"occupied":z[4] is not None,"owner_name":z[5] if z[4] is not None else None} for z in zones]})
     async def capture(request):
         uid = await authenticate(request)
-        if not await is_admin(uid):
-            raise web.HTTPForbidden(text="Захват доступен только администраторам")
+        await check_access(uid)
         body = await request.json()
         try:
             with sqlite3.connect(database_path, timeout=10, isolation_level=None) as db:
@@ -39,4 +47,4 @@ def routes(database_path, authenticate, is_admin):
             return web.json_response({"ok":True,"result":result})
         except (KeyError,TypeError,ValueError,sqlite3.Error) as exc:
             raise web.HTTPBadRequest(text=str(exc))
-    return [web.get("/api/city/state",state),web.post("/api/city/capture",capture)]
+    return [web.get("/api/city/access",access),web.get("/api/city/state",state),web.post("/api/city/capture",capture)]
