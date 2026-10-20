@@ -2730,11 +2730,11 @@ class MiniAppServer:
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
         response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=(self)"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self' https://telegram.org; "
-            "style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' blob:; "
-            "connect-src 'self'; frame-ancestors https://web.telegram.org https://*.telegram.org"
+            "default-src 'self'; script-src 'self' https://telegram.org https://unpkg.com; "
+            "style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' https: data: blob:; media-src 'self' blob:; "
+            "connect-src 'self' https://tile.openstreetmap.org; frame-src https://www.openstreetmap.org; frame-ancestors https://web.telegram.org https://*.telegram.org"
         )
         if origin and origin_allowed:
             response.headers["Access-Control-Allow-Origin"] = origin
@@ -2800,6 +2800,12 @@ class MiniAppServer:
         app.router.add_post("/api/miniapp/games/words/invite", self.game_words)
         app.router.add_post("/api/miniapp/games/respond", self.game_respond)
         app.router.add_post("/api/miniapp/games/action", self.game_action)
+        from .city_game_api import routes as city_routes
+        async def city_auth(request):
+            uid, _user, _row = await self._auth(request)
+            return uid
+        for city_route in city_routes(self.db.path, city_auth):
+            app.router.add_routes([city_route])
         from .admin_api import install_admin_routes
         install_admin_routes(app, self)
         app.router.add_get("/api/miniapp/subscription", self.subscription)
