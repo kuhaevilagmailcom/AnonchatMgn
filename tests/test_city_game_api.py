@@ -86,7 +86,7 @@ class CityRoutesTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(data["zones"]), len(city.STARTER_ZONES))
             self.assertTrue(all(z["polygon"] == [] for z in data["zones"]))  # no invented boundaries
             self.assertEqual(len([z for z in data["zones"] if z["kind"] == "mall"]), 4)
-            self.assertEqual(len([z for z in data["zones"] if z["kind"] == "district"]), 5)
+            self.assertEqual(len([z for z in data["zones"] if z["kind"] == "district"]), 4)
             self.assertTrue(all(z.get("official_name") and z.get("address") for z in data["zones"]))
             self.assertTrue(data["can_capture"])
 
