@@ -138,15 +138,23 @@
       if (contains(face.polygon, zone.lat, zone.lon)) return 0;
       const scale = Math.cos(zone.lat * Math.PI / 180);
       let best = Infinity;
-      for (const [lat, lon] of face.polygon) {
-        best = Math.min(best, Math.hypot((lat - zone.lat) * M,
-                                       (lon - zone.lon) * M * scale));
+      const x = zone.lon * M * scale, y = zone.lat * M;
+      for (let i = 0; i < face.polygon.length; i++) {
+        const p = face.polygon[i], q = face.polygon[(i + 1) % face.polygon.length];
+        const ax = p[1] * M * scale, ay = p[0] * M;
+        const bx = q[1] * M * scale, by = q[0] * M;
+        const dx = bx - ax, dy = by - ay;
+        const lengthSq = dx * dx + dy * dy;
+        const t = lengthSq ? Math.max(0, Math.min(1,
+          ((x - ax) * dx + (y - ay) * dy) / lengthSq)) : 0;
+        best = Math.min(best, Math.hypot(x - ax - t * dx, y - ay - t * dy));
       }
       return best;
     };
     for (const zone of zones || []) {
       if (!Number.isFinite(zone.lat) || !Number.isFinite(zone.lon)) continue;
-      const maxArea = zone.kind === 'district' ? 2500000 : 1200000;
+      const maxArea = zone.kind === 'district' ? 2500000 :
+        Math.min(1200000, Math.PI * (zone.radius_m || 350) ** 2 * 3);
       let best = null;
       for (const face of faces) {
         if (face.area > maxArea) continue;
