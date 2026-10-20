@@ -2729,12 +2729,14 @@ class MiniAppServer:
             response.headers["Cache-Control"] = "no-cache, must-revalidate, max-age=0"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
-        response.headers["Referrer-Policy"] = "no-referrer"
+        # The city map needs an Origin/Referer for licensed basemap hosts;\n        # preserve the stricter policy everywhere else in the Mini App.\n        response.headers["Referrer-Policy"] = (\n            "strict-origin-when-cross-origin" if request.path.endswith("/city.html")\n            else "no-referrer"\n        )
         response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=(self)"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self' https://telegram.org https://unpkg.com; "
             "style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' https: data: blob:; media-src 'self' blob:; "
-            "connect-src 'self' https://tile.openstreetmap.org; frame-src https://www.openstreetmap.org; frame-ancestors https://web.telegram.org https://*.telegram.org"
+            "connect-src 'self' https://tiles.openfreemap.org https://assets.openfreemap.com https://tile.openstreetmap.org; "
+            "worker-src 'self' blob:; child-src 'self' blob:; "
+            "frame-src https://www.openstreetmap.org; frame-ancestors https://web.telegram.org https://*.telegram.org"
         )
         if origin and origin_allowed:
             response.headers["Access-Control-Allow-Origin"] = origin
