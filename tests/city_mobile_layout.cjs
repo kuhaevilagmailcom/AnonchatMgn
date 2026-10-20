@@ -98,8 +98,23 @@ const leafletStub='('+function fakeLeaflet(){
           width+'px persistent GPS instructions returned');
         await page.click('#theme');
         assert.equal(await page.locator('body').getAttribute('data-map-theme'),'light');
+        const lightSector = await page.locator('[aria-label="Ашик"] .zone-pin-inner').last()
+          .evaluate(el => ({
+            color:el.style.getPropertyValue('--zone-color'),
+            background:getComputedStyle(el).backgroundColor,
+            border:getComputedStyle(el).borderColor
+          }));
+        assert.equal(lightSector.color,'#565d68',
+          width+'px free-sector color has insufficient contrast in light mode');
+        assert.equal(lightSector.background,'rgb(255, 255, 255)',
+          width+'px light mode must use a light pin background');
         await page.click('#theme');
         assert.equal(await page.locator('body').getAttribute('data-map-theme'),'dark');
+        const darkSector = await page.locator('[aria-label="Ашик"] .zone-pin-inner').last()
+          .evaluate(el=>el.style.getPropertyValue('--zone-color'));
+        assert.equal(darkSector,'#80767d',
+          width+'px dark theme did not restore original area colors');
+        assert.notEqual(lightSector.color,darkSector);
         // Fake Leaflet does not remove stale DOM markers on redraw.
         // The last one represents the current light/dark redraw.
         await page.locator('[aria-label="Ашик"]').last().click();
