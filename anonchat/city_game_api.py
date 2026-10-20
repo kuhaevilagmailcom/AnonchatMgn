@@ -18,6 +18,7 @@ from . import city_capture as game
 # GPS anchors for public landmarks or shopping centres. Polygon radii are GAME size only.
 # Nicknames reflect local usage; official place names and addresses are kept separately.
 # Sources: official centre websites, Magnitogorsk tourism portal, public mapping listings.
+# Source for left-bank point 16: https://visit.magnitogorsk.ru/tours/tematicheskie-ekskursii/pervyy-sotsialisticheskiy/
 STARTER_ZONES = (
     (1, "Парк у Вечного огня", 53.404924, 58.990902, 450),
     (2, "Парк «Притяжение»", 53.380514, 58.960070, 610),
@@ -34,6 +35,7 @@ STARTER_ZONES = (
     (13, "Площадь Победы", 53.393547, 59.063386, 320),
     (14, "Соцгород", 53.390291, 59.056160, 440),
     (15, "Комсомольская площадь", 53.415252, 59.054228, 350),
+    (16, "Соцгород · Пушкина", 53.390672, 59.061452, 250),
 )
 ZONE_META = {
     1: ("park", "Парк у Вечного огня", "Набережная, 11/2"),
@@ -51,6 +53,7 @@ ZONE_META = {
     13: ("district", "Площадь Победы · левый берег", "проспект Пушкина"),
     14: ("district", "Квартал №1 Соцгорода", "улицы Маяковского, Кирова, Чайковского, проспект Пушкина"),
     15: ("district", "Комсомольская площадь", "левый берег, Магнитогорск"),
+    16: ("district", "Проспект Пушкина, 21", "Соцгород · левый берег"),
 }
 SECTOR_SIZES = {z[0]: z[4] for z in STARTER_ZONES}
 
