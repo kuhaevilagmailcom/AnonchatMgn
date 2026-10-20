@@ -250,11 +250,31 @@ body:has(#panel[data-tab="market"]) .leaflet-bottom.leaflet-right{bottom:calc(mi
 .hud .hp-stat strong{color:#f2a7d4}
 .hud .hp-separator{display:block!important}
 .zone-guard-badge{font-size:17px;line-height:1.1;flex:none}
-.market{padding:13px 16px 22px;overflow-y:auto}
-.bottom-sheet[data-tab=market]{height:min(68dvh,555px);max-height:76dvh}
-body:has(#panel[data-tab=market]) .leaflet-bottom.leaflet-right{
-  bottom:calc(min(68dvh,555px) + 8px);
+/* Market is a proper in-app screen, not a half-open drawer.
+   Header stays visible at top; bottom nav stays pinned to the screen bottom. */
+.bottom-sheet[data-tab="market"]{
+  top:calc(58px + env(safe-area-inset-top,0px));
+  bottom:0;
+  left:0;right:0;
+  width:100%;
+  height:auto;
+  max-height:none;
+  border-radius:0;
+  border-top:1px solid var(--line);
 }
+.bottom-sheet[data-tab="market"] .sheet-grip{display:none}
+.bottom-sheet[data-tab="market"] .sheet-tabs{flex-shrink:0}
+.market{
+  min-height:0;
+  min-width:0;
+  flex:1 1 auto;
+  padding:15px 16px 24px;
+  overflow-x:hidden;
+  overflow-y:auto;
+  overscroll-behavior-y:contain;
+  -webkit-overflow-scrolling:touch;
+}
+body:has(#panel[data-tab="market"]) .leaflet-bottom.leaflet-right{display:none}
 .market-head{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 0 12px;border-bottom:1px solid #282227}
 .market-head>div{display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0}
 .market-head small{font-size:9px;color:#b6a8b1;font-weight:700;letter-spacing:.3px}
@@ -300,7 +320,11 @@ body:has(#panel[data-tab=market]) .leaflet-bottom.leaflet-right{
   .pet-product-emoji{width:32px}
 }
 @media(orientation:landscape) and (max-height:500px){
- .bottom-sheet[data-tab=market]{height:100dvh;max-height:100dvh}
- body:has(#panel[data-tab=market]) .leaflet-bottom.leaflet-right{bottom:0}
+ .bottom-sheet[data-tab=market]{
+   top:calc(58px + env(safe-area-inset-top,0px));
+   bottom:0;left:0;right:0;width:100%;
+   height:auto;max-height:none;border-radius:0;
+ }
+ body:has(#panel[data-tab=market]) .leaflet-bottom.leaflet-right{display:none}
 }
 @media(prefers-reduced-motion:reduce){.pet-agent>span{animation:none}}
