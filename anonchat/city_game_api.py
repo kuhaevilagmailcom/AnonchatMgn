@@ -10,6 +10,12 @@ def routes(database_path, authenticate):
         uid = await authenticate(request)
         with sqlite3.connect(database_path, timeout=10) as db:
             game.init_db(db)
+            db.executemany("INSERT OR IGNORE INTO city_zones(id,name,lat,lon,enabled) VALUES(?,?,?,?,1)", [
+                (1,"Парк у Вечного огня",53.4217,58.9877),
+                (2,"Парк Притяжение",53.3776,58.9778),
+                (3,"Сквер Металлургов",53.4185,58.9791),
+            ])
+            db.commit()
             zones = db.execute(
                 "SELECT z.id,z.name,z.lat,z.lon,o.user_id FROM city_zones z "
                 "LEFT JOIN city_ownership o ON z.id=o.zone_id WHERE z.enabled=1"
