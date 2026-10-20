@@ -503,6 +503,7 @@
     if (gps.accuracy < 0 || gps.accuracy > 3000) return;
     state.gps = gps;
     state.gpsEnabled = true;
+    state.gpsUpdateAt = Date.now();
     drawLocation(gps, focus);
     renderSelection();
   }
@@ -530,6 +531,9 @@
     if (!tg?.LocationManager?.isAccessGranted) return;
     state.telegramPollId = window.setInterval(async () => {
       if (document.hidden || state.locating) return;
+      // In Telegram iOS, WebKit watchPosition can stall without an error.
+      // Poll Telegram only if no valid browser location arrived recently.
+      if (Date.now() - (state.gpsUpdateAt || 0) < 18000) return;
       try {
         const gps = await telegramLocation();
         updateGPS(gps, !state.autoCentered);
@@ -540,7 +544,9 @@
     if (!state.gpsEnabled || document.hidden) return;
     // Native watchPosition updates continuously when supported.
     // Telegram LocationManager has no watch method; use low-rate polling there.
-    if (!startBrowserWatch()) startTelegramPolling();
+    startBrowserWatch();
+    // iOS fallback runs alongside watchPosition, but polls only if it stalls.
+    startTelegramPolling();
   }
   function stopTracking() {
     if (state.gpsWatchId !== null) {
