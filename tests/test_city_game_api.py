@@ -15,7 +15,7 @@ from anonchat import city_game_api as city
 class GeometryTests(unittest.TestCase):
     def test_sector_polygons_are_distinct_and_stable(self):
         zones = city.STARTER_ZONES
-        self.assertEqual(len(zones), 16)
+        self.assertEqual(len(zones), 17)
         zone_names = {row[1] for row in zones}
         self.assertTrue({"Ашик", "Гостинка", "Контик", "Джазик", "Ленинский район", "Площадь Победы", "Соцгород", "Комсомольская площадь", "Левобережный ДК"}.issubset(zone_names))
         self.assertEqual(city.ZONE_META[6][1], "ТРК «Семейный парк»")
