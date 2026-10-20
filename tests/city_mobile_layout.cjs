@@ -83,7 +83,9 @@ const leafletStub='('+function fakeLeaflet(){
         assert.ok(sizes.map.height>=740,width+'px map not full screen');
         assert.ok(sizes.tabs.every(t=>t.width>70),width+'px tab too narrow');
         assert.equal(sizes.icons,12,width+'px expected 12 icon pins');
-        assert.ok(sizes.panel.height<=170,width+'px empty panel takes too much map');
+        assert.ok(sizes.panel.height<=130,width+'px empty panel takes too much map');
+        assert.equal(await page.locator('#capture').isVisible(),false,
+          width+'px capture action should only appear after choosing a place');
         assert.equal(await page.locator('#ownerCard').isVisible(),false,
           width+'px owner row should stay hidden until a zone is selected');
         assert.equal(await page.locator('#distance').count(),0,
@@ -97,6 +99,7 @@ const leafletStub='('+function fakeLeaflet(){
         await page.locator('[aria-label="Ашик"]').click();
         assert.equal(await page.locator('#zone').textContent(),'Ашик');
         assert.equal(await page.locator('#ownerCard').isVisible(),true);
+        assert.equal(await page.locator('#capture').isVisible(),true);
         const dock=await page.evaluate(()=>{
           const box=id=>document.querySelector(id).getBoundingClientRect();
           return {panel:box('#panel').height,captureBottom:box('#capture').bottom,navTop:box('#tabs').top};
