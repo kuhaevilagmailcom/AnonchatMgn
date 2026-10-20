@@ -173,16 +173,34 @@ body[data-map-theme=light] .zone-pin.is-free .zone-pin-inner{background:#fff}
 /* MapLibre renders true dark/light vector styles, so no CSS filtering is applied
    to its WebGL canvas. The Leaflet raster fallback alone gets a color filter. */
 .maplibregl-map,.maplibregl-canvas,.maplibregl-canvas-container{filter:none!important}
-.leaflet-bottom.leaflet-right{bottom:min(253px,46dvh);z-index:1000}
+.leaflet-bottom.leaflet-right{bottom:calc(min(253px,46dvh) + 8px);right:8px;z-index:1000}
 body:has(#panel.is-expanded) .leaflet-bottom.leaflet-right,
 body:has(#panel[data-tab="top"]) .leaflet-bottom.leaflet-right,
-body:has(#panel[data-tab="rules"]) .leaflet-bottom.leaflet-right{bottom:min(57dvh,465px)}
-.leaflet-control-attribution{font-size:9px!important;padding:2px 5px!important;border-radius:5px 0 0 0}
+body:has(#panel[data-tab="rules"]) .leaflet-bottom.leaflet-right{bottom:calc(min(57dvh,465px) + 8px)}
+/* One short, accessible data-source credit; no duplicate text or Leaflet logo. */
+.leaflet-control-attribution{
+  max-width:calc(100vw - 18px);
+  padding:4px 7px!important;
+  border:1px solid #363036!important;
+  border-radius:6px!important;
+  background:#100d10ee!important;
+  color:#bcb5bb!important;
+  font-size:clamp(8px,1.95vw,10px)!important;
+  line-height:1.25!important;
+  text-align:right;
+  overflow-wrap:normal;
+  box-shadow:none!important;
+}
+.leaflet-control-attribution a{
+  color:#ddbad0!important;
+  text-decoration:none;
+}
+.leaflet-control-attribution a:hover{text-decoration:underline}
 @media(max-height:680px){
-  .leaflet-bottom.leaflet-right{bottom:min(239px,52dvh)}
+  .leaflet-bottom.leaflet-right{bottom:calc(min(239px,52dvh) + 8px)}
   body:has(#panel.is-expanded) .leaflet-bottom.leaflet-right,
   body:has(#panel[data-tab="top"]) .leaflet-bottom.leaflet-right,
-  body:has(#panel[data-tab="rules"]) .leaflet-bottom.leaflet-right{bottom:65dvh}
+  body:has(#panel[data-tab="rules"]) .leaflet-bottom.leaflet-right{bottom:calc(65dvh + 8px)}
 }
 @media(orientation:landscape) and (max-height:500px){
   .leaflet-bottom.leaflet-right{bottom:0;right:min(380px,62vw)}
