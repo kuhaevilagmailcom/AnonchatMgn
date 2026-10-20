@@ -68,11 +68,13 @@ const server = http.createServer((req, res) => {
         assert.ok(result.panel.height <= 280, width + ': map dock is too large');
         assert.ok(result.panel.top >= 440, width + ': map not visible enough');
         assert.ok(result.action.bottom <= result.nav.top + 2, width + ': capture button hidden beneath nav');
-        assert.ok(result.navItems === 3, 'map/tops/rules navigation missing');
+        assert.ok(result.navItems === 4, 'map/tops/market/rules navigation missing');
         await page.locator('#theme').click();
         assert.equal(await page.evaluate(() => document.body.dataset.mapTheme), 'light');
         await page.locator('#sheetToggle').click();
         assert.ok(await page.locator('#panel').evaluate(el => el.classList.contains('is-expanded')));
+        await page.locator('#showmarket').click();
+        assert.ok(await page.locator('#market').isVisible());
         await page.locator('#showtop').click();
         assert.ok(await page.locator('#leaderboard').isVisible());
         await page.locator('#showmap').click();
