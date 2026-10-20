@@ -330,6 +330,7 @@
     const zone = selectedZone();
     ui.panel.classList.toggle('has-selection', Boolean(zone));
     ui.ownerCard.hidden = !zone;
+    ui.capture.hidden = !zone;
 
     if (!zone) {
       ui.zone.textContent = 'Выбери место на карте';
