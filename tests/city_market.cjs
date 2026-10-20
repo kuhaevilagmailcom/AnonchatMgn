@@ -48,11 +48,11 @@ async function flush(){for(let i=0;i<70;i++) await Promise.resolve();}
     }}
   };
   const catalog=[
-    {kind:'cat',emoji:'🐈',name:'Кот',price:100,stars_h:1,hp_h:.5},
-    {kind:'bird',emoji:'🐤',name:'Птица',price:500,stars_h:3,hp_h:1},
-    {kind:'pig',emoji:'🐷',name:'Свинка',price:1000,stars_h:6,hp_h:1.5},
-    {kind:'snake',emoji:'🐍',name:'Змея',price:2500,stars_h:10,hp_h:2.5},
-    {kind:'lion',emoji:'🦁',name:'Лев',price:5000,stars_h:18,hp_h:4}
+    {kind:'cat',emoji:'🐈',name:'Кот',price:100,stars_h:1,hp_5m:.5},
+    {kind:'bird',emoji:'🐤',name:'Птица',price:500,stars_h:3,hp_5m:1},
+    {kind:'pig',emoji:'🐷',name:'Свинка',price:1000,stars_h:6,hp_5m:1.5},
+    {kind:'snake',emoji:'🐍',name:'Змея',price:2500,stars_h:10,hp_5m:2.5},
+    {kind:'lion',emoji:'🦁',name:'Лев',price:5000,stars_h:18,hp_5m:4}
   ];
   const zone={id:1,name:'Ашик',lat:53.38,lon:58.98,polygon:[],
     mine:true,occupied:true,owner_name:'Тест',kind:'mall',size:'Малый'};
@@ -92,7 +92,8 @@ async function flush(){for(let i=0;i<70;i++) await Promise.resolve();}
   assert.equal(nodes.hpValue.textContent,'93.2');
   assert.equal(nodes.petCatalog.children.length,5);
   assert.match(nodes.petCatalog.children[0].children[1].children[1].textContent,/⭐\/ч/);
-  assert.match(nodes.petCatalog.children[0].children[1].children[1].textContent,/HP\/ч/);
+  assert.match(nodes.petCatalog.children[0].children[1].children[2].textContent,/Урон: −0,5 HP \/ 5 мин/);
+  assert.doesNotMatch(nodes.petCatalog.children[0].children[1].children[2].textContent,/HP\/ч/);
   await nodes.petCatalog.listeners.click({
     target:{closest:()=>({dataset:{buyKind:'cat'}})}
   });
