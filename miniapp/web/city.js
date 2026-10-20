@@ -16,10 +16,9 @@
   const ui = {
     panel: $('panel'), view: $('mapView'), board: $('leaderboard'), rules: $('rules'),
     count: $('count'), mine: $('mineCount'), captures: $('captureCount'),
-    zone: $('zone'), owner: $('owner'), state: $('zoneState'),
-    code: $('sectorCode'), size: $('sectorSize'), details: $('zoneDetails'),
-    theme: $('theme'), sheetToggle: $('sheetToggle'),
-    distance: $('distance'), accuracy: $('gpsQuality'), status: $('status'),
+    zone: $('zone'), owner: $('owner'), ownerCard: $('ownerCard'),
+    state: $('zoneState'), details: $('zoneDetails'),
+    theme: $('theme'), sheetToggle: $('sheetToggle'), status: $('status'),
     capture: $('capture'), captureLabel: $('captureLabel'),
     locate: $('locate'), refresh: $('refresh'), top: $('topbutton'),
     leaders: $('leaders'), toast: $('toast'),
@@ -329,55 +328,42 @@
 
   function renderSelection() {
     const zone = selectedZone();
+    ui.panel.classList.toggle('has-selection', Boolean(zone));
+    ui.ownerCard.hidden = !zone;
+
     if (!zone) {
-      ui.code.textContent = 'Территория';
-      ui.size.textContent = 'Выбери на карте';
       ui.zone.textContent = 'Выбери место на карте';
+      ui.details.textContent = '';
       ui.details.hidden = true;
-      ui.owner.textContent = 'Пока не выбран';
-      ui.state.textContent = '—';
-      ui.state.className = 'owner-state';
-      ui.distance.textContent = state.gps ? 'Твоя позиция найдена' : 'Расстояние: —';
-      ui.accuracy.textContent = state.gps ? 'GPS ±' + Math.round(state.gps.accuracy) + ' м' : 'GPS не определён';
-      setStatus('Нажми на значок места. Для захвата понадобится геолокация.');
       ui.capture.disabled = true;
       ui.captureLabel.textContent = 'Выбери место';
       return;
     }
-    ui.code.textContent = 'Территория №' + String(zone.id).padStart(2, '0');
-    ui.size.textContent = zone.size === 'Большой' ? 'Большая' : 'Малая';
+
     ui.zone.textContent = zone.name;
-    ui.details.textContent = [zone.official_name && zone.official_name !== zone.name ? zone.official_name : '', zone.address || ''].filter(Boolean).join(' · ');
+    ui.details.textContent = [
+      zone.official_name && zone.official_name !== zone.name ? zone.official_name : '',
+      zone.address || ''
+    ].filter(Boolean).join(' · ');
     ui.details.hidden = !ui.details.textContent;
-    ui.owner.textContent = zone.mine ? 'Ты' : zone.occupied ? (zone.owner_name || 'Аноним') : 'Никого';
+    ui.owner.textContent = zone.mine ? 'Ты' :
+      zone.occupied ? (zone.owner_name || 'Аноним') : 'Никого';
     ui.state.textContent = zone.mine ? 'Твоя' : zone.occupied ? 'Занято' : 'Свободно';
     ui.state.className = 'owner-state ' + (zone.mine ? 'mine' : zone.occupied ? 'occupied' : '');
-    const gps = state.gps;
-    const metres = gps ? distanceM(gps.lat, gps.lon, zone.lat, zone.lon) : Infinity;
-    ui.distance.textContent = gps ? 'До точки: ' + humanDistance(metres) : 'Расстояние: нажми GPS';
-    ui.accuracy.textContent = gps ?
-      (gps.accuracy <= state.maxAccuracy ? 'GPS ±' + Math.round(gps.accuracy) + ' м' : 'GPS неточный') :
-      'GPS не определён';
-    const cd = cooldownS();
-    ui.capture.disabled = !state.canCapture || !!zone.mine || state.capturing || state.locating || cd > 0;
+
+    const remaining = cooldownS();
+    ui.capture.disabled = !state.canCapture || !!zone.mine ||
+      state.capturing || state.locating || remaining > 0;
     if (!state.canCapture) {
       ui.captureLabel.textContent = 'Только просмотр';
-      setStatus('Сейчас режим тестирования. Захват закрыт.');
     } else if (zone.mine) {
-      ui.captureLabel.textContent = 'Уже захвачено';
-      setStatus('Район уже под твоим контролем. Выбери другой.');
-    } else if (cd > 0) {
-      ui.captureLabel.textContent = 'Повтор через ' + humanTime(cd);
-      setStatus('Следующий захват будет доступен после окончания таймера.');
+      ui.captureLabel.textContent = 'Уже твоё';
+    } else if (remaining > 0) {
+      ui.captureLabel.textContent = 'Повтор через ' + humanTime(remaining);
     } else if (state.capturing || state.locating) {
-      ui.captureLabel.textContent = 'Проверяем GPS…';
-      setStatus('Определяем точные координаты для захвата территории.');
+      ui.captureLabel.textContent = 'Проверяем позицию…';
     } else {
       ui.captureLabel.textContent = 'Захватить';
-      if (!gps) setStatus('Нужен GPS: нажми захват или кнопку геолокации на карте.');
-      else if (gps.accuracy > state.maxAccuracy) setStatus('Точность GPS слишком низкая. Для захвата требуется не хуже ±' + state.maxAccuracy + ' м.');
-      else if (metres + gps.accuracy > state.radius) setStatus('Подойди ближе к метке на карте. Радиус захвата — ' + state.radius + ' м с учётом погрешности GPS.');
-      else setStatus('Ты достаточно близко к точке. Можно захватывать!');
     }
   }
 
@@ -498,7 +484,7 @@
       if (!Number.isFinite(gps.lat) || !Number.isFinite(gps.lon)) throw new Error('GPS вернул неверные координаты.');
       state.gps = gps;
       drawLocation(gps, focus);
-      if (!auto) feedback('Местоположение найдено · точность ±' + Math.round(gps.accuracy) + ' м', 'success');
+      if (!auto) feedback('Местоположение определено', 'success');
       return gps;
     } catch (error) {
       if (!auto) feedback(error.message || 'Не удалось определить GPS', 'error');
