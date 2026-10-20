@@ -59,6 +59,14 @@ class CityPetsTest(unittest.TestCase):
             city_pets.buy(self.db,10,"unknown")
         self.assertEqual(self.xp(),9900)
 
+    def test_buy_retry_uses_same_order_without_second_debit(self):
+        first = city_pets.buy(self.db,10,"bird",now=100,request_id="once-abcd")
+        second = city_pets.buy(self.db,10,"bird",now=101,request_id="once-abcd")
+        self.assertEqual(first["pet_id"],second["pet_id"])
+        self.assertTrue(second["replayed"])
+        self.assertEqual(self.xp(),9500)
+        self.assertEqual(self.db.execute("SELECT COUNT(*) FROM city_pets").fetchone()[0],1)
+
     def test_guard_only_on_owned_zone_and_one_per_zone(self):
         a = city_pets.buy(self.db,10,"cat",now=100)["pet_id"]
         b = city_pets.buy(self.db,10,"bird",now=101)["pet_id"]
