@@ -48,6 +48,7 @@ const server = http.createServer((req, res) => {
             BackButton: { show() {}, onClick() {} } } };
         });
         await page.goto('http://127.0.0.1:' + port + '/city.html', { waitUntil: 'domcontentloaded' });
+        await page.evaluate(() => { document.querySelector('#toast').hidden = true; });
         const result = await page.evaluate(() => {
           const box = node => {
             const r = document.querySelector(node).getBoundingClientRect();
