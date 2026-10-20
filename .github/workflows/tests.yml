@@ -35,6 +35,7 @@ jobs:
           - test_city_capture
           - test_city_game_api
           - test_city_roads
+          - test_city_pets
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
