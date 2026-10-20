@@ -125,3 +125,100 @@ a{color:inherit;text-decoration:none}
 @media(max-height:680px){.bottom-sheet{max-height:58dvh}.sheet-content{padding-top:9px;padding-bottom:11px}.sheet-content h1{font-size:21px;margin-bottom:9px}.owner-card{min-height:51px}.game-status{margin-bottom:8px}.hud{min-height:67px;top:calc(71px + env(safe-area-inset-top,0px))}.map-actions{top:calc(152px + env(safe-area-inset-top,0px))}}
 @media(orientation:landscape) and (max-height:500px){.hud{display:none}.map-actions{top:calc(65px + env(safe-area-inset-top,0px))}.bottom-sheet{left:auto;right:0;width:min(400px,60vw);max-height:100dvh;border-radius:18px 0 0 0;bottom:0}.sheet-content{padding-top:9px}.appbar{right:min(400px,60vw)}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+
+
+/* v2: leave most of the viewport for map exploration. */
+.bottom-sheet{
+  height:min(260px,46dvh);max-height:none;
+  transition:height .24s var(--ease);
+}
+.bottom-sheet.is-expanded,
+.bottom-sheet[data-tab="top"],
+.bottom-sheet[data-tab="rules"]{
+  height:min(57dvh,490px);
+}
+.sheet-grip{
+  flex:none;display:grid;place-items:center;width:100%;height:18px;
+  margin:0;padding:0;border:0;background:transparent;touch-action:manipulation;
+}
+.sheet-handle{margin:0;width:35px;height:4px;transition:background .2s}
+.sheet-grip:active .sheet-handle{background:var(--pink)}
+.sheet-content{flex:1;min-height:0;overflow-y:auto}
+#mapView{padding:7px 16px 9px}
+#mapView .sheet-overline{font-size:8px;letter-spacing:1.15px}
+#mapView h1{margin:7px 0 8px;font-size:20px;letter-spacing:-.5px;line-height:1.15}
+#mapView .owner-card{min-height:41px;padding:5px 8px;gap:8px;border-radius:10px}
+#mapView .owner-icon{width:30px;height:30px;border-radius:8px}
+#mapView .owner-icon .ico{width:16px;height:16px}
+#mapView .owner-data{gap:2px}
+#mapView .owner-data small{font-size:8px;letter-spacing:.4px}
+#mapView .owner-data strong{font-size:12px}
+#mapView .owner-state{font-size:8px;padding:4px 6px}
+#mapView .game-readings{min-height:25px;padding:3px 0}
+#mapView .reading{font-size:10px}
+#mapView .game-status{margin:2px 0 7px;min-height:14px;font-size:10px;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#mapView .capture-button{min-height:44px;padding:8px 13px;border-radius:11px;font-size:12px}
+#mapView .capture-button .ico{width:17px;height:17px}
+#mapView .zone-details{display:none;color:#bdaeb7;font-size:11px;line-height:1.5;margin:0 0 7px}
+.bottom-sheet.is-expanded .zone-details:not([hidden]){display:block}
+.bottom-sheet.is-expanded #mapView .game-status{
+  overflow:visible;white-space:normal;min-height:0;margin:7px 0 12px;
+}
+.bottom-sheet.is-expanded #mapView .owner-card{min-height:52px}
+.bottom-sheet.is-expanded #mapView .game-readings{min-height:36px}
+.sheet-tabs{min-height:56px;padding:5px 11px calc(6px + env(safe-area-inset-bottom,0px));gap:5px}
+.tab{gap:3px;font-size:9px}
+.tab .ico{width:18px;height:18px}
+.map-actions{top:calc(176px + env(safe-area-inset-top,0px))}
+.map-action{width:43px;height:43px;border-radius:13px}
+.map-action .ico{width:20px;height:20px}
+.theme-switch{color:#f2cbe4}
+.theme-switch.is-active{border-color:#e6a0ce;background:#341c2d}
+body[data-map-theme="light"] #map{background:#f0ede7}
+body[data-map-theme="light"] .leaflet-container{background:#edece9}
+body[data-map-theme="light"] .leaflet-tile-pane{filter:grayscale(.3) brightness(1.1) contrast(1.02)}
+body[data-map-theme="light"] .map-shade{
+  background:linear-gradient(180deg,#000d 0%,#0005 12%,transparent 30%,transparent 64%,#0004 86%,#0009 100%);
+}
+body[data-map-theme="light"] .map-action{background:#fffef4ef;color:#29202a;border-color:#cdbac5}
+body[data-map-theme="light"] .theme-switch.is-active{color:#c33e91;background:#ffe4f4}
+.zone-pin{
+  background:none;border:0;overflow:visible;
+}
+.zone-pin-inner{
+  position:relative;display:flex;justify-content:center;align-items:center;
+  width:33px;height:33px;border:2px solid var(--zone-color,#c18ba9);
+  border-radius:10px;background:#120d13ed;box-shadow:0 3px 11px #000a,0 0 0 4px #0005;
+  color:#fff;
+}
+.zone-pin-inner:after{content:"";position:absolute;bottom:-5px;width:7px;height:7px;
+  border-right:2px solid var(--zone-color,#c18ba9);border-bottom:2px solid var(--zone-color,#c18ba9);
+  background:#120d13;transform:rotate(45deg)
+}
+.zone-pin-inner svg{display:block;width:18px;height:18px;stroke-width:1.8;fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
+.zone-pin.is-mine .zone-pin-inner{background:#713251;color:#fff;border-color:#f9a2da}
+.zone-pin.is-district .zone-pin-inner{border-radius:50%;width:39px;height:39px}
+.zone-pin.is-district .zone-pin-inner svg{width:21px;height:21px}
+.zone-pin.is-selected .zone-pin-inner{box-shadow:0 0 0 5px #e57ac642,0 5px 18px #000b;transform:translateY(-2px)}
+.zone-pin.is-free .zone-pin-inner{background:#242126e8;color:#e1cdda}
+.zone-pin.is-free .zone-pin-inner:after{background:#242126}
+body[data-map-theme="light"] .zone-pin-inner{background:#fff;box-shadow:0 3px 11px #0004,0 0 0 3px #fff8;color:#2c1925}
+body[data-map-theme="light"] .zone-pin.is-mine .zone-pin-inner{background:#e57ac6;color:#20101b}
+body[data-map-theme="light"] .zone-pin.is-free .zone-pin-inner{background:#fff}
+body[data-map-theme="light"] .zone-pin-inner:after{background:#fff}
+@media(max-height:680px){
+ .bottom-sheet{height:min(250px,50dvh);max-height:none}
+ .bottom-sheet.is-expanded,.bottom-sheet[data-tab="top"],.bottom-sheet[data-tab="rules"]{height:65dvh}
+ .sheet-content{padding-bottom:6px}
+ #mapView h1{font-size:18px}
+}
+@media(max-width:370px){
+ #mapView{padding-left:12px;padding-right:12px}
+ #mapView h1{font-size:18px}
+ #mapView .sheet-overline{font-size:7px}
+}
+@media(orientation:landscape) and (max-height:500px){
+ .bottom-sheet,.bottom-sheet.is-expanded,.bottom-sheet[data-tab="top"],.bottom-sheet[data-tab="rules"]{
+   width:min(370px,60vw);height:100dvh;max-height:100dvh;
+ }
+}
