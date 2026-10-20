@@ -13,6 +13,7 @@ from pathlib import Path
 from .city_roads import RoadGeometry
 
 from . import city_capture as game
+from . import city_pets
 
 # GPS anchors for public landmarks or shopping centres. Radius labels are GAME size hints only.
 # Nicknames reflect local usage; official place names and addresses are kept separately.
@@ -93,7 +94,9 @@ def routes(database_path, authenticate, is_admin):
         uid = await require_access(request)
         with sqlite3.connect(database_path, timeout=10) as db:
             seed_zones(db)
+            city_pets.init_db(db)
             db.commit()
+            pet_state = city_pets.state(db, uid)
             zones = db.execute(
                 """SELECT z.id, z.name, z.lat, z.lon, o.user_id, o.captured_at,
                           COALESCE(NULLIF(TRIM(u.nickname), ''), 'Аноним')
@@ -121,6 +124,7 @@ def routes(database_path, authenticate, is_admin):
         remaining = max(0, int(game.COOLDOWN_S - (time.time() - last_capture))) if last_capture is not None else 0
         return web.json_response({
             "user_id": uid, "can_capture": True, "test_mode": os.getenv("CITY_GAME_TEST_ADMINS_ONLY", "1") != "0",
+            **pet_state,
             "capture_radius_m": game.RADIUS_M, "max_accuracy_m": game.MAX_ACCURACY_M,
             "cooldown_remaining_s": remaining, "total_captures": total_captures,
             "my_zones": sum(1 for z in zones if z[4] == uid),
@@ -155,6 +159,7 @@ def routes(database_path, authenticate, is_admin):
             body = await request.json()
             with sqlite3.connect(database_path, timeout=10, isolation_level=None) as db:
                 seed_zones(db)
+                city_pets.init_db(db)
                 result = game.capture(
                     db, int(uid), int(body["zone_id"]), float(body["lat"]),
                     float(body["lon"]), float(body["accuracy_m"]),
@@ -164,9 +169,73 @@ def routes(database_path, authenticate, is_admin):
         except (KeyError, TypeError, ValueError, sqlite3.Error) as exc:
             raise web.HTTPBadRequest(text=str(exc))
 
+    async def pets_buy(request):
+        uid = await require_access(request)
+        try:
+            body = await request.json()
+            with sqlite3.connect(database_path, timeout=10, isolation_level=None) as db:
+                city_pets.init_db(db)
+                result = city_pets.buy(db, uid, str(body["kind"]))
+            return web.json_response({"ok": True, **result})
+        except (KeyError, TypeError, ValueError, sqlite3.Error) as error:
+            raise web.HTTPBadRequest(text=str(error))
+
+    async def pets_place(request):
+        uid = await require_access(request)
+        try:
+            body = await request.json()
+            with sqlite3.connect(database_path, timeout=10, isolation_level=None) as db:
+                seed_zones(db)
+                city_pets.init_db(db)
+                result = city_pets.place(db, uid, int(body["pet_id"]), int(body["zone_id"]))
+            return web.json_response({"ok": True, **result})
+        except (KeyError, TypeError, ValueError, sqlite3.Error) as error:
+            raise web.HTTPBadRequest(text=str(error))
+
+    async def pets_recall(request):
+        uid = await require_access(request)
+        try:
+            body = await request.json()
+            with sqlite3.connect(database_path, timeout=10, isolation_level=None) as db:
+                city_pets.init_db(db)
+                result = city_pets.recall(db, uid, int(body["pet_id"]))
+            return web.json_response({"ok": True, **result})
+        except (KeyError, TypeError, ValueError, sqlite3.Error) as error:
+            raise web.HTTPBadRequest(text=str(error))
+
+    async def pets_claim(request):
+        uid = await require_access(request)
+        try:
+            with sqlite3.connect(database_path, timeout=10, isolation_level=None) as db:
+                city_pets.init_db(db)
+                result = city_pets.claim(db, uid)
+            return web.json_response({"ok": True, **result})
+        except (ValueError, sqlite3.Error) as error:
+            raise web.HTTPBadRequest(text=str(error))
+
+    async def presence(request):
+        uid = await require_access(request)
+        try:
+            body = await request.json()
+            with sqlite3.connect(database_path, timeout=10, isolation_level=None) as db:
+                city_pets.init_db(db)
+                result = city_pets.presence(
+                    db, uid, float(body["lat"]), float(body["lon"]),
+                    float(body["accuracy_m"]), float(body["timestamp_s"]),
+                    road_data.data,
+                )
+            return web.json_response({"ok": True, **result})
+        except (KeyError, TypeError, ValueError, sqlite3.Error) as error:
+            raise web.HTTPBadRequest(text=str(error))
+
     return [
         web.get("/api/city/access", access),
         web.get("/api/city/state", state),
         web.get("/api/city/road-shapes", road_shapes),
         web.post("/api/city/capture", capture),
+        web.post("/api/city/pets/buy", pets_buy),
+        web.post("/api/city/pets/place", pets_place),
+        web.post("/api/city/pets/recall", pets_recall),
+        web.post("/api/city/pets/claim", pets_claim),
+        web.post("/api/city/presence", presence),
     ]
