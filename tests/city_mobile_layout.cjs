@@ -72,7 +72,7 @@ const leafletStub='('+function fakeLeaflet(){
             HapticFeedback:{selectionChanged(){}},BackButton:{show(){},onClick(){}}}};
         });
         await page.goto('http://127.0.0.1:'+server.address().port+'/city.html',{waitUntil:'domcontentloaded'});
-        await page.waitForFunction(()=>document.querySelector('#count')?.textContent==='0 / 16',{timeout:5000});
+        await page.waitForFunction(()=>document.querySelector('#hpHud')?.textContent==='100',{timeout:5000});
         assert.deepEqual(errors,[],width+'px page errors');
         const sizes=await page.evaluate(()=>{
           const rect=selector=>{const r=document.querySelector(selector).getBoundingClientRect();
