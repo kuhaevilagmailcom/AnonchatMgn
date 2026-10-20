@@ -10,6 +10,8 @@ import sqlite3
 import time
 
 from aiohttp import web
+from pathlib import Path
+from .city_roads import RoadGeometry
 
 from . import city_capture as game
 
@@ -85,6 +87,7 @@ def polygon_for(zone_id, lat, lon):
 
 def routes(database_path, authenticate, is_admin):
     """All user IDs come from server-verified Telegram initData."""
+    road_data = RoadGeometry(Path(database_path).parent / "city_road_shapes.json")
     async def allowed(uid):
         return os.getenv("CITY_GAME_TEST_ADMINS_ONLY", "1") == "0" or await is_admin(uid)
 
@@ -139,7 +142,7 @@ def routes(database_path, authenticate, is_admin):
             ],
             "zones": [
                 {"id": z[0], "name": z[1], "lat": z[2], "lon": z[3],
-                 "polygon": polygon_for(z[0], z[2], z[3]),
+                 "polygon": [],  # never claim made-up contours follow streets
                  "kind": ZONE_META.get(z[0], ("park", "", ""))[0],
                  "official_name": ZONE_META.get(z[0], ("", z[1], ""))[1],
                  "address": ZONE_META.get(z[0], ("", "", ""))[2],
@@ -150,6 +153,13 @@ def routes(database_path, authenticate, is_admin):
                 for z in zones
             ],
         })
+
+    async def road_shapes(request):
+        await require_access(request)
+        shapes = await road_data.shapes(
+            [(zone_id, lat, lon) for zone_id, _name, lat, lon, _size in STARTER_ZONES]
+        )
+        return web.json_response({"shapes": shapes, "source": "openstreetmap-roads"})
 
     async def capture(request):
         uid = await require_access(request)
@@ -169,5 +179,6 @@ def routes(database_path, authenticate, is_admin):
     return [
         web.get("/api/city/access", access),
         web.get("/api/city/state", state),
+        web.get("/api/city/road-shapes", road_shapes),
         web.post("/api/city/capture", capture),
     ]
