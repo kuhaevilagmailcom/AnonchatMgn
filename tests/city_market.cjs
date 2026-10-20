@@ -90,10 +90,10 @@ async function flush(){for(let i=0;i<70;i++) await Promise.resolve();}
   assert.equal(nodes.market.hidden,false);
   assert.equal(nodes.wallet.textContent,'1 100 ⭐');
   assert.equal(nodes.hpValue.textContent,'93.2');
-  assert.equal(nodes.shop.children.length,5);
-  assert.match(nodes.shop.children[0].children[1].children[1].textContent,/⭐\/ч/);
-  assert.match(nodes.shop.children[0].children[1].children[1].textContent,/HP\/ч/);
-  await nodes.shop.listeners.click({
+  assert.equal(nodes.petCatalog.children.length,5);
+  assert.match(nodes.petCatalog.children[0].children[1].children[1].textContent,/⭐\/ч/);
+  assert.match(nodes.petCatalog.children[0].children[1].children[1].textContent,/HP\/ч/);
+  await nodes.petCatalog.listeners.click({
     target:{closest:()=>({dataset:{buyKind:'cat'}})}
   });
   await flush();
@@ -104,7 +104,7 @@ async function flush(){for(let i=0;i<70;i++) await Promise.resolve();}
   assert.ok(markers.find(m=>m.title==='Ашик'));
   markers.find(m=>m.title==='Ашик').handlers.click();
   nodes.showmarket.click();
-  await nodes.inventory.listeners.click({
+  await nodes.petInventory.listeners.click({
     target:{closest:()=>({dataset:{petAction:'place',petId:'1'}})}
   });
   await flush();
