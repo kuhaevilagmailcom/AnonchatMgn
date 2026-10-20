@@ -22,6 +22,19 @@ class StreetGeometryTests(unittest.TestCase):
         self.assertGreaterEqual(len(shapes["6"]),5)
         self.assertAlmostEqual(shapes["6"][0][0], 53.378, delta=.005)
 
+    def test_three_sides_never_close_using_query_box_border(self):
+        # A network missing one street may not become a filled sector just
+        # because its open endpoints touch the Overpass download rectangle.
+        points = [(58.975, 53.378), (58.978, 53.378),
+                  (58.978, 53.380), (58.975, 53.380)]
+        roads = [
+            {"geometry": [
+                {"lon": x1, "lat": y1}, {"lon": x2, "lat": y2}
+            ]}
+            for (x1, y1), (x2, y2) in zip(points, points[1:])
+        ]
+        self.assertEqual(build_shapes(roads, [(6, 53.379, 58.976)]), {})
+
     def test_no_roads_means_no_fake_polygons(self):
         self.assertEqual(build_shapes([],[(15,53.415252,59.054228)]),{})
 
