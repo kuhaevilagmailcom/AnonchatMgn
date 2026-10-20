@@ -75,6 +75,7 @@ jobs:
           node tests/city_map_provider.cjs
           node tests/city_roads.cjs
           node tests/city_gps.cjs
+          node tests/city_market.cjs
 
   mobile-layout:
     name: Mobile layout · Chromium
