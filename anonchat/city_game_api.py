@@ -4,7 +4,6 @@ Territory outlines are deliberately *game sectors*, NOT municipal boundaries.
 Capture always happens within 100 metres of a separately marked public point.
 The points below are sourced from published local visitor/park information.
 """
-import math
 import os
 import sqlite3
 import time
@@ -15,7 +14,7 @@ from .city_roads import RoadGeometry
 
 from . import city_capture as game
 
-# GPS anchors for public landmarks or shopping centres. Polygon radii are GAME size only.
+# GPS anchors for public landmarks or shopping centres. Radius labels are GAME size hints only.
 # Nicknames reflect local usage; official place names and addresses are kept separately.
 # Sources: official centre websites, Magnitogorsk tourism portal, public mapping listings.
 # Source for left-bank point 16: https://visit.magnitogorsk.ru/tours/tematicheskie-ekskursii/pervyy-sotsialisticheskiy/
@@ -72,20 +71,6 @@ def seed_zones(db):
                  name=excluded.name, lat=excluded.lat, lon=excluded.lon""",
             (zone_id, name, lat, lon),
         )
-
-
-def polygon_for(zone_id, lat, lon):
-    """An irregular but stable 8-sided gameplay polygon in [lat, lon] order."""
-    radius = SECTOR_SIZES.get(zone_id, 300)
-    outline = []
-    for idx in range(8):
-        angle = (idx * 45 + 15 + zone_id * 7) * math.pi / 180
-        scale = (0.86, 1.04, 0.92, 1.10, 0.95, 1.02, 0.87, 1.05)[idx]
-        distance = radius * scale
-        dlat = math.cos(angle) * distance / 111_320
-        dlon = math.sin(angle) * distance / (111_320 * math.cos(math.radians(lat)))
-        outline.append([round(lat + dlat, 6), round(lon + dlon, 6)])
-    return outline
 
 
 def routes(database_path, authenticate, is_admin):
