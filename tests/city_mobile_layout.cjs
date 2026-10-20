@@ -83,12 +83,27 @@ const leafletStub='('+function fakeLeaflet(){
         assert.ok(sizes.map.height>=740,width+'px map not full screen');
         assert.ok(sizes.tabs.every(t=>t.width>70),width+'px tab too narrow');
         assert.equal(sizes.icons,12,width+'px expected 12 icon pins');
+        assert.ok(sizes.panel.height<=170,width+'px empty panel takes too much map');
+        assert.equal(await page.locator('#ownerCard').isVisible(),false,
+          width+'px owner row should stay hidden until a zone is selected');
+        assert.equal(await page.locator('#distance').count(),0,
+          width+'px persistent distance instructions returned');
+        assert.equal(await page.locator('#gpsQuality').count(),0,
+          width+'px persistent GPS instructions returned');
         await page.click('#theme');
         assert.equal(await page.locator('body').getAttribute('data-map-theme'),'light');
         await page.click('#theme');
         assert.equal(await page.locator('body').getAttribute('data-map-theme'),'dark');
         await page.locator('[aria-label="Ашик"]').click();
         assert.equal(await page.locator('#zone').textContent(),'Ашик');
+        assert.equal(await page.locator('#ownerCard').isVisible(),true);
+        const dock=await page.evaluate(()=>{
+          const box=id=>document.querySelector(id).getBoundingClientRect();
+          return {panel:box('#panel').height,captureBottom:box('#capture').bottom,navTop:box('#tabs').top};
+        });
+        assert.ok(dock.panel<=202,width+'px selected panel too tall: '+dock.panel);
+        assert.ok(dock.captureBottom<=dock.navTop+1,
+          width+'px capture button is hidden underneath navigation');
         assert.match(await page.locator('#zoneDetails').textContent(),/Семейный парк/);
         await page.click('#showtop');
         assert.equal(await page.locator('#leaderboard').isVisible(),true);
