@@ -244,57 +244,74 @@
     state.territoryGroup.clearLayers();
     state.territoryLayers.clear();
     const all = [];
-    // District-sized polygons go below the much smaller malls/parks.
     const ordered = [...state.zones].sort((a, b) =>
       (a.kind === 'district' ? -1 : 0) - (b.kind === 'district' ? -1 : 0));
+    // Outlines are rendered ONLY when created from real OSM roads by the API.
+    // A landmark without verified geometry remains a visible, clickable pin.
     for (const zone of ordered) {
-      if (!Array.isArray(zone.polygon) || zone.polygon.length < 3) continue;
-      const color = ownerColor(zone);
       const selected = state.selectedId === zone.id;
-      const polygon = L.polygon(zone.polygon, {
-        color, weight: selected ? 3.5 : zone.kind === 'district' ? 2.1 : 2.5,
-        opacity: zone.kind === 'district' ? .78 : 1,
-        dashArray: zone.occupied ? null : '8 6',
-        fillColor: color,
-        fillOpacity: selected ? .34 : zone.occupied ? .20 : zone.kind === 'district' ? .06 : .09,
-        lineCap: 'round', lineJoin: 'round'
+      let polygon = null;
+      if (Array.isArray(zone.polygon) && zone.polygon.length >= 4) {
+        const color = ownerColor(zone);
+        polygon = L.polygon(zone.polygon, {
+          color, weight: selected ? 3 : 2,
+          opacity: zone.kind === 'district' ? .85 : 1,
+          dashArray: zone.occupied ? null : '7 5',
+          fillColor: color, fillOpacity: selected ? .26 : zone.occupied ? .15 : .07,
+          lineCap: 'round', lineJoin: 'round'
+        }).addTo(state.territoryGroup);
+        polygon.on('click', () => chooseZone(zone.id));
+      }
+      const color = ownerColor(zone);
+      const captureRadius = L.circle([zone.lat,zone.lon],{
+        radius:state.radius,color,weight:1,dashArray:'3 6',
+        opacity:state.map.getZoom()>=15?.4:0,
+        fillColor:color,fillOpacity:0,interactive:false
       }).addTo(state.territoryGroup);
-      polygon.on('click', () => chooseZone(zone.id));
-      const captureRadius = L.circle([zone.lat, zone.lon], {
-        radius: state.radius, color, weight: 1, dashArray: '3 6',
-        opacity: state.map.getZoom() >= 14 ? .55 : 0,
-        fillColor: color,
-        fillOpacity: state.map.getZoom() >= 14 ? .035 : 0,
-        interactive: false
-      }).addTo(state.territoryGroup);
-      state.territoryLayers.set(zone.id, { polygon, point: null, captureRadius });
-      all.push(...zone.polygon);
+      state.territoryLayers.set(zone.id,{polygon,point:null,captureRadius});
+      all.push([zone.lat,zone.lon]);
     }
-    // Icon pins are rendered last, above every sector outline.
     for (const zone of ordered) {
       const item = state.territoryLayers.get(zone.id);
-      if (!item) continue;
       const kind = ZONE_ICONS[zone.kind] ? zone.kind : 'park';
       const selected = state.selectedId === zone.id;
       const icon = L.divIcon({
-        className: 'zone-pin' + (zone.mine ? ' is-mine' : zone.occupied ? ' is-held' : ' is-free') +
-          (selected ? ' is-selected' : '') + (kind === 'district' ? ' is-district' : ''),
-        html: zoneMarkerHtml(zone, ownerColor(zone), selected),
-        iconSize: kind === 'district' ? [39, 39] : [33, 33],
-        iconAnchor: kind === 'district' ? [19, 19] : [16, 16]
+        className:'zone-pin'+(zone.mine?' is-mine':zone.occupied?' is-held':' is-free')+
+          (selected?' is-selected':'')+(kind==='district'?' is-district':''),
+        html:zoneMarkerHtml(zone,ownerColor(zone),selected),
+        iconSize:kind==='district'?[39,39]:[33,33],
+        iconAnchor:kind==='district'?[19,19]:[16,16]
       });
-      item.point = L.marker([zone.lat, zone.lon], {
-        icon, keyboard: true, title: zone.name,
-        zIndexOffset: selected ? 500 : zone.kind === 'district' ? 50 : 150
+      item.point=L.marker([zone.lat,zone.lon],{
+        icon,keyboard:true,title:zone.name,
+        zIndexOffset:selected?500:kind==='district'?50:150
       }).addTo(state.territoryGroup);
-      item.point.on('click', () => chooseZone(zone.id));
+      item.point.on('click',()=>chooseZone(zone.id));
     }
     if (!state.hasFramed && all.length) {
-      state.hasFramed = true;
+      state.hasFramed=true;
       state.map.fitBounds(L.latLngBounds(all), {
-        maxZoom: 13, paddingTopLeft: [20, 100],
-        paddingBottomRight: [20, Math.min(270, Math.round(window.innerHeight * .30))]
+        maxZoom:12,paddingTopLeft:[20,90],
+        paddingBottomRight:[20,Math.min(185,Math.round(window.innerHeight*.24))]
       });
+    }
+  }
+  async function fetchRoadShapes() {
+    try {
+      const response = await api('/api/city/road-shapes');
+      const shapes = response.shapes || {};
+      let updated = 0;
+      for (const zone of state.zones) {
+        const shape = shapes[String(zone.id)];
+        if (Array.isArray(shape) && shape.length>=4) {
+          zone.polygon=shape;
+          updated++;
+        }
+      }
+      if (updated) drawTerritories();
+    } catch (error) {
+      // Road data are optional: icons continue to work without fake outlines.
+      console.warn('Street geometry unavailable', error);
     }
   }
 
@@ -377,6 +394,7 @@
     renderSelection();
     drawTerritories();
     const layer = state.territoryLayers.get(id)?.polygon;
+    if (!layer && state.map) state.map.flyTo([zone.lat, zone.lon], 15, {duration:.5});
     if (layer && state.map) {
       state.map.flyToBounds(layer.getBounds().pad(.5), {
         maxZoom: 15, duration: .55,
@@ -658,6 +676,6 @@
   tg?.BackButton?.show();
   tg?.BackButton?.onClick(() => { window.location.href = './index.html'; });
   if (createMap()) {
-    load().then(autoLocateIfGranted);
+    load().then(() => { autoLocateIfGranted(); fetchRoadShapes(); });
   }
 })();
