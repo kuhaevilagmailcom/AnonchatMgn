@@ -406,6 +406,7 @@
     ui.hpValue.textContent = state.hp.toFixed(1).replace(/\.0$/, '');
     ui.hpHud.textContent = String(Math.ceil(state.hp));
     ui.hpFill.style.width = state.hp + '%';
+    ui.hudHpFill.style.width = state.hp + '%';
     ui.pendingStars.textContent = state.pendingStars.toLocaleString('ru-RU') + ' ⭐';
     ui.claimIncome.disabled = state.actionBusy || state.pendingStars <= 0;
     ui.shop.replaceChildren();
@@ -566,6 +567,38 @@
     }
   }
 
+  function renderMyZones() {
+    const owned = state.zones.filter(zone => zone.mine)
+      .sort((a,b) => a.name.localeCompare(b.name, 'ru'));
+    ui.myZonesTotal.textContent = owned.length + (owned.length === 1 ? ' район' : ' районов');
+    ui.myZonesList.replaceChildren();
+    if (!owned.length) {
+      const empty = element('div', null, 'my-zones-empty');
+      empty.append(element('strong', 'Пока нет захваченных районов'),
+        element('p', 'Выбери место на карте и захвати его, чтобы оно появилось здесь.'));
+      ui.myZonesList.append(empty);
+      return;
+    }
+    for (const zone of owned) {
+      const row = element('button', null, 'my-zone-row');
+      row.type = 'button';
+      row.dataset.zoneId = String(zone.id);
+      const picture = element('span', null, 'my-zone-picture');
+      picture.innerHTML = window.MGNCityIcons?.svg(ZONE_ICON_NAMES[zone.kind] || 'map') || '⌖';
+      const content = element('span', null, 'my-zone-text');
+      const guard = state.guards.find(p => p.zone_id === zone.id && p.mine);
+      content.append(element('strong', zone.name),
+        element('small', guard ?
+          'Защищён · ' + (state.catalog.find(p => p.kind === guard.kind)?.name || 'Питомец') :
+          (zone.address || 'Без защитника')));
+      const arrow = element('span', null, 'my-zone-arrow');
+      arrow.innerHTML = window.MGNCityIcons?.svg('map-pinned') ||
+        window.MGNCityIcons?.svg('map') || '→';
+      row.append(picture,content,arrow);
+      ui.myZonesList.append(row);
+    }
+  }
+
   function renderBoard() {
     ui.leaders.replaceChildren();
     if (!state.leaderboard.length) {
@@ -667,15 +700,18 @@
     const pages = [
       [ui.view, ui.mapTab, 'map'],
       [ui.board, ui.topTab, 'top'],
+      [ui.myZonesPanel, null, 'myzones'],
       [ui.market, ui.marketTab, 'market'],
       [ui.rules, ui.rulesTab, 'rules']
     ];
     for (const [section, button, key] of pages) {
       const active = key === tab;
       section.hidden = !active;
-      button.classList.toggle('active', active);
-      if (active) button.setAttribute('aria-current', 'page');
-      else button.removeAttribute('aria-current');
+      if (button) {
+        button.classList.toggle('active', active);
+        if (active) button.setAttribute('aria-current', 'page');
+        else button.removeAttribute('aria-current');
+      }
     }
     // Market is a full-height scrolling page; always open at its top,
     // while keeping the four bottom navigation controls in place.
@@ -965,7 +1001,17 @@
   ui.sheetToggle.addEventListener('click', togglePanel);
   ui.locate.addEventListener('click', () => { locate(true).catch(() => {}); });
   ui.refresh.addEventListener('click', () => { load(); });
-  ui.top.addEventListener('click', () => { switchTab('top'); });
+  ui.myZonesButton.addEventListener('click', () => {
+    renderMyZones();
+    switchTab('myzones');
+  });
+  ui.myZonesList.addEventListener('click', event => {
+    const button = event.target.closest('[data-zone-id]');
+    if (!button) return;
+    const zoneId = Number(button.dataset.zoneId);
+    if (!state.zones.some(zone => zone.id === zoneId && zone.mine)) return;
+    chooseZone(zoneId);
+  });
   ui.mapTab.addEventListener('click', () => { switchTab('map'); });
   ui.topTab.addEventListener('click', () => { switchTab('top'); });
   ui.marketTab.addEventListener('click', () => { switchTab('market'); renderMarket(); });
