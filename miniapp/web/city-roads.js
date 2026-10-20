@@ -153,8 +153,8 @@
     };
     for (const zone of zones || []) {
       if (!Number.isFinite(zone.lat) || !Number.isFinite(zone.lon)) continue;
-      const maxArea = zone.kind === 'district' ? 2500000 :
-        Math.min(1200000, Math.PI * (zone.radius_m || 350) ** 2 * 3);
+      const maxArea = zone.kind === 'district' ? 120000 :
+        Math.min(90000, Math.PI * (zone.radius_m || 350) ** 2 * 2);
       let best = null;
       for (const face of faces) {
         if (face.area > maxArea) continue;
