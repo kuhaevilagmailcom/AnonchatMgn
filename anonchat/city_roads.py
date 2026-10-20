@@ -68,9 +68,17 @@ def build_shapes(ways, zones):
             if not area.contains(point):
                 continue
             containing = [p for p in faces if p.contains(point)]
-            if not containing:
-                continue
-            candidate = min(containing, key=lambda p: p.area)
+            if containing:
+                candidate = min(containing, key=lambda p: p.area)
+            else:
+                # Some verified entrance/POI anchors sit directly on a street.
+                # Choose the closest bounded block only within ~50 metres.
+                candidate = min(faces, key=lambda p: p.distance(point), default=None)
+                if candidate is None:
+                    continue
+                metres = point.distance(candidate) * 111320
+                if metres > 50:
+                    continue
             # Require a reasonably bounded urban block, not huge rural space.
             approx_area_m2 = candidate.area * 111320 * 111320 * math.cos(math.radians(latitude))
             if not 500 <= approx_area_m2 <= 700_000:
