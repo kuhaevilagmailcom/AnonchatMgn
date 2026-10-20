@@ -17,7 +17,8 @@
     panel: $('panel'), view: $('mapView'), board: $('leaderboard'), rules: $('rules'),
     count: $('count'), mine: $('mineCount'), captures: $('captureCount'),
     zone: $('zone'), owner: $('owner'), state: $('zoneState'),
-    code: $('sectorCode'), size: $('sectorSize'),
+    code: $('sectorCode'), size: $('sectorSize'), details: $('zoneDetails'),
+    theme: $('theme'), sheetToggle: $('sheetToggle'),
     distance: $('distance'), accuracy: $('gpsQuality'), status: $('status'),
     capture: $('capture'), captureLabel: $('captureLabel'),
     locate: $('locate'), refresh: $('refresh'), top: $('topbutton'),
@@ -30,7 +31,7 @@
     territoryLayers: new Map(), territoryGroup: null, markerGroup: null,
     gpsMarker: null, accuracyCircle: null, locating: false, capturing: false,
     canCapture: false, radius: 100, maxAccuracy: 75, cooldownEnd: 0,
-    activeTab: 'map', toastTimer: null, hasFramed: false
+    activeTab: 'map', toastTimer: null, hasFramed: false, expanded: false, theme: 'dark'
   };
 
   function safeText(value, fallback = '') {
@@ -109,18 +110,35 @@
     ui.mine.textContent = String(number(data.my_zones));
     ui.captures.textContent = String(number(data.total_captures));
   }
-  function labelElement(zone) {
-    const container = document.createElement('div');
-    container.className = 'label-inner';
-    const name = document.createElement('strong');
-    name.className = 'label-name';
-    name.textContent = zone.name;
-    const owner = document.createElement('span');
-    owner.className = 'label-owner';
-    owner.textContent = zone.mine ? '★ ТВОЯ ТЕРРИТОРИЯ' :
-      (zone.occupied ? (zone.owner_name || 'Аноним') : 'Свободно');
-    container.append(name, owner);
-    return container;
+  const ZONE_ICONS = {
+    mall: '<path d="M4 10h16v11H4zM3 10l2-6h14l2 6M8 10V4m8 6V4M9 21v-6h6v6"/>',
+    park: '<path d="M12 3 5 13h3l-4 5h16l-4-5h3L12 3ZM12 18v4"/>',
+    district: '<path d="m12 2 8 4v6c0 5-4 8-8 10-4-2-8-5-8-10V6l8-4Z"/><path d="m8 11 3 3 5-5"/>'
+  };
+  function zoneMarkerHtml(zone, color, selected) {
+    const kind = ZONE_ICONS[zone.kind] ? zone.kind : 'park';
+    const cls = 'zone-pin-inner';
+    const icon = '<svg viewBox="0 0 24 24" aria-hidden="true">' + ZONE_ICONS[kind] + '</svg>';
+    return '<div class="' + cls + '" style="--zone-color:' + color + '">' + icon + '</div>';
+  }
+
+  function applyTheme(name) {
+    state.theme = name === 'light' ? 'light' : 'dark';
+    document.body.dataset.mapTheme = state.theme;
+    ui.theme.classList.toggle('is-active', state.theme === 'light');
+    ui.theme.setAttribute('aria-label', state.theme === 'light' ? 'Включить тёмную карту' : 'Включить светлую карту');
+    ui.theme.setAttribute('title', state.theme === 'light' ? 'Тёмная карта' : 'Светлая карта');
+    try { window.localStorage?.setItem('mgn_city_map_theme', state.theme); } catch (_) {}
+  }
+  function initialTheme() {
+    try { return window.localStorage?.getItem('mgn_city_map_theme') || 'dark'; } catch (_) { return 'dark'; }
+  }
+  function togglePanel() {
+    state.expanded = !state.expanded;
+    ui.panel.classList.toggle('is-expanded', state.expanded);
+    ui.sheetToggle.setAttribute('aria-expanded', String(state.expanded));
+    ui.sheetToggle.setAttribute('aria-label', state.expanded ? 'Свернуть панель карты' : 'Развернуть панель карты');
+    requestAnimationFrame(() => state.map?.invalidateSize());
   }
   function createMap() {
     if (!window.L) {
@@ -142,7 +160,6 @@
     map.on('zoomend', () => {
       const showCaptureZones = map.getZoom() >= 14;
       for (const item of state.territoryLayers.values()) {
-        item.point.setStyle({ opacity: showCaptureZones ? 1 : 0.65, fillOpacity: showCaptureZones ? 1 : 0.65 });
         item.captureRadius.setStyle({ opacity: showCaptureZones ? .75 : 0, fillOpacity: showCaptureZones ? .06 : 0 });
       }
     });
@@ -155,44 +172,56 @@
     state.territoryGroup.clearLayers();
     state.territoryLayers.clear();
     const all = [];
-    for (const zone of state.zones) {
+    // District-sized polygons go below the much smaller malls/parks.
+    const ordered = [...state.zones].sort((a, b) =>
+      (a.kind === 'district' ? -1 : 0) - (b.kind === 'district' ? -1 : 0));
+    for (const zone of ordered) {
       if (!Array.isArray(zone.polygon) || zone.polygon.length < 3) continue;
       const color = ownerColor(zone);
-      const isSelected = state.selectedId === zone.id;
+      const selected = state.selectedId === zone.id;
       const polygon = L.polygon(zone.polygon, {
-        color, weight: isSelected ? 4 : 2.5,
-        opacity: 1, dashArray: zone.occupied ? null : '9 6',
-        fillColor: color, fillOpacity: isSelected ? .38 : zone.occupied ? .24 : .13,
+        color, weight: selected ? 3.5 : zone.kind === 'district' ? 2.1 : 2.5,
+        opacity: zone.kind === 'district' ? .78 : 1,
+        dashArray: zone.occupied ? null : '8 6',
+        fillColor: color,
+        fillOpacity: selected ? .34 : zone.occupied ? .20 : zone.kind === 'district' ? .06 : .09,
         lineCap: 'round', lineJoin: 'round'
       }).addTo(state.territoryGroup);
-      const tooltip = L.tooltip({
-        permanent: true, interactive: false, direction: 'center',
-        className: 'territory-label ' + (zone.mine ? 'is-owned' : zone.occupied ? 'is-held' : 'is-free'),
-        opacity: 1
-      });
-      tooltip.setContent(labelElement(zone));
-      polygon.bindTooltip(tooltip);
       polygon.on('click', () => chooseZone(zone.id));
-      const point = L.circleMarker([zone.lat, zone.lon], {
-        radius: 5, color: '#fff', weight: 2, fillColor: color,
-        fillOpacity: .95
-      }).addTo(state.territoryGroup);
-      point.on('click', () => chooseZone(zone.id));
       const captureRadius = L.circle([zone.lat, zone.lon], {
         radius: state.radius, color, weight: 1, dashArray: '3 6',
-        opacity: state.map.getZoom() >= 14 ? .75 : 0,
-        fillColor: color, fillOpacity: state.map.getZoom() >= 14 ? .06 : 0,
+        opacity: state.map.getZoom() >= 14 ? .55 : 0,
+        fillColor: color,
+        fillOpacity: state.map.getZoom() >= 14 ? .035 : 0,
         interactive: false
       }).addTo(state.territoryGroup);
-      state.territoryLayers.set(zone.id, { polygon, point, captureRadius });
+      state.territoryLayers.set(zone.id, { polygon, point: null, captureRadius });
       all.push(...zone.polygon);
+    }
+    // Icon pins are rendered last, above every sector outline.
+    for (const zone of ordered) {
+      const item = state.territoryLayers.get(zone.id);
+      if (!item) continue;
+      const kind = ZONE_ICONS[zone.kind] ? zone.kind : 'park';
+      const selected = state.selectedId === zone.id;
+      const icon = L.divIcon({
+        className: 'zone-pin' + (zone.mine ? ' is-mine' : zone.occupied ? ' is-held' : ' is-free') +
+          (selected ? ' is-selected' : '') + (kind === 'district' ? ' is-district' : ''),
+        html: zoneMarkerHtml(zone, ownerColor(zone), selected),
+        iconSize: kind === 'district' ? [39, 39] : [33, 33],
+        iconAnchor: kind === 'district' ? [19, 19] : [16, 16]
+      });
+      item.point = L.marker([zone.lat, zone.lon], {
+        icon, keyboard: true, title: zone.name,
+        zIndexOffset: selected ? 500 : zone.kind === 'district' ? 50 : 150
+      }).addTo(state.territoryGroup);
+      item.point.on('click', () => chooseZone(zone.id));
     }
     if (!state.hasFramed && all.length) {
       state.hasFramed = true;
-      const bounds = L.latLngBounds(all);
-      state.map.fitBounds(bounds, {
-        maxZoom: 13, paddingTopLeft: [20, 110],
-        paddingBottomRight: [20, Math.min(360, Math.round(window.innerHeight * .42))]
+      state.map.fitBounds(L.latLngBounds(all), {
+        maxZoom: 13, paddingTopLeft: [20, 100],
+        paddingBottomRight: [20, Math.min(270, Math.round(window.innerHeight * .30))]
       });
     }
   }
@@ -232,6 +261,7 @@
       ui.code.textContent = 'КОНТРОЛЬ ТЕРРИТОРИЙ';
       ui.size.textContent = 'МГН / ТЕСТ';
       ui.zone.textContent = 'Твой город. Твои правила.';
+      ui.details.hidden = true;
       ui.owner.textContent = 'Выбери сектор на карте';
       ui.state.textContent = 'НА КАРТЕ';
       ui.state.className = 'owner-state';
@@ -245,6 +275,8 @@
     ui.code.textContent = 'СЕКТОР ' + String(zone.id).padStart(2, '0');
     ui.size.textContent = zone.size === 'Большой' ? 'БОЛЬШОЙ РАЙОН' : 'МАЛЫЙ РАЙОН';
     ui.zone.textContent = zone.name;
+    ui.details.textContent = [zone.official_name && zone.official_name !== zone.name ? zone.official_name : '', zone.address || ''].filter(Boolean).join(' · ');
+    ui.details.hidden = !ui.details.textContent;
     ui.owner.textContent = zone.mine ? 'Ты' : (zone.owner_name || 'Аноним');
     ui.state.textContent = zone.mine ? 'ТВОЙ' : zone.occupied ? 'ЗАНЯТО' : 'СВОБОДНО';
     ui.state.className = 'owner-state ' + (zone.mine ? 'mine' : zone.occupied ? 'occupied' : '');
@@ -289,7 +321,7 @@
       state.map.flyToBounds(layer.getBounds().pad(.5), {
         maxZoom: 15, duration: .55,
         paddingTopLeft: [25, 85],
-        paddingBottomRight: [25, Math.min(345, Math.round(window.innerHeight * .43))]
+        paddingBottomRight: [25, Math.min(245, Math.round(window.innerHeight * .30))]
       });
     }
     touch();
@@ -297,6 +329,7 @@
 
   function switchTab(tab) {
     state.activeTab = tab;
+    ui.panel.setAttribute('data-tab', tab);
     const pages = [
       [ui.view, ui.mapTab, 'map'],
       [ui.board, ui.topTab, 'top'],
@@ -471,6 +504,8 @@
     }
   }
 
+  ui.theme.addEventListener('click', () => { applyTheme(state.theme === 'dark' ? 'light' : 'dark'); touch(); });
+  ui.sheetToggle.addEventListener('click', togglePanel);
   ui.locate.addEventListener('click', () => { locate(true).catch(() => {}); });
   ui.refresh.addEventListener('click', () => { load(); });
   ui.top.addEventListener('click', () => { switchTab('top'); });
@@ -480,6 +515,7 @@
   ui.capture.addEventListener('click', capture);
   setInterval(() => { if (selectedZone() && !state.capturing && !state.locating) renderSelection(); }, 1000);
 
+  applyTheme(initialTheme());
   tg?.BackButton?.show();
   tg?.BackButton?.onClick(() => { window.location.href = './index.html'; });
   if (createMap()) {
