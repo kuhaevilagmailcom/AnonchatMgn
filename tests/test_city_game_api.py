@@ -46,8 +46,14 @@ class CityRoutesTests(unittest.IsolatedAsyncioTestCase):
         self.tempdir = tempfile.TemporaryDirectory()
         self.path = str(Path(self.tempdir.name) / "game.db")
         with sqlite3.connect(self.path) as db:
-            db.execute("CREATE TABLE users(user_id INTEGER PRIMARY KEY, nickname TEXT NOT NULL DEFAULT '')")
-            db.execute("INSERT INTO users VALUES(20,'Тестовый игрок')")
+            db.execute("""CREATE TABLE users(
+                user_id INTEGER PRIMARY KEY, nickname TEXT NOT NULL DEFAULT '',
+                xp INTEGER NOT NULL DEFAULT 0, xp_source TEXT NOT NULL DEFAULT '',
+                xp_reason TEXT NOT NULL DEFAULT '',
+                xp_reference_type TEXT NOT NULL DEFAULT '',
+                xp_reference_id TEXT NOT NULL DEFAULT '')""")
+            db.execute("INSERT INTO users(user_id,nickname,xp) VALUES(20,'Тестовый игрок',0)")
+            db.execute("INSERT INTO users(user_id,nickname,xp) VALUES(10,'Админ',500)")
             db.commit()
 
         self.prior_gate = os.environ.get("CITY_GAME_TEST_ADMINS_ONLY")
@@ -89,6 +95,8 @@ class CityRoutesTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len([z for z in data["zones"] if z["kind"] == "district"]), 4)
             self.assertTrue(all(z.get("official_name") and z.get("address") for z in data["zones"]))
             self.assertTrue(data["can_capture"])
+            self.assertEqual(data["wallet"], 500)
+            self.assertEqual(len(data["catalog"]), 5)
 
     async def test_every_player_can_capture_when_gate_opens(self):
         os.environ["CITY_GAME_TEST_ADMINS_ONLY"] = "0"
@@ -105,6 +113,8 @@ class CityRoutesTests(unittest.IsolatedAsyncioTestCase):
         async with self.client.get("/api/city/state") as response:
             data = await response.json()
             self.assertEqual(data["my_zones"], 1)
+            self.assertEqual(data["wallet"], 50)
+            self.assertEqual(data["hp"], 100)
             self.assertGreater(data["cooldown_remaining_s"], 0)
             self.assertEqual(data["zones"][0]["owner_name"], "Тестовый игрок")
             self.assertEqual(data["leaderboard"][0]["zones"], 1)
