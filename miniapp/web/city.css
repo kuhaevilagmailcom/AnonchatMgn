@@ -72,7 +72,8 @@ a{color:inherit;text-decoration:none}
 .sheet-overline{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:10px;font-weight:600;letter-spacing:0}
 .sheet-id{margin-left:auto;color:#8d8389;font-size:10px;font-weight:500;letter-spacing:0;white-space:nowrap}
 .pulse-dot{display:none}
-.sheet-content h1{margin:4px 0 5px;font-size:19px;font-weight:770;letter-spacing:-.4px;line-height:1.15}
+.sheet-content h1{margin:4px 0 5px;font-size:19px;font-weight:770;letter-spacing:-.4px;line-height:1.15;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.bottom-sheet.is-expanded .sheet-content h1{white-space:normal;overflow:visible}
 .sheet-content h2{margin:6px 0 12px;font-size:21px;font-weight:760;letter-spacing:-.4px}
 .zone-details{margin:0 0 7px;color:var(--muted);font-size:11px;line-height:1.35}
 #mapView .zone-details{display:none}
