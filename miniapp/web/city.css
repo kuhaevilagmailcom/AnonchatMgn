@@ -25,7 +25,7 @@ a{color:inherit;text-decoration:none}
 .ico{display:block;width:20px;height:20px;flex:none}
 #map{position:absolute;inset:0;background:#171819;z-index:0}
 .leaflet-container{background:#171819}
-.leaflet-tile-pane{filter:grayscale(1) invert(.91) hue-rotate(175deg) brightness(.76) contrast(1.09)}
+.leaflet-tile-pane .leaflet-tile{filter:grayscale(1) invert(.91) hue-rotate(175deg) brightness(.76) contrast(1.09)}
 .leaflet-control-attribution{background:#101010d9!important;color:#a5a5a5!important;font-size:9px!important}
 .leaflet-control-attribution a{color:#e0adc9!important}
 .map-shade{position:absolute;inset:0;z-index:401;pointer-events:none;background:linear-gradient(180deg,#000a 0%,transparent 17%,transparent 73%,#0007 100%)}
@@ -134,7 +134,7 @@ a{color:inherit;text-decoration:none}
 
 /* Only the basemap changes tone; game overlay stays ANON MGN pink/graphite. */
 body[data-map-theme=light] #map,body[data-map-theme=light] .leaflet-container{background:#f3f3f1}
-body[data-map-theme=light] .leaflet-tile-pane{filter:grayscale(1) brightness(1.05) contrast(1.04)}
+body[data-map-theme=light] .leaflet-tile-pane .leaflet-tile{filter:grayscale(1) brightness(1.05) contrast(1.04)}
 body[data-map-theme=light] .map-shade{background:linear-gradient(180deg,#0008 0%,transparent 19%,transparent 75%,#0007 100%)}
 body[data-map-theme=light] .map-action{background:#fcfafb;color:#292126;border-color:#c9bec5}
 body[data-map-theme=light] .map-action.is-active{border-color:var(--accent);color:#b03e86}
@@ -169,3 +169,21 @@ body[data-map-theme=light] .zone-pin.is-free .zone-pin-inner{background:#fff}
  .appbar{right:min(380px,62vw)}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition-duration:.01ms!important;animation-duration:.01ms!important}}
+
+/* MapLibre renders true dark/light vector styles, so no CSS filtering is applied
+   to its WebGL canvas. The Leaflet raster fallback alone gets a color filter. */
+.maplibregl-map,.maplibregl-canvas,.maplibregl-canvas-container{filter:none!important}
+.leaflet-bottom.leaflet-right{bottom:min(253px,46dvh);z-index:1000}
+body:has(#panel.is-expanded) .leaflet-bottom.leaflet-right,
+body:has(#panel[data-tab="top"]) .leaflet-bottom.leaflet-right,
+body:has(#panel[data-tab="rules"]) .leaflet-bottom.leaflet-right{bottom:min(57dvh,465px)}
+.leaflet-control-attribution{font-size:9px!important;padding:2px 5px!important;border-radius:5px 0 0 0}
+@media(max-height:680px){
+  .leaflet-bottom.leaflet-right{bottom:min(239px,52dvh)}
+  body:has(#panel.is-expanded) .leaflet-bottom.leaflet-right,
+  body:has(#panel[data-tab="top"]) .leaflet-bottom.leaflet-right,
+  body:has(#panel[data-tab="rules"]) .leaflet-bottom.leaflet-right{bottom:65dvh}
+}
+@media(orientation:landscape) and (max-height:500px){
+  .leaflet-bottom.leaflet-right{bottom:0;right:min(380px,62vw)}
+}
