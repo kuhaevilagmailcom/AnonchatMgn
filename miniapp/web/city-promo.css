@@ -1,0 +1,23 @@
+/* Game entry matches the main ANON MGN visual system, not an alien gradient card. */
+.city-game-promo{
+  position:relative;display:block;overflow:hidden;
+  margin:13px 0 5px;padding:19px 19px 17px;
+  color:#fff!important;background:#160e13;
+  border:1px solid #5d334b;border-radius:16px;
+  text-decoration:none!important;text-align:left;
+  box-shadow:inset 0 1px 0 #ffffff0a;
+}
+.city-game-promo:after{
+  content:"";position:absolute;right:-32px;top:-25px;width:138px;height:138px;
+  border:1px solid #9a5c7b52;border-radius:50%;
+  box-shadow:0 0 0 25px #8e446016,0 0 0 56px #8e44600d;
+  pointer-events:none;
+}
+.city-game-promo__top{display:flex;align-items:center;gap:8px;color:#e99dce;font-size:9px;letter-spacing:1.6px;font-weight:800}
+.city-game-promo__top i{width:6px;height:6px;border-radius:50%;background:#e57ac6;box-shadow:0 0 9px #e57ac6}
+.city-game-promo>strong{display:flex;align-items:center;gap:10px;margin-top:13px;font-size:23px;font-weight:900;letter-spacing:-.7px}
+.city-game-promo>strong span{font-size:18px;color:#e57ac6;font-weight:450}
+.city-game-promo__copy{display:block;position:relative;z-index:1;max-width:245px;margin-top:7px;color:#c5aab9;font-size:12px;line-height:1.5}
+.city-game-promo__action{display:flex;align-items:center;gap:8px;margin-top:16px;color:#f2a8d7;font-size:10px;font-weight:850;letter-spacing:1.4px}
+.city-game-promo__action span{font-size:17px;letter-spacing:0}
+.city-game-promo:active{background:#24131d;transform:scale(.99)}
