@@ -17,12 +17,13 @@ def routes(database_path, authenticate):
             ])
             db.commit()
             zones = db.execute(
-                "SELECT z.id,z.name,z.lat,z.lon,o.user_id FROM city_zones z "
-                "LEFT JOIN city_ownership o ON z.id=o.zone_id WHERE z.enabled=1"
+                "SELECT z.id,z.name,z.lat,z.lon,o.user_id,COALESCE(NULLIF(u.nickname,''),'Аноним') FROM city_zones z "
+                "LEFT JOIN city_ownership o ON z.id=o.zone_id LEFT JOIN users u ON u.user_id=o.user_id WHERE z.enabled=1"
             ).fetchall()
-        return web.json_response({"user_id":uid,"zones":[
+            top = db.execute("""SELECT o.user_id, COUNT(*) AS wins, COALESCE(NULLIF(u.nickname,''),'Аноним') FROM city_ownership o LEFT JOIN users u ON u.user_id=o.user_id GROUP BY o.user_id ORDER BY wins DESC LIMIT 20""").fetchall()
+        return web.json_response({"user_id":uid,"leaderboard":[{"name":p[2],"zones":p[1],"mine":p[0]==uid} for p in top],"zones":[
             {"id":z[0],"name":z[1],"lat":z[2],"lon":z[3],
-             "mine":z[4]==uid,"occupied":z[4] is not None} for z in zones]})
+             "mine":z[4]==uid,"occupied":z[4] is not None,"owner_name":z[5] if z[4] is not None else None} for z in zones]})
     async def capture(request):
         uid = await authenticate(request)
         body = await request.json()
