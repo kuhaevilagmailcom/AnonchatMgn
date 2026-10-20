@@ -8,7 +8,7 @@
   <title>МГН: ЗАХВАТ — АНОН МГН</title>
   <link rel="icon" href="./assets/anon-mgn-logo.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="./city.css?v=2">
+  <link rel="stylesheet" href="./city.css?v=3">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -19,16 +19,16 @@
     <a class="appbar-back icon-button" href="./index.html" aria-label="Назад в АНОН МГН"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></a>
     <div class="appbar-brand"><img src="./assets/anon-mgn-logo.png" alt="АНОН МГН"></div>
     <div class="appbar-divider"></div>
-    <div class="appbar-name"><strong>ЗАХВАТ</strong><span>МАГНИТОГОРСК</span></div>
-    <div class="test-label"><i></i>ТЕСТ</div>
+    <div class="appbar-name"><strong>МГН: Захват</strong><span>Карта Магнитогорска</span></div>
+    <span class="test-label">Тест</span>
   </header>
 
   <div class="hud" aria-label="Статистика игры">
-    <div class="hud-stat"><span class="hud-kicker">ЗАХВАЧЕНО</span><strong id="count">—</strong><span class="hud-sub">территорий</span></div>
+    <div class="hud-stat"><span class="hud-kicker">Занято</span><strong id="count">—</strong><span class="hud-sub">территорий</span></div>
     <div class="hud-separator"></div>
-    <div class="hud-stat"><span class="hud-kicker">МОИ</span><strong id="mineCount">0</strong><span class="hud-sub">под контролем</span></div>
+    <div class="hud-stat"><span class="hud-kicker">Мои</span><strong id="mineCount">0</strong><span class="hud-sub">территорий</span></div>
     <div class="hud-separator"></div>
-    <div class="hud-stat"><span class="hud-kicker">ЗАХВАТЫ</span><strong id="captureCount">0</strong><span class="hud-sub">за всё время</span></div>
+    <div class="hud-stat"><span class="hud-kicker">Захваты</span><strong id="captureCount">0</strong><span class="hud-sub">за всё время</span></div>
   </div>
 
   <div id="controls" class="map-actions" aria-label="Управление картой">
@@ -42,31 +42,31 @@
   <main class="bottom-sheet" id="panel">
     <button class="sheet-grip" id="sheetToggle" type="button" aria-label="Развернуть или свернуть нижнюю панель"><span class="sheet-handle" aria-hidden="true"></span></button>
     <section id="mapView" class="sheet-content">
-      <div class="sheet-overline"><span class="pulse-dot"></span><span id="sectorCode">КОНТРОЛЬ ТЕРРИТОРИЙ</span><span class="sheet-id" id="sectorSize">МГН / 01</span></div>
-      <h1 id="zone">Твой город. Твои правила.</h1><p id="zoneDetails" class="zone-details" hidden></p>
+      <div class="sheet-overline"><span id="sectorCode">Территория</span><span class="sheet-id" id="sectorSize">Выбери на карте</span></div>
+      <h1 id="zone">Выбери место на карте</h1><p id="zoneDetails" class="zone-details" hidden></p>
       <div class="owner-card">
         <div class="owner-icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 8 4v5c0 5-3.2 8.7-8 11-4.8-2.3-8-6-8-11V6l8-4Z"/><path d="m9.5 12 2 2 3.5-4"/></svg></div>
-        <div class="owner-data"><small>ВЛАДЕЛЕЦ ТЕРРИТОРИИ</small><strong id="owner">Выбери сектор на карте</strong></div>
-        <span class="owner-state" id="zoneState">СВОБОДНО</span>
+        <div class="owner-data"><small>Владелец</small><strong id="owner">Пока не выбран</strong></div>
+        <span class="owner-state" id="zoneState">—</span>
       </div>
       <div class="game-readings">
         <div class="reading"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg><span id="distance">Расстояние: —</span></div>
         <div class="reading"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg><span id="gpsQuality">GPS не определён</span></div>
       </div>
       <p id="status" class="game-status" role="status">Выбери цветную территорию на карте. Для захвата нужно подойти к точке и подтвердить GPS.</p>
-      <button class="capture-button" id="capture" type="button" disabled><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m13 2-9 11h7l-1 9 10-12h-7l1-8Z"/></svg><span id="captureLabel">ВЫБЕРИ ТЕРРИТОРИЮ</span><span class="capture-chevron">↗</span></button>
+      <button class="capture-button" id="capture" type="button" disabled><span id="captureLabel">Выбери территорию</span></button>
     </section>
 
     <section id="leaderboard" class="sheet-content leaderboard" hidden>
-      <div class="sheet-overline"><span class="pulse-dot"></span>РЕЙТИНГ ИГРОКОВ <span class="sheet-id">ОНЛАЙН-ДАННЫЕ</span></div>
-      <h2>Кто держит город?</h2>
+      <div class="sheet-overline">Рейтинг <span class="sheet-id">По территориям</span></div>
+      <h2>Топ игроков</h2>
       <p class="section-subtitle">Лидеры по количеству захваченных и удерживаемых территорий.</p>
       <ol id="leaders" class="leaders"></ol>
     </section>
 
     <section id="rules" class="sheet-content rules" hidden>
-      <div class="sheet-overline"><span class="pulse-dot"></span>ПРАВИЛА ИГРЫ <span class="sheet-id">ТЕСТИРОВАНИЕ</span></div>
-      <h2>Как захватить район</h2>
+      <div class="sheet-overline">Как играть <span class="sheet-id">Тест</span></div>
+      <h2>Как захватить место</h2>
       <div class="rule"><b>01</b><span>Нажми на значок здания, парка или района на карте. Цвет контура покажет владельца.</span></div>
       <div class="rule"><b>02</b><span>Подойди к метке внутри территории на расстояние до 100 метров, учитывая точность GPS.</span></div>
       <div class="rule"><b>03</b><span>Нажми «Захватить». После успеха район станет твоим, ник увидят другие игроки.</span></div>
@@ -74,12 +74,12 @@
     </section>
 
     <nav class="sheet-tabs" id="tabs" aria-label="Разделы игры">
-      <button class="tab active" id="showmap" type="button" aria-current="page"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Zm6-3v15m6-12v15"/></svg><span>КАРТА</span></button>
-      <button class="tab" id="showtop" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10v8a5 5 0 0 1-10 0V3ZM7 6H4v3a4 4 0 0 0 4 4m9-7h3v3a4 4 0 0 1-4 4M12 16v5m-4 0h8"/></svg><span>ТОПЫ</span></button>
-      <button class="tab" id="showrules" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg><span>ПРАВИЛА</span></button>
+      <button class="tab active" id="showmap" type="button" aria-current="page"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Zm6-3v15m6-12v15"/></svg><span>Карта</span></button>
+      <button class="tab" id="showtop" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10v8a5 5 0 0 1-10 0V3ZM7 6H4v3a4 4 0 0 0 4 4m9-7h3v3a4 4 0 0 1-4 4M12 16v5m-4 0h8"/></svg><span>Топы</span></button>
+      <button class="tab" id="showrules" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg><span>Правила</span></button>
     </nav>
   </main>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="./city.js?v=9"></script>
+  <script src="./city.js?v=10"></script>
 </body>
 </html>
