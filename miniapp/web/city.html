@@ -9,7 +9,7 @@
   <link rel="icon" href="./assets/anon-mgn-logo.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
-  <link rel="stylesheet" href="./city.css?v=9">
+  <link rel="stylesheet" href="./city.css?v=10">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -70,11 +70,11 @@
           <div class="hp-track"><span id="hpFill"></span></div></div>
       </div>
       <div class="income-row">
-        <span>Накоплено <strong id="pendingStars">0 ⭐</strong><small>Доход от питомцев за час</small></span>
+        <span>Накоплено <strong id="pendingStars">0 ⭐</strong><small>За удержание своих кварталов</small></span>
         <button id="claimIncome" class="small-action" type="button">Собрать</button>
       </div>
       <h2>Маркет питомцев</h2>
-      <p class="market-note">Игровые ⭐ — те же звёзды, что за сообщения. Захват района: +50 ⭐.</p>
+      <p class="market-note">Игровые ⭐ — те же звёзды, что за сообщения; это не платные Telegram Stars. За захват: +50 ⭐.</p>
       <div id="petCatalog" class="pet-catalog" aria-label="Магазин питомцев"></div>
       <div class="market-inventory-head"><h2>Мои питомцы</h2><small id="petCount">0</small></div>
       <p id="placeHint" class="market-note">Для установки сначала захвати район, затем выбери его на карте.</p>
@@ -88,6 +88,8 @@
       <div class="rule"><b>01</b><span>Нажми на значок здания, парка или района на карте. Цвет контура покажет владельца.</span></div>
       <div class="rule"><b>02</b><span>Подойди к метке внутри территории на расстояние до 100 метров, учитывая точность GPS.</span></div>
       <div class="rule"><b>03</b><span>Нажми «Захватить». После успеха район станет твоим, ник увидят другие игроки.</span></div>
+      <div class="rule"><b>04</b><span>Купи питомца за игровые звёзды в маркете и поставь на свой район. Он защитит квартал и будет приносить ⭐ в час.</span></div>
+      <div class="rule"><b>05</b><span>В чужом охраняемом квартале HP постепенно уменьшается. Защитник не может убить: минимум 1 HP. За пределами зоны здоровье постепенно восстанавливается.</span></div>
       <p class="rules-note">Между захватами — 30 минут. Сейчас игру тестируют администраторы; после открытия захватывать смогут все. Секторы игровые, не официальные административные границы. Не заходи на дороги и закрытые территории.</p>
     </section>
 
@@ -101,7 +103,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
-  <script src="./city-roads.js?v=2"></script>
-  <script src="./city.js?v=19"></script>
+  <script src="./city-roads.js?v=3"></script>
+  <script src="./city.js?v=20"></script>
 </body>
 </html>
