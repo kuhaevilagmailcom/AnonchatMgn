@@ -6,8 +6,10 @@
   const tg = window.Telegram?.WebApp;
   tg?.ready();
   tg?.expand();
-  tg?.setHeaderColor?.('#000000');
-  tg?.setBackgroundColor?.('#000000');
+  try {
+    tg?.setHeaderColor?.('#000000');
+    tg?.setBackgroundColor?.('#000000');
+  } catch (_) { /* Older Telegram clients may reject theme setters. */ }
 
   const CITY = [53.405, 58.983];
   const PALETTE = ['#e57ac6', '#a28aff', '#ffba80', '#70d3c9', '#f18c9b', '#b9d47b'];
@@ -62,7 +64,8 @@
     if (!zone.occupied) return '#80767d';
     // The nickname is display-only; choose a stable color without exposing user IDs.
     let hash = 0;
-    for (const ch of safeText(zone.owner_name)) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
+    const key = zone.owner_name && zone.owner_name !== 'Аноним' ? zone.owner_name : 'anon-' + zone.id;
+    for (const ch of key) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
     return PALETTE[(hash >>> 0) % PALETTE.length];
   }
   function feedback(message, kind = 'info') {
@@ -475,7 +478,7 @@
   ui.topTab.addEventListener('click', () => { switchTab('top'); });
   ui.rulesTab.addEventListener('click', () => { switchTab('rules'); });
   ui.capture.addEventListener('click', capture);
-  setInterval(() => { if (selectedZone() && cooldownS() > 0) renderSelection(); }, 1000);
+  setInterval(() => { if (selectedZone() && !state.capturing && !state.locating) renderSelection(); }, 1000);
 
   tg?.BackButton?.show();
   tg?.BackButton?.onClick(() => { window.location.href = './index.html'; });
