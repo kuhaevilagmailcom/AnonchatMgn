@@ -8,7 +8,7 @@
   <title>МГН: ЗАХВАТ — АНОН МГН</title>
   <link rel="icon" href="./assets/anon-mgn-logo.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="./city.css?v=1">
+  <link rel="stylesheet" href="./city.css?v=2">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -34,15 +34,16 @@
   <div id="controls" class="map-actions" aria-label="Управление картой">
     <button class="map-action" id="locate" type="button" aria-label="Моё местоположение" title="Моё местоположение"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg></button>
     <button class="map-action" id="refresh" type="button" aria-label="Обновить территории" title="Обновить"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.2 5.5"/><path d="M20 4v7h-7"/></svg></button>
+    <button class="map-action theme-switch" id="theme" type="button" aria-label="Переключить на светлую карту" title="Светлая / тёмная карта"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2m-3.1-7.1-1.4 1.4M6.5 17.5l-1.4 1.4m0-14 1.4 1.4m11 11 1.4 1.4"/></svg></button>
     <button class="map-action" id="topbutton" type="button" aria-label="Топ игроков" title="Топ игроков"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10v8a5 5 0 0 1-10 0V3ZM7 6H4v3a4 4 0 0 0 4 4m9-7h3v3a4 4 0 0 1-4 4M12 16v5m-4 0h8"/></svg></button>
   </div>
   <div id="toast" class="toast" role="status" hidden></div>
 
   <main class="bottom-sheet" id="panel">
-    <div class="sheet-handle" aria-hidden="true"></div>
+    <button class="sheet-grip" id="sheetToggle" type="button" aria-label="Развернуть или свернуть нижнюю панель"><span class="sheet-handle" aria-hidden="true"></span></button>
     <section id="mapView" class="sheet-content">
       <div class="sheet-overline"><span class="pulse-dot"></span><span id="sectorCode">КОНТРОЛЬ ТЕРРИТОРИЙ</span><span class="sheet-id" id="sectorSize">МГН / 01</span></div>
-      <h1 id="zone">Твой город. Твои правила.</h1>
+      <h1 id="zone">Твой город. Твои правила.</h1><p id="zoneDetails" class="zone-details" hidden></p>
       <div class="owner-card">
         <div class="owner-icon"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 8 4v5c0 5-3.2 8.7-8 11-4.8-2.3-8-6-8-11V6l8-4Z"/><path d="m9.5 12 2 2 3.5-4"/></svg></div>
         <div class="owner-data"><small>ВЛАДЕЛЕЦ ТЕРРИТОРИИ</small><strong id="owner">Выбери сектор на карте</strong></div>
@@ -52,7 +53,7 @@
         <div class="reading"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg><span id="distance">Расстояние: —</span></div>
         <div class="reading"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg><span id="gpsQuality">GPS не определён</span></div>
       </div>
-      <p id="status" class="game-status" role="status">Выбери цветную территорию на карте. Для захвата нужно подойти к её точке и подтвердить GPS.</p>
+      <p id="status" class="game-status" role="status">Выбери цветную территорию на карте. Для захвата нужно подойти к точке и подтвердить GPS.</p>
       <button class="capture-button" id="capture" type="button" disabled><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m13 2-9 11h7l-1 9 10-12h-7l1-8Z"/></svg><span id="captureLabel">ВЫБЕРИ ТЕРРИТОРИЮ</span><span class="capture-chevron">↗</span></button>
     </section>
 
@@ -66,7 +67,7 @@
     <section id="rules" class="sheet-content rules" hidden>
       <div class="sheet-overline"><span class="pulse-dot"></span>ПРАВИЛА ИГРЫ <span class="sheet-id">ТЕСТИРОВАНИЕ</span></div>
       <h2>Как захватить район</h2>
-      <div class="rule"><b>01</b><span>Выбери территорию по цветному контуру на карте.</span></div>
+      <div class="rule"><b>01</b><span>Нажми на значок здания, парка или района на карте. Цвет контура покажет владельца.</span></div>
       <div class="rule"><b>02</b><span>Подойди к метке внутри территории на расстояние до 100 метров, учитывая точность GPS.</span></div>
       <div class="rule"><b>03</b><span>Нажми «Захватить». После успеха район станет твоим, ник увидят другие игроки.</span></div>
       <p class="rules-note">Между захватами — 30 минут. Сейчас игру тестируют администраторы; после открытия захватывать смогут все. Секторы игровые, не официальные административные границы. Не заходи на дороги и закрытые территории.</p>
@@ -79,6 +80,6 @@
     </nav>
   </main>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="./city.js?v=8"></script>
+  <script src="./city.js?v=9"></script>
 </body>
 </html>
