@@ -258,27 +258,27 @@
   function renderSelection() {
     const zone = selectedZone();
     if (!zone) {
-      ui.code.textContent = 'КОНТРОЛЬ ТЕРРИТОРИЙ';
-      ui.size.textContent = 'МГН / ТЕСТ';
-      ui.zone.textContent = 'Твой город. Твои правила.';
+      ui.code.textContent = 'Территория';
+      ui.size.textContent = 'Выбери на карте';
+      ui.zone.textContent = 'Выбери место на карте';
       ui.details.hidden = true;
-      ui.owner.textContent = 'Выбери сектор на карте';
-      ui.state.textContent = 'НА КАРТЕ';
+      ui.owner.textContent = 'Пока не выбран';
+      ui.state.textContent = '—';
       ui.state.className = 'owner-state';
       ui.distance.textContent = state.gps ? 'Твоя позиция найдена' : 'Расстояние: —';
       ui.accuracy.textContent = state.gps ? 'GPS ±' + Math.round(state.gps.accuracy) + ' м' : 'GPS не определён';
-      setStatus('Нажми на район с цветной границей. После выбора можно проверить местоположение и захватить его.');
+      setStatus('Нажми на значок места. Для захвата понадобится геолокация.');
       ui.capture.disabled = true;
-      ui.captureLabel.textContent = 'ВЫБЕРИ ТЕРРИТОРИЮ';
+      ui.captureLabel.textContent = 'Выбери место';
       return;
     }
-    ui.code.textContent = 'СЕКТОР ' + String(zone.id).padStart(2, '0');
-    ui.size.textContent = zone.size === 'Большой' ? 'БОЛЬШОЙ РАЙОН' : 'МАЛЫЙ РАЙОН';
+    ui.code.textContent = 'Территория №' + String(zone.id).padStart(2, '0');
+    ui.size.textContent = zone.size === 'Большой' ? 'Большая' : 'Малая';
     ui.zone.textContent = zone.name;
     ui.details.textContent = [zone.official_name && zone.official_name !== zone.name ? zone.official_name : '', zone.address || ''].filter(Boolean).join(' · ');
     ui.details.hidden = !ui.details.textContent;
-    ui.owner.textContent = zone.mine ? 'Ты' : (zone.owner_name || 'Аноним');
-    ui.state.textContent = zone.mine ? 'ТВОЙ' : zone.occupied ? 'ЗАНЯТО' : 'СВОБОДНО';
+    ui.owner.textContent = zone.mine ? 'Ты' : zone.occupied ? (zone.owner_name || 'Аноним') : 'Никого';
+    ui.state.textContent = zone.mine ? 'Твоя' : zone.occupied ? 'Занято' : 'Свободно';
     ui.state.className = 'owner-state ' + (zone.mine ? 'mine' : zone.occupied ? 'occupied' : '');
     const gps = state.gps;
     const metres = gps ? distanceM(gps.lat, gps.lon, zone.lat, zone.lon) : Infinity;
@@ -289,19 +289,19 @@
     const cd = cooldownS();
     ui.capture.disabled = !state.canCapture || !!zone.mine || state.capturing || state.locating || cd > 0;
     if (!state.canCapture) {
-      ui.captureLabel.textContent = 'РЕЖИМ ПРОСМОТРА';
+      ui.captureLabel.textContent = 'Только просмотр';
       setStatus('Сейчас режим тестирования. Захват закрыт.');
     } else if (zone.mine) {
-      ui.captureLabel.textContent = 'ТЕРРИТОРИЯ ТВОЯ';
+      ui.captureLabel.textContent = 'Уже захвачено';
       setStatus('Район уже под твоим контролем. Выбери другой.');
     } else if (cd > 0) {
-      ui.captureLabel.textContent = 'ОЖИДАНИЕ ' + humanTime(cd);
+      ui.captureLabel.textContent = 'Повтор через ' + humanTime(cd);
       setStatus('Следующий захват будет доступен после окончания таймера.');
     } else if (state.capturing || state.locating) {
-      ui.captureLabel.textContent = 'ПРОВЕРЯЕМ GPS…';
+      ui.captureLabel.textContent = 'Проверяем GPS…';
       setStatus('Определяем точные координаты для захвата территории.');
     } else {
-      ui.captureLabel.textContent = 'ЗАХВАТИТЬ ТЕРРИТОРИЮ';
+      ui.captureLabel.textContent = 'Захватить';
       if (!gps) setStatus('Нужен GPS: нажми захват или кнопку геолокации на карте.');
       else if (gps.accuracy > state.maxAccuracy) setStatus('Точность GPS слишком низкая. Для захвата требуется не хуже ±' + state.maxAccuracy + ' м.');
       else if (metres + gps.accuracy > state.radius) setStatus('Подойди ближе к метке на карте. Радиус захвата — ' + state.radius + ' м с учётом погрешности GPS.');
@@ -402,7 +402,7 @@
         className: 'user-position', html: '<div class="gps-marker"></div>',
         iconSize: [24, 24], iconAnchor: [12, 12]
       }), zIndexOffset: 2000
-    }).addTo(state.markerGroup).bindTooltip('ТЫ ЗДЕСЬ', {
+    }).addTo(state.markerGroup).bindTooltip('Ты здесь', {
       permanent: true, direction: 'top', offset: [0, -14], className: 'you-label'
     });
     // Never jump away from Magnitogorsk if the tester is in a different city.
@@ -469,7 +469,7 @@
     } catch (error) {
       ui.count.textContent = '—';
       ui.capture.disabled = true;
-      ui.captureLabel.textContent = 'ИГРА НЕДОСТУПНА';
+      ui.captureLabel.textContent = 'Игра недоступна';
       setStatus(error.message);
       feedback(error.message, 'error');
     } finally { ui.refresh.classList.remove('is-loading'); }
