@@ -28,7 +28,7 @@ class StreetGeometryTests(unittest.TestCase):
     def test_cached_blocks_are_loaded_without_network(self):
         with tempfile.TemporaryDirectory() as d:
             f=Path(d)/"roads.json"
-            f.write_text(json.dumps({"version":1,"shapes":{"13":[[53.39,59.06]]}}))
+            f.write_text(json.dumps({"version":2,"shapes":{"13":[[53.39,59.06]]}}))
             cache=RoadGeometry(f)
             self.assertIn("13",cache.data)
 
