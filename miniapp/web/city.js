@@ -114,6 +114,7 @@
   }
   const ZONE_ICONS = {
     mall: '<path d="M4 10h16v11H4zM3 10l2-6h14l2 6M8 10V4m8 6V4M9 21v-6h6v6"/>',
+    culture: '<path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-7h6v7M7 11h.01M17 11h.01"/>',
     park: '<path d="M12 3 5 13h3l-4 5h16l-4-5h3L12 3ZM12 18v4"/>',
     district: '<path d="m12 2 8 4v6c0 5-4 8-8 10-4-2-8-5-8-10V6l8-4Z"/><path d="m8 11 3 3 5-5"/>'
   };
