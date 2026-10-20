@@ -94,16 +94,110 @@ def build_shapes(ways, zones):
     return shapes
 
 
+def build_extra_zones(ways, landmarks, limit_per_bank=28):
+    """Additional small quarters from genuinely CLOSED OSM street blocks.
+
+    Territory IDs are based on a fixed geographic grid, not query order or
+    generated row numbers. Capturing/ownership remains stable after restart.
+    Open roads and huge unbounded areas cannot generate territories.
+    """
+    from shapely.geometry import LineString, box
+    from shapely.ops import polygonize, unary_union
+    chosen = []
+    for bank, bounds in enumerate(BOUNDS):
+        south, west, north, east = bounds
+        boundary = box(west, south, east, north)
+        roads = []
+        for way in ways:
+            coords = [
+                (p["lon"], p["lat"]) for p in way.get("geometry", [])
+                if "lat" in p and "lon" in p
+            ]
+            if len(coords) < 2:
+                continue
+            line = LineString(coords)
+            if line.intersects(boundary):
+                piece = line.intersection(boundary)
+                if not piece.is_empty:
+                    roads.append(piece)
+        if not roads:
+            continue
+        network = unary_union(roads)
+        faces = polygonize(network)
+        grid = {}
+        for face in faces:
+            if not face.is_valid or face.is_empty:
+                continue
+            center = face.representative_point()
+            lat, lon = center.y, center.x
+            if not (south + .001 < lat < north - .001 and
+                    west + .001 < lon < east - .001):
+                continue
+            sqm = face.area * 111_320**2 * math.cos(math.radians(lat))
+            # Districts should be smaller and far more precise than the old 1km rings.
+            if not 1300 <= sqm <= 48_000:
+                continue
+            # Refrain from putting another new pin on an existing named landmark.
+            def metres(a, b):
+                return math.hypot((lat-a)*111_320,
+                                  (lon-b)*111_320*math.cos(math.radians(lat)))
+            if any(metres(a, b) < 120 for _id, a, b in landmarks):
+                continue
+            row = int((lat-south)/.0022)
+            col = int((lon-west)/.0035)
+            if row < 0 or col < 0 or row > 70 or col > 100:
+                continue
+            zone_id = 100000 + bank * 30000 + row * 256 + col
+            polygon = face.simplify(.000006, preserve_topology=True)
+            ring = list(polygon.exterior.coords)
+            if len(ring) < 4 or len(ring) > 100:
+                continue
+            entry = {
+                "id": zone_id, "name": ("Квартал ЛБ" if bank else "Квартал ПБ") +
+                f" · {row+1:02d}/{col+1:02d}",
+                "lat": round(lat, 6), "lon": round(lon, 6),
+                "polygon": [[round(y, 6), round(x, 6)] for x, y in ring],
+                "area_m2": round(sqm),
+                "bank": "Левый берег" if bank else "Правый берег",
+            }
+            # At most one road block per ~200m map grid cell.
+            cell = (row, col)
+            prev = grid.get(cell)
+            target_size = 16_000
+            if prev is None or abs(sqm-target_size) < abs(prev["area_m2"]-target_size):
+                grid[cell] = entry
+        # Stable spread across both city banks, independent of OSM reply order.
+        candidates = sorted(grid.values(), key=lambda x: (
+            (int(x["id"]) * 73) % 1009, x["id"]
+        ))
+        selected = []
+        for item in candidates:
+            if len(selected) >= limit_per_bank:
+                break
+            nearby = any(
+                math.hypot((item["lat"]-p["lat"])*111_320,
+                           (item["lon"]-p["lon"])*111_320 *
+                           math.cos(math.radians(item["lat"]))) < 160
+                for p in selected
+            )
+            if not nearby:
+                selected.append(item)
+        chosen.extend(sorted(selected, key=lambda z: z["id"]))
+    return chosen
+
+
 class RoadGeometry:
     def __init__(self, cache_path):
         self.cache_path = Path(cache_path)
         self.data = {}
+        self.extra_zones = []
         self.retry_at = 0
         self.lock = asyncio.Lock()
         try:
             cached = json.loads(self.cache_path.read_text(encoding="utf-8"))
-            if cached.get("version") == 2 and isinstance(cached.get("shapes"), dict):
+            if cached.get("version") == 3 and isinstance(cached.get("shapes"), dict):
                 self.data = cached["shapes"]
+                self.extra_zones = cached.get("extra_zones", [])
         except (OSError, ValueError, TypeError):
             pass
 
@@ -139,12 +233,16 @@ class RoadGeometry:
                             ways.extend(result["elements"])
                 if ways:
                     found = await asyncio.to_thread(build_shapes, ways, zones)
-                    if found:
+                    extra = await asyncio.to_thread(build_extra_zones, ways, zones)
+                    if found or extra:
+                        self.extra_zones = extra
+                        # Extra polygons are as verified as the landmark outlines.
+                        found.update({str(z["id"]): z["polygon"] for z in extra})
                         self.data = found
                         try:
                             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
                             tmp = self.cache_path.with_suffix(".tmp")
-                            tmp.write_text(json.dumps({"version": 2, "shapes": found}, ensure_ascii=False),
+                            tmp.write_text(json.dumps({"version": 3, "shapes": found, "extra_zones": extra}, ensure_ascii=False),
                                            encoding="utf-8")
                             os.replace(tmp, self.cache_path)
                         except OSError as err:
