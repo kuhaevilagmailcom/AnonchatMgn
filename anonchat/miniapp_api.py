@@ -2734,7 +2734,7 @@ class MiniAppServer:
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self' https://telegram.org; "
             "style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' blob:; "
-            "connect-src 'self'; frame-ancestors https://web.telegram.org https://*.telegram.org"
+            "connect-src 'self'; frame-src https://www.openstreetmap.org; frame-ancestors https://web.telegram.org https://*.telegram.org"
         )
         if origin and origin_allowed:
             response.headers["Access-Control-Allow-Origin"] = origin
