@@ -9,7 +9,7 @@
   <link rel="icon" href="./assets/anon-mgn-logo.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
-  <link rel="stylesheet" href="./city.css?v=11">
+  <link rel="stylesheet" href="./city.css?v=12">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -17,30 +17,33 @@
   <div class="map-shade" aria-hidden="true"></div>
 
   <header class="appbar">
-    <a class="appbar-back icon-button" href="./index.html" aria-label="Назад в АНОН МГН"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></a>
+    <a class="appbar-back icon-button" href="./index.html" aria-label="Назад в АНОН МГН"><span class="city-icon" data-city-icon="arrow-left" aria-hidden="true"></span></a>
     <div class="appbar-brand"><img src="./assets/anon-mgn-logo.png" alt="АНОН МГН"></div>
     <div class="appbar-divider"></div>
     <div class="appbar-name"><strong>МГН: Захват</strong><span>Карта Магнитогорска</span></div>
     <span class="test-label">Тест</span>
   </header>
 
-  <div class="hud" aria-label="Статистика игры">
-    <div class="hud-stat"><span class="hud-kicker">Занято</span><strong id="count">—</strong><span class="hud-sub">территорий</span></div>
-    <div class="hud-separator"></div>
-    <div class="hud-stat"><span class="hud-kicker">Мои</span><strong id="mineCount">0</strong><span class="hud-sub">территорий</span></div>
-    <div class="hud-separator hp-separator"></div>
-    <div class="hud-stat hp-stat"><span class="hud-kicker">HP</span><strong id="hpHud">100</strong></div>
-    <div class="hud-separator"></div>
-    <div class="hud-stat"><span class="hud-kicker">Захваты</span><strong id="captureCount">0</strong><span class="hud-sub">за всё время</span></div>
+  <div class="hud hud-hp-only" aria-label="Здоровье персонажа">
+    <span class="hud-hp-icon" data-city-icon="shield-check" aria-hidden="true"></span>
+    <strong id="hpHud" class="hud-hp-value">100</strong>
+    <span class="hud-hp-unit">HP</span>
+    <div class="hud-hp-track" aria-hidden="true"><span id="hudHpFill"></span></div>
   </div>
 
   <div id="controls" class="map-actions" aria-label="Управление картой">
-    <button class="map-action" id="locate" type="button" aria-label="Моё местоположение" title="Моё местоположение"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg></button>
-    <button class="map-action" id="refresh" type="button" aria-label="Обновить территории" title="Обновить"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.2 5.5"/><path d="M20 4v7h-7"/></svg></button>
-    <button class="map-action theme-switch" id="theme" type="button" aria-label="Переключить на светлую карту" title="Светлая / тёмная карта"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2m-3.1-7.1-1.4 1.4M6.5 17.5l-1.4 1.4m0-14 1.4 1.4m11 11 1.4 1.4"/></svg></button>
-    <button class="map-action" id="topbutton" type="button" aria-label="Топ игроков" title="Топ игроков"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10v8a5 5 0 0 1-10 0V3ZM7 6H4v3a4 4 0 0 0 4 4m9-7h3v3a4 4 0 0 1-4 4M12 16v5m-4 0h8"/></svg></button>
+    <button class="map-action" id="locate" type="button" aria-label="Моё местоположение" title="Моё местоположение"><span class="city-icon" data-city-icon="locate-fixed" aria-hidden="true"></span></button>
+    <button class="map-action" id="refresh" type="button" aria-label="Обновить территории" title="Обновить"><span class="city-icon" data-city-icon="refresh-cw" aria-hidden="true"></span></button>
+    <button class="map-action theme-switch" id="theme" type="button" aria-label="Переключить на светлую карту" title="Светлая / тёмная карта"><span class="city-icon" data-city-icon="sun" aria-hidden="true"></span></button>
+    <button class="map-action" id="myZonesButton" type="button" aria-label="Мои районы" title="Мои районы"><span class="city-icon" data-city-icon="layers" aria-hidden="true"></span></button>
   </div>
   <div id="toast" class="toast" role="status" hidden></div>
+
+  <div class="map-credits" id="mapCredits" aria-label="Источники карты">
+    <a href="https://openmaptiles.org/" target="_blank" rel="noopener noreferrer">© OpenMapTiles</a>
+    <span aria-hidden="true">·</span>
+    <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>
+  </div>
 
   <main class="bottom-sheet" id="panel">
     <button class="sheet-grip" id="sheetToggle" type="button" aria-label="Развернуть или свернуть нижнюю панель"><span class="sheet-handle" aria-hidden="true"></span></button>
@@ -54,6 +57,12 @@
       </div>
       <p id="status" class="screenreader-status" role="status" aria-live="polite"></p>
       <button class="capture-button" id="capture" type="button" disabled hidden><span id="captureLabel">Захватить</span></button>
+    </section>
+
+    <section id="myZones" class="sheet-content my-zones" hidden>
+      <div class="sheet-overline">Твои территории <span class="sheet-id" id="myZonesTotal">0</span></div>
+      <h2>Мои районы</h2>
+      <div id="myZonesList" class="my-zones-list" aria-label="Захваченные мной районы"></div>
     </section>
 
     <section id="leaderboard" class="sheet-content leaderboard" hidden>
@@ -94,16 +103,17 @@
     </section>
 
     <nav class="sheet-tabs" id="tabs" aria-label="Разделы игры">
-      <button class="tab active" id="showmap" type="button" aria-current="page"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Zm6-3v15m6-12v15"/></svg><span>Карта</span></button>
-      <button class="tab" id="showtop" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10v8a5 5 0 0 1-10 0V3ZM7 6H4v3a4 4 0 0 0 4 4m9-7h3v3a4 4 0 0 1-4 4M12 16v5m-4 0h8"/></svg><span>Топы</span></button>
-      <button class="tab" id="showmarket" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16v12H4zM3 9l2-6h14l2 6M9 21v-6h6v6"/></svg><span>Маркет</span></button>
-      <button class="tab" id="showrules" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg><span>Правила</span></button>
+      <button class="tab active" id="showmap" type="button" aria-current="page"><span class="city-icon" data-city-icon="map" aria-hidden="true"></span><span>Карта</span></button>
+      <button class="tab" id="showtop" type="button"><span class="city-icon" data-city-icon="trophy" aria-hidden="true"></span><span>Топы</span></button>
+      <button class="tab" id="showmarket" type="button"><span class="city-icon" data-city-icon="shopping-bag" aria-hidden="true"></span><span>Маркет</span></button>
+      <button class="tab" id="showrules" type="button"><span class="city-icon" data-city-icon="info" aria-hidden="true"></span><span>Правила</span></button>
     </nav>
   </main>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
+  <script src="./city-icons.js?v=1"></script>
   <script src="./city-roads.js?v=3"></script>
-  <script src="./city.js?v=21"></script>
+  <script src="./city.js?v=22"></script>
 </body>
 </html>
