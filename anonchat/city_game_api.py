@@ -13,15 +13,37 @@ from aiohttp import web
 
 from . import city_capture as game
 
-# Publicly documented places. IDs 1-3 supersede inaccurate prototype coordinates.
-# The radius describes the visual game sector, NOT the GPS capture radius.
+# GPS anchors for public landmarks or shopping centres. Polygon radii are GAME size only.
+# Nicknames reflect local usage; official place names and addresses are kept separately.
+# Sources: official centre websites, Magnitogorsk tourism portal, public mapping listings.
 STARTER_ZONES = (
     (1, "Парк у Вечного огня", 53.404924, 58.990902, 450),
     (2, "Парк «Притяжение»", 53.380514, 58.960070, 610),
     (3, "Сквер Металлургов", 53.422358, 58.990517, 260),
     (4, "Парк Ветеранов Магнитки", 53.428465, 59.000297, 350),
     (5, "Сквер у стелы Магнитки", 53.411091, 58.986059, 280),
+    (6, "Ашик", 53.378600, 58.976300, 220),
+    (7, "Гостинка", 53.378700, 58.981500, 190),
+    (8, "Контик", 53.402700, 58.987600, 250),
+    (9, "Джазик", 53.430400, 58.973200, 270),
+    (10, "Ленинский район", 53.422257, 58.984145, 1050),
+    (11, "Экологический парк", 53.402300, 58.952800, 450),
+    (12, "Пикниковая зона", 53.401738, 58.994939, 160),
 )
+ZONE_META = {
+    1: ("park", "Парк у Вечного огня", "Набережная, 11/2"),
+    2: ("park", "Городской курорт «Притяжение»", "Советская, 132"),
+    3: ("park", "Сквер Металлургов", "проспект Металлургов"),
+    4: ("park", "Парк Ветеранов Магнитки", "Ленинский район"),
+    5: ("park", "Сквер у стелы славы Магнитки", "Гагарина, 3"),
+    6: ("mall", "ТРК «Семейный парк»", "Карла Маркса, 172"),
+    7: ("mall", "ТРК «Гостиный двор»", "Карла Маркса, 153"),
+    8: ("mall", "ТРК «Континент»", "Ленина, 83"),
+    9: ("mall", "ТРК «Jazz Mall»", "Герцена, 6"),
+    10: ("district", "Ленинский район · площадь Ленина", "Площадь Ленина"),
+    11: ("park", "Экологический парк", "Лесопарковая, 1"),
+    12: ("park", "Пикниковая зона парка у Вечного огня", "Набережная"),
+}
 SECTOR_SIZES = {z[0]: z[4] for z in STARTER_ZONES}
 
 
@@ -112,6 +134,9 @@ def routes(database_path, authenticate, is_admin):
             "zones": [
                 {"id": z[0], "name": z[1], "lat": z[2], "lon": z[3],
                  "polygon": polygon_for(z[0], z[2], z[3]),
+                 "kind": ZONE_META.get(z[0], ("park", "", ""))[0],
+                 "official_name": ZONE_META.get(z[0], ("", z[1], ""))[1],
+                 "address": ZONE_META.get(z[0], ("", "", ""))[2],
                  "size": "Большой" if SECTOR_SIZES.get(z[0], 300) >= 400 else "Малый",
                  "mine": z[4] == uid, "occupied": z[4] is not None,
                  "owner_name": z[6] if z[4] is not None else None,
