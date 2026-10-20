@@ -43,9 +43,9 @@ class CityPetsTest(unittest.TestCase):
         catalog = city_pets.catalog()
         self.assertEqual([p["emoji"] for p in catalog], ["🐈","🐤","🐷","🐍","🦁"])
         self.assertEqual([p["price"] for p in catalog], [100,500,1000,2500,5000])
-        self.assertLess(catalog[0]["hp_h"], catalog[-1]["hp_h"])
+        self.assertLess(catalog[0]["hp_5m"], catalog[-1]["hp_5m"])
         self.assertLess(catalog[0]["stars_h"], catalog[-1]["stars_h"])
-        self.assertLessEqual(catalog[-1]["hp_h"], 5)
+        self.assertLessEqual(catalog[-1]["hp_5m"], 5)
 
     def test_buy_atomic_debit_and_insufficient_funds(self):
         result = city_pets.buy(self.db,10,"cat",now=100)
@@ -109,7 +109,8 @@ class CityPetsTest(unittest.TestCase):
         second = city_pets.presence(self.db,20,53.4,58.9,5,2060,self.shape,now=2060)
         self.assertEqual(second["attacked_by"],"lion")
         self.assertLess(second["hp"],100)
-        self.assertGreater(second["hp"],99.9)
+        self.assertAlmostEqual(second["hp"],99.2, places=2)
+        self.assertEqual(city_pets.PET_TYPES["lion"]["hp_5m"], 4)
         # GPS outside the real road cell causes no pet damage.
         out = city_pets.presence(self.db,20,53.43,58.93,5,2120,self.shape,now=2120)
         self.assertIsNone(out["attacked_by"])
@@ -131,6 +132,34 @@ class CityPetsTest(unittest.TestCase):
         tick = city_pets.presence(self.db,20,position,58.9,8,2060,self.shape,now=2060)
         self.assertIsNone(tick["attacked_by"])
         self.assertEqual(tick["hp"],100)
+
+    def test_no_damage_without_enemy_pet_even_inside_captured_zone(self):
+        # A captured place alone cannot attack. HP should slowly regenerate.
+        area2 = {"2": [
+            [53.4006,58.9006], [53.4006,58.9014],
+            [53.4014,58.9014], [53.4014,58.9006],
+        ]}
+        city_pets.presence(self.db, 20, 53.401, 58.901, 5, 2000, area2, now=2000)
+        self.db.execute(
+            "UPDATE city_player_hp SET hp_milli=80000,last_tick=2000 WHERE user_id=20"
+        )
+        safe = city_pets.presence(self.db,20,53.401,58.901,5,2060,area2,now=2060)
+        self.assertIsNone(safe["attacked_by"])
+        self.assertIsNone(safe["zone_id"])
+        self.assertGreater(safe["hp"],80)
+        # A pet in a DIFFERENT zone still cannot attack this visitor.
+        lion = city_pets.buy(self.db,10,"lion",now=100)["pet_id"]
+        city_pets.place(self.db,10,lion,1,now=100)
+        safe = city_pets.presence(
+            self.db,20,53.401,58.901,5,2120,{**self.shape,**area2},now=2120
+        )
+        self.assertIsNone(safe["attacked_by"])
+        self.assertGreater(safe["hp"],80)
+        attacked = city_pets.presence(
+            self.db,20,53.4,58.9,5,2180,{**self.shape,**area2},now=2180
+        )
+        self.assertEqual(attacked["attacked_by"],"lion")
+        self.assertLess(attacked["hp"],safe["hp"])
 
     def test_no_damage_on_stale_or_inaccurate_gps(self):
         lion = city_pets.buy(self.db,10,"lion",now=100)["pet_id"]
