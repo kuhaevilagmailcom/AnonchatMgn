@@ -2804,7 +2804,9 @@ class MiniAppServer:
         async def city_auth(request):
             uid, _user, _row = await self._auth(request)
             return uid
-        for city_route in city_routes(self.db.path, city_auth):
+        async def city_is_admin(uid):
+            return uid in await self.db.all_admin_ids(self.cfg.admin_ids)
+        for city_route in city_routes(self.db.path, city_auth, city_is_admin):
             app.router.add_routes([city_route])
         from .admin_api import install_admin_routes
         install_admin_routes(app, self)
