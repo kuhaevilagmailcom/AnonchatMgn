@@ -135,10 +135,10 @@ def routes(database_path, authenticate, is_admin):
             "zones": [
                 {"id": z[0], "name": z[1], "lat": z[2], "lon": z[3],
                  "polygon": [],  # never claim made-up contours follow streets
-                 "kind": ZONE_META.get(z[0], ("park", "", ""))[0],
+                 "kind": ZONE_META.get(z[0], ("block", "", ""))[0],
                  "official_name": ZONE_META.get(z[0], ("", z[1], ""))[1],
-                 "address": ZONE_META.get(z[0], ("", "", ""))[2],
-                 "size": "Большой" if SECTOR_SIZES.get(z[0], 300) >= 400 else "Малый",
+                 "address": ZONE_META.get(z[0], ("", "", "Левый берег" if z[3] > 59.025 else "Правый берег"))[2],
+                 "size": "Большой" if z[0] < 100000 and SECTOR_SIZES.get(z[0], 300) >= 400 else "Малый",
                  "mine": z[4] == uid, "occupied": z[4] is not None,
                  "owner_name": z[6] if z[4] is not None else None,
                  "captured_at": z[5]}
@@ -151,7 +151,23 @@ def routes(database_path, authenticate, is_admin):
         shapes = await road_data.shapes(
             [(zone_id, lat, lon) for zone_id, _name, lat, lon, _size in STARTER_ZONES]
         )
-        return web.json_response({"shapes": shapes, "source": "openstreetmap-roads"})
+        extras = road_data.extra_zones[:56]
+        if extras:
+            # Actual verified street-block centroids, never randomly generated
+            # positions. INSERT OR IGNORE preserves ownership and admin state.
+            with sqlite3.connect(database_path, timeout=10) as db:
+                seed_zones(db)
+                db.executemany(
+                    """INSERT OR IGNORE INTO city_zones(id,name,lat,lon,enabled)
+                       VALUES(?,?,?,?,1)""",
+                    [(p["id"], p["name"], p["lat"], p["lon"]) for p in extras],
+                )
+                db.commit()
+        return web.json_response({
+            "shapes": shapes,
+            "extra_count": len(extras),
+            "source": "openstreetmap-roads",
+        })
 
     async def capture(request):
         uid = await require_access(request)
