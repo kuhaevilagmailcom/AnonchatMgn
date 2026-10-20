@@ -15,7 +15,13 @@ from anonchat import city_game_api as city
 class GeometryTests(unittest.TestCase):
     def test_sector_polygons_are_distinct_and_stable(self):
         zones = city.STARTER_ZONES
-        self.assertGreaterEqual(len(zones), 5)
+        self.assertEqual(len(zones), 12)
+        zone_names = {row[1] for row in zones}
+        self.assertTrue({"Ашик", "Гостинка", "Контик", "Джазик", "Ленинский район"}.issubset(zone_names))
+        self.assertEqual(city.ZONE_META[6][1], "ТРК «Семейный парк»")
+        self.assertEqual(city.ZONE_META[7][1], "ТРК «Гостиный двор»")
+        self.assertEqual(city.ZONE_META[8][1], "ТРК «Континент»")
+        self.assertEqual(city.ZONE_META[9][1], "ТРК «Jazz Mall»")
         self.assertGreater(len({row[4] for row in zones}), 1)  # big and small
         for zone_id, _, lat, lon, radius in zones:
             poly = city.polygon_for(zone_id, lat, lon)
@@ -85,6 +91,9 @@ class CityRoutesTests(unittest.IsolatedAsyncioTestCase):
             data = await response.json()
             self.assertEqual(len(data["zones"]), len(city.STARTER_ZONES))
             self.assertTrue(all(len(z["polygon"]) == 8 for z in data["zones"]))
+            self.assertEqual(len([z for z in data["zones"] if z["kind"] == "mall"]), 4)
+            self.assertEqual(len([z for z in data["zones"] if z["kind"] == "district"]), 1)
+            self.assertTrue(all(z.get("official_name") and z.get("address") for z in data["zones"]))
             self.assertTrue(data["can_capture"])
 
     async def test_every_player_can_capture_when_gate_opens(self):
