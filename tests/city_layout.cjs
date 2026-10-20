@@ -75,6 +75,42 @@ const server = http.createServer((req, res) => {
         assert.ok(await page.locator('#panel').evaluate(el => el.classList.contains('is-expanded')));
         await page.locator('#showmarket').click();
         assert.ok(await page.locator('#market').isVisible());
+        const marketLayout = await page.evaluate(() => {
+          const bb = selector => document.querySelector(selector).getBoundingClientRect();
+          const market = document.querySelector('#market');
+          const sample = document.createElement('div');
+          sample.style.cssText = 'height:950px;width:100%;pointer-events:none';
+          sample.id = 'market-scroll-test';
+          market.append(sample);
+          return {
+            headerBottom:bb('.appbar').bottom,
+            panelTop:bb('#panel').top, panelBottom:bb('#panel').bottom,
+            navBottom:bb('#tabs').bottom, navTop:bb('#tabs').top,
+            marketTop:bb('#market').top, marketBottom:bb('#market').bottom,
+            marketHeight:market.clientHeight, marketScrollable:market.scrollHeight > market.clientHeight,
+            fullWidth:bb('#panel').width,
+            screenHeight:document.documentElement.clientHeight,
+          };
+        });
+        assert.ok(marketLayout.panelTop >= marketLayout.headerBottom - 3,
+          width + ': market overlaps Mini App header');
+        assert.ok(marketLayout.panelTop <= marketLayout.headerBottom + 5,
+          width + ': market opens too low instead of using full screen');
+        assert.ok(Math.abs(marketLayout.panelBottom - marketLayout.screenHeight) <= 2,
+          width + ': market detached from screen bottom');
+        assert.ok(Math.abs(marketLayout.navBottom - marketLayout.screenHeight) <= 2,
+          width + ': market hides bottom navigation');
+        assert.ok(marketLayout.marketBottom <= marketLayout.navTop + 2,
+          width + ': market content spills underneath bottom navigation');
+        assert.ok(marketLayout.marketTop >= marketLayout.panelTop,
+          width + ': market list appears above the drawer');
+        assert.ok(Math.abs(marketLayout.fullWidth - width) <= 2,
+          width + ': market is not full width');
+        assert.ok(marketLayout.marketScrollable,
+          width + ': long pet list does not scroll');
+        await page.locator('#market').evaluate(node => { node.scrollTop = 250; });
+        assert.ok(await page.locator('#market').evaluate(node => node.scrollTop > 50),
+          width + ': market scroll is blocked');
         await page.locator('#showtop').click();
         assert.ok(await page.locator('#leaderboard').isVisible());
         await page.locator('#showmap').click();
