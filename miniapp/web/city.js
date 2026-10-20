@@ -528,7 +528,7 @@
   }
 
   async function sendPresence(gps) {
-    if (!state.guards.length || !gps || document.hidden ||
+    if (!state.guards.some(guard => !guard.mine) || !gps || document.hidden ||
         gps.accuracy > 35 || Date.now()-state.lastPresenceAt < 15000) return;
     state.lastPresenceAt = Date.now();
     try {
@@ -961,6 +961,14 @@
   });
   setInterval(() => { if (selectedZone() && !state.capturing && !state.locating) renderSelection(); }, 1000);
   setInterval(animatePets, 2300);
+  // Stationary devices can stop invoking watchPosition. Refresh only when
+  // consented, so the HP/presence mechanic continues while the game is open.
+  setInterval(() => {
+    if (document.hidden || !state.gpsEnabled || state.locating) return;
+    if (Date.now() - (state.gpsUpdateAt || 0) > 22000) {
+      locate(false, true).catch(() => {});
+    }
+  }, 25000);
 
   applyTheme(initialTheme());
   tg?.BackButton?.show();
