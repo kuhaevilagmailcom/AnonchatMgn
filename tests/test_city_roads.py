@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from anonchat.city_roads import RoadGeometry, build_shapes
+from anonchat.city_roads import RoadGeometry, build_shapes, build_extra_zones
 
 
 class StreetGeometryTests(unittest.TestCase):
@@ -34,6 +34,22 @@ class StreetGeometryTests(unittest.TestCase):
             for (x1, y1), (x2, y2) in zip(points, points[1:])
         ]
         self.assertEqual(build_shapes(roads, [(6, 53.379, 58.976)]), {})
+
+    def test_small_extra_quarters_from_closed_roads_on_left_bank(self):
+        corners = [(59.049,53.387), (59.050,53.387),
+                   (59.050,53.388), (59.049,53.388)]
+        roads = [
+            {"geometry": [{"lat":p[1], "lon":p[0]},
+                           {"lat":q[1], "lon":q[0]}]}
+            for p, q in zip(corners, corners[1:] + corners[:1])
+        ]
+        extras = build_extra_zones(roads, [(13,53.393547,59.063386)])
+        self.assertEqual(len(extras), 1)
+        self.assertEqual(extras[0]["bank"], "Левый берег")
+        self.assertGreaterEqual(extras[0]["id"], 100000)
+        self.assertEqual(extras, build_extra_zones(roads, [(13,53.393547,59.063386)]))
+        self.assertTrue(len(extras[0]["polygon"]) >= 4)
+        self.assertEqual(build_extra_zones(roads[:3], []), [])
 
     def test_no_roads_means_no_fake_polygons(self):
         self.assertEqual(build_shapes([],[(15,53.415252,59.054228)]),{})
