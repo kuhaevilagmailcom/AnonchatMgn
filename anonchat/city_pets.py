@@ -275,6 +275,22 @@ def _contains(polygon, latitude, longitude):
     return inside
 
 
+def _boundary_distance_m(polygon, lat, lon):
+    """Shortest distance to real road-block edge; uses a local metre projection."""
+    scale = math.cos(math.radians(lat))
+    x, y = lon * 111320 * scale, lat * 111320
+    best = float("inf")
+    for i in range(len(polygon)):
+        p, q = polygon[i - 1], polygon[i]
+        ax, ay = p[1] * 111320 * scale, p[0] * 111320
+        bx, by = q[1] * 111320 * scale, q[0] * 111320
+        dx, dy = bx - ax, by - ay
+        length = dx * dx + dy * dy
+        t = max(0, min(1, ((x-ax)*dx + (y-ay)*dy) / length)) if length else 0
+        best = min(best, math.hypot(x - ax - t*dx, y - ay - t*dy))
+    return best
+
+
 def presence(db, user_id, lat, lon, accuracy_m, timestamp_s, polygons, now=None):
     """Applies HP only inside real OSM road cells. No coordinate history stored.
 
@@ -310,6 +326,8 @@ def presence(db, user_id, lat, lon, accuracy_m, timestamp_s, polygons, now=None)
             ).fetchall():
                 shape = polygons.get(str(zone_id))
                 if not shape or len(shape) < 3 or not _contains(shape, lat, lon):
+                    continue
+                if _boundary_distance_m(shape, lat, lon) < accuracy_m + 2:
                     continue
                 hit_kind, hit_zone = kind, zone_id
                 break
