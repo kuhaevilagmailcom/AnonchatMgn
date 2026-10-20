@@ -83,3 +83,5 @@ jobs:
       - run: npm install --no-save --no-package-lock playwright-core@1.56.0
       - name: Check all active Mini App screens at 320–430px
         run: node tests/mobile_layout.cjs
+      - name: Check MGN capture map at 320–430px
+        run: node tests/city_mobile_layout.cjs
