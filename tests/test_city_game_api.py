@@ -122,6 +122,51 @@ class CityRoutesTests(unittest.IsolatedAsyncioTestCase):
         async with self.client.post("/api/city/capture", json=payload) as response:
             self.assertEqual(response.status, 400)
 
+    async def test_shop_obeys_admin_gate_and_guards_owned_zones(self):
+        user = {"X-Test-User": "20"}
+        admin = {"X-Test-User": "10"}
+        async with self.client.post("/api/city/pets/buy", headers=user, json={"kind":"cat"}) as r:
+            self.assertEqual(r.status, 403)
+        async with self.client.get("/api/city/state", headers=admin) as r:
+            self.assertEqual(r.status, 200)
+        async with self.client.post(
+            "/api/city/pets/buy", headers=admin,
+            json={"kind":"cat","request_id":"pet-first"},
+        ) as r:
+            self.assertEqual(r.status, 200)
+            pet = await r.json()
+        async with self.client.post(
+            "/api/city/pets/buy", headers=admin,
+            json={"kind":"cat","request_id":"pet-first"},
+        ) as r:
+            self.assertEqual(r.status, 200)
+            replay = await r.json()
+            self.assertEqual(replay["pet_id"],pet["pet_id"])
+        async with self.client.post(
+            "/api/city/pets/place", headers=admin,
+            json={"pet_id":pet["pet_id"],"zone_id":1}
+        ) as r:
+            self.assertEqual(r.status, 400)  # not owned yet
+        async with self.client.post(
+            "/api/city/capture", headers=admin,
+            json={"zone_id":1,"lat":53.404924,"lon":58.990902,
+                  "accuracy_m":5,"timestamp_s":time.time()},
+        ) as r:
+            self.assertEqual(r.status, 200)
+        async with self.client.post(
+            "/api/city/pets/place", headers=admin,
+            json={"pet_id":pet["pet_id"],"zone_id":1}
+        ) as r:
+            self.assertEqual(r.status, 200)
+        async with self.client.get("/api/city/state", headers=admin) as r:
+            data = await r.json()
+            self.assertEqual(data["wallet"], 500-100+50)
+            self.assertEqual(len(data["guards"]), 1)
+            self.assertTrue(data["guards"][0]["mine"])
+        async with self.client.post("/api/city/pets/claim", headers=admin,
+                                    json={}) as r:
+            self.assertEqual(r.status, 200)
+
     async def test_capture_requires_proximity_not_just_sector_click(self):
         os.environ["CITY_GAME_TEST_ADMINS_ONLY"] = "0"
         payload = {
