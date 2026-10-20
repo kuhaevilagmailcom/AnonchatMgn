@@ -191,7 +191,7 @@ def routes(database_path, authenticate, is_admin):
             body = await request.json()
             with sqlite3.connect(database_path, timeout=10, isolation_level=None) as db:
                 city_pets.init_db(db)
-                result = city_pets.buy(db, uid, str(body["kind"]))
+                result = city_pets.buy(db, uid, str(body["kind"]), request_id=body.get("request_id", ""))
             return web.json_response({"ok": True, **result})
         except (KeyError, TypeError, ValueError, sqlite3.Error) as error:
             raise web.HTTPBadRequest(text=str(error))
