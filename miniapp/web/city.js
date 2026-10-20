@@ -15,6 +15,10 @@
   const PALETTE = ['#e57ac6', '#a28aff', '#ffba80', '#70d3c9', '#f18c9b', '#b9d47b'];
   const ui = {
     panel: $('panel'), view: $('mapView'), board: $('leaderboard'), rules: $('rules'),
+    market: $('market'), shop: $('petCatalog'), inventory: $('petInventory'),
+    wallet: $('wallet'), hpValue: $('hpValue'), hpHud: $('hpHud'), hpFill: $('hpFill'),
+    pendingStars: $('pendingStars'), petCount: $('petCount'),
+    placeHint: $('placeHint'), claimIncome: $('claimIncome'), zoneGuard: $('zoneGuard'),
     count: $('count'), mine: $('mineCount'), captures: $('captureCount'),
     zone: $('zone'), owner: $('owner'), ownerCard: $('ownerCard'),
     state: $('zoneState'), details: $('zoneDetails'),
@@ -22,7 +26,7 @@
     capture: $('capture'), captureLabel: $('captureLabel'),
     locate: $('locate'), refresh: $('refresh'), top: $('topbutton'),
     leaders: $('leaders'), toast: $('toast'),
-    mapTab: $('showmap'), topTab: $('showtop'), rulesTab: $('showrules')
+    mapTab: $('showmap'), topTab: $('showtop'), marketTab: $('showmarket'), rulesTab: $('showrules')
   };
 
   const state = {
@@ -33,7 +37,10 @@
     activeTab: 'map', toastTimer: null, hasFramed: false, expanded: false, theme: 'dark',
     baseLayer: null, basemapType: null,
     gpsWatchId: null, telegramPollId: null, gpsEnabled: false, autoCentered: false,
-    roadPolygons: new Map(), roadTimer: null, roadSignature: ""
+    roadPolygons: new Map(), roadTimer: null, roadSignature: "",
+    catalog: [], myPets: [], guards: [], wallet: 0, hp: 100, pendingStars: 0,
+    actionBusy: false, petGroup: null, petAgents: [], lastPresenceAt: 0,
+    lastAttackedZone: null
   };
 
   function safeText(value, fallback = '') {
@@ -111,6 +118,7 @@
     ui.count.textContent = occupied + ' / ' + state.zones.length;
     ui.mine.textContent = String(number(data.my_zones));
     ui.captures.textContent = String(number(data.total_captures));
+    ui.hpHud.textContent = String(Math.ceil(state.hp));
   }
   const ZONE_ICONS = {
     mall: '<path d="M4 10h16v11H4zM3 10l2-6h14l2 6M8 10V4m8 6V4M9 21v-6h6v6"/>',
@@ -233,6 +241,7 @@
     // vector style automatically. Do NOT add it a second time here.
     state.territoryGroup = L.layerGroup().addTo(map);
     state.markerGroup = L.layerGroup().addTo(map);
+    state.petGroup = L.layerGroup().addTo(map);
     map.on('zoomend', () => {
       const showCaptureZones = map.getZoom() >= 14;
       for (const item of state.territoryLayers.values()) {
@@ -335,6 +344,7 @@
       }).addTo(state.territoryGroup);
       item.point.on('click',()=>chooseZone(zone.id));
     }
+    drawPetAgents();
     if (!state.hasFramed && all.length) {
       state.hasFramed=true;
       state.map.fitBounds(L.latLngBounds(all), {
@@ -360,6 +370,169 @@
     } catch (error) {
       // Road data are optional: icons continue to work without fake outlines.
       console.warn('Street geometry unavailable', error);
+    }
+  }
+
+  function element(tag, text, className) {
+    const node = document.createElement(tag);
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    if (className) node.className = className;
+    return node;
+  }
+  function guardedZone(id) {
+    return state.zones.find(z => z.id === id);
+  }
+  function renderMarket() {
+    ui.wallet.textContent = state.wallet.toLocaleString('ru-RU') + ' ⭐';
+    ui.hpValue.textContent = state.hp.toFixed(1).replace(/\.0$/, '');
+    ui.hpHud.textContent = String(Math.ceil(state.hp));
+    ui.hpFill.style.width = state.hp + '%';
+    ui.pendingStars.textContent = state.pendingStars.toLocaleString('ru-RU') + ' ⭐';
+    ui.claimIncome.disabled = state.actionBusy || state.pendingStars <= 0;
+    ui.shop.replaceChildren();
+    for (const pet of state.catalog) {
+      const row = element('div', null, 'pet-product');
+      const emoji = element('span', pet.emoji, 'pet-product-emoji');
+      const info = element('div', null, 'pet-product-info');
+      info.append(element('strong', pet.name),
+        element('small', '+' + pet.stars_h + ' ⭐/ч · −' + pet.hp_h + ' HP/ч'));
+      const buyBox = element('div', null, 'pet-product-price');
+      const buy = element('button', 'Купить');
+      buy.type = 'button';
+      buy.dataset.buyKind = pet.kind;
+      buy.disabled = state.actionBusy || state.wallet < pet.price;
+      const price = element('small', pet.price.toLocaleString('ru-RU') + ' ⭐');
+      buyBox.append(price, buy);
+      row.append(emoji, info, buyBox);
+      ui.shop.append(row);
+    }
+    ui.inventory.replaceChildren();
+    ui.petCount.textContent = String(state.myPets.length);
+    const zone = selectedZone();
+    ui.placeHint.textContent = zone?.mine ?
+      'Выбран район: ' + zone.name : 'Чтобы поставить питомца, выбери свой район на карте.';
+    if (!state.myPets.length) {
+      ui.inventory.append(element('p', 'Пока пусто. Купленные питомцы появятся здесь.', 'market-note'));
+    }
+    for (const pet of state.myPets) {
+      const info = state.catalog.find(i => i.kind === pet.kind);
+      if (!info) continue;
+      const row = element('div', null, 'pet-inventory-row');
+      const emoji = element('span', info.emoji, 'pet-product-emoji');
+      const desc = element('div', null, 'pet-inventory-label');
+      const location = pet.zone_id ? guardedZone(pet.zone_id)?.name || 'Район' : 'В запасе';
+      desc.append(element('strong', info.name + ' · #' + pet.id),
+        element('small', location + (pet.zone_id ? ' · +' + info.stars_h + ' ⭐/ч' : '')));
+      const button = element('button', pet.zone_id ? 'Снять' : 'Поставить', 'pet-action');
+      button.type = 'button';
+      button.dataset.petAction = pet.zone_id ? 'recall' : 'place';
+      button.dataset.petId = String(pet.id);
+      button.disabled = state.actionBusy || (!pet.zone_id && !zone?.mine);
+      row.append(emoji, desc, button);
+      ui.inventory.append(row);
+    }
+  }
+
+  async function petAction(action, values = {}) {
+    if (state.actionBusy) return;
+    if (action === 'place' && !selectedZone()?.mine) {
+      feedback('Выбери свой район на карте', 'error'); return;
+    }
+    state.actionBusy = true;
+    renderMarket();
+    try {
+      const result = await api('/api/city/pets/' + action, {
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(values)
+      });
+      await load();
+      if (action === 'buy') feedback('Питомец куплен. Выбери свой район!', 'success');
+      else if (action === 'place') feedback('Защитник отправлен на район', 'success');
+      else if (action === 'recall') feedback('Питомец вернулся в запас', 'success');
+      else feedback('Получено ' + (result.stars || 0) + ' ⭐', 'success');
+      touch('success');
+    } catch (error) {
+      feedback(error.message, 'error');
+      touch('error');
+    } finally {
+      state.actionBusy = false;
+      renderMarket();
+    }
+  }
+
+  function insidePolygon(poly, lat, lon) {
+    if (!Array.isArray(poly) || poly.length < 3) return false;
+    if (window.MGNRoadBlocks?.contains)
+      return window.MGNRoadBlocks.contains(poly, lat, lon);
+    let inside = false;
+    for (let i=0,j=poly.length-1;i<poly.length;j=i++) {
+      const a=poly[i],b=poly[j];
+      if ((a[0]>lat)!==(b[0]>lat) &&
+          lon < (b[1]-a[1])*(lat-a[0])/(b[0]-a[0])+a[1]) inside=!inside;
+    }
+    return inside;
+  }
+  function drawPetAgents() {
+    if (!state.petGroup) return;
+    state.petGroup.clearLayers();
+    state.petAgents = [];
+    const shown = state.guards.slice(0, 75);
+    for (const guard of shown) {
+      const zone = guardedZone(guard.zone_id);
+      const kind = state.catalog.find(p=>p.kind===guard.kind);
+      if (!zone || !kind) continue;
+      const poly = state.roadPolygons.get(zone.id)?.polygon || zone.polygon;
+      const box = Array.isArray(poly) && poly.length >= 3 ? poly : null;
+      const anchor = box && insidePolygon(box,zone.lat,zone.lon) ?
+        [zone.lat,zone.lon] : box ? box[0] : [zone.lat,zone.lon];
+      const marker = L.marker(anchor, {
+        interactive:false,zIndexOffset:1200,
+        icon:L.divIcon({
+          className:'pet-agent',
+          html:'<span aria-hidden="true">' + kind.emoji + '</span>',
+          iconSize:[31,31],iconAnchor:[15,15]
+        })
+      }).addTo(state.petGroup);
+      state.petAgents.push({marker,anchor,polygon:box,zoneId:zone.id,phase:zone.id*1.71});
+    }
+  }
+  function animatePets() {
+    if (document.hidden || !state.petAgents.length) return;
+    const t = Date.now()/2600;
+    for (const pet of state.petAgents) {
+      if (!pet.polygon || !pet.marker.setLatLng) continue; // no verified borders: stay put
+      const box = pet.polygon;
+      const idx = Math.floor((t/4+pet.phase)%box.length);
+      const edge = box[idx], inside = pet.anchor;
+      const f = .07 + .08 * (1+Math.sin(t+pet.phase))/2;
+      const lat = inside[0] + (edge[0]-inside[0])*f;
+      const lon = inside[1] + (edge[1]-inside[1])*f;
+      if (insidePolygon(box,lat,lon)) pet.marker.setLatLng([lat,lon]);
+    }
+  }
+
+  async function sendPresence(gps) {
+    if (!state.guards.length || !gps || document.hidden ||
+        gps.accuracy > 35 || Date.now()-state.lastPresenceAt < 15000) return;
+    state.lastPresenceAt = Date.now();
+    try {
+      const result = await api('/api/city/presence',{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          lat:gps.lat,lon:gps.lon,accuracy_m:gps.accuracy,
+          timestamp_s:gps.timestamp/1000
+        })
+      });
+      state.hp = Math.max(1, Math.min(100, Number(result.hp) || 1));
+      renderMarket();
+      if (state.lastAttackedZone !== result.zone_id && result.zone_id) {
+        const zone = guardedZone(result.zone_id);
+        feedback('Защитник ' + (zone?.name || 'района') + ' атакует. HP падает медленно.', 'info');
+      }
+      state.lastAttackedZone = result.zone_id || null;
+    } catch (error) {
+      // Geolocation/gameplay is optional. No alerts on repeated noisy fixes.
+      console.warn('GPS HP update unavailable', error);
     }
   }
 
@@ -397,6 +570,11 @@
     ui.panel.classList.toggle('has-selection', Boolean(zone));
     ui.ownerCard.hidden = !zone;
     ui.capture.hidden = !zone;
+    ui.zoneGuard.hidden = !zone || !state.guards.some(g => g.zone_id === zone.id);
+    if (!ui.zoneGuard.hidden) {
+      const defender = state.guards.find(g => g.zone_id === zone.id);
+      ui.zoneGuard.textContent = state.catalog.find(p => p.kind === defender.kind)?.emoji || '🐈';
+    }
 
     if (!zone) {
       ui.zone.textContent = 'Выбери место на карте';
@@ -419,12 +597,12 @@
     ui.state.className = 'owner-state ' + (zone.mine ? 'mine' : zone.occupied ? 'occupied' : '');
 
     const remaining = cooldownS();
-    ui.capture.disabled = !state.canCapture || !!zone.mine ||
-      state.capturing || state.locating || remaining > 0;
+    ui.capture.disabled = !state.canCapture ||
+      state.capturing || state.locating || (!zone.mine && remaining > 0);
     if (!state.canCapture) {
       ui.captureLabel.textContent = 'Только просмотр';
     } else if (zone.mine) {
-      ui.captureLabel.textContent = 'Уже твоё';
+      ui.captureLabel.textContent = 'Защитить район';
     } else if (remaining > 0) {
       ui.captureLabel.textContent = 'Повтор через ' + humanTime(remaining);
     } else if (state.capturing || state.locating) {
@@ -459,6 +637,7 @@
     const pages = [
       [ui.view, ui.mapTab, 'map'],
       [ui.board, ui.topTab, 'top'],
+      [ui.market, ui.marketTab, 'market'],
       [ui.rules, ui.rulesTab, 'rules']
     ];
     for (const [section, button, key] of pages) {
@@ -553,6 +732,7 @@
     state.gpsEnabled = true;
     state.gpsUpdateAt = Date.now();
     drawLocation(gps, focus);
+    sendPresence(gps);
     renderSelection();
   }
 
@@ -684,6 +864,12 @@
         scheduleRoadPolygons(state.baseLayer.getMaplibreMap());
       }
       state.leaderboard = Array.isArray(data.leaderboard) ? data.leaderboard : [];
+      state.catalog = Array.isArray(data.catalog) ? data.catalog : [];
+      state.myPets = Array.isArray(data.my_pets) ? data.my_pets : [];
+      state.guards = Array.isArray(data.guards) ? data.guards : [];
+      state.wallet = number(data.wallet);
+      state.hp = Math.max(1, Math.min(100, number(data.hp, 100)));
+      state.pendingStars = number(data.pending_stars);
       state.canCapture = !!data.can_capture;
       state.radius = number(data.capture_radius_m, 100);
       state.maxAccuracy = number(data.max_accuracy_m, 75);
@@ -691,6 +877,7 @@
       if (state.selectedId && !state.zones.some(z => z.id === state.selectedId)) state.selectedId = null;
       renderHud(data);
       renderBoard();
+      renderMarket();
       drawTerritories();
       renderSelection();
       if (!state.zones.length) feedback('Пока нет активных игровых районов');
@@ -705,7 +892,9 @@
 
   async function capture() {
     const zone = selectedZone();
-    if (!zone || state.capturing || cooldownS() > 0 || !state.canCapture || zone.mine) return;
+    if (!zone || state.capturing || !state.canCapture) return;
+    if (zone.mine) { switchTab('market'); return; }
+    if (cooldownS() > 0) return;
     state.capturing = true;
     renderSelection();
     try {
@@ -739,9 +928,23 @@
   ui.top.addEventListener('click', () => { switchTab('top'); });
   ui.mapTab.addEventListener('click', () => { switchTab('map'); });
   ui.topTab.addEventListener('click', () => { switchTab('top'); });
+  ui.marketTab.addEventListener('click', () => { switchTab('market'); renderMarket(); });
   ui.rulesTab.addEventListener('click', () => { switchTab('rules'); });
   ui.capture.addEventListener('click', capture);
+  ui.claimIncome.addEventListener('click', () => { petAction('claim'); });
+  ui.shop.addEventListener('click', event => {
+    const button = event.target.closest('[data-buy-kind]');
+    if (button) petAction('buy', {kind: button.dataset.buyKind});
+  });
+  ui.inventory.addEventListener('click', event => {
+    const button = event.target.closest('[data-pet-action]');
+    if (!button) return;
+    petAction(button.dataset.petAction, {
+      pet_id: Number(button.dataset.petId), zone_id: state.selectedId
+    });
+  });
   setInterval(() => { if (selectedZone() && !state.capturing && !state.locating) renderSelection(); }, 1000);
+  setInterval(animatePets, 2300);
 
   applyTheme(initialTheme());
   tg?.BackButton?.show();
