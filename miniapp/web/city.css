@@ -62,48 +62,81 @@ a{color:inherit;text-decoration:none}
 .toast{position:absolute;z-index:1700;top:calc(190px + env(safe-area-inset-top,0px));left:50%;width:max-content;max-width:calc(100% - 34px);transform:translateX(-50%);padding:10px 13px;background:#171316;border:1px solid #59424f;border-radius:10px;color:white;font-size:12px;line-height:1.4;text-align:center}
 .toast[data-kind=error]{border-color:#9c536c}
 
-/* Narrow dock at rest; only ranking/rules or explicit expansion grows it. */
-.bottom-sheet{position:absolute;z-index:1100;bottom:0;left:0;right:0;width:100%;height:min(253px,46dvh);display:flex;flex-direction:column;overflow:hidden;border-top:1px solid #50404b;border-radius:17px 17px 0 0;background:rgba(14,12,13,.985);transition:height .2s ease}
-.bottom-sheet.is-expanded,.bottom-sheet[data-tab=top],.bottom-sheet[data-tab=rules]{height:min(57dvh,465px)}
-.sheet-grip{display:grid;place-items:center;flex:none;width:100%;height:16px;padding:0;background:transparent;touch-action:manipulation}
-.sheet-handle{display:block;width:35px;height:3px;border-radius:10px;background:#63565f}
-.sheet-content{flex:1;min-height:0;overflow:auto;scrollbar-width:none;overscroll-behavior:contain;padding:5px 17px 6px}
+/* Compact native-feeling panel: title, owner, action, tabs. */
+.bottom-sheet{
+  position:absolute;z-index:1100;left:0;right:0;bottom:0;width:100%;
+  height:calc(181px + env(safe-area-inset-bottom,0px));
+  display:flex;flex-direction:column;overflow:hidden;
+  background:rgba(14,12,13,.985);border-top:1px solid #50404b;
+  border-radius:16px 16px 0 0;transition:height .18s ease;
+}
+.bottom-sheet:not(.has-selection):not(.is-expanded):not([data-tab=top]):not([data-tab=rules]){
+  height:calc(145px + env(safe-area-inset-bottom,0px));
+}
+.bottom-sheet.is-expanded,.bottom-sheet[data-tab=top],.bottom-sheet[data-tab=rules]{
+  height:min(54dvh,425px);
+}
+.sheet-grip{
+  display:grid;place-items:center;flex:none;width:100%;height:13px;
+  padding:0;background:transparent;touch-action:manipulation;
+}
+.sheet-handle{display:block;width:33px;height:3px;border-radius:10px;background:#605760}
+.sheet-content{
+  flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  scrollbar-width:none;padding:6px 16px 9px;
+}
 .sheet-content::-webkit-scrollbar{display:none}
-.sheet-overline{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:10px;font-weight:600;letter-spacing:0}
-.sheet-id{margin-left:auto;color:#8d8389;font-size:10px;font-weight:500;letter-spacing:0;white-space:nowrap}
-.pulse-dot{display:none}
-.sheet-content h1{margin:4px 0 5px;font-size:19px;font-weight:770;letter-spacing:-.4px;line-height:1.15;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.bottom-sheet.is-expanded .sheet-content h1{white-space:normal;overflow:visible}
-.sheet-content h2{margin:6px 0 12px;font-size:21px;font-weight:760;letter-spacing:-.4px}
-.zone-details{margin:0 0 7px;color:var(--muted);font-size:11px;line-height:1.35}
-#mapView .zone-details{display:none}
+.sheet-overline{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:11px}
+.sheet-id{font-size:10px;color:var(--muted)}
+.sheet-content h1{
+  margin:1px 0 5px;font-size:20px;font-weight:760;line-height:1.24;letter-spacing:-.35px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.bottom-sheet.is-expanded h1{overflow:visible;white-space:normal}
+.sheet-content h2{margin:4px 0 11px;font-size:21px;font-weight:760;letter-spacing:-.3px}
+#mapView .zone-details{
+  display:none;margin:0 0 9px;font-size:11px;color:var(--muted);line-height:1.45;
+}
 .bottom-sheet.is-expanded #mapView .zone-details:not([hidden]){display:block}
-
-/* Content uses native list rows, not shiny nested cards. */
-.owner-card{display:flex;align-items:center;gap:9px;min-height:36px;padding:3px 0;border-top:1px solid #2d282b;border-bottom:1px solid #2d282b;background:none}
-.owner-icon{display:none}
-.owner-data{display:flex;flex:1;flex-direction:row;align-items:center;min-width:0;gap:8px}
-.owner-data small{flex:none;color:var(--muted);font-size:11px;font-weight:500}
-.owner-data strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;font-size:12px;font-weight:680}
-.owner-state{padding:2px 6px;border:1px solid #494148;border-radius:4px;color:var(--muted);font-size:10px;font-weight:600;white-space:nowrap;background:none}
-.owner-state.mine{border-color:#ba78a3;color:#f5c0e0}
-.owner-state.occupied{color:#f0c1d9}
-.game-readings{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:22px;padding:3px 0;color:var(--muted)}
-.reading{display:flex;align-items:center;gap:5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
-.reading span{overflow:hidden;text-overflow:ellipsis}
-.reading .ico{height:13px;width:13px;color:var(--muted)}
-.game-status{min-height:13px;margin:0 0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px;line-height:1.4}
-.bottom-sheet.is-expanded .game-status{white-space:normal;overflow:visible;margin:7px 0 10px}
-.capture-button{display:flex;align-items:center;justify-content:center;width:100%;min-height:42px;padding:9px 14px;border-radius:11px;background:var(--accent);color:#191016;font-size:13px;font-weight:760;letter-spacing:0}
+.owner-card{
+  display:flex;align-items:center;justify-content:space-between;gap:9px;
+  min-height:27px;padding:3px 0;border-top:1px solid var(--line);
+}
+.owner-data{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.owner-data small{color:var(--muted);font-size:11px;white-space:nowrap}
+.owner-data strong{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:12px;font-weight:650;
+}
+.owner-state{flex:none;font-size:10px;font-weight:650;color:#b9afb7}
+.owner-state.mine{color:var(--accent)}
+.owner-state.occupied{color:#e9c6da}
+.capture-button{
+  display:flex;align-items:center;justify-content:center;width:100%;min-height:42px;
+  margin-top:9px;padding:9px 14px;background:var(--accent);border-radius:10px;
+  color:#21131b;font-size:13px;font-weight:760;
+}
 .capture-button:not(:disabled):hover{background:#ed8dce}
-.capture-button:disabled{background:#563747;color:#e0b6d1}
+.capture-button:disabled{background:#533345;color:#e5bed8}
 .capture-button .ico,.capture-chevron{display:none}
-.capture-button>span{margin:0}
-.sheet-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;flex:none;width:100%;min-height:54px;padding:0 10px env(safe-area-inset-bottom,0px);border-top:1px solid #262225;background:#090809}
-.tab{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:3px;min-height:51px;padding:5px 0;color:#8e858c;background:none;font-size:10px;font-weight:660;letter-spacing:0;border-radius:0;border-top:2px solid transparent}
+.screenreader-status{
+  position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;
+  border:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;
+}
+.sheet-tabs{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));flex:none;gap:0;
+  width:100%;min-height:calc(54px + env(safe-area-inset-bottom,0px));
+  padding:0 10px env(safe-area-inset-bottom,0px);
+  border-top:1px solid var(--line);background:#090809;
+}
+.tab{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:3px;min-height:51px;padding:5px 0;border-top:2px solid transparent;
+  background:none;color:#8e858c;font-size:10px;font-weight:650;
+}
 .tab .ico{width:19px;height:19px}
-.tab.active{color:var(--accent);background:none;border-top-color:var(--accent)}
-.section-subtitle{margin:0 0 8px;color:var(--muted);font-size:12px;line-height:1.4}
+.tab.active{color:var(--accent);border-top-color:var(--accent)}
+.section-subtitle{color:var(--muted);font-size:12px;line-height:1.4;margin:0 0 8px}
 
 /* Rankings: simple dense rows */
 .leaders{margin:0;padding:0;list-style:none}
@@ -157,8 +190,8 @@ body[data-map-theme=light] .zone-pin.is-free .zone-pin-inner{background:#fff}
  .reading{font-size:9px}
 }
 @media(max-height:680px){
- .bottom-sheet{height:min(239px,52dvh)}
- .bottom-sheet.is-expanded,.bottom-sheet[data-tab=top],.bottom-sheet[data-tab=rules]{height:65dvh}
+ .bottom-sheet{height:calc(181px + env(safe-area-inset-bottom,0px))}
+ .bottom-sheet.is-expanded,.bottom-sheet[data-tab=top],.bottom-sheet[data-tab=rules]{height:min(63dvh,425px)}
  .hud{top:calc(64px + env(safe-area-inset-top,0px))}
  .map-actions{top:calc(117px + env(safe-area-inset-top,0px))}
 }
@@ -173,10 +206,15 @@ body[data-map-theme=light] .zone-pin.is-free .zone-pin-inner{background:#fff}
 /* MapLibre renders true dark/light vector styles, so no CSS filtering is applied
    to its WebGL canvas. The Leaflet raster fallback alone gets a color filter. */
 .maplibregl-map,.maplibregl-canvas,.maplibregl-canvas-container{filter:none!important}
-.leaflet-bottom.leaflet-right{bottom:calc(min(253px,46dvh) + 8px);right:8px;z-index:1000}
+.leaflet-bottom.leaflet-right{
+  bottom:calc(181px + env(safe-area-inset-bottom,0px) + 8px);right:8px;z-index:1000;
+}
+body:has(#panel:not(.has-selection):not(.is-expanded):not([data-tab=top]):not([data-tab=rules])) .leaflet-bottom.leaflet-right{
+  bottom:calc(145px + env(safe-area-inset-bottom,0px) + 8px);
+}
 body:has(#panel.is-expanded) .leaflet-bottom.leaflet-right,
 body:has(#panel[data-tab="top"]) .leaflet-bottom.leaflet-right,
-body:has(#panel[data-tab="rules"]) .leaflet-bottom.leaflet-right{bottom:calc(min(57dvh,465px) + 8px)}
+body:has(#panel[data-tab="rules"]) .leaflet-bottom.leaflet-right{bottom:calc(min(54dvh,425px) + 8px)}
 /* One short, accessible data-source credit; no duplicate text or Leaflet logo. */
 .leaflet-control-attribution{
   max-width:calc(100vw - 18px);
@@ -197,10 +235,9 @@ body:has(#panel[data-tab="rules"]) .leaflet-bottom.leaflet-right{bottom:calc(min
 }
 .leaflet-control-attribution a:hover{text-decoration:underline}
 @media(max-height:680px){
-  .leaflet-bottom.leaflet-right{bottom:calc(min(239px,52dvh) + 8px)}
   body:has(#panel.is-expanded) .leaflet-bottom.leaflet-right,
   body:has(#panel[data-tab="top"]) .leaflet-bottom.leaflet-right,
-  body:has(#panel[data-tab="rules"]) .leaflet-bottom.leaflet-right{bottom:calc(65dvh + 8px)}
+  body:has(#panel[data-tab="rules"]) .leaflet-bottom.leaflet-right{bottom:calc(min(63dvh,425px) + 8px)}
 }
 @media(orientation:landscape) and (max-height:500px){
   .leaflet-bottom.leaflet-right{bottom:0;right:min(380px,62vw)}
