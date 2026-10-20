@@ -5,6 +5,6 @@
   if(!initData)return;
   fetch('/api/city/access',{headers:{'X-Telegram-Init-Data':initData}})
     .then(r=>r.ok?r.json():null)
-    .then(data=>{if(data?.allowed)entry.hidden=false})
+    .then(data=>{if(data?.allowed){entry.hidden=false;entry.style.display="block"}})
     .catch(()=>{});
 })();
