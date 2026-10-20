@@ -404,7 +404,8 @@
       const emoji = element('span', pet.emoji, 'pet-product-emoji');
       const info = element('div', null, 'pet-product-info');
       info.append(element('strong', pet.name),
-        element('small', '+' + pet.stars_h + ' ⭐/ч · −' + pet.hp_h + ' HP/ч'));
+        element('small', 'Доход: +' + pet.stars_h + ' ⭐/ч'),
+        element('small', 'Урон: −' + Number(pet.hp_5m).toLocaleString('ru-RU') + ' HP / 5 мин'));
       const buyBox = element('div', null, 'pet-product-price');
       const buy = element('button', 'Купить');
       buy.type = 'button';
@@ -528,7 +529,10 @@
   }
 
   async function sendPresence(gps) {
-    if (!state.guards.some(guard => !guard.mine) || !gps || document.hidden ||
+    // Update HP even when no guard is present: the server regenerates it.
+    // Only a deployed opponent guard inside an accurately verified polygon
+    // can do damage. Never infer attacks from the zone owner alone.
+    if (!gps || document.hidden ||
         gps.accuracy > 35 || Date.now()-state.lastPresenceAt < 15000) return;
     state.lastPresenceAt = Date.now();
     try {
@@ -663,7 +667,16 @@
       if (active) button.setAttribute('aria-current', 'page');
       else button.removeAttribute('aria-current');
     }
-    ui.panel.scrollTop = 0;
+    // Market is a full-height scrolling page; always open at its top,
+    // while keeping the four bottom navigation controls in place.
+    if (tab === 'market') {
+      ui.market.scrollTop = 0;
+      state.expanded = false;
+      ui.panel.classList.remove('is-expanded');
+      ui.sheetToggle.setAttribute('aria-expanded', 'false');
+    } else if (state.activeTab !== 'market') {
+      ui.panel.scrollTop = 0;
+    }
     touch();
     requestAnimationFrame(() => state.map?.invalidateSize());
   }
