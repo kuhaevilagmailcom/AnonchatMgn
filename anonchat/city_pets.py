@@ -16,11 +16,11 @@ MIN_HP_MILLI = 1_000
 REGEN_HP_H = 8
 CLAIM_MAX_SECONDS = 24 * 3600
 PET_TYPES = {
-    "cat":   {"name": "Кот",    "emoji": "🐈", "price": 100,  "stars_h": 1,  "hp_h": 0.5},
-    "bird":  {"name": "Птица",  "emoji": "🐤", "price": 500,  "stars_h": 3,  "hp_h": 1},
-    "pig":   {"name": "Свинка", "emoji": "🐷", "price": 1000, "stars_h": 6,  "hp_h": 1.5},
-    "snake": {"name": "Змея",   "emoji": "🐍", "price": 2500, "stars_h": 10, "hp_h": 2.5},
-    "lion":  {"name": "Лев",    "emoji": "🦁", "price": 5000, "stars_h": 18, "hp_h": 4},
+    "cat":   {"name": "Кот",    "emoji": "🐈", "price": 100,  "stars_h": 1,  "hp_5m": 0.5},
+    "bird":  {"name": "Птица",  "emoji": "🐤", "price": 500,  "stars_h": 3,  "hp_5m": 1},
+    "pig":   {"name": "Свинка", "emoji": "🐷", "price": 1000, "stars_h": 6,  "hp_5m": 1.5},
+    "snake": {"name": "Змея",   "emoji": "🐍", "price": 2500, "stars_h": 10, "hp_5m": 2.5},
+    "lion":  {"name": "Лев",    "emoji": "🦁", "price": 5000, "stars_h": 18, "hp_5m": 4},
 }
 
 
@@ -315,7 +315,7 @@ def presence(db, user_id, lat, lon, accuracy_m, timestamp_s, polygons, now=None)
         hit_kind = None
         hit_zone = None
         # Protect user with accuracy: entire GPS uncertainty must fit the road cell.
-        # On unreliable fixes, don't apply damage.
+        # On unreliable fixes, don't apply damage. No guard = healing only.
         if accuracy_m <= 35:
             for zone_id, kind, owner_id in db.execute(
                 """SELECT p.zone_id,p.kind,p.owner_id FROM city_pets p
@@ -332,7 +332,9 @@ def presence(db, user_id, lat, lon, accuracy_m, timestamp_s, polygons, now=None)
                 hit_kind, hit_zone = kind, zone_id
                 break
         if hit_kind in PET_TYPES:
-            damage = int(elapsed * PET_TYPES[hit_kind]["hp_h"] * 1000 / 3600)
+            # Damage numbers are HP lost per 5 MINUTES, not per hour.
+            # Real server elapsed time; no offline damage spikes, never fatal.
+            damage = int(elapsed * PET_TYPES[hit_kind]["hp_5m"] * 1000 / 300)
             hp = max(MIN_HP_MILLI, hp - damage)
         else:
             hp = min(MAX_HP_MILLI, hp + int(elapsed * REGEN_HP_H * 1000 / 3600))
