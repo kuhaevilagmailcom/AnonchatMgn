@@ -2730,7 +2730,7 @@ class MiniAppServer:
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
         response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=()"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=(self)"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; script-src 'self' https://telegram.org; "
             "style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' blob:; "
