@@ -34,6 +34,7 @@ jobs:
           - dice_duels
           - test_city_capture
           - test_city_game_api
+          - test_city_roads
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
