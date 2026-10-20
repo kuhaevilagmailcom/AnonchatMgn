@@ -7,7 +7,7 @@ const path=require('node:path');
 const {chromium}=require('playwright-core');
 const root=path.resolve(__dirname,'..','miniapp','web');
 const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.png':'image/png'};
-const zoneNames=['Парк','Притяжение','Сквер','Ветеранов','Стела','Ашик','Гостинка','Контик','Джазик','Ленинский район','Экопарк','Пикник','Площадь Победы','Соцгород','Комсомольская площадь','Соцгород · Пушкина'];
+const zoneNames=['Парк','Притяжение','Сквер','Ветеранов','Стела','Ашик','Гостинка','Контик','Джазик','Ленинский район','Экопарк','Пикник','Площадь Победы','Соцгород','Комсомольская площадь','Соцгород · Пушкина','Левобережный ДК'];
 const zones=zoneNames.map((name,i)=>({
   id:i+1,name,kind:i===9?'district':i>=5&&i<=8?'mall':'park',
   official_name:name==='Ашик'?'ТРК «Семейный парк»':name,address:'Магнитогорск',
@@ -72,7 +72,7 @@ const leafletStub='('+function fakeLeaflet(){
             HapticFeedback:{selectionChanged(){}},BackButton:{show(){},onClick(){}}}};
         });
         await page.goto('http://127.0.0.1:'+server.address().port+'/city.html',{waitUntil:'domcontentloaded'});
-        await page.waitForFunction(()=>document.querySelector('#count')?.textContent==='0 / 16',{timeout:5000});
+        await page.waitForFunction(()=>document.querySelector('#count')?.textContent==='0 / 17',{timeout:5000});
         assert.deepEqual(errors,[],width+'px page errors');
         const sizes=await page.evaluate(()=>{
           const rect=selector=>{const r=document.querySelector(selector).getBoundingClientRect();
@@ -86,7 +86,7 @@ const leafletStub='('+function fakeLeaflet(){
         assert.ok(sizes.panel.height<=275,width+'px panel too tall: '+sizes.panel.height);
         assert.ok(sizes.map.height>=740,width+'px map not full screen');
         assert.ok(sizes.tabs.every(t=>t.width>70),width+'px tab too narrow');
-        assert.equal(sizes.icons,16,width+'px expected 16 icon pins');
+        assert.equal(sizes.icons,17,width+'px expected 17 icon pins');
         assert.ok(sizes.panel.height<=130,width+'px empty panel takes too much map');
         assert.equal(await page.locator('#capture').isVisible(),false,
           width+'px capture action should only appear after choosing a place');
