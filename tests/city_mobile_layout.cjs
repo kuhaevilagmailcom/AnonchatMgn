@@ -39,7 +39,8 @@ const leafletStub='('+function fakeLeaflet(){
     marker(coords,opts){
       const el=document.createElement('button');
       el.type='button';el.className=opts.icon?.className||'test-marker';
-      el.style.cssText='position:absolute;z-index:500;left:'+((coords[1]-58.95)*450+95)+'px;top:'+((coords[0]-53.38)*550+285)+'px';
+      const index=window.__fakePinIndex||0;window.__fakePinIndex=index+1;
+      el.style.cssText='position:absolute;z-index:500;left:'+(37+(index%3)*61)+'px;top:'+(211+Math.floor((index%12)/3)*53)+'px';
       el.innerHTML=opts.icon?.html||'';
       el.setAttribute('aria-label',opts.title||'GPS');
       document.getElementById('map').append(el);
