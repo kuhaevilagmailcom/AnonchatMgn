@@ -229,7 +229,7 @@ def state(db, user_id, now=None):
             for p in pets
         ],
         "guards": [
-            {"zone_id": z[0], "kind": z[1], "owner_id": z[2]}
+            {"zone_id": z[0], "kind": z[1], "mine": z[2] == user_id}
             for z in db.execute(
                 """SELECT p.zone_id,p.kind,p.owner_id FROM city_pets p
                    JOIN city_ownership o ON p.zone_id=o.zone_id AND p.owner_id=o.user_id
