@@ -31,7 +31,8 @@
     gpsMarker: null, accuracyCircle: null, locating: false, capturing: false,
     canCapture: false, radius: 100, maxAccuracy: 75, cooldownEnd: 0,
     activeTab: 'map', toastTimer: null, hasFramed: false, expanded: false, theme: 'dark',
-    baseLayer: null, basemapType: null
+    baseLayer: null, basemapType: null,
+    gpsWatchId: null, telegramPollId: null, gpsEnabled: false, autoCentered: false
   };
 
   function safeText(value, fallback = '') {
@@ -450,29 +451,95 @@
   }
   function drawLocation(gps, focus) {
     if (!state.map || !Number.isFinite(gps.lat) || !Number.isFinite(gps.lon)) return;
-    if (state.gpsMarker) state.map.removeLayer(state.gpsMarker);
-    if (state.accuracyCircle) state.map.removeLayer(state.accuracyCircle);
-    state.accuracyCircle = L.circle([gps.lat, gps.lon], {
-      radius: Math.max(6, Math.min(gps.accuracy, 500)),
-      color: '#e57ac6', weight: 1.5, fillColor: '#e57ac6', fillOpacity: .12
-    }).addTo(state.markerGroup);
-    state.gpsMarker = L.marker([gps.lat, gps.lon], {
-      icon: L.divIcon({
-        className: 'user-position', html: '<div class="gps-marker"></div>',
-        iconSize: [24, 24], iconAnchor: [12, 12]
-      }), zIndexOffset: 2000
-    }).addTo(state.markerGroup).bindTooltip('Ты здесь', {
-      permanent: true, direction: 'top', offset: [0, -14], className: 'you-label'
-    });
-    // Never jump away from Magnitogorsk if the tester is in a different city.
+    const point = [gps.lat, gps.lon];
+    if (!state.accuracyCircle) {
+      state.accuracyCircle = L.circle(point, {
+        radius: Math.max(5, Math.min(gps.accuracy, 500)),
+        color: '#e57ac6', weight: 1.5, fillColor: '#e57ac6', fillOpacity: .12
+      }).addTo(state.markerGroup);
+    } else {
+      state.accuracyCircle.setLatLng(point);
+      state.accuracyCircle.setRadius(Math.max(5, Math.min(gps.accuracy, 500)));
+    }
+    if (!state.gpsMarker) {
+      state.gpsMarker = L.marker(point, {
+        icon: L.divIcon({
+          className: 'user-position', html: '<div class="gps-marker"></div>',
+          iconSize: [24, 24], iconAnchor: [12, 12]
+        }), zIndexOffset: 2000
+      }).addTo(state.markerGroup).bindTooltip('Ты здесь', {
+        permanent: true, direction: 'top', offset: [0, -14], className: 'you-label'
+      });
+    } else state.gpsMarker.setLatLng(point);
+    ui.locate.classList.add('is-active');
+    // Automatically centre ONCE after consent; never hijack a user exploring the map.
     if (focus) {
-      const fromCity = distanceM(gps.lat, gps.lon, CITY[0], CITY[1]);
-      if (fromCity < 18000) state.map.flyTo([gps.lat, gps.lon], Math.max(state.map.getZoom(), 15), { duration: .65 });
-      else feedback('Ты сейчас далеко от Магнитогорска. Метка сохранена на карте.');
+      state.map.flyTo(point, Math.max(state.map.getZoom(), 15), {duration:.5});
+      state.autoCentered = true;
     }
   }
+
+  function updateGPS(gps, focus = false) {
+    if (!gps || !Number.isFinite(gps.lat) || !Number.isFinite(gps.lon)) return;
+    // Ignore less accurate background readings rather than teleporting the dot.
+    if (gps.accuracy < 0 || gps.accuracy > 3000) return;
+    state.gps = gps;
+    state.gpsEnabled = true;
+    drawLocation(gps, focus);
+    renderSelection();
+  }
+
+  function startBrowserWatch() {
+    if (state.gpsWatchId !== null || !navigator.geolocation?.watchPosition) return false;
+    try {
+      state.gpsWatchId = navigator.geolocation.watchPosition(
+        p => updateGPS(normaliseLocation(
+          p.coords.latitude,p.coords.longitude,p.coords.accuracy,p.timestamp
+        ), !state.autoCentered && !document.hidden),
+        error => {
+          if (error.code === 1) {
+            stopTracking();
+            feedback('Доступ к геолокации закрыт', 'error');
+          }
+        },
+        {enableHighAccuracy:true, maximumAge:5000, timeout:20000}
+      );
+      return true;
+    } catch (_) {return false;}
+  }
+  function startTelegramPolling() {
+    if (state.telegramPollId !== null) return;
+    if (!tg?.LocationManager?.isAccessGranted) return;
+    state.telegramPollId = window.setInterval(async () => {
+      if (document.hidden || state.locating) return;
+      try {
+        const gps = await telegramLocation();
+        updateGPS(gps, !state.autoCentered);
+      } catch (_) { /* permissions can change on another screen */ }
+    }, 12000);
+  }
+  function startTracking() {
+    if (!state.gpsEnabled || document.hidden) return;
+    // Native watchPosition updates continuously when supported.
+    // Telegram LocationManager has no watch method; use low-rate polling there.
+    if (!startBrowserWatch()) startTelegramPolling();
+  }
+  function stopTracking() {
+    if (state.gpsWatchId !== null) {
+      try {navigator.geolocation?.clearWatch(state.gpsWatchId);} catch (_) {}
+      state.gpsWatchId = null;
+    }
+    if (state.telegramPollId !== null) {
+      window.clearInterval(state.telegramPollId);
+      state.telegramPollId = null;
+    }
+  }
+
   async function locate(focus = true, auto = false) {
-    if (state.locating) return state.gps;
+    if (state.locating) {
+      if (focus && state.gps) drawLocation(state.gps,true);
+      return state.gps;
+    }
     state.locating = true;
     ui.locate.classList.add('is-loading');
     renderSelection();
@@ -482,10 +549,12 @@
         try { gps = await telegramLocation(); }
         catch (_) { gps = await browserLocation(); }
       } else gps = await browserLocation();
-      if (!Number.isFinite(gps.lat) || !Number.isFinite(gps.lon)) throw new Error('GPS вернул неверные координаты.');
-      state.gps = gps;
-      drawLocation(gps, focus);
-      if (!auto) feedback('Местоположение определено', 'success');
+      if (!Number.isFinite(gps.lat) || !Number.isFinite(gps.lon))
+        throw new Error('GPS вернул неверные координаты.');
+      // A manual tap always recentres; an automatic lookup recentres once only.
+      updateGPS(gps, focus || !state.autoCentered);
+      startTracking();
+      if (!auto) feedback('Местоположение обновлено', 'success');
       return gps;
     } catch (error) {
       if (!auto) feedback(error.message || 'Не удалось определить GPS', 'error');
@@ -498,16 +567,27 @@
     }
   }
   function autoLocateIfGranted() {
+    // Never ask a fresh permission request on app launch. Only reuse consent.
     if (tg?.LocationManager?.isAccessGranted) {
-      locate(false, true).catch(() => {});
+      locate(false,true).then(() => startTracking()).catch(() => {});
       return;
     }
-    if (navigator.permissions?.query) {
-      navigator.permissions.query({ name: 'geolocation' })
-        .then(result => { if (result.state === 'granted') locate(false, true).catch(() => {}); })
-        .catch(() => {});
-    }
+    navigator.permissions?.query?.({name:'geolocation'})
+      .then(result => {
+        if (result.state === 'granted') locate(false,true).then(() => startTracking()).catch(() => {});
+        result.onchange = () => {
+          if (result.state === 'granted') locate(false,true).then(() => startTracking()).catch(() => {});
+          else stopTracking();
+        };
+      }).catch(() => {});
   }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopTracking();
+    else if (state.gpsEnabled) {
+      locate(false,true).then(() => startTracking()).catch(() => {});
+    } else autoLocateIfGranted();
+  });
+  window.addEventListener('pagehide', stopTracking);
 
   async function load() {
     ui.refresh.classList.add('is-loading');
