@@ -8,7 +8,7 @@ const source=fs.readFileSync(path.resolve(__dirname,'../miniapp/web/city.js'),'u
 async function scenario(granted){
   const nodes={};let watchCallback=null,updates=0,centres=0;
   const make=id=>({
-    id,hidden:false,disabled:false,textContent:'',children:[],attrs:{},className:'',
+    id,hidden:false,disabled:false,textContent:'',children:[],attrs:{},className:'',style:{},
     dataset:{},classList:{add(){},remove(){},toggle(){}},
     addEventListener(){},append(){},replaceChildren(){},setAttribute(){},removeAttribute(){}
   });
