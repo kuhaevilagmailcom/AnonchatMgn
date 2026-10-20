@@ -9,7 +9,7 @@
   <link rel="icon" href="./assets/anon-mgn-logo.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
-  <link rel="stylesheet" href="./city.css?v=8">
+  <link rel="stylesheet" href="./city.css?v=9">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -28,6 +28,8 @@
     <div class="hud-stat"><span class="hud-kicker">Занято</span><strong id="count">—</strong><span class="hud-sub">территорий</span></div>
     <div class="hud-separator"></div>
     <div class="hud-stat"><span class="hud-kicker">Мои</span><strong id="mineCount">0</strong><span class="hud-sub">территорий</span></div>
+    <div class="hud-separator hp-separator"></div>
+    <div class="hud-stat hp-stat"><span class="hud-kicker">HP</span><strong id="hpHud">100</strong></div>
     <div class="hud-separator"></div>
     <div class="hud-stat"><span class="hud-kicker">Захваты</span><strong id="captureCount">0</strong><span class="hud-sub">за всё время</span></div>
   </div>
@@ -48,6 +50,7 @@
       <div class="owner-card" id="ownerCard" hidden>
         <div class="owner-data"><small>Владелец</small><strong id="owner">Никого</strong></div>
         <span class="owner-state" id="zoneState">Свободно</span>
+        <span class="zone-guard-badge" id="zoneGuard" hidden aria-label="Защитник района"></span>
       </div>
       <p id="status" class="screenreader-status" role="status" aria-live="polite"></p>
       <button class="capture-button" id="capture" type="button" disabled hidden><span id="captureLabel">Захватить</span></button>
@@ -58,6 +61,25 @@
       <h2>Топ игроков</h2>
       <p class="section-subtitle">Лидеры по количеству захваченных и удерживаемых территорий.</p>
       <ol id="leaders" class="leaders"></ol>
+    </section>
+
+    <section id="market" class="sheet-content market" hidden>
+      <div class="market-head">
+        <div><small>ТВОИ ЗВЁЗДЫ</small><strong id="wallet">0 ⭐</strong></div>
+        <div class="market-hp"><small>ЗДОРОВЬЕ</small><strong><span id="hpValue">100</span> / 100 HP</strong>
+          <div class="hp-track"><span id="hpFill"></span></div></div>
+      </div>
+      <div class="income-row">
+        <span>Накоплено <strong id="pendingStars">0 ⭐</strong><small>Доход от питомцев за час</small></span>
+        <button id="claimIncome" class="small-action" type="button">Собрать</button>
+      </div>
+      <h2>Маркет питомцев</h2>
+      <p class="market-note">Игровые ⭐ — те же звёзды, что за сообщения. Захват района: +50 ⭐.</p>
+      <div id="petCatalog" class="pet-catalog" aria-label="Магазин питомцев"></div>
+      <div class="market-inventory-head"><h2>Мои питомцы</h2><small id="petCount">0</small></div>
+      <p id="placeHint" class="market-note">Для установки сначала захвати район, затем выбери его на карте.</p>
+      <div id="petInventory" class="pet-inventory" aria-label="Купленные питомцы"></div>
+      <p class="market-note">На одном районе — один защитник. Он перемещается только внутри своего квартала. Максимальный урон — 4 HP/ч; HP никогда не станет ниже 1. Доход можно забрать раз в любое время (начисление не более 24 ч за раз).</p>
     </section>
 
     <section id="rules" class="sheet-content rules" hidden>
@@ -72,6 +94,7 @@
     <nav class="sheet-tabs" id="tabs" aria-label="Разделы игры">
       <button class="tab active" id="showmap" type="button" aria-current="page"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Zm6-3v15m6-12v15"/></svg><span>Карта</span></button>
       <button class="tab" id="showtop" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10v8a5 5 0 0 1-10 0V3ZM7 6H4v3a4 4 0 0 0 4 4m9-7h3v3a4 4 0 0 1-4 4M12 16v5m-4 0h8"/></svg><span>Топы</span></button>
+      <button class="tab" id="showmarket" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16v12H4zM3 9l2-6h14l2 6M9 21v-6h6v6"/></svg><span>Маркет</span></button>
       <button class="tab" id="showrules" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5m0-8h.01"/></svg><span>Правила</span></button>
     </nav>
   </main>
@@ -79,6 +102,6 @@
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
   <script src="./city-roads.js?v=2"></script>
-  <script src="./city.js?v=18"></script>
+  <script src="./city.js?v=19"></script>
 </body>
 </html>
