@@ -3,48 +3,48 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#090b12">
+<meta name="theme-color" content="#000000">
 <title>МГН — ЗАХВАТ</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
-:root{color-scheme:dark;--bg:#0c0d15;--panel:#11131f;--stroke:#ffffff19;--muted:#979caf;--purple:#9b6aff;--cyan:#48e1cf}
+:root{color-scheme:dark;--bg:#000;--panel:#0e0c0d;--stroke:#30242c;--muted:#a49ca2;--purple:#e57ac6;--cyan:#e57ac6}
 *{box-sizing:border-box}html,body{width:100%;height:100%;height:100dvh;margin:0;overflow:hidden;background:var(--bg);color:#f6f4ff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
 button{font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}button:active{transform:scale(.975)}button:disabled{opacity:.46;cursor:not-allowed;transform:none}
-#map{position:absolute;inset:0;z-index:0;filter:saturate(.68) contrast(1.05)}
-.leaflet-container{background:#171a25}
-#map:after{content:"";position:absolute;inset:0;pointer-events:none;z-index:450;background:linear-gradient(180deg,#0a0b15ba 0%,transparent 23%,transparent 60%,#090a10a0 100%)}
+#map{position:absolute;inset:0;z-index:0;filter:saturate(.72) contrast(1.04)}
+.leaflet-container{background:#151015}
+#map:after{content:"";position:absolute;inset:0;pointer-events:none;z-index:450;background:linear-gradient(180deg,#000000ad 0%,transparent 23%,transparent 60%,#000000ba 100%)}
 #topbar{position:absolute;z-index:1000;top:0;left:0;right:0;padding:calc(14px + env(safe-area-inset-top,0px)) 17px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;pointer-events:none}
 #topbar>*{pointer-events:auto}
 #topbar>div:first-child{display:flex;flex-direction:column;gap:5px}
-#topbar small{color:#c6b6ff;font-size:9px;font-weight:850;letter-spacing:2.4px;text-transform:uppercase}
+#topbar small{color:#f6afd9;font-size:9px;font-weight:850;letter-spacing:2.4px;text-transform:uppercase}
 #topbar strong{font-size:24px;font-weight:950;letter-spacing:-.9px;line-height:1.08;text-shadow:0 2px 16px #0008}
-#count{background:#151826e8;border:1px solid #ffffff29;border-radius:14px;padding:11px 13px;white-space:nowrap;font-size:12px;font-weight:800;box-shadow:0 8px 25px #0005;backdrop-filter:blur(20px)}
-#count:before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:#4ce3bb;box-shadow:0 0 10px #4ce3bb;margin-right:8px}
+#count{background:#100c0fee;border:1px solid #4c3342;border-radius:14px;padding:11px 13px;white-space:nowrap;font-size:12px;font-weight:800;box-shadow:0 8px 25px #0005;backdrop-filter:blur(20px)}
+#count:before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:#e57ac6;box-shadow:0 0 10px #4ce3bb;margin-right:8px}
 #controls{position:absolute;z-index:990;top:calc(100px + env(safe-area-inset-top,0px));right:13px;display:flex;flex-direction:column;gap:9px}
-#controls button{display:grid;place-items:center;width:47px;height:47px;padding:0;border:1px solid #ffffff26;border-radius:15px;background:#131623e8;color:#f5f2ff;font-size:23px;font-weight:800;box-shadow:0 6px 20px #0006;backdrop-filter:blur(18px)}
+#controls button{display:grid;place-items:center;width:47px;height:47px;padding:0;border:1px solid #4a3442;border-radius:15px;background:#120d11ef;color:#f5f2ff;font-size:23px;font-weight:800;box-shadow:0 6px 20px #0006;backdrop-filter:blur(18px)}
 #controls button:focus-visible,#tabs button:focus-visible{outline:2px solid var(--purple)}
-#panel{position:absolute;z-index:1100;bottom:0;left:0;right:0;width:100%;max-height:min(51dvh,490px);overflow-y:auto;overscroll-behavior:contain;background:linear-gradient(160deg,#1b1c2c 0%,#11131f 65%);border:1px solid #ffffff24;border-bottom:0;border-radius:25px 25px 0 0;padding:11px 18px calc(14px + env(safe-area-inset-bottom,0px));box-shadow:0 -12px 65px #000a;backdrop-filter:blur(24px)}
+#panel{position:absolute;z-index:1100;bottom:0;left:0;right:0;width:100%;max-height:min(51dvh,490px);overflow-y:auto;overscroll-behavior:contain;background:linear-gradient(160deg,#1b1219 0%,#0c0a0c 65%);border:1px solid #3a2933;border-bottom:0;border-radius:25px 25px 0 0;padding:11px 18px calc(14px + env(safe-area-inset-bottom,0px));box-shadow:0 -12px 65px #000a;backdrop-filter:blur(24px)}
 #panel:before{content:"";display:block;width:39px;height:4px;border-radius:20px;background:#ffffff40;margin:0 auto 17px}
-#panel .eyebrow{display:flex;align-items:center;gap:7px;margin-bottom:7px;font-size:10px;font-weight:850;letter-spacing:1.7px;text-transform:uppercase;color:#aa8bff}
-#panel .eyebrow:before{content:"";height:7px;width:7px;border-radius:2px;background:var(--purple);box-shadow:0 0 12px #ae7bff}
+#panel .eyebrow{display:flex;align-items:center;gap:7px;margin-bottom:7px;font-size:10px;font-weight:850;letter-spacing:1.7px;text-transform:uppercase;color:#e57ac6}
+#panel .eyebrow:before{content:"";height:7px;width:7px;border-radius:2px;background:var(--purple);box-shadow:0 0 12px #e57ac6}
 #zone{font-size:23px;font-weight:900;line-height:1.16;letter-spacing:-.6px}
-#owner{margin-top:8px;color:#d6c7ff;font-size:13px;font-weight:650}
-#status{margin:13px 0 12px;color:#aeb3c6;font-size:12px;line-height:1.55}
-#capture{width:100%;display:flex;justify-content:center;align-items:center;gap:10px;min-height:53px;padding:14px 18px;border:1px solid #c19aff60;border-radius:15px;background:linear-gradient(105deg,#7746ed,#ae69f9);color:white;font-size:13px;font-weight:900;letter-spacing:.9px;box-shadow:0 8px 26px #8746ed40}
-#capture:before{content:"⚡";font-size:17px}
-#tabs{display:grid;grid-template-columns:1fr 1fr;gap:7px;width:100%;padding:5px;margin-top:13px;border:1px solid #ffffff10;border-radius:14px;background:#080b16a6}
-#tabs button{min-height:40px;border:0;border-radius:10px;background:transparent;color:#9b9db2;font-size:12px;font-weight:800;letter-spacing:.3px}
-#tabs button.active{background:#29253d;color:#f4ebff;box-shadow:0 2px 9px #0004}
-#leaderboard{display:none;margin-top:13px;padding:13px;border-radius:14px;border:1px solid #ffffff16;background:#0d101c}
+#owner{margin-top:8px;color:#f2b9de;font-size:13px;font-weight:650}
+#status{margin:13px 0 12px;color:#a49ca2;font-size:12px;line-height:1.55}
+#capture{width:100%;display:flex;justify-content:center;align-items:center;gap:10px;min-height:53px;padding:14px 18px;border:1px solid #f5a8dc70;border-radius:15px;background:linear-gradient(105deg,#ce5da8,#ed8fcb);color:white;font-size:13px;font-weight:900;letter-spacing:.9px;box-shadow:0 8px 26px #e57ac640}
+#capture:before{content:"";display:block;width:15px;height:18px;background:currentColor;clip-path:polygon(54% 0,9% 56%,47% 56%,35% 100%,91% 40%,54% 40%)}
+#tabs{display:grid;grid-template-columns:1fr 1fr;gap:7px;width:100%;padding:5px;margin-top:13px;border:1px solid #ffffff10;border-radius:14px;background:#090709bd}
+#tabs button{display:flex;align-items:center;justify-content:center;gap:8px;min-height:40px;border:0;border-radius:10px;background:transparent;color:#aaa0a7;font-size:12px;font-weight:800;letter-spacing:.3px}
+#tabs button svg{width:17px;height:17px;flex:none}#controls button svg{width:23px;height:23px}#tabs button.active{background:#35202f;color:#fff;box-shadow:0 2px 9px #0004}
+#leaderboard{display:none;margin-top:13px;padding:13px;border-radius:14px;border:1px solid #ffffff16;background:#100c10}
 #leaderboard.open{display:block}
 #leaderboard h3{margin:0 0 10px;font-size:14px;font-weight:850}
 #leaderboard ol{list-style:none;counter-reset:rank;margin:0;padding:0}
 #leaderboard li{counter-increment:rank;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 3px;border-bottom:1px solid #ffffff11;font-size:13px;font-weight:650}
-#leaderboard li:before{content:counter(rank,decimal-leading-zero);color:#b39bff;font-size:11px;font-weight:900}
-#leaderboard li b{margin-left:auto;color:#e3d4ff;white-space:nowrap;font-size:12px}
-#panel .disclaimer{margin:12px 0 9px;color:#71788e;font-size:10px;line-height:1.5}
-#panel .back{display:inline-flex;align-items:center;color:#ad91ec;font-size:11px;font-weight:750;text-decoration:none;padding:5px 0}
-.leaflet-tooltip.territory-tooltip{background:#0d1123e8;border:1px solid #ffffff30;border-radius:9px;box-shadow:0 4px 12px #0007;color:#fff;font-size:11px;font-weight:800;padding:6px 9px}
+#leaderboard li:before{content:counter(rank,decimal-leading-zero);color:#e57ac6;font-size:11px;font-weight:900}
+#leaderboard li b{margin-left:auto;color:#ffe2f2;white-space:nowrap;font-size:12px}
+#panel .disclaimer{margin:12px 0 9px;color:#86777f;font-size:10px;line-height:1.5}
+#panel .back{display:inline-flex;align-items:center;color:#e57ac6;font-size:11px;font-weight:750;text-decoration:none;padding:5px 0}
+.leaflet-tooltip.territory-tooltip{background:#150e13ed;border:1px solid #ffffff30;border-radius:9px;box-shadow:0 4px 12px #0007;color:#fff;font-size:11px;font-weight:800;padding:6px 9px}
 .leaflet-tooltip.territory-tooltip:before{display:none}
 .leaflet-control-attribution{opacity:.7;font-size:9px!important}
 @media(max-width:375px){#panel{padding-left:13px;padding-right:13px}#zone{font-size:20px}#topbar strong{font-size:21px}}
@@ -55,9 +55,9 @@ button{font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}butto
 <div id="map" aria-label="Карта территорий Магнитогорска"></div>
 <header id="topbar"><div><small>АНОН МГН / БИТВА ЗА ГОРОД</small><strong>МГН: ЗАХВАТ</strong></div><div id="count">Загрузка</div></header>
 <div id="controls">
-<button id="locate" aria-label="Показать мою позицию" title="Моя позиция">⌖</button>
-<button id="refresh" aria-label="Обновить территории" title="Обновить">↻</button>
-<button id="topbutton" aria-label="Открыть топ игроков" title="Топ игроков">♛</button>
+<button id="locate" aria-label="Показать мою позицию" title="Моя позиция"><svg viewBox="0 0 24 24" aria-hidden="true" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3"/></svg></button>
+<button id="refresh" aria-label="Обновить территории" title="Обновить"><svg viewBox="0 0 24 24" aria-hidden="true" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.7 9A7 7 0 0 1 18.5 7L20 12M4 12l1.5 5A7 7 0 0 0 18.3 15"/></svg></button>
+<button id="topbutton" aria-label="Открыть топ игроков" title="Топ игроков"><svg viewBox="0 0 24 24" aria-hidden="true" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 3h10v8a5 5 0 0 1-10 0V3ZM7 6H4v3a4 4 0 0 0 4 4m9-7h3v3a4 4 0 0 1-4 4"/></svg></button>
 </div>
 <section id="panel">
 <div class="eyebrow">ТЕРРИТОРИЯ</div>
@@ -65,7 +65,7 @@ button{font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}butto
 <div id="owner">Цветные границы показывают игровые территории</div>
 <div id="status" role="status">Выбери сектор и подойди к точке захвата в пределах 100 метров.</div>
 <button id="capture" disabled>ЗАХВАТИТЬ РАЙОН</button>
-<nav id="tabs" aria-label="Разделы игры"><button id="showmap" class="active">◈ КАРТА</button><button id="showtop">♛ ТОП ИГРОКОВ</button></nav>
+<nav id="tabs" aria-label="Разделы игры"><button id="showmap" class="active"><svg viewBox="0 0 24 24" aria-hidden="true" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3V6Zm6-3v15m6-12v15"/></svg> КАРТА</button><button id="showtop"><svg viewBox="0 0 24 24" aria-hidden="true" width="23" height="23" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 21h8M12 17v4M7 3h10v8a5 5 0 0 1-10 0V3ZM7 6H4v3a4 4 0 0 0 4 4m9-7h3v3a4 4 0 0 1-4 4"/></svg> ТОП ИГРОКОВ</button></nav>
 <div id="leaderboard"><h3>Лидеры по территориям</h3><ol id="leaders"></ol></div>
 <p class="disclaimer">Это игровые секторы, не административные границы. Не заходи на дороги и закрытые территории.</p>
 <a class="back" href="./index.html">← ВЕРНУТЬСЯ В АНОН МГН</a>
