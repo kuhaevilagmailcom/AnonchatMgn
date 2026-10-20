@@ -1,0 +1,88 @@
+/* Layout regression for the standalone city Mini App.
+ * Uses the project Playwright Chromium installation; no external map requests.
+ */
+'use strict';
+const assert = require('node:assert/strict');
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+const { chromium } = require('playwright-core');
+
+const root = path.resolve(__dirname, '..', 'miniapp', 'web');
+const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
+  '.png': 'image/png', '.svg': 'image/svg+xml' };
+const server = http.createServer((req, res) => {
+  const pathname = new URL(req.url, 'http://localhost').pathname;
+  const full = path.resolve(root, '.' + decodeURIComponent(pathname));
+  if (!full.startsWith(root + path.sep) || !fs.existsSync(full) || !fs.statSync(full).isFile()) {
+    res.writeHead(404);
+    res.end('Not found');
+    return;
+  }
+  res.writeHead(200, { 'Content-Type': mime[path.extname(full)] || 'application/octet-stream' });
+  fs.createReadStream(full).pipe(res);
+});
+
+(async () => {
+  const browserPath = process.env.CHROME_BIN ||
+    ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium'].find(fs.existsSync);
+  assert.ok(browserPath, 'Chromium is required for the UI layout test');
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  let browser;
+  try {
+    browser = await chromium.launch({ executablePath: browserPath, headless: true, args: ['--no-sandbox'] });
+    for (const width of [320, 360, 390, 430]) {
+      const context = await browser.newContext({ viewport: { width, height: 740 },
+        deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+      const page = await context.newPage();
+      try {
+        await page.route('https://telegram.org/**', route =>
+          route.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
+        await page.route('https://unpkg.com/**', route =>
+          route.fulfill({ status: 200, contentType: route.request().url().endsWith('.css')
+            ? 'text/css' : 'application/javascript', body: '' }));
+        await page.addInitScript(() => {
+          window.Telegram = { WebApp: { initData: '',
+            ready() {}, expand() {}, setHeaderColor() {}, setBackgroundColor() {},
+            BackButton: { show() {}, onClick() {} } } };
+        });
+        await page.goto('http://127.0.0.1:' + port + '/city.html', { waitUntil: 'domcontentloaded' });
+        const result = await page.evaluate(() => {
+          const box = node => {
+            const r = document.querySelector(node).getBoundingClientRect();
+            return { left: r.left, right: r.right, top: r.top, bottom: r.bottom,
+              width: r.width, height: r.height };
+          };
+          return {
+            docWidth: document.documentElement.scrollWidth,
+            panel: box('#panel'), nav: box('#tabs'), map: box('#map'),
+            action: box('#capture'), mapControl: box('#locate'),
+            navItems: [...document.querySelectorAll('.sheet-tabs .tab')].length
+          };
+        });
+        assert.ok(result.docWidth <= width + 1, width + ': horizontal page overflow');
+        assert.ok(result.panel.left >= -1 && result.panel.right <= width + 1, width + ': dock overflows');
+        assert.ok(result.panel.width >= width - 2, width + ': dock not full width');
+        assert.ok(result.panel.height <= 280, width + ': map dock is too large');
+        assert.ok(result.panel.top >= 440, width + ': map not visible enough');
+        assert.ok(result.action.bottom <= result.nav.top + 2, width + ': capture button hidden beneath nav');
+        assert.ok(result.navItems === 3, 'map/tops/rules navigation missing');
+        await page.locator('#theme').click();
+        assert.equal(await page.evaluate(() => document.body.dataset.mapTheme), 'light');
+        await page.locator('#sheetToggle').click();
+        assert.ok(await page.locator('#panel').evaluate(el => el.classList.contains('is-expanded')));
+        await page.locator('#showtop').click();
+        assert.ok(await page.locator('#leaderboard').isVisible());
+        await page.locator('#showmap').click();
+        assert.ok(await page.locator('#mapView').isVisible());
+        process.stdout.write('City Mini App layout and controls OK: ' + width + 'px\n');
+      } finally {
+        await context.close();
+      }
+    }
+  } finally {
+    if (browser) await browser.close();
+    await new Promise(resolve => server.close(resolve));
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });
