@@ -67,19 +67,19 @@ a{color:inherit;text-decoration:none}
 .bottom-sheet.is-expanded,.bottom-sheet[data-tab=top],.bottom-sheet[data-tab=rules]{height:min(57dvh,465px)}
 .sheet-grip{display:grid;place-items:center;flex:none;width:100%;height:16px;padding:0;background:transparent;touch-action:manipulation}
 .sheet-handle{display:block;width:35px;height:3px;border-radius:10px;background:#63565f}
-.sheet-content{flex:1;min-height:0;overflow:auto;scrollbar-width:none;overscroll-behavior:contain;padding:7px 17px 8px}
+.sheet-content{flex:1;min-height:0;overflow:auto;scrollbar-width:none;overscroll-behavior:contain;padding:5px 17px 6px}
 .sheet-content::-webkit-scrollbar{display:none}
 .sheet-overline{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted);font-size:10px;font-weight:600;letter-spacing:0}
 .sheet-id{margin-left:auto;color:#8d8389;font-size:10px;font-weight:500;letter-spacing:0;white-space:nowrap}
 .pulse-dot{display:none}
-.sheet-content h1{margin:6px 0 8px;font-size:19px;font-weight:770;letter-spacing:-.4px;line-height:1.15}
+.sheet-content h1{margin:4px 0 5px;font-size:19px;font-weight:770;letter-spacing:-.4px;line-height:1.15}
 .sheet-content h2{margin:6px 0 12px;font-size:21px;font-weight:760;letter-spacing:-.4px}
 .zone-details{margin:0 0 7px;color:var(--muted);font-size:11px;line-height:1.35}
 #mapView .zone-details{display:none}
 .bottom-sheet.is-expanded #mapView .zone-details:not([hidden]){display:block}
 
 /* Content uses native list rows, not shiny nested cards. */
-.owner-card{display:flex;align-items:center;gap:9px;min-height:40px;padding:5px 0;border-top:1px solid #2d282b;border-bottom:1px solid #2d282b;background:none}
+.owner-card{display:flex;align-items:center;gap:9px;min-height:36px;padding:3px 0;border-top:1px solid #2d282b;border-bottom:1px solid #2d282b;background:none}
 .owner-icon{display:none}
 .owner-data{display:flex;flex:1;flex-direction:row;align-items:center;min-width:0;gap:8px}
 .owner-data small{flex:none;color:var(--muted);font-size:11px;font-weight:500}
@@ -87,13 +87,13 @@ a{color:inherit;text-decoration:none}
 .owner-state{padding:2px 6px;border:1px solid #494148;border-radius:4px;color:var(--muted);font-size:10px;font-weight:600;white-space:nowrap;background:none}
 .owner-state.mine{border-color:#ba78a3;color:#f5c0e0}
 .owner-state.occupied{color:#f0c1d9}
-.game-readings{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:28px;padding:5px 0;color:var(--muted)}
+.game-readings{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:22px;padding:3px 0;color:var(--muted)}
 .reading{display:flex;align-items:center;gap:5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px}
 .reading span{overflow:hidden;text-overflow:ellipsis}
 .reading .ico{height:13px;width:13px;color:var(--muted)}
-.game-status{min-height:13px;margin:1px 0 7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px;line-height:1.4}
+.game-status{min-height:13px;margin:0 0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:10px;line-height:1.4}
 .bottom-sheet.is-expanded .game-status{white-space:normal;overflow:visible;margin:7px 0 10px}
-.capture-button{display:flex;align-items:center;justify-content:center;width:100%;min-height:43px;padding:10px 14px;border-radius:11px;background:var(--accent);color:#191016;font-size:13px;font-weight:760;letter-spacing:0}
+.capture-button{display:flex;align-items:center;justify-content:center;width:100%;min-height:42px;padding:9px 14px;border-radius:11px;background:var(--accent);color:#191016;font-size:13px;font-weight:760;letter-spacing:0}
 .capture-button:not(:disabled):hover{background:#ed8dce}
 .capture-button:disabled{background:#563747;color:#e0b6d1}
 .capture-button .ico,.capture-chevron{display:none}
