@@ -12,19 +12,24 @@
   } catch (_) { /* Older Telegram clients may reject theme setters. */ }
 
   const CITY = [53.405, 58.983];
-  const PALETTE = ['#e57ac6', '#a28aff', '#ffba80', '#70d3c9', '#f18c9b', '#b9d47b'];
+  const DARK_PALETTE = ['#e57ac6', '#a28aff', '#ffba80', '#70d3c9', '#f18c9b', '#b9d47b'];
+  // These are deliberately saturated and darker than the light basemap.
+  // Pastel outlines washed out against OpenFreeMap Positron.
+  const LIGHT_PALETTE = ['#8c247e', '#4e48a8', '#ab5317', '#08726c', '#b03652', '#536923'];
   const ui = {
     panel: $('panel'), view: $('mapView'), board: $('leaderboard'), rules: $('rules'),
     market: $('market'), shop: $('petCatalog'), inventory: $('petInventory'),
     wallet: $('wallet'), hpValue: $('hpValue'), hpHud: $('hpHud'), hpFill: $('hpFill'),
     pendingStars: $('pendingStars'), petCount: $('petCount'),
     placeHint: $('placeHint'), claimIncome: $('claimIncome'), zoneGuard: $('zoneGuard'),
-    count: $('count'), mine: $('mineCount'), captures: $('captureCount'),
+    hudHpFill: $('hudHpFill'),
+    myZonesPanel: $('myZones'), myZonesList: $('myZonesList'),
+    myZonesTotal: $('myZonesTotal'), myZonesButton: $('myZonesButton'),
     zone: $('zone'), owner: $('owner'), ownerCard: $('ownerCard'),
     state: $('zoneState'), details: $('zoneDetails'),
     theme: $('theme'), sheetToggle: $('sheetToggle'), status: $('status'),
     capture: $('capture'), captureLabel: $('captureLabel'),
-    locate: $('locate'), refresh: $('refresh'), top: $('topbutton'),
+    locate: $('locate'), refresh: $('refresh'),
     leaders: $('leaders'), toast: $('toast'),
     mapTab: $('showmap'), topTab: $('showtop'), marketTab: $('showmarket'), rulesTab: $('showrules')
   };
@@ -71,13 +76,15 @@
     return state.zones.find(zone => zone.id === state.selectedId) || null;
   }
   function ownerColor(zone) {
-    if (zone.mine) return '#e57ac6';
-    if (!zone.occupied) return '#80767d';
-    // The nickname is display-only; choose a stable color without exposing user IDs.
+    const light = state.theme === 'light';
+    if (zone.mine) return light ? '#a81772' : '#e57ac6';
+    if (!zone.occupied) return light ? '#565d68' : '#80767d';
+    // Stable faction colors with enough contrast on both basemaps.
     let hash = 0;
     const key = zone.owner_name && zone.owner_name !== 'Аноним' ? zone.owner_name : 'anon-' + zone.id;
     for (const ch of key) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
-    return PALETTE[(hash >>> 0) % PALETTE.length];
+    const palette = light ? LIGHT_PALETTE : DARK_PALETTE;
+    return palette[(hash >>> 0) % palette.length];
   }
   function feedback(message, kind = 'info') {
     if (!message) return;
@@ -114,26 +121,20 @@
     return response.json();
   }
 
-  function renderHud(data) {
-    const occupied = state.zones.filter(zone => zone.occupied).length;
-    ui.count.textContent = occupied + ' / ' + state.zones.length;
-    ui.mine.textContent = String(number(data.my_zones));
-    ui.captures.textContent = String(number(data.total_captures));
+  function renderHud() {
     ui.hpHud.textContent = String(Math.ceil(state.hp));
+    ui.hudHpFill.style.width = state.hp + '%';
   }
-  const ZONE_ICONS = {
-    mall: '<path d="M4 10h16v11H4zM3 10l2-6h14l2 6M8 10V4m8 6V4M9 21v-6h6v6"/>',
-    culture: '<path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-7h6v7M7 11h.01M17 11h.01"/>',
-    park: '<path d="M12 3 5 13h3l-4 5h16l-4-5h3L12 3ZM12 18v4"/>',
-    district: '<path d="m12 2 8 4v6c0 5-4 8-8 10-4-2-8-5-8-10V6l8-4Z"/><path d="m8 11 3 3 5-5"/>',
-    block: '<path d="M4 4h16v16H4zM4 12h16M12 4v16"/>',
-    culture: '<path d="M3 21h18M6 21V9l6-5 6 5v12M9 13h6v8M3 11l9-8 9 8"/>'
-  };
-  function zoneMarkerHtml(zone, color, selected) {
-    const kind = ZONE_ICONS[zone.kind] ? zone.kind : 'park';
-    const cls = 'zone-pin-inner';
-    const icon = '<svg viewBox="0 0 24 24" aria-hidden="true">' + ZONE_ICONS[kind] + '</svg>';
-    return '<div class="' + cls + '" style="--zone-color:' + color + '">' + icon + '</div>';
+  const ZONE_ICON_NAMES = Object.freeze({
+    mall: 'store', park: 'trees', district: 'building',
+    culture: 'landmark', block: 'blocks'
+  });
+  function zoneMarkerHtml(zone, color) {
+    const name = ZONE_ICON_NAMES[zone.kind] || 'map';
+    // Local Lucide asset is loaded before the game; fallback remains a vector.
+    const icon = window.MGNCityIcons?.svg(name) ||
+      '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="3"/></svg>';
+    return '<div class="zone-pin-inner" style="--zone-color:' + color + '">' + icon + '</div>';
   }
 
   function applyTheme(name) {
@@ -142,6 +143,10 @@
     ui.theme.classList.toggle('is-active', state.theme === 'light');
     ui.theme.setAttribute('aria-label', state.theme === 'light' ? 'Включить тёмную карту' : 'Включить светлую карту');
     ui.theme.setAttribute('title', state.theme === 'light' ? 'Тёмная карта' : 'Светлая карта');
+    if (window.MGNCityIcons?.svg) {
+      ui.theme.innerHTML = window.MGNCityIcons.svg(state.theme === 'light' ? 'moon' : 'sun');
+    }
+    if (state.map && state.zones.length) drawTerritories();
     if (state.basemapType === 'vector' && state.baseLayer) {
       try {
         const gl = state.baseLayer.getMaplibreMap();
@@ -197,7 +202,8 @@
       return false;
     }
     const map = L.map('map', {
-      zoomControl: false, preferCanvas: true, minZoom: 10, maxZoom: 19
+      zoomControl: false, attributionControl: false,
+      preferCanvas: true, minZoom: 10, maxZoom: 19
     }).setView(CITY, 12);
     // The blue/yellow mark before "Leaflet" is its logo, not a country flag.
     // Remove the optional library branding; keep map data credit intact.
@@ -316,11 +322,15 @@
       const roadOutline = state.roadPolygons.get(zone.id)?.polygon || zone.polygon;
       if (Array.isArray(roadOutline) && roadOutline.length >= 3) {
         const color = ownerColor(zone);
+        const light = state.theme === 'light';
         polygon = L.polygon(roadOutline, {
-          color, weight: selected ? 3 : 2,
-          opacity: zone.kind === 'district' ? .85 : 1,
-          dashArray: zone.occupied ? null : '7 5',
-          fillColor: color, fillOpacity: selected ? .26 : zone.occupied ? .15 : .07,
+          color,
+          weight: selected ? (light ? 4 : 3.3) : (light ? 2.8 : 2),
+          opacity: light ? 1 : zone.kind === 'district' ? .86 : 1,
+          dashArray: zone.occupied ? null : light ? '5 4' : '7 5',
+          fillColor: color,
+          fillOpacity: selected ? (light ? .18 : .26) :
+            zone.occupied ? (light ? .10 : .15) : (light ? .045 : .07),
           lineCap: 'round', lineJoin: 'round'
         }).addTo(state.territoryGroup);
         polygon.on('click', () => chooseZone(zone.id));
@@ -336,7 +346,7 @@
     }
     for (const zone of ordered) {
       const item = state.territoryLayers.get(zone.id);
-      const kind = ZONE_ICONS[zone.kind] ? zone.kind : 'park';
+      const kind = ZONE_ICON_NAMES[zone.kind] ? zone.kind : 'park';
       const selected = state.selectedId === zone.id;
       const icon = L.divIcon({
         className:'zone-pin'+(zone.mine?' is-mine':zone.occupied?' is-held':' is-free')+
@@ -907,6 +917,7 @@
       renderHud(data);
       renderBoard();
       renderMarket();
+      renderMyZones();
       drawTerritories();
       renderSelection();
       if (!state.zones.length) feedback('Пока нет активных игровых районов');
