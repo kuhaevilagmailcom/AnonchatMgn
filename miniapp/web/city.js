@@ -958,7 +958,7 @@
       renderSelection();
       if (!state.zones.length) feedback('Пока нет активных игровых районов');
     } catch (error) {
-      ui.count.textContent = '—';
+      // HP-only HUD: never access removed capture counters here.
       ui.capture.disabled = true;
       ui.captureLabel.textContent = 'Игра недоступна';
       setStatus(error.message);
