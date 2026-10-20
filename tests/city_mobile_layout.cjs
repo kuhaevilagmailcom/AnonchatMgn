@@ -100,7 +100,9 @@ const leafletStub='('+function fakeLeaflet(){
         assert.equal(await page.locator('body').getAttribute('data-map-theme'),'light');
         await page.click('#theme');
         assert.equal(await page.locator('body').getAttribute('data-map-theme'),'dark');
-        await page.locator('[aria-label="Ашик"]').click();
+        // Fake Leaflet does not remove stale DOM markers on redraw.
+        // The last one represents the current light/dark redraw.
+        await page.locator('[aria-label="Ашик"]').last().click();
         assert.equal(await page.locator('#zone').textContent(),'Ашик');
         assert.equal(await page.locator('#ownerCard').isVisible(),true);
         assert.equal(await page.locator('#capture').isVisible(),true);
