@@ -125,6 +125,7 @@
     culture: '<path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-7h6v7M7 11h.01M17 11h.01"/>',
     park: '<path d="M12 3 5 13h3l-4 5h16l-4-5h3L12 3ZM12 18v4"/>',
     district: '<path d="m12 2 8 4v6c0 5-4 8-8 10-4-2-8-5-8-10V6l8-4Z"/><path d="m8 11 3 3 5-5"/>',
+    block: '<path d="M4 4h16v16H4zM4 12h16M12 4v16"/>',
     culture: '<path d="M3 21h18M6 21V9l6-5 6 5v12M9 13h6v8M3 11l9-8 9 8"/>'
   };
   function zoneMarkerHtml(zone, color, selected) {
@@ -244,6 +245,11 @@
     state.petGroup = L.layerGroup().addTo(map);
     map.on('zoomend', () => {
       const showCaptureZones = map.getZoom() >= 14;
+      const blocksVisible = map.getZoom() >= 13;
+      if (state.showBlocks !== blocksVisible) {
+        state.showBlocks = blocksVisible;
+        drawTerritories();
+      }
       for (const item of state.territoryLayers.values()) {
         item.captureRadius.setStyle({ opacity: showCaptureZones ? .75 : 0, fillOpacity: showCaptureZones ? .06 : 0 });
       }
@@ -299,7 +305,7 @@
     state.territoryGroup.clearLayers();
     state.territoryLayers.clear();
     const all = [];
-    const ordered = [...state.zones].sort((a, b) =>
+    const ordered = state.zones.filter(z => z.id < 100000 || state.map.getZoom() >= 13).sort((a, b) =>
       (a.kind === 'district' ? -1 : 0) - (b.kind === 'district' ? -1 : 0));
     // Outlines are rendered ONLY when created from real OSM roads by the API.
     // A landmark without verified geometry remains a visible, clickable pin.
@@ -357,6 +363,8 @@
     try {
       const response = await api('/api/city/road-shapes');
       const shapes = response.shapes || {};
+      // Server has created actual OSM-verified small quarters in SQLite.
+      if (response.extra_count > 0) await load();
       let updated = 0;
       for (const zone of state.zones) {
         const shape = shapes[String(zone.id)];
