@@ -60,7 +60,9 @@ def build_shapes(ways, zones):
                     lines.append(geom.intersection(area))
         if not lines:
             continue
-        network = unary_union(lines + [area.boundary])
+        # Never close a street block with the arbitrary fetch bounding box:
+        # that created artificial straight edges which cross buildings/roads.
+        network = unary_union(lines)
         faces = [p for p in polygonize(network)
                  if p.is_valid and not p.is_empty and p.area > 0.00000007]
         for zone_id, latitude, longitude in zones:
