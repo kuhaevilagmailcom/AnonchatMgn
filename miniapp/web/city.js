@@ -585,16 +585,25 @@
     }
   }
   function autoLocateIfGranted() {
-    // Never ask a fresh permission request on app launch. Only reuse consent.
-    if (tg?.LocationManager?.isAccessGranted) {
-      locate(false,true).then(() => startTracking()).catch(() => {});
-      return;
+    // Initializing Telegram's location manager is not a permission request.
+    // On iOS isAccessGranted is only reliable AFTER init() has completed.
+    const manager = tg?.LocationManager;
+    if (manager) {
+      const check = () => {
+        if (manager.isAccessGranted) locate(false,true).then(startTracking).catch(() => {});
+      };
+      try {
+        if (manager.isInited) check();
+        else manager.init(check);
+      } catch (_) { /* unsupported Telegram version */ }
     }
+    // Browser permission APIs can be missing on older iOS/WebKit clients.
+    // Do not trigger an unsolicited OS permission dialog on startup.
     navigator.permissions?.query?.({name:'geolocation'})
       .then(result => {
-        if (result.state === 'granted') locate(false,true).then(() => startTracking()).catch(() => {});
+        if (result.state === 'granted') locate(false,true).then(startTracking).catch(() => {});
         result.onchange = () => {
-          if (result.state === 'granted') locate(false,true).then(() => startTracking()).catch(() => {});
+          if (result.state === 'granted') locate(false,true).then(startTracking).catch(() => {});
           else stopTracking();
         };
       }).catch(() => {});
