@@ -68,6 +68,10 @@ def capture(db, user_id, zone_id, lat, lon, accuracy_m, fix_timestamp, now=None)
         db.execute(
           "INSERT INTO city_capture_events(zone_id,user_id,captured_at) VALUES(?,?,?)",
           (zone_id,user_id,int(now)))
+        # Atomic with ownership: reward existing ⭐/XP balance and remove
+        # an old owner's guard. If reward fails, capture itself rolls back.
+        from .city_pets import on_capture
+        on_capture(db, user_id, zone_id, int(now))
         db.commit()
         return {"zone_id":zone_id,"name":zone[0],"owner_user_id":user_id}
     except BaseException:
