@@ -546,7 +546,7 @@
   function updateGPS(gps, focus = false) {
     if (!gps || !Number.isFinite(gps.lat) || !Number.isFinite(gps.lon)) return;
     // Ignore less accurate background readings rather than teleporting the dot.
-    if (gps.accuracy < 0 || gps.accuracy > 3000) return;
+    if (gps.accuracy < 0) return; // Missing accuracy must not hide the user marker.
     state.gps = gps;
     state.gpsEnabled = true;
     state.gpsUpdateAt = Date.now();
@@ -563,8 +563,13 @@
         ), !state.autoCentered && !document.hidden),
         error => {
           if (error.code === 1) {
-            stopTracking();
-            feedback('Доступ к геолокации закрыт', 'error');
+            // Browser permission can be denied even while Telegram native GPS is granted.
+            if (state.gpsWatchId !== null) {
+              try {navigator.geolocation.clearWatch(state.gpsWatchId);} catch (_) {}
+              state.gpsWatchId = null;
+            }
+            if (tg?.LocationManager?.isAccessGranted) startTelegramPolling();
+            else feedback('Доступ к геолокации закрыт', 'error');
           }
         },
         {enableHighAccuracy:true, maximumAge:5000, timeout:20000}
