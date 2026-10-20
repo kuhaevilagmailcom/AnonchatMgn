@@ -69,6 +69,24 @@ const server = http.createServer((req, res) => {
         assert.ok(result.panel.top >= 440, width + ': map not visible enough');
         assert.ok(result.action.bottom <= result.nav.top + 2, width + ': capture button hidden beneath nav');
         assert.ok(result.navItems === 4, 'map/tops/market/rules navigation missing');
+        assert.equal(await page.locator('#count').count(), 0, width + ': old occupied count returned');
+        assert.equal(await page.locator('#mineCount').count(), 0, width + ': old zone count returned');
+        assert.equal(await page.locator('#captureCount').count(), 0, width + ': old capture count returned');
+        assert.ok(await page.locator('#hpHud').isVisible(), width + ': HP status missing');
+        assert.equal(await page.locator('#mapCredits a').count(), 2,
+          width + ': both legal map data attributions must stay visible');
+        assert.ok(await page.locator('#mapCredits').isVisible(),
+          width + ': copyright links must remain accessible');
+        const creditStyle = await page.locator('#mapCredits').evaluate(el => ({
+          background:getComputedStyle(el).backgroundColor,
+          boxShadow:getComputedStyle(el).boxShadow
+        }));
+        assert.equal(creditStyle.background, 'rgba(0, 0, 0, 0)',
+          width + ': black copyright plaque returned');
+        assert.equal(creditStyle.boxShadow, 'none',
+          width + ': copyright block has unwanted shadow');
+        assert.ok(await page.locator('#myZonesButton .ico').isVisible(),
+          width + ': real SVG my-zones icon missing');
         await page.locator('#theme').click();
         assert.equal(await page.evaluate(() => document.body.dataset.mapTheme), 'light');
         await page.locator('#sheetToggle').click();
@@ -115,6 +133,13 @@ const server = http.createServer((req, res) => {
         assert.ok(await page.locator('#leaderboard').isVisible());
         await page.locator('#showmap').click();
         assert.ok(await page.locator('#mapView').isVisible());
+        await page.locator('#myZonesButton').click();
+        assert.ok(await page.locator('#myZones').isVisible(),
+          width + ': side button must show My Districts, not leaderboard');
+        assert.ok(await page.locator('#myZonesList').isVisible());
+        assert.ok(await page.locator('#tabs').isVisible(),
+          width + ': my-districts page must preserve bottom navigation');
+        await page.locator('#showmap').click();
         process.stdout.write('City Mini App layout and controls OK: ' + width + 'px\n');
       } finally {
         await context.close();
