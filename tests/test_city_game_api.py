@@ -15,21 +15,15 @@ from anonchat import city_game_api as city
 class GeometryTests(unittest.TestCase):
     def test_sector_polygons_are_distinct_and_stable(self):
         zones = city.STARTER_ZONES
-        self.assertEqual(len(zones), 12)
+        self.assertEqual(len(zones), 15)
         zone_names = {row[1] for row in zones}
-        self.assertTrue({"Ашик", "Гостинка", "Контик", "Джазик", "Ленинский район"}.issubset(zone_names))
+        self.assertTrue({"Ашик", "Гостинка", "Контик", "Джазик", "Ленинский район", "Площадь Победы", "Соцгород", "Комсомольская площадь"}.issubset(zone_names))
         self.assertEqual(city.ZONE_META[6][1], "ТРК «Семейный парк»")
         self.assertEqual(city.ZONE_META[7][1], "ТРК «Гостиный двор»")
         self.assertEqual(city.ZONE_META[8][1], "ТРК «Континент»")
         self.assertEqual(city.ZONE_META[9][1], "ТРК «Jazz Mall»")
         self.assertGreater(len({row[4] for row in zones}), 1)  # big and small
-        for zone_id, _, lat, lon, radius in zones:
-            poly = city.polygon_for(zone_id, lat, lon)
-            self.assertEqual(poly, city.polygon_for(zone_id, lat, lon))
-            self.assertEqual(len(poly), 8)
-            self.assertEqual(len(set(tuple(p) for p in poly)), 8)
-            self.assertTrue(all(abs(p[0] - lat) < .02 and abs(p[1] - lon) < .02 for p in poly))
-            self.assertGreater(radius, 100)  # capture radius is separate from outline
+        self.assertTrue(all(radius > 100 for _, _, _, _, radius in zones))
 
     def test_seed_fixes_legacy_coordinates_without_erasing_owner(self):
         db = sqlite3.connect(":memory:", isolation_level=None)
@@ -90,9 +84,9 @@ class CityRoutesTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status, 200)
             data = await response.json()
             self.assertEqual(len(data["zones"]), len(city.STARTER_ZONES))
-            self.assertTrue(all(len(z["polygon"]) == 8 for z in data["zones"]))
+            self.assertTrue(all(z["polygon"] == [] for z in data["zones"]))  # no invented boundaries
             self.assertEqual(len([z for z in data["zones"] if z["kind"] == "mall"]), 4)
-            self.assertEqual(len([z for z in data["zones"] if z["kind"] == "district"]), 1)
+            self.assertEqual(len([z for z in data["zones"] if z["kind"] == "district"]), 4)
             self.assertTrue(all(z.get("official_name") and z.get("address") for z in data["zones"]))
             self.assertTrue(data["can_capture"])
 
