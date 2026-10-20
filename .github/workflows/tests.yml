@@ -32,6 +32,8 @@ jobs:
           - load_smoke
           - game_resilience
           - dice_duels
+          - test_city_capture
+          - test_city_game_api
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -66,6 +68,8 @@ jobs:
           node --check miniapp/web/app.js
           node --check miniapp/web/admin.js
           node --check miniapp/web/realtime.js
+          node --check miniapp/web/city.js
+          node --check miniapp/web/city-access.js
 
   mobile-layout:
     name: Mobile layout · Chromium
