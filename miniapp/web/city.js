@@ -31,7 +31,8 @@
     territoryLayers: new Map(), territoryGroup: null, markerGroup: null,
     gpsMarker: null, accuracyCircle: null, locating: false, capturing: false,
     canCapture: false, radius: 100, maxAccuracy: 75, cooldownEnd: 0,
-    activeTab: 'map', toastTimer: null, hasFramed: false, expanded: false, theme: 'dark'
+    activeTab: 'map', toastTimer: null, hasFramed: false, expanded: false, theme: 'dark',
+    baseLayer: null, basemapType: null
   };
 
   function safeText(value, fallback = '') {
@@ -128,6 +129,15 @@
     ui.theme.classList.toggle('is-active', state.theme === 'light');
     ui.theme.setAttribute('aria-label', state.theme === 'light' ? 'Включить тёмную карту' : 'Включить светлую карту');
     ui.theme.setAttribute('title', state.theme === 'light' ? 'Тёмная карта' : 'Светлая карта');
+    if (state.basemapType === 'vector' && state.baseLayer) {
+      try {
+        const gl = state.baseLayer.getMaplibreMap();
+        gl?.setStyle(MAP_STYLES[state.theme]);
+      } catch (error) {
+        console.warn('Не удалось переключить стиль карты', error);
+        feedback('Не удалось сменить тему карты', 'error');
+      }
+    }
     try { window.localStorage?.setItem('mgn_city_map_theme', state.theme); } catch (_) {}
   }
   function initialTheme() {
@@ -140,21 +150,86 @@
     ui.sheetToggle.setAttribute('aria-label', state.expanded ? 'Свернуть панель карты' : 'Развернуть панель карты');
     requestAnimationFrame(() => state.map?.invalidateSize());
   }
+  // OpenFreeMap serves OSM-derived vector maps with no API key.
+  // Official Leaflet bridge: https://openfreemap.org/quick_start/
+  const MAP_STYLES = {
+    dark: 'https://tiles.openfreemap.org/styles/dark',
+    light: 'https://tiles.openfreemap.org/styles/positron'
+  };
+
+  function createFallbackLayer(map) {
+    // Only used when this device cannot render vector maps (e.g. WebGL off).
+    // The city document now sends Referer in accordance with OSM tile policy.
+    const fallback = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      minZoom: 10, maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
+      referrerPolicy: 'strict-origin-when-cross-origin',
+      crossOrigin: true
+    }).addTo(map);
+    fallback.on('tileerror', () => {
+      if (!fallback.errorShown) {
+        fallback.errorShown = true;
+        feedback('Не удалось загрузить карту. Проверь подключение и обнови игру.', 'error');
+      }
+    });
+    state.baseLayer = fallback;
+    state.basemapType = 'raster';
+  }
+
   function createMap() {
     if (!window.L) {
-      setStatus('Не загрузилась карта. Проверь интернет и обнови игру.');
+      setStatus('Не удалось загрузить карту. Проверь интернет и обнови игру.');
       ui.capture.disabled = true;
-      feedback('Картографический движок недоступен');
+      feedback('Картографический движок недоступен', 'error');
       return false;
     }
     const map = L.map('map', {
       zoomControl: false, preferCanvas: true, minZoom: 10, maxZoom: 19
     }).setView(CITY, 12);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      minZoom: 10, maxZoom: 19, attribution: '© OpenStreetMap contributors',
-      crossOrigin: true
-    }).addTo(map);
     state.map = map;
+    let vectorReady = false;
+    let vectorLoaded = false;
+    if (window.maplibregl && typeof L.maplibreGL === 'function') {
+      try {
+        if (window.maplibregl.supported?.() !== false) {
+          const layer = L.maplibreGL({
+            style: MAP_STYLES[state.theme],
+            interactive: false
+          }).addTo(map);
+          state.baseLayer = layer;
+          state.basemapType = 'vector';
+          vectorReady = true;
+          const gl = layer.getMaplibreMap();
+          if (gl) {
+            gl.on('load', () => { vectorLoaded = true; });
+            // If the vector provider is unreachable, remove the blank canvas.
+            window.setTimeout(() => {
+              if (state.map !== map || state.baseLayer !== layer || vectorLoaded) return;
+              if (gl.isStyleLoaded?.()) return;
+              try { map.removeLayer(layer); } catch (_) {}
+              createFallbackLayer(map);
+              feedback('Основная карта недоступна, включена резервная.', 'error');
+            }, 13000);
+          }
+        }
+      } catch (error) {
+        console.warn('MapLibre недоступен, используем резервную карту', error);
+        if (state.baseLayer) {
+          try { map.removeLayer(state.baseLayer); } catch (_) {}
+          state.baseLayer = null;
+        }
+        vectorReady = false;
+      }
+    }
+    if (!vectorReady) createFallbackLayer(map);
+    // Keep required map attribution visible with the rest of the game UI.
+    if (state.basemapType === 'vector') {
+      map.attributionControl?.addAttribution(
+        '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> ' +
+        '&copy; <a href="https://openmaptiles.org">OpenMapTiles</a> ' +
+        'Data from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+      );
+    }
     state.territoryGroup = L.layerGroup().addTo(map);
     state.markerGroup = L.layerGroup().addTo(map);
     map.on('zoomend', () => {
