@@ -186,6 +186,9 @@
     const map = L.map('map', {
       zoomControl: false, preferCanvas: true, minZoom: 10, maxZoom: 19
     }).setView(CITY, 12);
+    // The blue/yellow mark before "Leaflet" is its logo, not a country flag.
+    // Remove the optional library branding; keep map data credit intact.
+    map.attributionControl?.setPrefix(false);
     state.map = map;
     let vectorReady = false;
     let vectorLoaded = false;
@@ -222,14 +225,8 @@
       }
     }
     if (!vectorReady) createFallbackLayer(map);
-    // Keep required map attribution visible with the rest of the game UI.
-    if (state.basemapType === 'vector') {
-      map.attributionControl?.addAttribution(
-        '&copy; <a href="https://openfreemap.org">OpenFreeMap</a> ' +
-        '&copy; <a href="https://openmaptiles.org">OpenMapTiles</a> ' +
-        'Data from <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-      );
-    }
+    // The Leaflet/MapLibre bridge takes the legal data attribution from the
+    // vector style automatically. Do NOT add it a second time here.
     state.territoryGroup = L.layerGroup().addTo(map);
     state.markerGroup = L.layerGroup().addTo(map);
     map.on('zoomend', () => {
