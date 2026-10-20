@@ -22,7 +22,7 @@ def routes(database_path, authenticate):
             ).fetchall()
         return web.json_response({"user_id":uid,"zones":[
             {"id":z[0],"name":z[1],"lat":z[2],"lon":z[3],
-             "owner_user_id":z[4]} for z in zones]})
+             "mine":z[4]==uid,"occupied":z[4] is not None} for z in zones]})
     async def capture(request):
         uid = await authenticate(request)
         body = await request.json()
