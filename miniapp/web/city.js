@@ -4,7 +4,7 @@ const tg=window.Telegram?.WebApp;tg?.ready();tg?.expand();
 const $=id=>document.getElementById(id);
 const map=L.map('map',{zoomControl:false}).setView([53.407,58.98],12);
 L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
-let selected=null,shapes=[],myMarker=null,accuracyRing=null,position=null,zones=[];
+let canCapture=false;let selected=null,shapes=[],myMarker=null,accuracyRing=null,position=null,zones=[];
 const colors=['#9c64ff','#ff648d','#40b5ef','#f7ac44','#52d7a0','#df73dd'];
 const message=t=>$('status').textContent=t;
 async function api(path,options={}){
@@ -21,7 +21,7 @@ function sector(zone,index){
 function select(z,shape){
  selected=z;$('zone').textContent=z.name;
  $('owner').textContent=z.occupied?'Владелец: '+(z.owner_name||'Аноним'):'Свободная территория';
- $('capture').disabled=!!z.mine;
+ $('capture').disabled=!canCapture||!!z.mine;
  message(z.mine?'Это твоя территория': 'Подойди к точке захвата внутри сектора. Нужна точность GPS до 75 м.');
  if(shape)map.fitBounds(shape.getBounds(),{padding:[35,35],maxZoom:16});
 }
@@ -33,7 +33,7 @@ function renderTop(rows){
 function showTop(on){$('leaderboard').classList.toggle('open',on);$('showtop').classList.toggle('active',on);$('showmap').classList.toggle('active',!on);if(on){$('panel').scrollTo({top:0,behavior:'smooth'})}}
 async function load(){
  try{
-  const data=await api('/api/city/state');zones=data.zones;
+  const data=await api('/api/city/state');canCapture=!!data.can_capture;zones=data.zones;$('capture').textContent=canCapture?'ЗАХВАТИТЬ РАЙОН':'ЗАХВАТ ТОЛЬКО ДЛЯ АДМИНОВ';
   shapes.forEach(s=>map.removeLayer(s));shapes=[];
   zones.forEach((z,i)=>{
    const color=z.mine?'#35e2a5':z.occupied?colors[(i+2)%colors.length]:colors[i%colors.length];
@@ -45,7 +45,7 @@ async function load(){
   });
   $('count').textContent=zones.filter(z=>z.occupied).length+'/'+zones.length+' занято';
   renderTop(data.leaderboard||[]);
-  if(selected){const latest=zones.find(z=>z.id===selected.id);if(latest){selected=latest;$('zone').textContent=latest.name;$('owner').textContent=latest.occupied?'Владелец: '+(latest.owner_name||'Аноним'):'Свободная территория';$('capture').disabled=!!latest.mine}}
+  if(selected){const latest=zones.find(z=>z.id===selected.id);if(latest){selected=latest;$('zone').textContent=latest.name;$('owner').textContent=latest.occupied?'Владелец: '+(latest.owner_name||'Аноним'):'Свободная территория';$('capture').disabled=!canCapture||!!latest.mine}}
   if(!zones.length)message('Территории ещё не добавлены');
  }catch(e){message('Ошибка загрузки: '+e.message)}
 }
