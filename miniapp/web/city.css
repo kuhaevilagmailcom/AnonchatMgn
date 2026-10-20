@@ -70,10 +70,10 @@ a{color:inherit;text-decoration:none}
   background:rgba(14,12,13,.985);border-top:1px solid #50404b;
   border-radius:16px 16px 0 0;
 }
-.bottom-sheet:not(.has-selection):not(.is-expanded):not([data-tab=top]):not([data-tab=rules]):not([data-tab=market]){
+.bottom-sheet:not(.has-selection):not(.is-expanded):not([data-tab=top]):not([data-tab=rules]):not([data-tab=market]):not([data-tab=myzones]){
   height:calc(116px + env(safe-area-inset-bottom,0px));
 }
-.bottom-sheet.is-expanded,.bottom-sheet[data-tab=top],.bottom-sheet[data-tab=rules],.bottom-sheet[data-tab=market]{
+.bottom-sheet.is-expanded,.bottom-sheet[data-tab=top],.bottom-sheet[data-tab=rules],.bottom-sheet[data-tab=market],.bottom-sheet[data-tab=myzones]{
   height:min(54dvh,425px);
 }
 .sheet-grip{
@@ -191,14 +191,14 @@ body[data-map-theme=light] .zone-pin.is-free .zone-pin-inner{background:#fff}
 }
 @media(max-height:680px){
  .bottom-sheet{height:calc(199px + env(safe-area-inset-bottom,0px))}
- .bottom-sheet.is-expanded,.bottom-sheet[data-tab=top],.bottom-sheet[data-tab=rules]{height:min(63dvh,425px)}
+ .bottom-sheet.is-expanded,.bottom-sheet[data-tab=top],.bottom-sheet[data-tab=rules],.bottom-sheet[data-tab=myzones]{height:min(63dvh,425px)}
  .hud{top:calc(64px + env(safe-area-inset-top,0px))}
  .map-actions{top:calc(117px + env(safe-area-inset-top,0px))}
 }
 @media(orientation:landscape) and (max-height:500px){
  .hud{display:none}
  .map-actions{top:calc(65px + env(safe-area-inset-top,0px))}
- .bottom-sheet,.bottom-sheet.is-expanded,.bottom-sheet[data-tab=top],.bottom-sheet[data-tab=rules]{width:min(380px,62vw);height:100dvh;max-height:none;left:auto;right:0;border-radius:12px 0 0 0}
+ .bottom-sheet,.bottom-sheet.is-expanded,.bottom-sheet[data-tab=top],.bottom-sheet[data-tab=rules],.bottom-sheet[data-tab=myzones]{width:min(380px,62vw);height:100dvh;max-height:none;left:auto;right:0;border-radius:12px 0 0 0}
  .appbar{right:min(380px,62vw)}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{transition-duration:.01ms!important;animation-duration:.01ms!important}}
@@ -209,7 +209,7 @@ body[data-map-theme=light] .zone-pin.is-free .zone-pin-inner{background:#fff}
 .leaflet-bottom.leaflet-right{
   bottom:calc(199px + env(safe-area-inset-bottom,0px) + 8px);right:8px;z-index:1000;
 }
-body:has(#panel:not(.has-selection):not(.is-expanded):not([data-tab=top]):not([data-tab=rules]):not([data-tab=market])) .leaflet-bottom.leaflet-right{
+body:has(#panel:not(.has-selection):not(.is-expanded):not([data-tab=top]):not([data-tab=rules]):not([data-tab=market]):not([data-tab=myzones])) .leaflet-bottom.leaflet-right{
   bottom:calc(116px + env(safe-area-inset-bottom,0px) + 8px);
 }
 body:has(#panel.is-expanded) .leaflet-bottom.leaflet-right,
@@ -328,3 +328,124 @@ body:has(#panel[data-tab="market"]) .leaflet-bottom.leaflet-right{display:none}
  body:has(#panel[data-tab=market]) .leaflet-bottom.leaflet-right{display:none}
 }
 @media(prefers-reduced-motion:reduce){.pet-agent>span{animation:none}}
+
+
+/* ANON MGN map controls — authentic locally bundled Lucide icons. */
+.city-icon,.hud-hp-icon{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:21px;height:21px;flex:none;pointer-events:none;
+}
+.city-icon .ico,.hud-hp-icon .ico{width:21px;height:21px;stroke-width:1.9}
+.appbar-back .city-icon{width:18px;height:18px}
+.appbar-back .city-icon .ico{width:18px;height:18px}
+.map-action .city-icon .ico{width:21px;height:21px}
+.tab .city-icon,.tab .city-icon .ico{width:19px;height:19px}
+.zone-pin-inner .ico{width:20px;height:20px;stroke-width:2}
+.zone-pin.is-district .zone-pin-inner .ico{width:23px;height:23px}
+
+/* Top HUD contains HP only — no occupied, capture or district counters. */
+.hud-hp-only{
+  gap:9px;min-height:47px;min-width:139px;
+  padding:8px 12px;
+  border-radius:12px;
+  background:rgba(11,10,12,.93);
+}
+.hud-hp-only .hud-hp-icon{width:19px;height:19px;color:#e985c4}
+.hud-hp-only .hud-hp-icon .ico{width:19px;height:19px}
+.hud-hp-value{font-size:17px!important;font-weight:850;color:#fff!important;
+  font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+.hud-hp-unit{font-size:10px;color:#f0a6d3;font-weight:770;margin-left:-5px}
+.hud-hp-track{flex:1;min-width:26px;max-width:37px;height:4px;
+  border-radius:5px;background:#41263a;overflow:hidden}
+.hud-hp-track span{display:block;width:100%;height:100%;
+  background:#e57ac6;border-radius:5px;transition:width .3s ease}
+
+/* The map data remains visibly credited, without the generated black box.
+   These two official copyright links replace auto-injected provider plaques. */
+.leaflet-control-attribution,.maplibregl-ctrl-attrib{display:none!important}
+.map-credits{
+  position:absolute;z-index:1080;
+  right:10px;bottom:calc(124px + env(safe-area-inset-bottom,0px));
+  display:flex;align-items:center;gap:5px;
+  max-width:calc(100% - 20px);
+  padding:0;background:transparent;border:0;border-radius:0;
+  box-shadow:none;
+  font:500 9px/1.35 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  letter-spacing:0;white-space:nowrap;
+  color:#d6cbd4;
+  text-shadow:0 1px 4px #000,0 0 4px #000;
+}
+.map-credits a{color:inherit;text-decoration:none}
+.map-credits a:hover,.map-credits a:focus-visible{text-decoration:underline}
+body:has(#panel.has-selection:not(.is-expanded)[data-tab="map"]) .map-credits{
+  bottom:calc(207px + env(safe-area-inset-bottom,0px));
+}
+body:has(#panel.is-expanded) .map-credits,
+body:has(#panel[data-tab="top"]) .map-credits,
+body:has(#panel[data-tab="rules"]) .map-credits,
+body:has(#panel[data-tab="myzones"]) .map-credits{
+  bottom:calc(min(54dvh,425px) + 8px);
+}
+body:has(#panel[data-tab="market"]) .map-credits{display:none}
+@media(max-height:680px){
+  body:has(#panel[data-tab="top"]) .map-credits,
+  body:has(#panel[data-tab="rules"]) .map-credits,
+  body:has(#panel[data-tab="myzones"]) .map-credits{
+    bottom:calc(min(63dvh,425px) + 8px);
+  }
+}
+@media(orientation:landscape) and (max-height:500px){
+  .map-credits{right:calc(min(380px,62vw) + 9px);bottom:8px}
+  body:has(#panel[data-tab="top"]) .map-credits,
+  body:has(#panel[data-tab="rules"]) .map-credits,
+  body:has(#panel[data-tab="myzones"]) .map-credits{
+    bottom:8px;right:calc(min(380px,62vw) + 9px)
+  }
+}
+/* Light mode uses dark saturated outlines and high-contrast pin surfaces. */
+body[data-map-theme=light] .zone-pin-inner{
+  background:#fff;color:#273240;
+  border-color:var(--zone-color,#53657b);
+  box-shadow:0 1px 3px #0005,0 0 0 2px #ffffffe0;
+}
+body[data-map-theme=light] .zone-pin.is-held .zone-pin-inner{
+  background:var(--zone-color,#545d72);color:#fff;
+  box-shadow:0 2px 5px #0004,0 0 0 2px #fff;
+}
+body[data-map-theme=light] .zone-pin.is-free .zone-pin-inner{
+  background:#fff;color:#434b56;
+}
+body[data-map-theme=light] .zone-pin.is-mine .zone-pin-inner{
+  background:#a81772;color:white;border-color:#a81772;
+  box-shadow:0 1px 5px #6c164a5c,0 0 0 2px #fff;
+}
+body[data-map-theme=light] .zone-pin.is-selected .zone-pin-inner{
+  outline:3px solid #222c39;outline-offset:1px;
+}
+body[data-map-theme=light] .map-credits{
+  color:#343b44;text-shadow:0 1px 3px #fff,0 0 2px #fff;
+}
+
+/* My districts: clean tappable native rows, not floating map cards. */
+.my-zones{padding:13px 16px 20px;overflow-y:auto}
+.my-zones .sheet-overline{margin-bottom:4px}
+.my-zones-list{display:flex;flex-direction:column;gap:0}
+.my-zone-row{
+  width:100%;display:flex;align-items:center;gap:11px;min-height:64px;
+  padding:10px 0;text-align:left;background:transparent;border-bottom:1px solid #332831;
+  color:#fff;
+}
+.my-zone-row:last-child{border-bottom:0}
+.my-zone-picture{display:grid;place-items:center;flex:none;width:37px;height:37px;
+  color:#f0a5d2;border-radius:11px;background:#281826}
+.my-zone-picture .ico{width:21px;height:21px}
+.my-zone-text{display:flex;min-width:0;flex:1;flex-direction:column;gap:5px}
+.my-zone-text strong{font-size:13px;font-weight:760;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.my-zone-text small{font-size:10px;color:#afa0ae;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.my-zone-arrow{display:grid;place-items:center;width:24px;height:24px;flex:none;color:#9c748d}
+.my-zone-arrow .ico{width:18px;height:18px}
+.my-zones-empty{padding:14px 0;color:#fff}
+.my-zones-empty strong{font-size:13px;font-weight:700}
+.my-zones-empty p{font-size:11px;color:#a99da6;line-height:1.5;margin:7px 0 0}
