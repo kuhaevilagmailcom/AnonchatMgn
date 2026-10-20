@@ -86,6 +86,14 @@ async function flush(){for(let i=0;i<70;i++) await Promise.resolve();}
     'setInterval','requestAnimationFrame',source)(
       document,window,navigator,L,fetch,()=>1,()=>{},()=>1,fn=>fn());
   await flush();
+  nodes.myZonesButton.click();
+  assert.equal(nodes.myZones.hidden,false,'side control must show My Districts');
+  assert.equal(nodes.myZonesList.children.length,1,'owned area should appear in my district list');
+  assert.match(nodes.myZonesList.children[0].children[1].children[0].textContent,/Ашик/);
+  nodes.myZonesList.listeners.click({
+    target:{closest:()=>({dataset:{zoneId:'1'}})}
+  });
+  assert.equal(nodes.mapView.hidden,false,'opening owned zone must return to map');
   nodes.showmarket.click();
   assert.equal(nodes.market.hidden,false);
   assert.equal(nodes.wallet.textContent,'1 100 ⭐');
