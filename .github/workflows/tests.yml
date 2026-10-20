@@ -72,6 +72,7 @@ jobs:
           node --check miniapp/web/city.js
           node --check miniapp/web/city-access.js
           node tests/city_map_provider.cjs
+          node tests/city_roads.cjs
           node tests/city_gps.cjs
 
   mobile-layout:
