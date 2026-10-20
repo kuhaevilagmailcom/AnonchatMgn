@@ -68,7 +68,7 @@ a{color:inherit;text-decoration:none}
   height:calc(199px + env(safe-area-inset-bottom,0px));
   display:flex;flex-direction:column;overflow:hidden;
   background:rgba(14,12,13,.985);border-top:1px solid #50404b;
-  border-radius:16px 16px 0 0;transition:height .18s ease;
+  border-radius:16px 16px 0 0;
 }
 .bottom-sheet:not(.has-selection):not(.is-expanded):not([data-tab=top]):not([data-tab=rules]){
   height:calc(116px + env(safe-area-inset-bottom,0px));
