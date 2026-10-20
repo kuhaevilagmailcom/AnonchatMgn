@@ -60,6 +60,10 @@ const leafletStub='('+function fakeLeaflet(){
       try{
         const page=await context.newPage(),errors=[];
         page.on('pageerror',e=>errors.push(e.message));
+        // Avoid fetching third-party mapping bundles during UI geometry tests.
+        await page.route('https://unpkg.com/**',r=>r.fulfill({
+          status:200,contentType:r.request().url().endsWith('.css')?'text/css':'application/javascript',body:''
+        }));
         await page.route('https://telegram.org/js/telegram-web-app.js',r=>r.fulfill({status:200,contentType:'application/javascript',body:''}));
         await page.route('https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',r=>r.fulfill({status:200,contentType:'application/javascript',body:leafletStub}));
         await page.route('https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',r=>r.fulfill({status:200,contentType:'text/css',body:'.leaflet-container{position:relative}'}));
