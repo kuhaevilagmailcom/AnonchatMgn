@@ -73,7 +73,7 @@ a{color:inherit;text-decoration:none}
 .bottom-sheet:not(.has-selection):not(.is-expanded):not([data-tab=top]):not([data-tab=rules]){
   height:calc(116px + env(safe-area-inset-bottom,0px));
 }
-.bottom-sheet.is-expanded,.bottom-sheet[data-tab=top],.bottom-sheet[data-tab=rules]{
+.bottom-sheet.is-expanded,.bottom-sheet[data-tab=top],.bottom-sheet[data-tab=rules],.bottom-sheet[data-tab=market]{
   height:min(54dvh,425px);
 }
 .sheet-grip{
@@ -124,7 +124,7 @@ a{color:inherit;text-decoration:none}
   border:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;
 }
 .sheet-tabs{
-  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));flex:none;gap:0;
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));flex:none;gap:0;
   width:100%;min-height:calc(54px + env(safe-area-inset-bottom,0px));
   padding:0 10px env(safe-area-inset-bottom,0px);
   border-top:1px solid var(--line);background:#090809;
@@ -214,7 +214,8 @@ body:has(#panel:not(.has-selection):not(.is-expanded):not([data-tab=top]):not([d
 }
 body:has(#panel.is-expanded) .leaflet-bottom.leaflet-right,
 body:has(#panel[data-tab="top"]) .leaflet-bottom.leaflet-right,
-body:has(#panel[data-tab="rules"]) .leaflet-bottom.leaflet-right{bottom:calc(min(54dvh,425px) + 8px)}
+body:has(#panel[data-tab="rules"]) .leaflet-bottom.leaflet-right,
+body:has(#panel[data-tab="market"]) .leaflet-bottom.leaflet-right{bottom:calc(min(54dvh,425px) + 8px)}
 /* One short, accessible data-source credit; no duplicate text or Leaflet logo. */
 .leaflet-control-attribution{
   max-width:calc(100vw - 18px);
@@ -242,3 +243,64 @@ body:has(#panel[data-tab="rules"]) .leaflet-bottom.leaflet-right{bottom:calc(min
 @media(orientation:landscape) and (max-height:500px){
   .leaflet-bottom.leaflet-right{bottom:0;right:min(380px,62vw)}
 }
+
+
+/* Pet economy: functional and restrained, same visual system as ANON MGN. */
+.hud .hp-stat{display:flex!important;min-width:54px;padding:0 7px}
+.hud .hp-stat strong{color:#f2a7d4}
+.hud .hp-separator{display:block!important}
+.zone-guard-badge{font-size:17px;line-height:1.1;flex:none}
+.market{padding:13px 16px 22px;overflow-y:auto}
+.bottom-sheet[data-tab=market]{height:min(68dvh,555px);max-height:76dvh}
+body:has(#panel[data-tab=market]) .leaflet-bottom.leaflet-right{
+  bottom:calc(min(68dvh,555px) + 8px);
+}
+.market-head{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:0 0 12px;border-bottom:1px solid #282227}
+.market-head>div{display:flex;flex-direction:column;justify-content:center;gap:4px;min-width:0}
+.market-head small{font-size:9px;color:#b6a8b1;font-weight:700;letter-spacing:.3px}
+.market-head strong{font-size:20px;font-weight:800;white-space:nowrap}
+.market-hp strong{font-size:13px;white-space:nowrap}
+.hp-track{width:100%;height:4px;background:#3a2a35;border-radius:6px;overflow:hidden;margin-top:5px}
+.hp-track span{display:block;width:100%;height:100%;background:#e57ac6;transition:width .35s ease}
+.income-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #292328}
+.income-row>span{font-size:12px;color:#b7a8b1}
+.income-row strong{font-size:13px;color:#f6b5df;margin-left:5px}
+.income-row small{display:block;margin-top:3px;color:#847983;font-size:10px}
+.small-action{min-width:78px;min-height:34px;padding:8px 11px;border-radius:9px;border:1px solid #8f4d74;color:#f6b5df;background:#24151f;font-size:11px;font-weight:750}
+.small-action:disabled{opacity:.35}
+.market h2{margin:16px 0 7px;font-size:16px;font-weight:760}
+.market-note{margin:6px 0 10px;font-size:11px;line-height:1.5;color:#a39aa2}
+.pet-catalog,.pet-inventory{display:flex;flex-direction:column}
+.pet-product{display:flex;align-items:center;gap:10px;min-height:69px;padding:9px 0;border-bottom:1px solid #302831}
+.pet-product-emoji{display:grid;place-items:center;flex:none;width:37px;height:38px;border-radius:11px;background:#211821;font-size:24px}
+.pet-product-info{display:flex;flex:1;flex-direction:column;gap:5px;min-width:0}
+.pet-product-info strong{font-size:13px;line-height:1.2}
+.pet-product-info small{color:#aea0ab;font-size:10px;line-height:1.3}
+.pet-product-price{display:flex;flex:none;flex-direction:column;align-items:center;gap:4px;min-width:73px}
+.pet-product-price button,.pet-action{padding:8px 11px;border:1px solid #a7538a;background:#3b1d30;color:#ffbee7;border-radius:8px;font-size:11px;font-weight:750;white-space:nowrap}
+.pet-product-price button:disabled,.pet-action:disabled{opacity:.38;cursor:default}
+.pet-product-price small{font-size:10px;color:#d7b1cc}
+.market-inventory-head{display:flex;align-items:center;justify-content:space-between;margin-top:8px}
+.market-inventory-head small{color:#e57ac6;font-size:12px}
+.pet-inventory-row{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #302831}
+.pet-inventory-row .pet-product-emoji{width:31px;height:32px;font-size:21px}
+.pet-inventory-label{display:flex;flex:1;flex-direction:column;min-width:0;gap:3px}
+.pet-inventory-label strong{font-size:12px}
+.pet-inventory-label small{font-size:10px;color:#a49ca2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pet-inventory-row .pet-action{min-width:69px;text-align:center;font-size:10px;padding:7px 8px}
+.pet-agent{border:0!important;background:none!important;pointer-events:none}
+.pet-agent>span{display:block;font-size:23px;filter:drop-shadow(0 1px 3px #000d);animation:pet-bob 1.7s ease-in-out infinite alternate}
+@keyframes pet-bob{from{transform:translateY(0) scale(1)}to{transform:translateY(-4px) scale(1.04)}}
+@media(max-width:360px){
+  .hud .hp-stat{min-width:46px}
+  .market{padding-left:13px;padding-right:13px}
+  .pet-product{gap:7px}
+  .pet-product-info small{font-size:9px}
+  .pet-product-price{min-width:70px}
+  .pet-product-emoji{width:32px}
+}
+@media(orientation:landscape) and (max-height:500px){
+ .bottom-sheet[data-tab=market]{height:100dvh;max-height:100dvh}
+ body:has(#panel[data-tab=market]) .leaflet-bottom.leaflet-right{bottom:0}
+}
+@media(prefers-reduced-motion:reduce){.pet-agent>span{animation:none}}
