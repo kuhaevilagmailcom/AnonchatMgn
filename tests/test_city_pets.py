@@ -122,6 +122,16 @@ class CityPetsTest(unittest.TestCase):
         self.assertGreaterEqual(result["hp"],1)
         self.assertFalse(result["hp"]==0)
 
+    def test_uncertainty_near_block_border_is_safe(self):
+        lion = city_pets.buy(self.db,10,"lion",now=100)["pet_id"]
+        city_pets.place(self.db,10,lion,1,now=100)
+        # The reported center is just 2 m inside the street boundary.
+        position = 53.399618
+        city_pets.presence(self.db,20,position,58.9,8,2000,self.shape,now=2000)
+        tick = city_pets.presence(self.db,20,position,58.9,8,2060,self.shape,now=2060)
+        self.assertIsNone(tick["attacked_by"])
+        self.assertEqual(tick["hp"],100)
+
     def test_no_damage_on_stale_or_inaccurate_gps(self):
         lion = city_pets.buy(self.db,10,"lion",now=100)["pet_id"]
         city_pets.place(self.db,10,lion,1,now=100)
