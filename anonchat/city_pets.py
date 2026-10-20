@@ -45,6 +45,12 @@ def init_db(db):
     CREATE INDEX IF NOT EXISTS idx_city_pets_zone ON city_pets(zone_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_city_one_pet_per_zone
       ON city_pets(zone_id) WHERE zone_id IS NOT NULL;
+    CREATE TABLE IF NOT EXISTS city_pet_orders (
+      owner_id INTEGER NOT NULL,
+      request_id TEXT NOT NULL,
+      pet_id INTEGER NOT NULL,
+      PRIMARY KEY(owner_id,request_id)
+    );
     CREATE TABLE IF NOT EXISTS city_player_hp (
       user_id INTEGER PRIMARY KEY,
       hp_milli INTEGER NOT NULL DEFAULT 100000,
@@ -92,18 +98,35 @@ def _owner_has_zone(db, owner_id, zone_id):
     ).fetchone() is not None
 
 
-def buy(db, user_id, kind, now=None):
+def buy(db, user_id, kind, now=None, request_id=""):
     if kind not in PET_TYPES:
         raise ValueError("Такого питомца нет")
     now = int(time.time() if now is None else now)
+    request_id = str(request_id or "").strip()
+    if request_id and (len(request_id) > 80 or not all(c.isalnum() or c in "-_" for c in request_id)):
+        raise ValueError("Неверный ключ покупки")
     _begin(db)
     try:
+        if request_id:
+            old = db.execute(
+                "SELECT pet_id FROM city_pet_orders WHERE owner_id=? AND request_id=?",
+                (user_id, request_id),
+            ).fetchone()
+            if old:
+                balance = db.execute("SELECT xp FROM users WHERE user_id=?", (user_id,)).fetchone()[0]
+                db.commit()
+                return {"pet_id": old[0], "balance": balance, "replayed": True}
         price = PET_TYPES[kind]["price"]
         balance = _change_xp(db, user_id, -price, "city_pet_purchase",
                              "Покупка питомца " + PET_TYPES[kind]["name"], kind)
         cursor = db.execute(
             """INSERT INTO city_pets(owner_id, kind, purchased_at)
                VALUES(?,?,?)""", (user_id, kind, now))
+        if request_id:
+            db.execute(
+                "INSERT INTO city_pet_orders(owner_id,request_id,pet_id) VALUES(?,?,?)",
+                (user_id, request_id, cursor.lastrowid),
+            )
         db.commit()
         return {"pet_id": cursor.lastrowid, "balance": balance}
     except BaseException:
