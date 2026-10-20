@@ -17,7 +17,9 @@ assert.match(js, /https:\/\/tiles\.openfreemap\.org\/styles\/positron/);
 assert.match(js, /L\.maplibreGL\(/);
 assert.match(js, /getMaplibreMap\(\)/);
 assert.match(js, /getMaplibreMap\(\)[\s\S]*?setStyle\(/);
-assert.match(js, /function createFallbackLayer\(/);
+assert.match(js, /function createFallbackLayer\\(/);
+assert.match(js, /map\\.attributionControl\\?\\.setPrefix\\(false\\)/);
+assert.doesNotMatch(js, /map\\.attributionControl\\?\\.addAttribution\\(/);
 assert.match(js, /referrerPolicy: 'strict-origin-when-cross-origin'/);
 assert.match(html, /maplibre-gl@5\.24\.0\/dist\/maplibre-gl\.js/);
 assert.match(html, /maplibre-gl-leaflet@0\.1\.4\/leaflet-maplibre-gl\.js/);
@@ -27,4 +29,4 @@ assert.match(server, /strict-origin-when-cross-origin.*if request\.path\.endswit
 assert.match(server, /https:\/\/tiles\.openfreemap\.org/);
 assert.match(server, /worker-src 'self' blob:/);
 new Function(js);
-console.log('City map basemap provider and CSP checks passed');
+console.log('City map provider, single attribution and CSP checks passed');
