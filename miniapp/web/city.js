@@ -30,7 +30,7 @@ function renderTop(rows){
  if(!rows.length){const li=document.createElement('li');li.textContent='Пока нет захватов';root.append(li);return}
  for(const p of rows){const li=document.createElement('li');li.textContent=p.name+(p.mine?' (ты)':'');const b=document.createElement('b');b.textContent=p.zones+' районов';li.append(b);root.append(li)}
 }
-function showTop(on){$('leaderboard').classList.toggle('open',on)}
+function showTop(on){$('leaderboard').classList.toggle('open',on);$('showtop').classList.toggle('active',on);$('showmap').classList.toggle('active',!on);if(on){$('panel').scrollTo({top:0,behavior:'smooth'})}}
 async function load(){
  try{
   const data=await api('/api/city/state');zones=data.zones;
@@ -45,7 +45,7 @@ async function load(){
   });
   $('count').textContent=zones.filter(z=>z.occupied).length+'/'+zones.length+' занято';
   renderTop(data.leaderboard||[]);
-  if(selected){const latest=zones.find(z=>z.id===selected.id);if(latest)select(latest)}
+  if(selected){const latest=zones.find(z=>z.id===selected.id);if(latest){selected=latest;$('zone').textContent=latest.name;$('owner').textContent=latest.occupied?'Владелец: '+(latest.owner_name||'Аноним'):'Свободная территория';$('capture').disabled=!!latest.mine}}
   if(!zones.length)message('Территории ещё не добавлены');
  }catch(e){message('Ошибка загрузки: '+e.message)}
 }
