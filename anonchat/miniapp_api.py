@@ -2732,9 +2732,9 @@ class MiniAppServer:
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(self), geolocation=(self)"
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self' https://telegram.org; "
-            "style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob:; media-src 'self' blob:; "
-            "connect-src 'self'; frame-src https://www.openstreetmap.org; frame-ancestors https://web.telegram.org https://*.telegram.org"
+            "default-src 'self'; script-src 'self' https://telegram.org https://unpkg.com; "
+            "style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' https: data: blob:; media-src 'self' blob:; "
+            "connect-src 'self' https://tile.openstreetmap.org; frame-src https://www.openstreetmap.org; frame-ancestors https://web.telegram.org https://*.telegram.org"
         )
         if origin and origin_allowed:
             response.headers["Access-Control-Allow-Origin"] = origin
