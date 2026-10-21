@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
   <meta name="theme-color" content="#000000">
   <meta name="color-scheme" content="dark">
-  <title>МГН: ЗАХВАТ — АНОН МГН</title>
+  <title>РАЙОНЫ — АНОН МГН</title>
   <link rel="icon" href="./assets/anon-mgn-logo.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
-  <link rel="stylesheet" href="./city.css?v=15">
+  <link rel="stylesheet" href="./city.css?v=16">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -20,7 +20,7 @@
     <a class="appbar-back icon-button" href="./index.html" aria-label="Назад в АНОН МГН"><span class="city-icon" data-city-icon="arrow-left" aria-hidden="true"></span></a>
     <div class="appbar-brand"><img src="./assets/anon-mgn-logo.png" alt="АНОН МГН"></div>
     <div class="appbar-divider"></div>
-    <div class="appbar-name"><strong>МГН: Захват</strong><span>Карта Магнитогорска</span></div>
+    <div class="appbar-name"><strong>РАЙОНЫ</strong><span>Карта Магнитогорска</span></div>
     <span class="test-label">Тест</span>
   </header>
 
@@ -35,7 +35,7 @@
     <button class="map-action" id="locate" type="button" aria-label="Моё местоположение" title="Моё местоположение"><span class="city-icon" data-city-icon="locate-fixed" aria-hidden="true"></span></button>
     <button class="map-action" id="refresh" type="button" aria-label="Обновить территории" title="Обновить"><span class="city-icon" data-city-icon="refresh-cw" aria-hidden="true"></span></button>
     <button class="map-action theme-switch" id="theme" type="button" aria-label="Переключить на светлую карту" title="Светлая / тёмная карта"><span class="city-icon" data-city-icon="sun" aria-hidden="true"></span></button>
-    <button class="map-action" id="myZonesButton" type="button" aria-label="Мои районы" title="Мои районы"><span class="city-icon" data-city-icon="layers" aria-hidden="true"></span></button>
+    <button class="map-action" id="myZonesButton" type="button" aria-label="Инвентарь" title="Инвентарь"><span class="city-icon" data-city-icon="backpack" aria-hidden="true"></span></button>
   </div>
   <div id="toast" class="toast" role="status" hidden></div>
 
@@ -51,7 +51,7 @@
       <div class="city-death-symbol" aria-hidden="true">
         <span data-city-icon="skull"></span>
       </div>
-      <p class="city-death-eyebrow">МГН: ЗАХВАТ</p>
+      <p class="city-death-eyebrow">РАЙОНЫ</p>
       <h2 id="deathTitle">Ты погиб</h2>
       <p id="deathDescription">Здоровье закончилось. Твои территории снова свободны.</p>
       <div class="city-death-stats">
@@ -84,6 +84,32 @@
       <div id="myZonesList" class="my-zones-list" aria-label="Захваченные мной районы"></div>
     </section>
 
+    <section id="districtInventory" class="sheet-content district-page" hidden>
+      <div class="district-section-head"><div><small>РАЙОНЫ</small><h2>Инвентарь</h2></div><span id="invTotal">0 питомцев</span></div>
+      <div class="district-pills" id="inventoryTabs">
+        <button data-inv-filter="pets" class="active" type="button">🐾 Питомцы</button>
+        <button data-inv-filter="items" type="button">🎒 Предметы</button>
+        <button data-inv-filter="defense" type="button">🛡️ Защита</button>
+        <button data-inv-filter="rare" type="button">✨ Редкости</button>
+      </div>
+      <div id="inventoryContent" class="district-list"></div>
+    </section>
+
+    <section id="districtWarehouses" class="sheet-content district-page" hidden>
+      <div class="district-section-head"><div><small>ОБЪЕДИНЕНИЯ ИГРОКОВ</small><h2>Склады</h2></div></div>
+      <div id="warehouseContent"></div>
+    </section>
+
+    <section id="districtMore" class="sheet-content district-page" hidden>
+      <div class="district-section-head"><div><small>НАВИГАЦИЯ</small><h2>Ещё</h2></div></div>
+      <div class="district-more-grid">
+        <button type="button" data-more-page="warehouses">📦 <span>Склады<small>Команда и приглашения</small></span></button>
+        <button type="button" data-more-page="top">🏆 <span>Топ игроков<small>Рейтинг по районам</small></span></button>
+        <button type="button" data-more-page="myzones">🗺️ <span>Мои районы<small>Твои территории</small></span></button>
+        <button type="button" data-more-page="rules">ℹ️ <span>Правила<small>Механики игры</small></span></button>
+      </div>
+    </section>
+
     <section id="leaderboard" class="sheet-content leaderboard" hidden>
       <div class="sheet-overline">Рейтинг <span class="sheet-id">По территориям</span></div>
       <h2>Топ игроков</h2>
@@ -104,6 +130,9 @@
       <h2>Маркет питомцев</h2>
       <p class="market-note">Игровые ⭐ — те же звёзды, что за сообщения; это не платные Telegram Stars. За захват: +50 ⭐.</p>
       <div id="petCatalog" class="pet-catalog" aria-label="Магазин питомцев"></div>
+      <h2>Telegram Stars · редкие питомцы</h2>
+      <p class="market-note">Это настоящие Telegram Stars (XTR), не игровые ⭐. Питомцев также можно найти в сундуках.</p>
+      <div id="premiumCatalog" class="pet-catalog"></div>
       <div class="market-inventory-head"><h2>Мои питомцы</h2><small id="petCount">0</small></div>
       <p id="placeHint" class="market-note">Для установки сначала захвати район, затем выбери его на карте.</p>
       <div id="petInventory" class="pet-inventory" aria-label="Купленные питомцы"></div>
@@ -123,16 +152,22 @@
 
     <nav class="sheet-tabs" id="tabs" aria-label="Разделы игры">
       <button class="tab active" id="showmap" type="button" aria-current="page"><span class="city-icon" data-city-icon="map" aria-hidden="true"></span><span>Карта</span></button>
-      <button class="tab" id="showtop" type="button"><span class="city-icon" data-city-icon="trophy" aria-hidden="true"></span><span>Топы</span></button>
+      <button class="tab" id="showtop" type="button"><span class="city-icon" data-city-icon="backpack" aria-hidden="true"></span><span>Инвентарь</span></button>
       <button class="tab" id="showmarket" type="button"><span class="city-icon" data-city-icon="shopping-bag" aria-hidden="true"></span><span>Маркет</span></button>
-      <button class="tab" id="showrules" type="button"><span class="city-icon" data-city-icon="info" aria-hidden="true"></span><span>Правила</span></button>
+      <button class="tab" id="showrules" type="button"><span class="city-icon" data-city-icon="menu" aria-hidden="true"></span><span>Ещё</span></button>
     </nav>
   </main>
+  <div id="petDetails" class="district-modal" hidden role="dialog" aria-modal="true" aria-label="Информация о питомце">
+    <div class="district-modal-card"><button type="button" id="closePetDetails" class="district-close" aria-label="Закрыть">✕</button>
+      <div id="petDetailsBody"></div>
+    </div>
+  </div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
   <script src="./city-icons.js?v=3"></script>
   <script src="./city-roads.js?v=3"></script>
-  <script src="./city.js?v=26"></script>
+  <script src="./city-expansion.js?v=1"></script>
+  <script src="./city.js?v=27"></script>
 </body>
 </html>
