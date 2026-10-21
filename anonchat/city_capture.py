@@ -49,6 +49,17 @@ def capture(db, user_id, zone_id, lat, lon, accuracy_m, fix_timestamp, now=None)
           (zone_id,)).fetchone()
         if not zone:
             raise ValueError("Zone unavailable")
+        # Dead players cannot capture zones by calling the endpoint directly.
+        # In production city_pets.init_db() is run before a capture transaction.
+        hp_table = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='city_player_hp'"
+        ).fetchone()
+        if hp_table:
+            health = db.execute(
+                "SELECT hp_milli FROM city_player_hp WHERE user_id=?", (user_id,)
+            ).fetchone()
+            if health is not None and health[0] <= 0:
+                raise ValueError("Сначала возродись, затем захватывай территории")
         if distance_m(lat,lon,zone[1],zone[2])+accuracy_m > RADIUS_M:
             raise ValueError("Outside capture radius")
         last = db.execute(
