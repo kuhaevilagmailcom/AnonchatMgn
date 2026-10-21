@@ -313,13 +313,17 @@ def presence(db, user_id, lat, lon, accuracy_m, timestamp_s, polygons, now=None)
     On reaching zero HP, ownership and defenders are released atomically.
     A dead player must explicitly respawn; repeated GPS reports cannot kill twice.
     """
-    now = int(time.time() if now is None else now)
+    # Check fractional GPS timestamps against fractional server time.
+    # Comparing them to int(time.time()) rejected valid fixes in the
+    # same second (e.g. timestamp 12:00:00.800 > server 12:00:00).
+    now_wall = float(time.time() if now is None else now)
+    now = int(now_wall)
     vals = (lat, lon, accuracy_m, timestamp_s)
     if not all(isinstance(v, (float, int)) and math.isfinite(v) for v in vals):
         raise ValueError("Неверные координаты")
     if not (-90 <= lat <= 90 and -180 <= lon <= 180) or not (0 <= accuracy_m <= MAX_ACCURACY_M):
         raise ValueError("Низкая точность GPS")
-    if not (0 <= now - timestamp_s <= FIX_MAX_AGE_S):
+    if not (-2 <= now_wall - timestamp_s <= FIX_MAX_AGE_S):
         raise ValueError("Устаревшее положение")
     _begin(db)
     try:
