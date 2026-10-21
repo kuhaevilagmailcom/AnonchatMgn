@@ -398,13 +398,6 @@ def presence(db, user_id, lat, lon, accuracy_m, timestamp_s, polygons, now=None)
         if hit_kind:
             from .city_progression import stats
             damage = int(elapsed * stats(hit_kind, hit_level)["hp_5m"] * 1000 / 300)
-            # Zone shield applies only while active and owned by its installer.
-            shield = db.execute("""SELECT 1 FROM city_effects
-                WHERE zone_id=? AND kind='shield' AND owner_id=? AND expires_at>?""",
-                (hit_zone,owner_id,now)).fetchone() if db.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='city_effects'"
-            ).fetchone() else None
-            if shield: damage = int(damage*.7)
             hp = max(MIN_HP_MILLI, hp - damage)
         else:
             hp = min(MAX_HP_MILLI, hp + int(elapsed * REGEN_HP_H * 1000 / 3600))
