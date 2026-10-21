@@ -9,7 +9,7 @@
   <link rel="icon" href="./assets/anon-mgn-logo.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
-  <link rel="stylesheet" href="./city.css?v=13">
+  <link rel="stylesheet" href="./city.css?v=14">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -44,6 +44,25 @@
     <span aria-hidden="true">·</span>
     <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>
   </div>
+
+  <section class="city-death" id="deathScreen" role="dialog" aria-modal="true"
+           aria-labelledby="deathTitle" aria-describedby="deathDescription" hidden>
+    <div class="city-death-content">
+      <div class="city-death-symbol" aria-hidden="true">
+        <span data-city-icon="shield-check"></span>
+      </div>
+      <p class="city-death-eyebrow">МГН: ЗАХВАТ</p>
+      <h2 id="deathTitle">Ты погиб</h2>
+      <p id="deathDescription">Здоровье закончилось. Твои территории снова свободны.</p>
+      <div class="city-death-stats">
+        <span>Освобождено территорий</span>
+        <strong id="deathLost">0</strong>
+      </div>
+      <p class="city-death-note">Питомцы вернулись в инвентарь. Звёзды и купленные питомцы сохранены.</p>
+      <button id="respawn" class="city-respawn" type="button">Возродиться · 100 HP</button>
+      <p class="city-death-footnote">Возрождение не возвращает потерянные районы.</p>
+    </div>
+  </section>
 
   <main class="bottom-sheet" id="panel">
     <button class="sheet-grip" id="sheetToggle" type="button" aria-label="Развернуть или свернуть нижнюю панель"><span class="sheet-handle" aria-hidden="true"></span></button>
@@ -88,7 +107,7 @@
       <div class="market-inventory-head"><h2>Мои питомцы</h2><small id="petCount">0</small></div>
       <p id="placeHint" class="market-note">Для установки сначала захвати район, затем выбери его на карте.</p>
       <div id="petInventory" class="pet-inventory" aria-label="Купленные питомцы"></div>
-      <p class="market-note">На районе может быть один питомец. Без защитника HP не списывается. Урон — только в чужом охраняемом квартале, максимум 4 HP за 5 минут. HP не опускается ниже 1. Звёзды за защиту можно забирать в любое время.</p>
+      <p class="market-note">На районе может быть один питомец. Без защитника HP не списывается. Урон — только в чужом охраняемом квартале, максимум 4 HP за 5 минут. При 0 HP игрок погибает: все районы освобождаются, питомцы остаются в инвентаре. Звёзды за защиту можно забирать в любое время.</p>
     </section>
 
     <section id="rules" class="sheet-content rules" hidden>
@@ -98,7 +117,7 @@
       <div class="rule"><b>02</b><span>Подойди к метке внутри территории на расстояние до 100 метров, учитывая точность GPS.</span></div>
       <div class="rule"><b>03</b><span>Нажми «Захватить». После успеха район станет твоим, ник увидят другие игроки.</span></div>
       <div class="rule"><b>04</b><span>Купи питомца за игровые звёзды в маркете и поставь на свой район. Он защитит квартал и будет приносить ⭐ в час.</span></div>
-      <div class="rule"><b>05</b><span>Урон идёт только в чужом районе с установленным питомцем, раз в 5 минут по его характеристике. Если питомца нет — HP не списывается. Минимум 1 HP; вне охраняемой зоны здоровье восстанавливается.</span></div>
+      <div class="rule"><b>05</b><span>Урон идёт только в чужом районе с питомцем. В безопасном месте HP восстанавливается. При 0 HP игрок погибает: его территории становятся свободными, а питомцы возвращаются в запас. После возрождения HP — 100.</span></div>
       <p class="rules-note">Между захватами — 30 минут. Сейчас игру тестируют администраторы; после открытия захватывать смогут все. Секторы игровые, не официальные административные границы. Не заходи на дороги и закрытые территории.</p>
     </section>
 
@@ -114,6 +133,6 @@
   <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
   <script src="./city-icons.js?v=2"></script>
   <script src="./city-roads.js?v=3"></script>
-  <script src="./city.js?v=23"></script>
+  <script src="./city.js?v=24"></script>
 </body>
 </html>
