@@ -1,4 +1,4 @@
-"""MGN Capture: server-authoritative pet marketplace, internal ⭐ and nonlethal HP.
+"""MGN Capture: pet marketplace, death and server-authoritative GPS combat.
 
 ⭐ is the bot's existing users.xp (earned from messages), NOT paid Telegram Stars.
 All writes to users.xp are tagged for the app's append-only XP ledger trigger.
@@ -12,7 +12,7 @@ from .city_capture import FIX_MAX_AGE_S, MAX_ACCURACY_M
 
 CAPTURE_STARS = 50
 MAX_HP_MILLI = 100_000
-MIN_HP_MILLI = 1_000
+MIN_HP_MILLI = 0
 REGEN_HP_H = 8
 CLAIM_MAX_SECONDS = 24 * 3600
 PET_TYPES = {
@@ -55,6 +55,12 @@ def init_db(db):
       user_id INTEGER PRIMARY KEY,
       hp_milli INTEGER NOT NULL DEFAULT 100000,
       last_tick INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS city_player_deaths (
+      user_id INTEGER PRIMARY KEY,
+      deaths INTEGER NOT NULL DEFAULT 0,
+      died_at INTEGER NOT NULL DEFAULT 0,
+      zones_lost INTEGER NOT NULL DEFAULT 0
     );
     """)
 
@@ -237,12 +243,20 @@ def state(db, user_id, now=None):
     now = int(time.time() if now is None else now)
     row = db.execute("SELECT xp FROM users WHERE user_id=?", (user_id,)).fetchone()
     hp = db.execute("SELECT hp_milli FROM city_player_hp WHERE user_id=?", (user_id,)).fetchone()
+    death = db.execute(
+        "SELECT deaths,died_at,zones_lost FROM city_player_deaths WHERE user_id=?",
+        (user_id,),
+    ).fetchone()
     pets = _owned_pets(db, user_id)
     pending = sum(pending_income(p, now)[0] for p in pets)
     return {
         "wallet": max(0, row[0]) if row else 0,
         "hp": round((hp[0] if hp else MAX_HP_MILLI) / 1000, 2),
         "max_hp": 100,
+        "dead": bool(hp and hp[0] <= 0),
+        "deaths": int(death[0]) if death else 0,
+        "last_death_at": int(death[1]) if death else 0,
+        "zones_lost": int(death[2]) if death else 0,
         "capture_stars": CAPTURE_STARS,
         "pending_stars": pending,
         "catalog": catalog(),
@@ -296,6 +310,8 @@ def presence(db, user_id, lat, lon, accuracy_m, timestamp_s, polygons, now=None)
 
     No damage on first location report. Delayed requests cannot stack hours of
     damage; each request processes at most 60 seconds of server elapsed time.
+    On reaching zero HP, ownership and defenders are released atomically.
+    A dead player must explicitly respawn; repeated GPS reports cannot kill twice.
     """
     now = int(time.time() if now is None else now)
     vals = (lat, lon, accuracy_m, timestamp_s)
@@ -312,6 +328,16 @@ def presence(db, user_id, lat, lon, accuracy_m, timestamp_s, polygons, now=None)
         ).fetchone()
         hp = previous[0] if previous else MAX_HP_MILLI
         elapsed = max(0, min(60, now - previous[1])) if previous else 0
+        if hp <= 0:
+            details = db.execute(
+                "SELECT deaths,zones_lost FROM city_player_deaths WHERE user_id=?",
+                (user_id,),
+            ).fetchone()
+            db.commit()
+            return {"hp": 0, "max_hp": 100, "dead": True, "died": False,
+                    "deaths": details[0] if details else 0,
+                    "zones_lost": details[1] if details else 0,
+                    "zone_id": None, "attacked_by": None}
         hit_kind = None
         hit_zone = None
         # Protect user with accuracy: entire GPS uncertainty must fit the road cell.
@@ -333,20 +359,80 @@ def presence(db, user_id, lat, lon, accuracy_m, timestamp_s, polygons, now=None)
                 break
         if hit_kind in PET_TYPES:
             # Damage numbers are HP lost per 5 MINUTES, not per hour.
-            # Real server elapsed time; no offline damage spikes, never fatal.
+            # Real server elapsed time; no offline damage spikes.
             damage = int(elapsed * PET_TYPES[hit_kind]["hp_5m"] * 1000 / 300)
             hp = max(MIN_HP_MILLI, hp - damage)
         else:
             hp = min(MAX_HP_MILLI, hp + int(elapsed * REGEN_HP_H * 1000 / 3600))
+        died = hp <= 0
+        lost_zones = 0
+        if died:
+            # This runs under the SAME IMMEDIATE SQLite transaction as HP=0.
+            # Other players will see all former zones free after this commit.
+            lost_zones = db.execute(
+                "SELECT COUNT(*) FROM city_ownership WHERE user_id=?",
+                (user_id,),
+            ).fetchone()[0]
+            db.execute("DELETE FROM city_ownership WHERE user_id=?", (user_id,))
+            # Pets are not destroyed or sold: they return to the inventory.
+            # No abandoned guards can hurt players or generate star income.
+            db.execute(
+                """UPDATE city_pets SET zone_id=NULL,assigned_at=0,
+                          income_tick_at=0,income_fraction=0
+                   WHERE owner_id=? AND zone_id IS NOT NULL""",
+                (user_id,),
+            )
+            db.execute(
+                """INSERT INTO city_player_deaths(user_id,deaths,died_at,zones_lost)
+                   VALUES(?,1,?,?)
+                   ON CONFLICT(user_id) DO UPDATE SET
+                     deaths=deaths+1,died_at=excluded.died_at,
+                     zones_lost=excluded.zones_lost""",
+                (user_id, now, lost_zones),
+            )
         db.execute(
             """INSERT INTO city_player_hp(user_id,hp_milli,last_tick) VALUES(?,?,?)
                ON CONFLICT(user_id) DO UPDATE SET hp_milli=excluded.hp_milli,
                last_tick=excluded.last_tick""",
             (user_id, hp, now),
         )
+        deaths = db.execute(
+            "SELECT deaths FROM city_player_deaths WHERE user_id=?",
+            (user_id,),
+        ).fetchone()
         db.commit()
-        return {"hp": round(hp / 1000, 2), "max_hp": 100, "zone_id": hit_zone,
-                "attacked_by": hit_kind, "safe": hp <= MIN_HP_MILLI}
+        return {"hp": round(hp / 1000, 2), "max_hp": 100,
+                "dead": died, "died": died, "deaths": deaths[0] if deaths else 0,
+                "zones_lost": lost_zones, "zone_id": hit_zone,
+                "attacked_by": hit_kind, "safe": not died}
+    except BaseException:
+        db.rollback()
+        raise
+
+
+def respawn(db, user_id, now=None):
+    """Explicit respawn after death. Health resets; lost zones stay free."""
+    now = int(time.time() if now is None else now)
+    _begin(db)
+    try:
+        old = db.execute(
+            "SELECT hp_milli FROM city_player_hp WHERE user_id=?",
+            (user_id,),
+        ).fetchone()
+        if old is None or old[0] > 0:
+            raise ValueError("Возрождение доступно только после гибели")
+        db.execute(
+            "UPDATE city_player_hp SET hp_milli=?,last_tick=? WHERE user_id=?",
+            (MAX_HP_MILLI, now, user_id),
+        )
+        info = db.execute(
+            "SELECT deaths,zones_lost FROM city_player_deaths WHERE user_id=?",
+            (user_id,),
+        ).fetchone()
+        db.commit()
+        return {"hp": 100, "max_hp": 100, "dead": False,
+                "deaths": info[0] if info else 0,
+                "zones_lost": info[1] if info else 0}
     except BaseException:
         db.rollback()
         raise
