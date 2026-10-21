@@ -13,10 +13,28 @@ const zones=zoneNames.map((name,i)=>({
   official_name:name==='Ашик'?'ТРК «Семейный парк»':name,address:'Магнитогорск',
   lat:53.39+i*.003,lon:58.98+i*.001,
   polygon:[[53.39+i*.003,58.98],[53.391+i*.003,58.981],[53.391+i*.003,58.982]],
-  mine:false,occupied:false,size:'Малый'
+  mine:i===0,occupied:i===0,size:'Малый'
 }));
-const data=JSON.stringify({can_capture:true,cooldown_remaining_s:0,my_zones:0,total_captures:0,
-  capture_radius_m:100,max_accuracy_m:75,zones,leaderboard:[]});
+const cat={kind:'cat',name:'Кот',emoji:'🐈',price:100,stars_h:1,hp_5m:.5};
+const pet={id:77,kind:'cat',name:'Кот',emoji:'🐈',rarity:'common',
+  rarity_name:'Обычный',level:2,pet_hp:100,zone_id:1,
+  stars_h:1.12,hp_5m:.54,upgrade_cost:300};
+const data=JSON.stringify({can_capture:true,cooldown_remaining_s:0,my_zones:1,total_captures:1,
+  capture_radius_m:100,max_accuracy_m:75,zones,leaderboard:[],
+  wallet:1200,hp:97.5,dead:false,pending_stars:1,
+  catalog:[cat],my_pets:[{id:77,kind:'cat',zone_id:1,level:2,active:true}],
+  guards:[{zone_id:1,kind:'cat',mine:true,level:2,hp_5m:.54,stars_h:1.12}],
+  inventory_pets:[pet],items:[{kind:'medkit',emoji:'❤️',name:'Аптечка',
+    rarity:'common',quantity:2,description:'Восстанавливает HP'}],
+  effects:[],premium_catalog:[
+    {kind:'panda',name:'Панда',emoji:'🐼',rarity:'rare',xtr:15,stars_h:7,hp_5m:2},
+    {kind:'wolf',name:'Волк',emoji:'🐺',rarity:'epic',xtr:25,stars_h:10,hp_5m:2.6},
+    {kind:'dragon',name:'Дракон',emoji:'🐉',rarity:'legendary',xtr:50,stars_h:15,hp_5m:3.6}
+  ],
+  chests:[{id:'cycle-1',kind:'common',emoji:'📦',lat:53.39,lon:58.98,
+    place:'Парк у Вечного огня',expires_at:9999999999,opened:false}],
+  warehouse:null,invitations:[]
+});
 const server=http.createServer((req,res)=>{
   const route=new URL(req.url,'http://127.0.0.1').pathname;
   if(route==='/api/city/state'){
@@ -72,7 +90,7 @@ const leafletStub='('+function fakeLeaflet(){
             HapticFeedback:{selectionChanged(){}},BackButton:{show(){},onClick(){}}}};
         });
         await page.goto('http://127.0.0.1:'+server.address().port+'/city.html',{waitUntil:'domcontentloaded'});
-        await page.waitForFunction(()=>document.querySelector('#hpHud')?.textContent==='100',{timeout:5000});
+        await page.waitForFunction(()=>document.querySelector('#hpHud')?.textContent==='98',{timeout:5000});
         assert.deepEqual(errors,[],width+'px page errors');
         const sizes=await page.evaluate(()=>{
           const rect=selector=>{const r=document.querySelector(selector).getBoundingClientRect();
@@ -131,6 +149,26 @@ const leafletStub='('+function fakeLeaflet(){
         assert.match(await page.locator('#zoneDetails').textContent(),/Семейный парк/);
         await page.click('#showtop');
         assert.equal(await page.locator('#districtInventory').isVisible(),true);
+        assert.equal(await page.locator('#inventoryContent [data-pet-id]').count(),1,
+          width+'px purchased pet missing from inventory');
+        await page.locator('#inventoryContent [data-pet-id]').first().click();
+        assert.ok(await page.locator('#petDetails').isVisible(),
+          width+'px tapping pet must open details, not alert');
+        assert.match(await page.locator('#petDetailsBody').textContent(),/Кот/);
+        assert.match(await page.locator('#petDetailsBody').textContent(),/Ур. 2/);
+        assert.match(await page.locator('#petDetailsBody').textContent(),/HP/);
+        await page.click('#closePetDetails');
+        assert.ok(await page.locator('#petDetails').isHidden());
+        await page.click('#showmarket');
+        assert.equal(await page.locator('#premiumCatalog [data-action=premium]').count(),3,
+          width+'px XTR premium catalog must show 15, 25 and 50 Telegram Stars');
+        assert.match(await page.locator('#premiumCatalog').textContent(),/15 Telegram Stars/);
+        await page.click('#showrules');
+        assert.ok(await page.locator('#districtMore').isVisible());
+        await page.locator('[data-more-page=warehouses]').click();
+        assert.ok(await page.locator('#districtWarehouses').isVisible());
+        assert.ok(await page.locator('#warehouseCreate').isVisible(),
+          width+'px warehouse create form missing');
         await page.click('#showmap');
         await page.click('#sheetToggle');
         assert.ok((await page.locator('#panel').getAttribute('class')).includes('is-expanded'));
