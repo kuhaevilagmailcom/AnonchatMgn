@@ -2,6 +2,7 @@
 import re
 import sqlite3
 import time
+from .city_progression import stats
 
 CAPACITY = 10
 INVITE_TTL = 2*86400
@@ -53,14 +54,14 @@ def my_warehouse(db,uid):
       "members":[{"id":m[0],"nickname":m[1] or "Аноним","role":m[2],
                   "zones":m[3]} for m in members],
       "zones":total,"level":1+total//10,
-      "income_h":sum(r[0] for r in db.execute(
-        """SELECT CASE p.kind
-             WHEN 'cat' THEN 1 WHEN 'bird' THEN 3 WHEN 'pig' THEN 6
-             WHEN 'snake' THEN 10 WHEN 'lion' THEN 18 ELSE 0 END
-           FROM city_pets p
-           JOIN city_warehouse_members m ON m.user_id=p.owner_id
-           JOIN city_ownership o ON o.zone_id=p.zone_id AND o.user_id=p.owner_id
-           WHERE m.warehouse_id=?""",(row[0],))),
+      "income_h":round(sum(
+        stats(pet[0],pet[1])["stars_h"]
+        for pet in db.execute(
+           """SELECT p.kind,p.level FROM city_pets p
+              JOIN city_warehouse_members m ON m.user_id=p.owner_id
+              JOIN city_ownership o ON o.zone_id=p.zone_id AND o.user_id=p.owner_id
+              WHERE m.warehouse_id=?""",(row[0],))
+      ),2),
       "achievements":[
         {"name":"Первая территория","done":total>=1},
         {"name":"Десять районов","done":total>=10},
