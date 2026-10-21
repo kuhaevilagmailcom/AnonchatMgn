@@ -30,6 +30,14 @@ def init_db(db):
       status TEXT NOT NULL DEFAULT 'pending'
     );
     CREATE INDEX IF NOT EXISTS idx_city_invitee ON city_warehouse_invites(invitee_id, status);
+    CREATE TABLE IF NOT EXISTS city_warehouse_mission_claims (
+      warehouse_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      day INTEGER NOT NULL,
+      tier INTEGER NOT NULL,
+      claimed_at INTEGER NOT NULL,
+      PRIMARY KEY(warehouse_id,user_id,day,tier)
+    );
     """)
 
 def _begin(db):
@@ -62,6 +70,7 @@ def my_warehouse(db,uid):
               JOIN city_ownership o ON o.zone_id=p.zone_id AND o.user_id=p.owner_id
               WHERE m.warehouse_id=?""",(row[0],))
       ),2),
+      "missions":missions(db,uid,row[0]),
       "achievements":[
         {"name":"Первая территория","done":total>=1},
         {"name":"Десять районов","done":total>=10},
@@ -182,3 +191,46 @@ def disband(db,uid,confirm):
         db.execute("DELETE FROM city_warehouses WHERE id=?",(row[0],))
         db.commit();return {"deleted":True}
     except BaseException:db.rollback();raise
+
+
+MISSION_REWARDS = ((3,25),(10,100))
+
+def missions(db,uid,warehouse_id,now=None):
+    now=int(time.time() if now is None else now)
+    day=now//86400
+    captures=db.execute("""SELECT COUNT(*) FROM city_capture_events c
+       JOIN city_warehouse_members m ON m.user_id=c.user_id
+       WHERE m.warehouse_id=? AND c.captured_at>=? AND c.captured_at<?""",
+       (warehouse_id,day*86400,(day+1)*86400)).fetchone()[0]
+    claimed={r[0] for r in db.execute("""SELECT tier FROM city_warehouse_mission_claims
+       WHERE warehouse_id=? AND user_id=? AND day=?""",(warehouse_id,uid,day))}
+    return [
+        {"tier":tier,"label":f"Захватить {tier} районов за день",
+         "progress":min(captures,tier),"target":tier,"reward":amount,
+         "claimed":tier in claimed,"claimable":captures>=tier and tier not in claimed}
+        for tier,amount in MISSION_REWARDS
+    ]
+
+def claim_mission(db,uid,tier,now=None):
+    """Shared capture progress; each warehouse member claims once per UTC day."""
+    from .city_pets import _change_xp
+    now=int(time.time() if now is None else now)
+    _begin(db)
+    try:
+        found=db.execute(
+          "SELECT warehouse_id FROM city_warehouse_members WHERE user_id=?",(uid,)
+        ).fetchone()
+        if not found:raise ValueError("Ты не состоишь на складе")
+        wh_id=found[0]
+        quest=next((q for q in missions(db,uid,wh_id,now) if q["tier"]==tier),None)
+        if not quest or not quest["claimable"]:
+            raise ValueError("Задание ещё не выполнено или награда уже получена")
+        db.execute("""INSERT INTO city_warehouse_mission_claims(
+           warehouse_id,user_id,day,tier,claimed_at) VALUES(?,?,?,?,?)""",
+           (wh_id,uid,now//86400,tier,now))
+        balance=_change_xp(db,uid,quest["reward"],"city_warehouse_mission",
+                           "Совместное задание склада",f"{wh_id}:{now//86400}:{tier}")
+        db.commit()
+        return {"reward":quest["reward"],"balance":balance}
+    except BaseException:
+        db.rollback();raise
