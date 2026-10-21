@@ -175,26 +175,13 @@ const leafletStub='('+function fakeLeaflet(){
           width+'px warehouse create form missing');
         await page.click('#showmap');
         const chestMarker=page.locator('.district-chest-icon');
-        assert.ok(await chestMarker.count()>0, width+'px chest emoji should be on the map');
-        await chestMarker.last().click({force:true});
-        // Fake Leaflet pins are absolute children without genuine Leaflet hit
-        // testing; verify a direct pin activation as well as screen click.
-        if(!(await page.locator('#chestDetails').isVisible())){
-          await chestMarker.last().evaluate(el => {
-            el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
-          });
-        }
-        const chestVisible=await page.locator('#chestDetails').isVisible();
-        if(!chestVisible){
-          const info=await page.evaluate(()=>({
-            markerCount:document.querySelectorAll('.district-chest-icon').length,
-            hidden:document.querySelector('#chestDetails').hidden,
-            title:document.querySelector('#chestDetailsTitle').textContent,
-            style:getComputedStyle(document.querySelector('#chestDetails')).display
-          }));
-          console.error('Chest open diagnostic:',JSON.stringify(info),'pageErrors:',errors);
-        }
-        assert.ok(chestVisible,
+        assert.ok(await chestMarker.count()>0,
+          width+'px chest emoji should be on the map');
+        // Temporary messages can legitimately cover a pin for a few seconds.
+        // Dismiss them before testing the actual on-screen tap.
+        await page.locator('#toast').evaluate(node=>{node.hidden=true});
+        await chestMarker.last().click();
+        assert.ok(await page.locator('#chestDetails').isVisible(),
           width+'px tapping chest should open real game modal');
         assert.match(await page.locator('#chestDetailsTitle').textContent(),/Сундук/);
         assert.ok(await page.locator('#openChest').isVisible(),
