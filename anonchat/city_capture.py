@@ -72,6 +72,15 @@ def capture(db, user_id, zone_id, lat, lon, accuracy_m, fix_timestamp, now=None)
           (zone_id,)).fetchone()
         if owner and owner[0] == user_id:
             raise ValueError("Already owned")
+        # Temporary lock item is effective server-side, not a decorative badge.
+        if owner and db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='city_effects'"
+        ).fetchone():
+            lock=db.execute("""SELECT 1 FROM city_effects WHERE
+                zone_id=? AND kind='lock' AND owner_id=? AND expires_at>?""",
+                (zone_id,owner[0],int(now))).fetchone()
+            if lock:
+                raise ValueError("Район защищён замком. Приходи после его окончания.")
         db.execute(
           "INSERT INTO city_ownership VALUES(?,?,?) ON CONFLICT(zone_id) DO UPDATE SET "
           "user_id=excluded.user_id,captured_at=excluded.captured_at",
