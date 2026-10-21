@@ -140,7 +140,33 @@ const server = http.createServer((req, res) => {
         assert.ok(await page.locator('#tabs').isVisible(),
           width + ': my-districts page must preserve bottom navigation');
         await page.locator('#showmap').click();
-        process.stdout.write('City Mini App layout and controls OK: ' + width + 'px\n');
+        await page.evaluate(() => {
+          document.querySelector('#deathScreen').hidden = false;
+          document.querySelector('#deathLost').textContent = '56';
+        });
+        assert.ok(await page.locator('#deathScreen').isVisible(),
+          width + ': dead player must see respawn overlay');
+        const death = await page.evaluate(() => {
+          const get = selector => document.querySelector(selector).getBoundingClientRect();
+          const content = get('.city-death-content'),button = get('#respawn');
+          return {
+            left:content.left,right:content.right,
+            top:content.top,bottom:content.bottom,
+            buttonBottom:button.bottom,
+            width:content.width,
+            viewportW:document.documentElement.clientWidth,
+            viewportH:document.documentElement.clientHeight
+          };
+        });
+        assert.ok(death.left >= 0 && death.right <= width + 1,
+          width + ': death screen overflows horizontally');
+        assert.ok(death.top >= 0 && death.bottom <= death.viewportH + 1,
+          width + ': death content is clipped');
+        assert.ok(death.buttonBottom <= death.viewportH - 5,
+          width + ': respawn button is hidden on narrow screens');
+        assert.ok(death.width >= 240,
+          width + ': death screen is too narrow to use');
+        process.stdout.write('City Mini App layout, respawn and controls OK: ' + width + 'px\n');
       } finally {
         await context.close();
       }
