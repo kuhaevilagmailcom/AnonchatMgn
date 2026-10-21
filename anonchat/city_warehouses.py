@@ -58,6 +58,7 @@ def my_warehouse(db,uid):
     total=sum(m[3] for m in members)
     return {"warehouse":{
       "id":row[0],"owner_id":row[1],"mine":row[1]==uid,
+      "my_role": db.execute("SELECT role FROM city_warehouse_members WHERE user_id=?", (uid,)).fetchone()[0],
       "name":row[2],"emoji":row[3],"description":row[4],
       "members":[{"id":m[0],"nickname":m[1] or "Аноним","role":m[2],
                   "zones":m[3]} for m in members],
@@ -185,6 +186,28 @@ def kick(db,uid,target_id):
         if res.rowcount!=1:raise ValueError("Участник не найден")
         db.commit();return {"removed":True}
     except BaseException:db.rollback();raise
+
+def set_role(db, uid, target_id, new_role):
+    '''Only warehouse owners can promote or demote team members.'''
+    if new_role not in ('member', 'moderator'):
+        raise ValueError('Некорректная роль')
+    _begin(db)
+    try:
+        owner = db.execute(
+            "SELECT warehouse_id FROM city_warehouse_members WHERE user_id=? AND role='owner'", (uid,)
+        ).fetchone()
+        if not owner: raise ValueError('Роли назначает только владелец склада')
+        if uid == target_id: raise ValueError('Нельзя изменить свою роль')
+        res = db.execute(
+            "UPDATE city_warehouse_members SET role=? WHERE warehouse_id=? AND user_id=? AND role<>'owner'",
+            (new_role, owner[0], target_id),
+        )
+        if res.rowcount!=1: raise ValueError('Участник не найден')
+        db.commit()
+        return {'user_id':target_id,'role':new_role}
+    except BaseException:
+        db.rollback()
+        raise
 
 def disband(db,uid,confirm):
     if confirm!="УДАЛИТЬ СКЛАД":raise ValueError("Нужно явное подтверждение удаления")
