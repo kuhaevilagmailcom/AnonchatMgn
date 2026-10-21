@@ -1046,6 +1046,8 @@
       state.deaths = number(data.deaths);
       state.zonesLost = number(data.zones_lost);
       state.pendingStars = number(data.pending_stars);
+      // Load premium species before drawing all map guardians on first open.
+      expansion?.render(data);
       state.canCapture = !!data.can_capture;
       state.radius = number(data.capture_radius_m, 100);
       state.maxAccuracy = number(data.max_accuracy_m, 75);
@@ -1058,7 +1060,6 @@
       drawTerritories();
       renderSelection();
       renderDeath();
-      expansion?.render(data);
       if (!state.zones.length) feedback('Пока нет активных игровых районов');
     } catch (error) {
       // HP-only HUD: never access removed capture counters here.
