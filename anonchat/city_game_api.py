@@ -229,6 +229,16 @@ def routes(database_path, authenticate, is_admin):
         except (ValueError, sqlite3.Error) as error:
             raise web.HTTPBadRequest(text=str(error))
 
+    async def respawn(request):
+        uid = await require_access(request)
+        try:
+            with sqlite3.connect(database_path, timeout=10, isolation_level=None) as db:
+                city_pets.init_db(db)
+                result = city_pets.respawn(db, uid)
+            return web.json_response({"ok": True, **result})
+        except (ValueError, sqlite3.Error) as error:
+            raise web.HTTPBadRequest(text=str(error))
+
     async def presence(request):
         uid = await require_access(request)
         try:
@@ -254,4 +264,5 @@ def routes(database_path, authenticate, is_admin):
         web.post("/api/city/pets/recall", pets_recall),
         web.post("/api/city/pets/claim", pets_claim),
         web.post("/api/city/presence", presence),
+        web.post("/api/city/respawn", respawn),
     ]
