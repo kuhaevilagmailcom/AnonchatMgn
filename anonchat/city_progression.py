@@ -120,8 +120,13 @@ def inventory(db,uid):
     pets=[]
     for row in db.execute("SELECT id,kind,level,pet_hp,zone_id FROM city_pets WHERE owner_id=? ORDER BY id DESC",(uid,)):
         item=stats(row[1],row[2])
-        item.update({"id":row[0],"pet_hp":row[3],"zone_id":row[4],
-                     "upgrade_cost":upgrade_cost(row[1],row[2])})
+        item.update({
+            "id": row[0], "pet_hp": row[3], "zone_id": row[4],
+            "upgrade_cost": upgrade_cost(row[1], row[2]),
+            # Preview values are calculated by the same trusted server formula
+            # as an actual upgrade. Do not calculate combat stats in the UI.
+            "next_stats": stats(row[1], row[2] + 1) if row[2] < 10 else None,
+        })
         pets.append(item)
     items=[{"kind":k,"quantity":q,**ITEMS[k]} for k,q in db.execute(
         "SELECT kind,quantity FROM city_items WHERE owner_id=? AND quantity>0",(uid,)) if k in ITEMS]
