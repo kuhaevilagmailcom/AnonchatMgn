@@ -340,6 +340,17 @@ def routes(database_path, authenticate, is_admin, bot=None):
             return web.json_response({"ok":True,**result})
         except (KeyError,ValueError,TypeError,sqlite3.Error) as e:raise web.HTTPBadRequest(text=str(e))
 
+    async def warehouse_mission_claim(request):
+        uid=await require_access(request)
+        data=await _body(request)
+        try:
+            with sqlite3.connect(database_path,timeout=10,isolation_level=None) as db:
+                warehouses.init_db(db)
+                result=warehouses.claim_mission(db,uid,int(data["tier"]))
+            return web.json_response({"ok":True,**result})
+        except (KeyError,TypeError,ValueError,sqlite3.Error) as e:
+            raise web.HTTPBadRequest(text=str(e))
+
     async def warehouse_disband(request):
         uid=await require_access(request)
         data=await _body(request)
@@ -442,4 +453,5 @@ def routes(database_path, authenticate, is_admin, bot=None):
         web.post("/api/city/warehouse/leave", warehouse_leave),
         web.post("/api/city/warehouse/kick", warehouse_kick),
         web.post("/api/city/warehouse/disband", warehouse_disband),
+        web.post("/api/city/warehouse/missions/claim", warehouse_mission_claim),
     ]
