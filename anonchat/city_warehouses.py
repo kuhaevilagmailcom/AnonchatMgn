@@ -119,9 +119,11 @@ def invite(db,uid,nickname,now=None):
              JOIN city_warehouse_members m ON m.warehouse_id=w.id
              WHERE m.user_id=? AND m.role IN ('owner','moderator')""",(uid,)).fetchone()
         if row is None:raise ValueError("Приглашать может владелец склада")
+        # nick_key is created with Python .casefold(), unlike SQLite LOWER
+        # which cannot compare Cyrillic uppercase and lowercase reliably.
         target=db.execute("""SELECT user_id,COALESCE(nickname,'') FROM users
-              WHERE lower(nickname)=lower(?) OR lower(nick_key)=lower(?) OR lower(username)=lower(?)""",
-              (nickname,nickname,nickname)).fetchone()
+              WHERE nick_key=? OR lower(username)=?""",
+              (nickname.casefold(),nickname.lower())).fetchone()
         if not target:raise ValueError("Пользователь с таким ником не найден")
         if target[0]==uid:raise ValueError("Нельзя пригласить себя")
         if db.execute("SELECT 1 FROM city_warehouse_members WHERE user_id=?",(target[0],)).fetchone():
