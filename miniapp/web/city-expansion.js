@@ -18,7 +18,7 @@
     const inv=$('districtInventory'), content=$('inventoryContent');
     const warehouse=$('districtWarehouses'), whBody=$('warehouseContent');
     const detail=$('petDetails'),detailBody=$('petDetailsBody');
-    let filter='pets',selectedPet=null,busy=false,drawnChests=[],chestLayer=null;
+    let filter='pets',selectedPet=null,busy=false,drawnChests=[],chestLayer=null,lastData={};
     const pets=()=>state.inventoryPets||[];
     const items=()=>state.items||[];
     const catalog=()=>state.premiumCatalog||[];
@@ -247,6 +247,8 @@
       }catch(e){feedback(e.message,'error')}
     }
     function render(data){
+      if (data) lastData=data;
+      data=lastData;
       state.inventoryPets=Array.isArray(data.inventory_pets)?data.inventory_pets:[];
       state.items=Array.isArray(data.items)?data.items:[];
       state.effects=Array.isArray(data.effects)?data.effects:[];
