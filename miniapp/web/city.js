@@ -26,6 +26,8 @@
     hudHpFill: $('hudHpFill'),
     myZonesPanel: $('myZones'), myZonesList: $('myZonesList'),
     myZonesTotal: $('myZonesTotal'), myZonesButton: $('myZonesButton'),
+    districtInventory: $('districtInventory'), districtWarehouses: $('districtWarehouses'),
+    districtMore: $('districtMore'),
     zone: $('zone'), owner: $('owner'), ownerCard: $('ownerCard'),
     state: $('zoneState'), details: $('zoneDetails'),
     theme: $('theme'), sheetToggle: $('sheetToggle'), status: $('status'),
@@ -542,7 +544,8 @@
     const shown = state.guards.slice(0, 75);
     for (const guard of shown) {
       const zone = guardedZone(guard.zone_id);
-      const kind = state.catalog.find(p=>p.kind===guard.kind);
+      const kind = state.catalog.find(p=>p.kind===guard.kind) ||
+        state.premiumCatalog?.find(p=>p.kind===guard.kind);
       if (!zone || !kind) continue;
       const poly = state.roadPolygons.get(zone.id)?.polygon || zone.polygon;
       const box = Array.isArray(poly) && poly.length >= 3 ? poly : null;
@@ -682,7 +685,12 @@
     ui.zoneGuard.hidden = !zone || !state.guards.some(g => g.zone_id === zone.id);
     if (!ui.zoneGuard.hidden) {
       const defender = state.guards.find(g => g.zone_id === zone.id);
-      ui.zoneGuard.textContent = state.catalog.find(p => p.kind === defender.kind)?.emoji || '🐈';
+      const d = state.catalog.find(p => p.kind === defender.kind) ||
+        state.premiumCatalog?.find(p => p.kind === defender.kind);
+      ui.zoneGuard.textContent = d?.emoji || '🐈';
+      ui.zoneGuard.title = (d?.name || defender.kind) + ' · Ур. '+
+        (defender.level || 1) + ' · −'+(defender.hp_5m || d?.hp_5m || 0)+
+        ' HP / 5 мин · +'+(defender.stars_h || d?.stars_h || 0)+' ⭐/ч';
     }
 
     if (!zone) {
@@ -747,10 +755,13 @@
     ui.panel.setAttribute('data-tab', tab);
     const pages = [
       [ui.view, ui.mapTab, 'map'],
-      [ui.board, ui.topTab, 'top'],
+      [ui.board, null, 'top'],
       [ui.myZonesPanel, null, 'myzones'],
+      [ui.districtInventory, ui.topTab, 'inventory'],
+      [ui.districtWarehouses, null, 'warehouses'],
+      [ui.districtMore, ui.rulesTab, 'more'],
       [ui.market, ui.marketTab, 'market'],
-      [ui.rules, ui.rulesTab, 'rules']
+      [ui.rules, null, 'rules']
     ];
     for (const [section, button, key] of pages) {
       const active = key === tab;
@@ -763,12 +774,13 @@
     }
     // Market is a full-height scrolling page; always open at its top,
     // while keeping the four bottom navigation controls in place.
-    if (tab === 'market') {
-      ui.market.scrollTop = 0;
+    if (['market','inventory','warehouses','more'].includes(tab)) {
+      const page = pages.find(([section,,key]) => key === tab)?.[0];
+      if (page) page.scrollTop = 0;
       state.expanded = false;
       ui.panel.classList.remove('is-expanded');
       ui.sheetToggle.setAttribute('aria-expanded', 'false');
-    } else if (state.activeTab !== 'market') {
+    } else {
       ui.panel.scrollTop = 0;
     }
     touch();
@@ -1008,6 +1020,7 @@
       drawTerritories();
       renderSelection();
       renderDeath();
+      expansion?.render(data);
       if (!state.zones.length) feedback('Пока нет активных игровых районов');
     } catch (error) {
       // HP-only HUD: never access removed capture counters here.
@@ -1053,10 +1066,7 @@
   ui.sheetToggle.addEventListener('click', togglePanel);
   ui.locate.addEventListener('click', () => { locate(true).catch(() => {}); });
   ui.refresh.addEventListener('click', () => { load(); });
-  ui.myZonesButton.addEventListener('click', () => {
-    renderMyZones();
-    switchTab('myzones');
-  });
+  ui.myZonesButton.addEventListener('click', () => { switchTab('inventory'); });
   ui.myZonesList.addEventListener('click', event => {
     const button = event.target.closest('[data-zone-id]');
     if (!button) return;
@@ -1065,9 +1075,9 @@
     chooseZone(zoneId);
   });
   ui.mapTab.addEventListener('click', () => { switchTab('map'); });
-  ui.topTab.addEventListener('click', () => { switchTab('top'); });
+  ui.topTab.addEventListener('click', () => { switchTab('inventory'); });
   ui.marketTab.addEventListener('click', () => { switchTab('market'); renderMarket(); });
-  ui.rulesTab.addEventListener('click', () => { switchTab('rules'); });
+  ui.rulesTab.addEventListener('click', () => { switchTab('more'); });
   ui.capture.addEventListener('click', capture);
   ui.claimIncome.addEventListener('click', () => { petAction('claim'); });
   ui.respawn.addEventListener('click', () => { respawn(); });
@@ -1102,6 +1112,10 @@
     }
   }, 25000);
 
+  const expansion = window.RaionyExpansion?.mount({
+    state, ui, api, load, feedback, switchTab, chooseZone, petAction,
+    locate, insidePolygon
+  });
   applyTheme(initialTheme());
   tg?.BackButton?.show();
   tg?.BackButton?.onClick(() => { window.location.href = './index.html'; });
