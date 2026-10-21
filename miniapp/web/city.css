@@ -677,3 +677,12 @@ body:has(#panel[data-tab="more"]) .leaflet-bottom.leaflet-right{display:none!imp
   .district-upgrade-line{grid-template-columns:minmax(48px,1fr) auto 10px auto;gap:4px}
   .district-upgrade-line small,.district-upgrade-line strong{font-size:9px}
 }
+
+/* Chest preview: same modest modal design as the pet inventory. */
+.chest-dialog{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px}
+.chest-dialog-emoji{font-size:57px;line-height:1.2;padding:8px 0}
+.chest-dialog h2{font-size:20px;margin:2px 0 0;font-weight:780}
+.chest-dialog-place{font-size:13px;color:#f0c0dd;margin:0}
+.chest-dialog .district-help{font-size:12px;line-height:1.55;text-align:center;
+  color:#ada2aa;margin:7px 0 12px}
+.chest-dialog .district-button{width:100%;min-height:44px}
