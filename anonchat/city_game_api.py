@@ -1,4 +1,4 @@
-"""MGN: ZAHVAT — authenticated, temporarily admin-gated game API.
+"""РАЙОНЫ — authenticated, temporarily admin-gated game API.
 
 Territory outlines are deliberately *game sectors*, NOT municipal boundaries.
 Capture always happens within 100 metres of a separately marked public point.
