@@ -539,13 +539,17 @@
   }
   function drawPetAgents() {
     if (!state.petGroup) return;
-    state.petGroup.clearLayers();
-    state.petAgents = [];
-    for (const guard of state.guards.slice(0,75)) {
-      const zone = guardedZone(guard.zone_id);
-      const kind = state.catalog.find(p => p.kind===guard.kind) ||
-        state.premiumCatalog?.find(p => p.kind===guard.kind);
-      if (!zone || !kind) continue;
+    // Preserve existing marker, waypoint and interpolation progress on
+    // theme changes, leaderboard refresh and recurring API polling.
+    // Rebuilding every layer here used to teleport moving pets home.
+    const previous=new Map(state.petAgents.map(p=>[p.guardKey,p]));
+    const next=[];
+    for(const guard of state.guards.slice(0,75)){
+      const zone=guardedZone(guard.zone_id);
+      const kind=state.catalog.find(p=>p.kind===guard.kind) ||
+        state.premiumCatalog?.find(p=>p.kind===guard.kind);
+      if(!zone||!kind)continue;
+      const key=zone.id+':'+guard.kind+':'+Boolean(guard.mine);
       const poly=state.roadPolygons.get(zone.id)?.polygon || zone.polygon;
       const boundary=Array.isArray(poly)&&poly.length>=3?poly:null;
       const anchor=boundary&&insidePolygon(boundary,zone.lat,zone.lon)?
@@ -555,6 +559,24 @@
         ]:[zone.lat,zone.lon];
       const startPoint=boundary&&insidePolygon(boundary,...anchor)?anchor:
         [zone.lat,zone.lon];
+      const old=previous.get(key);
+      if(old) {
+        previous.delete(key);
+        old.polygon=boundary;
+        old.anchor=startPoint;
+        // A source update can replace OSM boundaries. Reset movement only
+        // if the previous position or target is outside the new polygon.
+        if(!boundary || !insidePolygon(boundary,...old.from) ||
+           !insidePolygon(boundary,...old.target)){
+          old.from=startPoint;
+          old.target=startPoint;
+          old.since=Date.now();
+          old.pauseUntil=Date.now()+900;
+          old.marker.setLatLng?.(startPoint);
+        }
+        next.push(old);
+        continue;
+      }
       const marker=L.marker(startPoint,{
         interactive:false,keyboard:false,zIndexOffset:1200,
         icon:L.divIcon({
@@ -563,12 +585,18 @@
           iconSize:[31,31],iconAnchor:[15,15]
         })
       }).addTo(state.petGroup);
-      state.petAgents.push({
+      next.push({
         marker,polygon:boundary,anchor:startPoint,from:startPoint,target:startPoint,
-        since:Date.now(),duration:3000,pauseUntil:Date.now()+700,zoneId:zone.id
+        since:Date.now(),duration:3000,pauseUntil:Date.now()+700,
+        zoneId:zone.id,guardKey:key
       });
     }
+    for(const retired of previous.values()){
+      state.petGroup.removeLayer?.(retired.marker);
+    }
+    state.petAgents=next;
   }
+
   function nextPetWaypoint(pet) {
     const polygon=pet.polygon;
     if (!polygon || !insidePolygon(polygon,...pet.anchor)) return null;
