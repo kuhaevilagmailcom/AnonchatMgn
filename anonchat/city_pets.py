@@ -220,7 +220,7 @@ def income_with_bonus(db, pet, now):
         return stars, fraction
     row=db.execute("""SELECT expires_at FROM city_effects WHERE zone_id=?
         AND kind='income' AND owner_id=? AND expires_at>?""",
-        (pet[2], pet[8] if len(pet)>8 else 0, now)).fetchone()
+        (pet[2], pet[8] if len(pet)>8 else 0, pet[4])).fetchone()
     if not row:
         return stars, fraction
     from .city_progression import stats
