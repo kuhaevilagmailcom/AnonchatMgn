@@ -19,6 +19,8 @@
     const warehouse=$('districtWarehouses'), whBody=$('warehouseContent');
     const detail=$('petDetails'),detailBody=$('petDetailsBody');
     let filter='pets',selectedPet=null,busy=false,drawnChests=[],chestLayer=null,lastData={};
+    const chestModal=$('chestDetails');
+    let activeChest=null;
     const pets=()=>state.inventoryPets||[];
     const items=()=>state.items||[];
     const catalog=()=>state.premiumCatalog||[];
@@ -278,20 +280,48 @@
         drawnChests.push(marker);
       }
     }
-    async function openChest(chest){
+    function openChest(chest){
       if(busy)return;
-      const answer=root.confirm?.(
-        chest.emoji+' Сундук · '+chest.place+'\n\n'
-          +'Для открытия нужно находиться рядом по GPS. Открыть?');
-      if(answer===false)return;
+      activeChest=chest;
+      chestModal.hidden=false;
+      $('chestDetailsEmoji').textContent=chest.emoji;
+      $('chestDetailsTitle').textContent='Сундук · '+
+        ({common:'Обычный',rare:'Редкий',epic:'Эпический',legendary:'Легендарный'}[chest.kind]||'Награда');
+      $('chestDetailsPlace').textContent=chest.place;
+      $('chestDetailsHint').textContent=
+        'Чтобы открыть, подойди к этой точке на расстояние до 70 метров с учётом точности GPS. Награду определяет сервер.';
+      $('openChest').hidden=false;
+      $('openChest').disabled=false;
+    }
+    async function claimChest(){
+      const chest=activeChest;
+      if(busy||!chest)return;
+      const button=$('openChest');
+      button.disabled=true;
+      button.textContent='Проверяем GPS…';
       try{
         const gps=await locate(false);
-        await send('/api/city/chests/open',{
+        if(!gps)throw new Error('Не удалось определить GPS');
+        const result=await send('/api/city/chests/open',{
           id:chest.id,lat:gps.lat,lon:gps.lon,accuracy_m:gps.accuracy,
           timestamp_s:gps.timestamp/1000
-        },'RESULT');
-      }catch(e){feedback(e.message,'error')}
+        },'');
+        if(result){
+          $('chestDetailsTitle').textContent='Награда получена!';
+          $('chestDetailsHint').textContent=result.description||'Сундук открыт.';
+          $('openChest').hidden=true;
+          activeChest=null;
+        }
+      }catch(e){feedback(e.message||'Не удалось открыть сундук','error')}
+      finally{button.disabled=false;button.textContent='Открыть по GPS'}
     }
+    $('openChest').addEventListener('click',claimChest);
+    $('closeChestDetails').addEventListener('click',()=>{
+      chestModal.hidden=true;activeChest=null
+    });
+    chestModal.addEventListener('click',e=>{
+      if(e.target===chestModal){chestModal.hidden=true;activeChest=null}
+    });
     function render(data){
       if (data) lastData=data;
       data=lastData;
