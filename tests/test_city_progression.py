@@ -35,7 +35,11 @@ class GameSystemsTests(unittest.TestCase):
 
     def test_old_pet_migrates_without_data_loss_and_upgrade_is_atomic(self):
         pet=city_pets.buy(self.db,10,"cat",now=100)["pet_id"]
-        self.assertEqual(p.inventory(self.db,10)["inventory_pets"][0]["level"],1)
+        preview = p.inventory(self.db,10)["inventory_pets"][0]
+        self.assertEqual(preview["level"],1)
+        self.assertEqual(preview["next_stats"]["level"],2)
+        self.assertGreater(preview["next_stats"]["hp_5m"],preview["hp_5m"])
+        self.assertGreater(preview["next_stats"]["stars_h"],preview["stars_h"])
         old=self.balance()
         result=p.upgrade(self.db,10,pet)
         self.assertEqual(result["before"]["level"],1)
@@ -44,7 +48,9 @@ class GameSystemsTests(unittest.TestCase):
         self.assertEqual(self.balance(),old-result["cost"])
         for _ in range(8):
             p.upgrade(self.db,10,pet)
-        self.assertEqual(p.inventory(self.db,10)["inventory_pets"][0]["level"],10)
+        finished=p.inventory(self.db,10)["inventory_pets"][0]
+        self.assertEqual(finished["level"],10)
+        self.assertIsNone(finished["next_stats"])
         with self.assertRaises(ValueError):
             p.upgrade(self.db,10,pet)
         self.assertEqual(self.db.execute(
@@ -177,6 +183,17 @@ class GameSystemsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             w.respond(self.db,20,invite["id"],True,now=121)
         self.assertEqual(w.my_warehouse(self.db,20)["warehouse"]["name"],"Левый Берег")
+        self.assertEqual(w.my_warehouse(self.db,20)["warehouse"]["my_role"],"member")
+        changed=w.set_role(self.db,10,20,"moderator")
+        self.assertEqual(changed["role"],"moderator")
+        self.assertEqual(w.my_warehouse(self.db,20)["warehouse"]["my_role"],"moderator")
+        with self.assertRaises(ValueError):
+            w.set_role(self.db,20,10,"member")
+        with self.assertRaises(ValueError):
+            w.set_role(self.db,10,20,"owner")
+        with self.assertRaises(ValueError):
+            w.set_role(self.db,10,10,"member")
+        self.assertEqual(w.set_role(self.db,10,20,"member")["role"],"member")
         self.assertEqual(w.my_warehouse(self.db,20)["warehouse"]["zones"],1)
         self.assertEqual(self.db.execute("SELECT user_id FROM city_ownership WHERE zone_id=1").fetchone()[0],10)
         with self.assertRaises(ValueError):
