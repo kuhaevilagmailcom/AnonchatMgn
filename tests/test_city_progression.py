@@ -62,6 +62,14 @@ class GameSystemsTests(unittest.TestCase):
         result=city_capture.capture(self.db,20,1,53.38,58.98,5,5700,now=5700)
         self.assertEqual(result["owner_user_id"],20)
 
+    def test_shield_requires_attacker_to_approach_within_65m(self):
+        p.grant_item(self.db,10,"shield")
+        p.use_item(self.db,10,"shield",1,now=3000)
+        with self.assertRaisesRegex(ValueError,"Щит района"):
+            city_capture.capture(self.db,20,1,53.38072,58.98,5,3100,now=3100)
+        allowed=city_capture.capture(self.db,20,1,53.38,58.98,5,3101,now=3101)
+        self.assertEqual(allowed["owner_user_id"],20)
+
     def test_medkit_saves_hp_and_income_boost_is_real(self):
         p.grant_item(self.db,10,"medkit")
         self.db.execute("INSERT INTO city_player_hp(user_id,hp_milli,last_tick) VALUES(10,45000,1000)")
