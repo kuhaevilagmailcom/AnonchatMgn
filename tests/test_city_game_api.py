@@ -1,4 +1,5 @@
 """Regression tests for MGN ZAHVAT geometry, gate and capture API."""
+import json
 import os
 import sqlite3
 import tempfile
@@ -45,6 +46,15 @@ class CityRoutesTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tempdir = tempfile.TemporaryDirectory()
         self.path = str(Path(self.tempdir.name) / "game.db")
+        # Stable verified road block around zone 1, for real GPS combat tests.
+        # RoadGeometry reads this cache before registering HTTP handlers.
+        (Path(self.tempdir.name) / "city_road_shapes.json").write_text(
+            json.dumps({"version":4,"shapes":{"1":[
+                [53.4044,58.9902],[53.4044,58.9916],
+                [53.4055,58.9916],[53.4055,58.9902]
+            ]},"extra_zones":[]}),
+            encoding="utf-8",
+        )
         with sqlite3.connect(self.path) as db:
             db.execute("""CREATE TABLE users(
                 user_id INTEGER PRIMARY KEY, nickname TEXT NOT NULL DEFAULT '',
@@ -166,6 +176,87 @@ class CityRoutesTests(unittest.IsolatedAsyncioTestCase):
         async with self.client.post("/api/city/pets/claim", headers=admin,
                                     json={}) as r:
             self.assertEqual(r.status, 200)
+
+    async def test_fatal_gps_attack_frees_zones_for_everyone_then_respawns(self):
+        os.environ["CITY_GAME_TEST_ADMINS_ONLY"] = "0"
+        admin = {"X-Test-User":"10"}
+        victim = {"X-Test-User":"20"}
+        with sqlite3.connect(self.path) as db:
+            db.execute("UPDATE users SET xp=10000 WHERE user_id=10")
+            db.commit()
+        async with self.client.get("/api/city/state", headers=admin) as r:
+            self.assertEqual(r.status,200)
+        async with self.client.post("/api/city/capture", headers=admin,
+                                    json={"zone_id":1,"lat":53.404924,
+                                          "lon":58.990902,"accuracy_m":5,
+                                          "timestamp_s":time.time()}) as r:
+            self.assertEqual(r.status,200)
+        async with self.client.post("/api/city/pets/buy", headers=admin,
+                                    json={"kind":"lion","request_id":"guard"} ) as r:
+            self.assertEqual(r.status,200)
+            pet = (await r.json())["pet_id"]
+        async with self.client.post("/api/city/pets/place", headers=admin,
+                                    json={"pet_id":pet,"zone_id":1}) as r:
+            self.assertEqual(r.status,200)
+        victim_zone = city.STARTER_ZONES[1]
+        async with self.client.post("/api/city/capture", headers=victim,
+                                    json={"zone_id":victim_zone[0],
+                                          "lat":victim_zone[2],"lon":victim_zone[3],
+                                          "accuracy_m":5,
+                                          "timestamp_s":time.time()}) as r:
+            self.assertEqual(r.status,200)
+        with sqlite3.connect(self.path) as db:
+            db.execute(
+                "INSERT INTO city_player_hp(user_id,hp_milli,last_tick) VALUES(20,400,?)",
+                (int(time.time()) - 60,),
+            )
+            db.commit()
+        gps = {"lat":53.404924,"lon":58.990902,
+               "accuracy_m":5,"timestamp_s":time.time()}
+        async with self.client.post("/api/city/presence",
+                                    headers=victim,json=gps) as r:
+            self.assertEqual(r.status,200)
+            death = await r.json()
+            self.assertTrue(death["dead"])
+            self.assertTrue(death["died"])
+            self.assertEqual(death["hp"],0)
+            self.assertEqual(death["zones_lost"],1)
+        async with self.client.get("/api/city/state",headers=victim) as r:
+            data = await r.json()
+            self.assertEqual(data["hp"],0)
+            self.assertTrue(data["dead"])
+            self.assertEqual(data["my_zones"],0)
+            self.assertEqual(data["zones_lost"],1)
+            self.assertFalse(data["zones"][1]["occupied"])
+            self.assertEqual(data["wallet"],50)
+        async with self.client.get("/api/city/state",headers=admin) as r:
+            data = await r.json()
+            self.assertFalse(data["zones"][1]["occupied"])
+            self.assertEqual(len(data["guards"]),1)
+            self.assertEqual(data["guards"][0]["kind"],"lion")
+        async with self.client.post("/api/city/presence",
+                                    headers=victim,json=gps) as r:
+            self.assertEqual(r.status,200)
+            self.assertFalse((await r.json())["died"])
+        async with self.client.post("/api/city/capture",headers=victim,
+                                    json={"zone_id":victim_zone[0],
+                                          "lat":victim_zone[2],"lon":victim_zone[3],
+                                          "accuracy_m":5,
+                                          "timestamp_s":time.time()}) as r:
+            self.assertEqual(r.status,400)
+            self.assertIn("возродись",await r.text())
+        async with self.client.post("/api/city/respawn",headers=victim) as r:
+            self.assertEqual(r.status,200)
+            revived = await r.json()
+            self.assertEqual(revived["hp"],100)
+            self.assertFalse(revived["dead"])
+        async with self.client.get("/api/city/state",headers=victim) as r:
+            data = await r.json()
+            self.assertFalse(data["dead"])
+            self.assertEqual(data["hp"],100)
+            self.assertEqual(data["my_zones"],0)  # death penalty survives respawn
+        async with self.client.post("/api/city/respawn",headers=victim) as r:
+            self.assertEqual(r.status,400)
 
     async def test_capture_requires_proximity_not_just_sector_click(self):
         os.environ["CITY_GAME_TEST_ADMINS_ONLY"] = "0"
