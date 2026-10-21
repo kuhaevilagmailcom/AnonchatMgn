@@ -130,7 +130,7 @@ const leafletStub='('+function fakeLeaflet(){
           width+'px capture button is hidden underneath navigation');
         assert.match(await page.locator('#zoneDetails').textContent(),/Семейный парк/);
         await page.click('#showtop');
-        assert.equal(await page.locator('#leaderboard').isVisible(),true);
+        assert.equal(await page.locator('#districtInventory').isVisible(),true);
         await page.click('#showmap');
         await page.click('#sheetToggle');
         assert.ok((await page.locator('#panel').getAttribute('class')).includes('is-expanded'));
