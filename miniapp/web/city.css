@@ -641,3 +641,39 @@ body:has(#panel[data-tab="more"]) .leaflet-bottom.leaflet-right{display:none!imp
     top:calc(58px + env(safe-area-inset-top,0px));bottom:0;left:0;right:0;
     width:100%;height:auto;max-height:none;border-radius:0}
 }
+
+/* РАЙОНЫ: level upgrade preview comes from the game API, not JS estimates. */
+.district-zone-select{
+  display:block;width:100%;min-height:43px;padding:9px 12px;
+  background:#211a20;border:1px solid #5d3c50;border-radius:10px;
+  color:#fff;font:inherit;font-size:12px
+}
+.district-zone-select:focus-visible{outline:2px solid #e57ac6;outline-offset:1px}
+.district-upgrade-preview{
+  display:flex;flex-direction:column;gap:0;
+  margin-top:5px;padding:11px 12px 7px;
+  background:#1b141a;border:1px solid #49313f;border-radius:11px
+}
+.district-upgrade-heading{display:block;text-align:left;margin-bottom:7px;
+  font-size:12px;font-weight:760;color:#f0a7d3}
+.district-upgrade-line{display:grid;
+  grid-template-columns:minmax(55px,1fr) auto 14px auto;
+  align-items:center;gap:6px;min-height:30px;text-align:left;
+  border-bottom:1px solid #342630}
+.district-upgrade-line:last-child{border-bottom:0}
+.district-upgrade-line>span:first-child{color:#b7a7b2;font-size:10px}
+.district-upgrade-line small{color:#b7a7b2;font-size:10px}
+.district-upgrade-line strong{color:#fff;font-size:10px}
+.district-upgrade-arrow{color:#e57ac6;font-size:12px;text-align:center}
+.district-upgrade-done{padding:10px 12px;margin-bottom:12px;
+  color:#fff;background:#271727;border:1px solid #9b577f;
+  border-radius:10px;text-align:left}
+.district-upgrade-done strong{color:#f1a8d8;font-size:12px}
+.district-upgrade-done p{font-size:11px;margin:5px 0 0;line-height:1.4}
+.district-member{flex-wrap:wrap}
+.district-member>.district-text{min-width:100px;flex:1}
+.district-member>.district-button{padding:8px 9px;font-size:10px}
+@media(max-width:370px){
+  .district-upgrade-line{grid-template-columns:minmax(48px,1fr) auto 10px auto;gap:4px}
+  .district-upgrade-line small,.district-upgrade-line strong{font-size:9px}
+}
