@@ -73,6 +73,7 @@ async def janitor(
     """Подчищает устаревшее состояние и регулярно пересобирает возможные пары."""
     last_maintenance = 0.0
     last_backup_check = 0.0
+    last_raiony_chest_cycle = None
     while True:
         try:
             await asyncio.sleep(60)
@@ -84,6 +85,23 @@ async def janitor(
             if expired_mutes or expired_bans:
                 log.info('Expired restrictions lifted: mutes=%s bans=%s', expired_mutes, expired_bans)
             await db.online_peak(presence_online_count())
+            # Server-driven five-hour chest cycles, persisted across restarts.
+            from anonchat.city_progression import CHEST_INTERVAL
+            cycle = int(time.time()) // CHEST_INTERVAL
+            if cycle != last_raiony_chest_cycle:
+                def _spawn_raiony_chests():
+                    import sqlite3
+                    from anonchat import city_progression
+                    with sqlite3.connect(db.path, timeout=10) as conn:
+                        city_progression.init_db(conn)
+                        city_progression.current_chests(conn)
+                        conn.commit()
+                try:
+                    await asyncio.to_thread(_spawn_raiony_chests)
+                    last_raiony_chest_cycle = cycle
+                except Exception:
+                    log.exception("РАЙОНЫ: сундуки не созданы")
+
             if time.time() - last_maintenance >= 3600:
                 await db.cleanup_report_context(cfg.report_context_retention_days)
                 await db.cleanup_service_data()
