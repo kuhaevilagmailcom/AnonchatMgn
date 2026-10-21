@@ -449,3 +449,79 @@ body[data-map-theme=light] .map-credits{
 .my-zones-empty{padding:14px 0;color:#fff}
 .my-zones-empty strong{font-size:13px;font-weight:700}
 .my-zones-empty p{font-size:11px;color:#a99da6;line-height:1.5;margin:7px 0 0}
+
+
+/* Death is a gameplay state, not an external alert.
+   Full-screen but compact enough for Telegram's 320px webview. */
+.city-death{
+  position:absolute;
+  z-index:2400;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:calc(24px + env(safe-area-inset-top,0px))
+          19px calc(22px + env(safe-area-inset-bottom,0px));
+  background:rgba(0,0,0,.90);
+  backdrop-filter:blur(9px);
+  -webkit-backdrop-filter:blur(9px);
+  overflow-y:auto;
+}
+.city-death-content{
+  display:flex;flex-direction:column;align-items:center;
+  width:100%;max-width:370px;
+  padding:25px 19px 23px;
+  border:1px solid #40303c;
+  border-radius:19px;
+  background:#110e11;
+  text-align:center;
+  box-shadow:0 15px 50px #0006;
+}
+.city-death-symbol{
+  display:grid;place-items:center;
+  width:54px;height:54px;margin-bottom:15px;
+  color:#ffc1df;border:1px solid #734b64;
+  border-radius:17px;background:#321b2a;
+}
+.city-death-symbol .ico{width:27px;height:27px}
+.city-death-eyebrow{margin:0;color:#ae92a5;font-size:10px;
+  font-weight:750;letter-spacing:1.2px}
+.city-death h2{margin:9px 0 8px;font-size:29px;font-weight:820;
+  letter-spacing:-.8px;color:#fff}
+#deathDescription{margin:0;max-width:290px;color:#d7cbd5;
+  font-size:13px;line-height:1.5}
+.city-death-stats{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;
+  width:100%;margin-top:20px;padding:14px 2px;
+  border-top:1px solid #40313d;border-bottom:1px solid #40313d;
+}
+.city-death-stats span{font-size:12px;color:#bbaebb;text-align:left}
+.city-death-stats strong{font-size:22px;color:#ee83c8;
+  font-variant-numeric:tabular-nums}
+.city-death-note{margin:15px 0 18px;font-size:11px;line-height:1.5;
+  color:#bfb1bc}
+.city-respawn{
+  width:100%;min-height:46px;padding:12px 17px;
+  background:#e57ac6;color:#21131b;border-radius:11px;
+  font-size:14px;font-weight:800;
+}
+.city-respawn:disabled{opacity:.58}
+.city-death-footnote{margin:12px 0 0;color:#948693;
+  font-size:10px;line-height:1.4}
+body.city-is-dead .hud-hp-track span,
+body.city-is-dead .hp-track span{background:#8d4f61}
+@media(max-width:359px){
+  .city-death{padding-left:12px;padding-right:12px}
+  .city-death-content{padding:22px 15px 19px}
+}
+@media(orientation:landscape) and (max-height:500px){
+  .city-death{align-items:flex-start;padding-top:14px;padding-bottom:14px}
+  .city-death-content{padding:16px 18px}
+  .city-death-symbol{margin-bottom:7px;width:39px;height:39px}
+  .city-death h2{font-size:22px;margin:5px 0}
+  .city-death-stats{margin-top:10px;padding:8px 0}
+  .city-death-note{margin:7px 0 11px}
+}
+@media(prefers-reduced-motion:reduce){
+  .city-death{backdrop-filter:none;-webkit-backdrop-filter:none}
+}
