@@ -138,6 +138,29 @@ class GameSystemsTests(unittest.TestCase):
         self.assertEqual(len(p.inventory(self.db,10)["inventory_pets"]),0)
         self.assertEqual(self.balance(),20000)
 
+    def test_team_daily_quests_grant_each_member_once(self):
+        w.create(self.db,10,"Кварталы","📦",now=100)
+        invite=w.invite(self.db,10,"Даня",now=110)
+        w.respond(self.db,20,invite["id"],True,now=120)
+        now=86400*20+1000
+        self.db.executemany(
+            "INSERT INTO city_capture_events(zone_id,user_id,captured_at) VALUES(?,?,?)",
+            [(1,10,now-60),(1,20,now-40),(1,10,now-20)],
+        )
+        ws=w.my_warehouse(self.db,10)["warehouse"]
+        # Production displays real-day missions. Direct helper uses a
+        # deterministic clock for test replay/expiry safety.
+        ready=w.missions(self.db,20,ws["id"],now=now)[0]
+        self.assertTrue(ready["claimable"])
+        self.assertEqual(ready["progress"],3)
+        before=self.balance(20)
+        claim=w.claim_mission(self.db,20,3,now=now)
+        self.assertEqual(claim["reward"],25)
+        self.assertEqual(self.balance(20),before+25)
+        with self.assertRaises(ValueError):
+            w.claim_mission(self.db,20,3,now=now)
+        self.assertTrue(w.missions(self.db,10,ws["id"],now=now)[0]["claimable"])
+
     def test_warehouse_invitation_roles_capacity_and_ownership(self):
         result=w.create(self.db,10,"Левый Берег","🏚️","Наша команда",now=100)
         self.assertGreater(result["warehouse_id"],0)
