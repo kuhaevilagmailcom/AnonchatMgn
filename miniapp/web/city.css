@@ -525,3 +525,119 @@ body.city-is-dead .hp-track span{background:#8d4f61}
 @media(prefers-reduced-motion:reduce){
   .city-death{backdrop-filter:none;-webkit-backdrop-filter:none}
 }
+
+
+/* РАЙОНЫ extension: full-height navigable app pages, never cramped map sheets. */
+#panel[data-tab="inventory"],#panel[data-tab="warehouses"],#panel[data-tab="more"]{
+  top:calc(58px + env(safe-area-inset-top,0px));bottom:0;
+  left:0;right:0;width:100%;height:auto;max-height:none;
+  border-radius:0;border-top:1px solid #302831;
+}
+#panel[data-tab="inventory"] .sheet-grip,
+#panel[data-tab="warehouses"] .sheet-grip,
+#panel[data-tab="more"] .sheet-grip{display:none}
+#panel[data-tab="inventory"] .sheet-tabs,
+#panel[data-tab="warehouses"] .sheet-tabs,
+#panel[data-tab="more"] .sheet-tabs{flex-shrink:0}
+#panel[data-tab="inventory"] .sheet-content,
+#panel[data-tab="warehouses"] .sheet-content,
+#panel[data-tab="more"] .sheet-content{
+  flex:1 1 auto;min-height:0;overflow-y:auto;
+  padding:17px 16px 28px;overscroll-behavior-y:contain;
+  -webkit-overflow-scrolling:touch;
+}
+body:has(#panel[data-tab="inventory"]) .map-credits,
+body:has(#panel[data-tab="warehouses"]) .map-credits,
+body:has(#panel[data-tab="more"]) .map-credits,
+body:has(#panel[data-tab="inventory"]) .leaflet-bottom.leaflet-right,
+body:has(#panel[data-tab="warehouses"]) .leaflet-bottom.leaflet-right,
+body:has(#panel[data-tab="more"]) .leaflet-bottom.leaflet-right{display:none!important}
+#panel:not(.has-selection):not(.is-expanded):not([data-tab=top]):not([data-tab=rules]):not([data-tab=market]):not([data-tab=myzones]):not([data-tab=inventory]):not([data-tab=warehouses]):not([data-tab=more]){
+  height:calc(116px + env(safe-area-inset-bottom,0px));
+}
+.district-page{color:#fff}
+.district-section-head{display:flex;align-items:center;justify-content:space-between;margin:2px 0 15px}
+.district-section-head small{font-size:10px;color:#b18fa7;font-weight:700;letter-spacing:.6px}
+.district-section-head h2{font-size:23px;font-weight:820;letter-spacing:-.5px;margin:4px 0 0}
+.district-section-head>span{font-size:11px;color:#bbb1bb}
+.district-pills{display:flex;gap:6px;overflow-x:auto;padding-bottom:12px;margin-bottom:8px;scrollbar-width:none}
+.district-pills button{flex:none;white-space:nowrap;background:#1a161a;color:#baadb7;
+  border:1px solid #322b30;border-radius:8px;font-size:11px;padding:8px 10px;font-weight:650}
+.district-pills button.active{background:#402438;border-color:#a35c8c;color:#f8c9e7}
+.district-inventory-row{display:flex;align-items:center;gap:12px;width:100%;min-height:67px;
+  padding:11px 3px;border:0;border-bottom:1px solid #302a2e;background:none;
+  text-align:left;color:#fff}
+.district-emoji{display:grid;place-items:center;flex:none;width:42px;height:42px;
+  border-radius:11px;background:#231b22;font-size:27px}
+.district-text{display:flex;flex:1;flex-direction:column;gap:5px;min-width:0}
+.district-text strong{font-size:13px;font-weight:740;white-space:nowrap;text-overflow:ellipsis;overflow:hidden}
+.district-text small{font-size:11px;color:#aaa0aa;line-height:1.35}
+.district-arrow{color:#ec9ccf;font-size:24px}
+.district-empty{padding:24px 5px;text-align:center}
+.district-empty strong{font-size:14px}
+.district-empty p{max-width:300px;margin:8px auto;color:#9e939d;font-size:12px;line-height:1.5}
+.district-button{flex:none;min-height:36px;padding:8px 11px;
+  color:#f2b4dc;background:#251521;border:1px solid #7d4468;
+  border-radius:9px;font-size:11px;font-weight:740}
+.district-button.primary{width:100%;background:#e57ac6;color:#1d101a;border:0;font-size:13px}
+.district-button.muted{color:#ae849c;border-color:#46323c;margin-top:20px}
+.district-button:disabled{opacity:.42}
+.district-detail-emoji{font-size:51px;line-height:1.25;margin:5px 0 9px}
+.district-modal{position:fixed;inset:0;z-index:3600;display:flex;align-items:center;justify-content:center;
+  padding:18px;background:#000b;backdrop-filter:blur(7px)}
+.district-modal[hidden]{display:none!important}
+.district-modal-card{width:100%;max-width:405px;max-height:calc(100dvh - 38px);
+  overflow-y:auto;background:#171116;border:1px solid #67425b;border-radius:17px;
+  padding:20px;position:relative;text-align:center;box-shadow:0 22px 56px #0006}
+.district-modal-card h2{font-size:22px;margin:6px 0 3px}
+.district-detail-rarity{font-size:12px;color:#f1b0d9;margin-bottom:16px}
+.district-close{position:absolute;right:12px;top:10px;width:31px;height:31px;
+  border-radius:8px;background:#30202a;color:#fff;font-size:14px}
+.district-detail-stats{text-align:left;border-top:1px solid #40313c}
+.district-stat-row{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:10px 0;border-bottom:1px solid #40313c}
+.district-stat-row span{color:#a99aa5;font-size:11px}
+.district-stat-row strong{color:#fff;font-size:12px;text-align:right}
+.district-detail-actions{display:flex;flex-direction:column;gap:8px;margin-top:15px}
+.district-detail-actions .district-button{width:100%;min-height:41px}
+.district-help{font-size:11px;color:#b4a7b0;line-height:1.5;margin:10px 0}
+.district-form{display:flex;flex-direction:column;gap:11px;margin:14px 0;padding:15px 0;
+  border-top:1px solid #32272d}
+.district-form input,.district-form select{width:100%;height:43px;border-radius:10px;
+  background:#211a20;border:1px solid #493542;color:#fff;padding:10px 12px;
+  font-size:13px;outline:none}
+.district-form input:focus,.district-form select:focus{border-color:#e57ac6}
+.district-form input::placeholder{color:#857983}
+.district-warehouse-head{display:flex;gap:12px;align-items:center;padding:15px 0}
+.district-warehouse-emoji{font-size:37px}
+.district-warehouse-head h3{margin:0 0 5px;font-size:18px}
+.district-warehouse-head p{margin:0;color:#9b909a;font-size:11px}
+.district-warehouse-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.district-warehouse-metrics div{background:#211820;border:1px solid #352832;
+  border-radius:10px;padding:11px;display:flex;flex-direction:column;gap:5px}
+.district-warehouse-metrics small{font-size:10px;color:#b09ead}
+.district-warehouse-metrics strong{font-size:16px}
+.district-heading{margin:18px 0 10px;font-size:15px}
+.district-member,.district-invite{display:flex;align-items:center;gap:10px;
+  padding:12px 0;border-bottom:1px solid #362a34}
+.district-invite .district-button{min-width:56px;padding:8px 6px}
+.district-achievement{padding:12px 0;border-bottom:1px solid #302830;
+  color:#f0dde8;font-size:12px}
+.district-more-grid{display:flex;flex-direction:column}
+.district-more-grid button{display:flex;align-items:center;gap:14px;min-height:67px;
+  border:0;border-bottom:1px solid #332a30;background:transparent;text-align:left;
+  color:#fff;font-size:25px}
+.district-more-grid button span{display:flex;flex-direction:column;gap:5px;
+  font-size:14px;font-weight:720}
+.district-more-grid button small{font-size:11px;font-weight:400;color:#a99ba5}
+.district-chest-icon{border:0!important;background:transparent!important}
+.district-chest-icon span{display:block;pointer-events:none;font-size:28px;
+  line-height:1;filter:drop-shadow(0 2px 4px #000b);
+  animation:district-chest-bob 2s ease-in-out infinite alternate}
+@keyframes district-chest-bob{from{transform:translateY(0)}to{transform:translateY(-4px)}}
+@media(prefers-reduced-motion:reduce){.district-chest-icon span{animation:none}}
+@media(orientation:landscape) and (max-height:500px){
+  #panel[data-tab="inventory"],#panel[data-tab="warehouses"],#panel[data-tab="more"]{
+    top:calc(58px + env(safe-area-inset-top,0px));bottom:0;left:0;right:0;
+    width:100%;height:auto;max-height:none;border-radius:0}
+}
