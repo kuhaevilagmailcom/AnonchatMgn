@@ -63,6 +63,12 @@ def init_db(db):
       zones_lost INTEGER NOT NULL DEFAULT 0
     );
     """)
+    # Safe additive migrations for inventories created before progression.
+    columns = {row[1] for row in db.execute("PRAGMA table_info(city_pets)")}
+    if "level" not in columns:
+        db.execute("ALTER TABLE city_pets ADD COLUMN level INTEGER NOT NULL DEFAULT 1")
+    if "pet_hp" not in columns:
+        db.execute("ALTER TABLE city_pets ADD COLUMN pet_hp INTEGER NOT NULL DEFAULT 100")
 
 
 def _change_xp(db, user_id, amount, source, reason, ref_id):
