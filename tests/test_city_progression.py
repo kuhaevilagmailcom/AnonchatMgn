@@ -124,6 +124,11 @@ class GameSystemsTests(unittest.TestCase):
         order2=p.create_order(self.db,10,"wolf",now=1000)
         with self.assertRaises(ValueError):
             p.confirm_paid(self.db,10,order2["order_id"],"XTR",25,"charge-1",now=1005)
+        refunded=p.mark_refunded(self.db,10,"charge-1",now=1100)
+        self.assertTrue(refunded["refunded"])
+        self.assertTrue(p.mark_refunded(self.db,10,"charge-1",now=1101)["replayed"])
+        self.assertEqual(len(p.inventory(self.db,10)["inventory_pets"]),0)
+        self.assertEqual(self.balance(),20000)
 
     def test_warehouse_invitation_roles_capacity_and_ownership(self):
         result=w.create(self.db,10,"Левый Берег","🏚️","Наша команда",now=100)
