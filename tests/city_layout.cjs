@@ -130,15 +130,18 @@ const server = http.createServer((req, res) => {
         assert.ok(await page.locator('#market').evaluate(node => node.scrollTop > 50),
           width + ': market scroll is blocked');
         await page.locator('#showtop').click();
-        assert.ok(await page.locator('#leaderboard').isVisible());
+        assert.ok(await page.locator('#districtInventory').isVisible(),
+          width + ': inventory tab unavailable');
+        assert.ok(await page.locator('#inventoryTabs').isVisible());
+        await page.locator('#showrules').click();
+        assert.ok(await page.locator('#districtMore').isVisible(),
+          width + ': compact More menu unavailable');
         await page.locator('#showmap').click();
         assert.ok(await page.locator('#mapView').isVisible());
         await page.locator('#myZonesButton').click();
-        assert.ok(await page.locator('#myZones').isVisible(),
-          width + ': side button must show My Districts, not leaderboard');
-        assert.ok(await page.locator('#myZonesList').isVisible());
-        assert.ok(await page.locator('#tabs').isVisible(),
-          width + ': my-districts page must preserve bottom navigation');
+        assert.ok(await page.locator('#districtInventory').isVisible(),
+          width + ': side button must show Inventory, not old My Districts');
+        assert.ok(await page.locator('#tabs').isVisible());
         await page.locator('#showmap').click();
         await page.evaluate(() => {
           document.querySelector('#deathScreen').hidden = false;
