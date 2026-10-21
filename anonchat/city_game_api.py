@@ -288,6 +288,8 @@ def routes(database_path, authenticate, is_admin, bot=None):
             with sqlite3.connect(database_path,timeout=10,isolation_level=None) as db:
                 warehouses.init_db(db)
                 result=warehouses.invite(db,uid,data.get("nickname",""))
+                inviter_row=db.execute("SELECT nickname FROM users WHERE user_id=?",(uid,)).fetchone()
+                inviter_nick=(inviter_row[0] if inviter_row and inviter_row[0] else "Аноним")[:40]
             delivered=False
             if bot:
                 try:
@@ -300,7 +302,7 @@ def routes(database_path, authenticate, is_admin, bot=None):
                         result["recipient_id"],
                         f"📦 Тебя пригласили на склад!\\n\\n"
                         f"{result['emoji']} Склад: {result['warehouse']}\\n"
-                        f"Пригласил: игрок #{uid}\\n\\nПринять приглашение?",
+                        f"Пригласил: {inviter_nick}\\n\\nПринять приглашение?",
                         reply_markup=kb,parse_mode=None)
                     delivered=True
                 except Exception:
