@@ -18,7 +18,8 @@ const zones=zoneNames.map((name,i)=>({
 const cat={kind:'cat',name:'Кот',emoji:'🐈',price:100,stars_h:1,hp_5m:.5};
 const pet={id:77,kind:'cat',name:'Кот',emoji:'🐈',rarity:'common',
   rarity_name:'Обычный',level:2,pet_hp:100,zone_id:1,
-  stars_h:1.12,hp_5m:.54,upgrade_cost:300};
+  stars_h:1.12,hp_5m:.54,upgrade_cost:300,
+  next_stats:{level:3,stars_h:1.24,hp_5m:.58}};
 const data=JSON.stringify({can_capture:true,cooldown_remaining_s:0,my_zones:1,total_captures:1,
   capture_radius_m:100,max_accuracy_m:75,zones,leaderboard:[],
   wallet:1200,hp:97.5,dead:false,pending_stars:1,
@@ -157,6 +158,9 @@ const leafletStub='('+function fakeLeaflet(){
         assert.match(await page.locator('#petDetailsBody').textContent(),/Кот/);
         assert.match(await page.locator('#petDetailsBody').textContent(),/Ур. 2/);
         assert.match(await page.locator('#petDetailsBody').textContent(),/HP/);
+        assert.match(await page.locator('#petDetailsBody').textContent(),/БЫЛО → СТАЛО/);
+        assert.equal(await page.locator('#petTargetZone').count(),0,
+          width+'px deployed pet should show recall, not district selector');
         await page.click('#closePetDetails');
         assert.ok(await page.locator('#petDetails').isHidden());
         await page.click('#showmarket');
@@ -170,6 +174,16 @@ const leafletStub='('+function fakeLeaflet(){
         assert.ok(await page.locator('#warehouseCreate').isVisible(),
           width+'px warehouse create form missing');
         await page.click('#showmap');
+        const chestMarker=page.locator('.district-chest-icon');
+        assert.ok(await chestMarker.count()>0, width+'px chest emoji should be on the map');
+        await chestMarker.last().click({force:true});
+        assert.ok(await page.locator('#chestDetails').isVisible(),
+          width+'px tapping chest should open real game modal');
+        assert.match(await page.locator('#chestDetailsTitle').textContent(),/Сундук/);
+        assert.ok(await page.locator('#openChest').isVisible(),
+          width+'px chest needs a GPS opening action');
+        await page.locator('#closeChestDetails').click();
+        assert.ok(await page.locator('#chestDetails').isHidden());
         await page.click('#sheetToggle');
         assert.ok((await page.locator('#panel').getAttribute('class')).includes('is-expanded'));
         assert.deepEqual(errors,[],width+'px errors after interaction');
