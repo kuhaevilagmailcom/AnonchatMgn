@@ -1,4 +1,4 @@
-/* МГН: ЗАХВАТ — map, Telegram location, capture and ranking. */
+/* РАЙОНЫ — Telegram geolocation, chests, territories, pets and community. */
 (() => {
   'use strict';
 
