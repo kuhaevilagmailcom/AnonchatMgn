@@ -75,9 +75,14 @@ def init_db(db):
        id TEXT PRIMARY KEY, user_id INTEGER NOT NULL, kind TEXT NOT NULL,
        amount INTEGER NOT NULL, created_at INTEGER NOT NULL,
        fulfilled_at INTEGER NOT NULL DEFAULT 0,
-       charge_id TEXT UNIQUE
+       charge_id TEXT UNIQUE, pet_id INTEGER, refunded_at INTEGER NOT NULL DEFAULT 0
     );
     """)
+    order_columns={r[1] for r in db.execute("PRAGMA table_info(city_premium_orders)")}
+    if "pet_id" not in order_columns:
+        db.execute("ALTER TABLE city_premium_orders ADD COLUMN pet_id INTEGER")
+    if "refunded_at" not in order_columns:
+        db.execute("ALTER TABLE city_premium_orders ADD COLUMN refunded_at INTEGER NOT NULL DEFAULT 0")
 
 def stats(kind, level=1):
     base = {**city_pets.PET_TYPES,**PREMIUM}.get(kind)
@@ -270,9 +275,31 @@ def confirm_paid(db,uid,payload,currency,amount,charge,now=None):
         if db.execute("SELECT 1 FROM city_premium_orders WHERE charge_id=?",(charge,)).fetchone():
             raise ValueError("Этот платёж уже обработан")
         pet_id=grant_pet(db,uid,row[1],now)
-        db.execute("UPDATE city_premium_orders SET fulfilled_at=?,charge_id=? WHERE id=?",
-                   (now,charge,payload))
+        db.execute("UPDATE city_premium_orders SET fulfilled_at=?,charge_id=?,pet_id=? WHERE id=?",
+                   (now,charge,pet_id,payload))
         db.commit()
         return {"pet_id":pet_id,"kind":row[1],"replayed":False}
     except BaseException:
         db.rollback();raise
+
+
+def mark_refunded(db,uid,charge,now=None):
+    """Finalize an already successful Telegram refund and revoke its one pet."""
+    now=int(time.time() if now is None else now)
+    city_pets._begin(db)
+    try:
+        row=db.execute("""SELECT id,pet_id,refunded_at FROM city_premium_orders
+                           WHERE user_id=? AND charge_id=? AND fulfilled_at>0""",
+                       (uid,charge)).fetchone()
+        if not row:raise ValueError("Платёж не найден")
+        if row[2]:
+            db.commit()
+            return {"replayed":True}
+        if row[1]:
+            db.execute("DELETE FROM city_pets WHERE id=? AND owner_id=?",(row[1],uid))
+        db.execute("UPDATE city_premium_orders SET refunded_at=? WHERE id=?",(now,row[0]))
+        db.commit()
+        return {"refunded":True,"pet_id":row[1]}
+    except BaseException:
+        db.rollback()
+        raise
