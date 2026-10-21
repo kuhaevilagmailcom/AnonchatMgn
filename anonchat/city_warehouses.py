@@ -133,6 +133,10 @@ def invite(db,uid,nickname,now=None):
         recent=db.execute("""SELECT MAX(created_at) FROM city_warehouse_invites
                WHERE inviter_id=? AND invitee_id=?""",(uid,target[0])).fetchone()[0]
         if recent and now-recent<COOLDOWN:raise ValueError("Подожди перед следующим приглашением")
+        last_sent=db.execute("""SELECT MAX(created_at) FROM city_warehouse_invites
+             WHERE inviter_id=?""",(uid,)).fetchone()[0]
+        if last_sent and now-last_sent<30:
+            raise ValueError("Можно отправлять не чаще одного приглашения за 30 секунд")
         cur=db.execute("INSERT INTO city_warehouse_invites(warehouse_id,inviter_id,invitee_id,created_at) VALUES(?,?,?,?)",
                        (row[0],uid,target[0],now))
         db.commit()
