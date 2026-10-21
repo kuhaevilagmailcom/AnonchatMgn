@@ -38,7 +38,7 @@ async function flush(){for(let i=0;i<70;i++) await Promise.resolve();}
     fitBounds(){},invalidateSize(){},removeLayer(){}};
   const L={map:()=>map,tileLayer:layer,polygon:layer,circle:layer,
     layerGroup:layer,divIcon:o=>o,latLngBounds:()=>({}),
-    marker(_coords,opts){const marker=layer();marker.title=opts.title;markers.push(marker);return marker}};
+    marker(_coords,opts){const marker=layer();marker.title=opts.title;marker.iconClass=opts.icon?.className;markers.push(marker);return marker}};
   const window={
     L,innerHeight:780,addEventListener(){},setTimeout(){return 1},
     setInterval(){return 1},clearInterval(){},localStorage:{getItem(){return'dark'},setItem(){}},
@@ -119,6 +119,13 @@ async function flush(){for(let i=0;i<70;i++) await Promise.resolve();}
   assert.equal(nodes.zoneGuard.hidden,false);
   assert.equal(nodes.zoneGuard.textContent,'🐈');
   assert.equal(nodes.petCount.textContent,'1');
+  const agentsBefore=markers.filter(m=>m.iconClass==='pet-agent').length;
+  assert.equal(agentsBefore,1,'one visible emoji guardian');
+  nodes.refresh.click();
+  await flush();
+  const agentsAfter=markers.filter(m=>m.iconClass==='pet-agent').length;
+  assert.equal(agentsAfter,agentsBefore,
+    'routine map refresh must not teleport pet by recreating its marker');
   await nodes.claimIncome.click();
   await flush();
   assert.equal(posts[2].url,'/api/city/pets/claim');
