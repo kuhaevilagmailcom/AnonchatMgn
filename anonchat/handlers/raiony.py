@@ -78,7 +78,41 @@ async def on_paid(message:Message,db:Database,cfg:Config):
         await message.answer("Оплата получена. Если питомец не появился, напиши в поддержку.")
 
 @router.message(Command("raiony_refund"))
-async def refund_help(message:Message):
-    await message.answer(
-        "Для возврата Telegram Stars пришли администратору ID оплаты из чека. "
-        "Возвраты выполняются методом refundStarPayment после проверки платежа.")
+async def refund_stars(message:Message,db:Database,cfg:Config):
+    """Admin-only support command: /raiony_refund <user_id> <telegram_charge_id>."""
+    if message.from_user.id not in await db.all_admin_ids(cfg.admin_ids):
+        await message.answer("Эта команда только для администрации.");return
+    parts=(message.text or "").split()
+    if len(parts)!=3 or not parts[1].isdigit() or not parts[2].strip():
+        await message.answer("Использование: /raiony_refund user_id telegram_payment_charge_id")
+        return
+    uid=int(parts[1]);charge=parts[2].strip()
+    if uid<1 or len(charge)>255:
+        await message.answer("Некорректные реквизиты");return
+    try:
+        with sqlite3.connect(db.path,timeout=10) as conn:
+            progression.init_db(conn)
+            order=conn.execute("""SELECT pet_id,refunded_at FROM city_premium_orders
+                WHERE user_id=? AND charge_id=? AND fulfilled_at>0""",(uid,charge)).fetchone()
+        if not order:
+            await message.answer("Подтверждённый платёж не найден");return
+        if order[1]:
+            await message.answer("Этот платёж уже возвращён");return
+        try:
+            # Only Telegram can actually return XTR. Local DB is not authoritative.
+            await message.bot.refund_star_payment(
+                user_id=uid,telegram_payment_charge_id=charge)
+        except TelegramAPIError as error:
+            # On an interrupted prior refund, Telegram may already have
+            # returned the Stars; finish local reconciliation idempotently.
+            if "CHARGE_ALREADY_REFUNDED" not in str(error).upper():
+                await message.answer("Telegram не подтвердил возврат. Ничего не списано.")
+                return
+        with sqlite3.connect(db.path,timeout=10,isolation_level=None) as conn:
+            progression.init_db(conn)
+            result=progression.mark_refunded(conn,uid,charge)
+        await message.answer(
+            "✅ Telegram Stars возвращены. Платный питомец отозван из РАЙОНОВ."
+            if result.get("refunded") else "Возврат уже учтён")
+    except (ValueError,sqlite3.Error):
+        await message.answer("Не удалось завершить возврат. Проверь лог транзакции.")
