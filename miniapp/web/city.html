@@ -9,7 +9,7 @@
   <link rel="icon" href="./assets/anon-mgn-logo.png">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css">
-  <link rel="stylesheet" href="./city.css?v=16">
+  <link rel="stylesheet" href="./city.css?v=17">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -162,12 +162,23 @@
       <div id="petDetailsBody"></div>
     </div>
   </div>
+  <section id="chestDetails" class="district-modal" role="dialog" aria-modal="true"
+           aria-labelledby="chestDetailsTitle" hidden>
+    <div class="district-modal-card chest-dialog">
+      <button type="button" id="closeChestDetails" class="district-close" aria-label="Закрыть">✕</button>
+      <div class="chest-dialog-emoji" id="chestDetailsEmoji" aria-hidden="true">📦</div>
+      <h2 id="chestDetailsTitle">Сундук</h2>
+      <p id="chestDetailsPlace" class="chest-dialog-place"></p>
+      <p id="chestDetailsHint" class="district-help">Открой рядом с точкой на карте.</p>
+      <button type="button" id="openChest" class="district-button primary">Открыть по GPS</button>
+    </div>
+  </section>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/@maplibre/maplibre-gl-leaflet@0.1.4/leaflet-maplibre-gl.js"></script>
   <script src="./city-icons.js?v=3"></script>
   <script src="./city-roads.js?v=3"></script>
-  <script src="./city-expansion.js?v=1"></script>
+  <script src="./city-expansion.js?v=2"></script>
   <script src="./city.js?v=27"></script>
 </body>
 </html>
