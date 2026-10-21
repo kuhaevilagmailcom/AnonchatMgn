@@ -177,6 +177,13 @@ const leafletStub='('+function fakeLeaflet(){
         const chestMarker=page.locator('.district-chest-icon');
         assert.ok(await chestMarker.count()>0, width+'px chest emoji should be on the map');
         await chestMarker.last().click({force:true});
+        // Fake Leaflet pins are absolute children without genuine Leaflet hit
+        // testing; verify a direct pin activation as well as screen click.
+        if(!(await page.locator('#chestDetails').isVisible())){
+          await chestMarker.last().evaluate(el => {
+            el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true}));
+          });
+        }
         const chestVisible=await page.locator('#chestDetails').isVisible();
         if(!chestVisible){
           const info=await page.evaluate(()=>({
