@@ -29,7 +29,7 @@ async function flush(){for(let i=0;i<100;i++) await Promise.resolve();}
 
 (async()=>{
   const nodes={},posts=[],zoneId=7;let watch=null;
-  let fakeTime=Date.now(),lethal=false,dead=false,revived=false,presenceCalls=0;
+  let fakeTime=Date.now(),lethal=false,dead=false,revived=false,territoriesReleased=false,presenceCalls=0;
   class Clock extends Date {
     static now(){return fakeTime}
   }
@@ -51,8 +51,8 @@ async function flush(){for(let i=0;i<100;i++) await Promise.resolve();}
     marker:layer,layerGroup:layer,divIcon:()=>({}),latLngBounds:()=>({})};
   const zone={id:zoneId,name:'Квартал ЛБ',lat:53.39,lon:59.06,kind:'block',
     polygon:[],size:'Малый',owner_name:'Игрок',official_name:'',address:'Левый берег'};
-  function world(){return {...zone,mine:!dead,occupied:!dead,
-    owner_name:dead?null:'Игрок'};}
+  function world(){return {...zone,mine:!territoriesReleased,occupied:!territoriesReleased,
+    owner_name:territoriesReleased?null:'Игрок'};}
   const gpsFix=()=>({coords:{latitude:53.39,longitude:59.06,accuracy:5},
     timestamp:fakeTime});
   const navigator={
@@ -79,13 +79,13 @@ async function flush(){for(let i=0;i<100;i++) await Promise.resolve();}
       wallet:450,pending_stars:0,can_capture:true,
       hp:dead?0:revived?100:0.4,max_hp:100,dead,deaths:dead?1:revived?1:0,
       zones_lost:dead?1:revived?1:0,
-      my_zones:dead?0:1,total_captures:1,cooldown_remaining_s:0
+      my_zones:territoriesReleased?0:1,total_captures:1,cooldown_remaining_s:0
     })};
     if(url==='/api/city/road-shapes')return{ok:true,json:async()=>({shapes:{},extra_count:0})};
     if(url==='/api/city/presence') {
       presenceCalls++;
       if(lethal) {
-        dead=true;
+        dead=true;territoriesReleased=true;
         return{ok:true,json:async()=>({
           hp:0,max_hp:100,dead:true,died:true,deaths:1,
           zones_lost:1,zone_id:12,attacked_by:'lion'
@@ -135,6 +135,8 @@ async function flush(){for(let i=0;i<100;i++) await Promise.resolve();}
   assert.equal(revived,true,'respawn endpoint called');
   assert.equal(nodes.deathScreen.hidden,true,'death screen closes after server confirms');
   assert.equal(nodes.hpHud.textContent,'100','respawn restores 100 HP');
+  assert.equal(nodes.myZonesList.children[0].className,'my-zones-empty',
+    'respawn must NOT restore the territories');
   assert.equal(nodes.hpFill.style.width,'100%','market HP is full after respawn');
   assert.equal(document.body.classList.contains('city-is-dead'),false);
   assert.ok(posts.includes('/api/city/respawn'));
