@@ -248,6 +248,16 @@ class CityPetsTest(unittest.TestCase):
         self.assertEqual(attacked["attacked_by"],"lion")
         self.assertLess(attacked["hp"],safe["hp"])
 
+    def test_fractional_gps_timestamp_valid_in_same_second(self):
+        # Telegram sends Date.now()/1000, not integer seconds.
+        accepted = city_pets.presence(
+            self.db,20,53.4,58.9,5,2000.8,{},now=2000.9
+        )
+        self.assertEqual(accepted["hp"],100)
+        self.assertFalse(accepted["dead"])
+        with self.assertRaisesRegex(ValueError,"Устаревшее"):
+            city_pets.presence(self.db,20,53.4,58.9,5,2020.9,{},now=2000.9)
+
     def test_no_damage_on_stale_or_inaccurate_gps(self):
         lion = city_pets.buy(self.db,10,"lion",now=100)["pet_id"]
         city_pets.place(self.db,10,lion,1,now=100)
