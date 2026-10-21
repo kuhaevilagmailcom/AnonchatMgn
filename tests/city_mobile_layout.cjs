@@ -177,7 +177,17 @@ const leafletStub='('+function fakeLeaflet(){
         const chestMarker=page.locator('.district-chest-icon');
         assert.ok(await chestMarker.count()>0, width+'px chest emoji should be on the map');
         await chestMarker.last().click({force:true});
-        assert.ok(await page.locator('#chestDetails').isVisible(),
+        const chestVisible=await page.locator('#chestDetails').isVisible();
+        if(!chestVisible){
+          const info=await page.evaluate(()=>({
+            markerCount:document.querySelectorAll('.district-chest-icon').length,
+            hidden:document.querySelector('#chestDetails').hidden,
+            title:document.querySelector('#chestDetailsTitle').textContent,
+            style:getComputedStyle(document.querySelector('#chestDetails')).display
+          }));
+          console.error('Chest open diagnostic:',JSON.stringify(info),'pageErrors:',errors);
+        }
+        assert.ok(chestVisible,
           width+'px tapping chest should open real game modal');
         assert.match(await page.locator('#chestDetailsTitle').textContent(),/Сундук/);
         assert.ok(await page.locator('#openChest').isVisible(),
