@@ -101,7 +101,7 @@ class CityPetsTest(unittest.TestCase):
         self.assertIsNone(self.db.execute("SELECT zone_id FROM city_pets WHERE id=?", (pet,)).fetchone()[0])
         self.assertEqual(city_pets.state(self.db,10,now=2500)["pending_stars"],0)
 
-    def test_hp_requires_real_polygon_and_never_reaches_zero(self):
+    def test_hp_requires_real_polygon_and_death_at_zero(self):
         lion = city_pets.buy(self.db,10,"lion",now=100)["pet_id"]
         city_pets.place(self.db,10,lion,1,now=100)
         first = city_pets.presence(self.db,20,53.4,58.9,5,2000,self.shape,now=2000)
@@ -120,8 +120,95 @@ class CityPetsTest(unittest.TestCase):
         self.assertIsNone(no_shape["attacked_by"])
         self.db.execute("UPDATE city_player_hp SET hp_milli=1005,last_tick=2180 WHERE user_id=20")
         result = city_pets.presence(self.db,20,53.4,58.9,5,2240,self.shape,now=2240)
-        self.assertGreaterEqual(result["hp"],1)
-        self.assertFalse(result["hp"]==0)
+        self.assertGreater(result["hp"], 0)
+        self.assertLess(result["hp"], 1)
+        self.assertFalse(result["dead"])
+        self.db.execute("UPDATE city_player_hp SET hp_milli=500,last_tick=2240 WHERE user_id=20")
+        fatal = city_pets.presence(self.db,20,53.4,58.9,5,2300,self.shape,now=2300)
+        self.assertEqual(fatal["hp"], 0)
+        self.assertTrue(fatal["dead"])
+        self.assertTrue(fatal["died"])
+
+    def test_death_frees_every_owned_zone_and_recalls_owned_pets(self):
+        # Lion damages a visitor who owns two different areas.
+        lion = city_pets.buy(self.db,10,"lion",now=100)["pet_id"]
+        city_pets.place(self.db,10,lion,1,now=100)
+        cat = city_pets.buy(self.db,20,"cat",now=100)["pet_id"]
+        city_pets.place(self.db,20,cat,2,now=100)
+        self.db.execute("INSERT INTO city_zones VALUES(3,'Квартал 3',53.402,58.902,1)")
+        self.db.execute("INSERT INTO city_ownership VALUES(3,20,100)")
+        balance_before = self.xp(20)
+        self.db.execute(
+            "INSERT INTO city_player_hp(user_id,hp_milli,last_tick) VALUES(20,500,2000)"
+        )
+        result = city_pets.presence(
+            self.db,20,53.4,58.9,5,2060,self.shape,now=2060
+        )
+        self.assertEqual(result["hp"], 0)
+        self.assertTrue(result["died"])
+        self.assertTrue(result["dead"])
+        self.assertEqual(result["zones_lost"], 2)
+        self.assertEqual(result["deaths"], 1)
+        self.assertIsNone(self.db.execute(
+            "SELECT user_id FROM city_ownership WHERE zone_id=2"
+        ).fetchone())
+        self.assertIsNone(self.db.execute(
+            "SELECT user_id FROM city_ownership WHERE zone_id=3"
+        ).fetchone())
+        self.assertEqual(self.db.execute(
+            "SELECT user_id FROM city_ownership WHERE zone_id=1"
+        ).fetchone()[0],10)
+        self.assertIsNone(self.db.execute(
+            "SELECT zone_id FROM city_pets WHERE id=?", (cat,)
+        ).fetchone()[0])
+        self.assertEqual(self.db.execute(
+            "SELECT zone_id FROM city_pets WHERE id=?", (lion,)
+        ).fetchone()[0],1)
+        self.assertEqual(self.xp(20),balance_before)
+        lost_state = city_pets.state(self.db,20,now=2060)
+        self.assertTrue(lost_state["dead"])
+        self.assertEqual(lost_state["hp"],0)
+        self.assertEqual(lost_state["zones_lost"],2)
+        self.assertEqual(lost_state["my_pets"][0]["zone_id"],None)
+        self.assertEqual(lost_state["pending_stars"],0)
+
+        # Repeated GPS requests must not lose zones twice or regenerate HP.
+        again = city_pets.presence(
+            self.db,20,53.4,58.9,5,2120,self.shape,now=2120
+        )
+        self.assertTrue(again["dead"])
+        self.assertFalse(again["died"])
+        self.assertEqual(again["zones_lost"],2)
+        self.assertEqual(again["deaths"],1)
+        self.assertEqual(again["hp"],0)
+        with self.assertRaisesRegex(ValueError,"возродись"):
+            city_capture.capture(self.db,20,1,53.4,58.9,5,2180,now=2180)
+
+        # Respawn restores HP only, not territories or their guards.
+        revived = city_pets.respawn(self.db,20,now=2300)
+        self.assertEqual(revived["hp"],100)
+        self.assertFalse(revived["dead"])
+        self.assertEqual(city_pets.state(self.db,20)["deaths"],1)
+        self.assertFalse(city_pets.state(self.db,20)["dead"])
+        self.assertEqual(self.db.execute(
+            "SELECT COUNT(*) FROM city_ownership WHERE user_id=20"
+        ).fetchone()[0],0)
+        with self.assertRaises(ValueError):
+            city_pets.respawn(self.db,20,now=2301)
+        captured = city_capture.capture(
+            self.db,20,2,53.401,58.901,5,2360,now=2360
+        )
+        self.assertEqual(captured["zone_id"],2)
+        self.assertEqual(self.db.execute(
+            "SELECT COUNT(*) FROM city_ownership WHERE user_id=20"
+        ).fetchone()[0],1)
+
+    def test_respawn_not_allowed_when_alive(self):
+        with self.assertRaises(ValueError):
+            city_pets.respawn(self.db,20,now=100)
+        city_pets.presence(self.db,20,53.401,58.901,5,1000,{},now=1000)
+        with self.assertRaises(ValueError):
+            city_pets.respawn(self.db,20,now=1001)
 
     def test_uncertainty_near_block_border_is_safe(self):
         lion = city_pets.buy(self.db,10,"lion",now=100)["pet_id"]
