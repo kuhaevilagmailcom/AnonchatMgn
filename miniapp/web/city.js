@@ -541,39 +541,77 @@
     if (!state.petGroup) return;
     state.petGroup.clearLayers();
     state.petAgents = [];
-    const shown = state.guards.slice(0, 75);
-    for (const guard of shown) {
+    for (const guard of state.guards.slice(0,75)) {
       const zone = guardedZone(guard.zone_id);
-      const kind = state.catalog.find(p=>p.kind===guard.kind) ||
-        state.premiumCatalog?.find(p=>p.kind===guard.kind);
+      const kind = state.catalog.find(p => p.kind===guard.kind) ||
+        state.premiumCatalog?.find(p => p.kind===guard.kind);
       if (!zone || !kind) continue;
-      const poly = state.roadPolygons.get(zone.id)?.polygon || zone.polygon;
-      const box = Array.isArray(poly) && poly.length >= 3 ? poly : null;
-      const anchor = box && insidePolygon(box,zone.lat,zone.lon) ?
-        [zone.lat,zone.lon] : box ? box[0] : [zone.lat,zone.lon];
-      const marker = L.marker(anchor, {
-        interactive:false,zIndexOffset:1200,
+      const poly=state.roadPolygons.get(zone.id)?.polygon || zone.polygon;
+      const boundary=Array.isArray(poly)&&poly.length>=3?poly:null;
+      const anchor=boundary&&insidePolygon(boundary,zone.lat,zone.lon)?
+        [zone.lat,zone.lon]:boundary?[
+          boundary.reduce((sum,p)=>sum+p[0],0)/boundary.length,
+          boundary.reduce((sum,p)=>sum+p[1],0)/boundary.length
+        ]:[zone.lat,zone.lon];
+      const startPoint=boundary&&insidePolygon(boundary,...anchor)?anchor:
+        [zone.lat,zone.lon];
+      const marker=L.marker(startPoint,{
+        interactive:false,keyboard:false,zIndexOffset:1200,
         icon:L.divIcon({
           className:'pet-agent',
-          html:'<span aria-hidden="true">' + kind.emoji + '</span>',
+          html:'<span aria-hidden="true">'+kind.emoji+'</span>',
           iconSize:[31,31],iconAnchor:[15,15]
         })
       }).addTo(state.petGroup);
-      state.petAgents.push({marker,anchor,polygon:box,zoneId:zone.id,phase:zone.id*1.71});
+      state.petAgents.push({
+        marker,polygon:boundary,anchor:startPoint,from:startPoint,target:startPoint,
+        since:Date.now(),duration:3000,pauseUntil:Date.now()+700,zoneId:zone.id
+      });
     }
   }
+  function nextPetWaypoint(pet) {
+    const polygon=pet.polygon;
+    if (!polygon || !insidePolygon(polygon,...pet.anchor)) return null;
+    // Pick a safe point not far from the known interior anchor. Validate the
+    // entire walking segment, not just its endpoints (concave OSM blocks).
+    for (let attempt=0;attempt<22;attempt++) {
+      const edge=polygon[Math.floor(Math.random()*polygon.length)];
+      const scale=.06+Math.random()*.45;
+      const to=[pet.anchor[0]+(edge[0]-pet.anchor[0])*scale,
+                pet.anchor[1]+(edge[1]-pet.anchor[1])*scale];
+      let valid=true;
+      for (let step=0;step<=16;step++) {
+        const f=step/16;
+        const lat=pet.from[0]+(to[0]-pet.from[0])*f;
+        const lon=pet.from[1]+(to[1]-pet.from[1])*f;
+        if (!insidePolygon(polygon,lat,lon)) {valid=false;break}
+      }
+      if(valid)return to;
+    }
+    return pet.anchor;
+  }
   function animatePets() {
-    if (document.hidden || !state.petAgents.length) return;
-    const t = Date.now()/2600;
-    for (const pet of state.petAgents) {
-      if (!pet.polygon || !pet.marker.setLatLng) continue; // no verified borders: stay put
-      const box = pet.polygon;
-      const idx = Math.floor((t/4+pet.phase)%box.length);
-      const edge = box[idx], inside = pet.anchor;
-      const f = .07 + .08 * (1+Math.sin(t+pet.phase))/2;
-      const lat = inside[0] + (edge[0]-inside[0])*f;
-      const lon = inside[1] + (edge[1]-inside[1])*f;
-      if (insidePolygon(box,lat,lon)) pet.marker.setLatLng([lat,lon]);
+    if(document.hidden || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)
+      return;
+    const now=Date.now();
+    for(const pet of state.petAgents) {
+      if(!pet.polygon || !pet.marker.setLatLng || now<pet.pauseUntil)continue;
+      if(now>=pet.since+pet.duration) {
+        const destination=nextPetWaypoint(pet);
+        if (!destination)continue; // no verified polygon: pet stands at zone marker
+        pet.from=pet.target;
+        pet.target=destination;
+        pet.since=now;
+        const metres=distanceM(pet.from[0],pet.from[1],pet.target[0],pet.target[1]);
+        pet.duration=Math.max(2800,Math.min(12500,metres*950));
+        pet.pauseUntil=now+400+Math.random()*1300;
+        continue;
+      }
+      const t=Math.max(0,Math.min(1,(now-pet.since)/pet.duration));
+      const eased=t*t*(3-2*t);
+      const lat=pet.from[0]+(pet.target[0]-pet.from[0])*eased;
+      const lon=pet.from[1]+(pet.target[1]-pet.from[1])*eased;
+      if(insidePolygon(pet.polygon,lat,lon))pet.marker.setLatLng([lat,lon]);
     }
   }
 
@@ -1093,7 +1131,9 @@
     });
   });
   setInterval(() => { if (selectedZone() && !state.capturing && !state.locating) renderSelection(); }, 1000);
-  setInterval(animatePets, 2300);
+  // A short, throttled rAF tick makes emoji pets walk smoothly without
+  // running a continuously hot 60fps loop on old iPhones.
+  setInterval(() => { if (!document.hidden) requestAnimationFrame(animatePets); }, 50);
   // Another player's death frees their sectors server-side immediately.
   // Refresh public ownership periodically so the map reflects it without
   // forcing players to close the Mini App or hit the refresh button.
