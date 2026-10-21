@@ -192,19 +192,23 @@ def recall(db, user_id, pet_id):
 
 def pending_income(pet, now):
     """pet: (id, kind, zone_id, assigned_at, income_tick_at, fraction, is_owned)."""
-    _id, kind, zone_id, _assigned, tick, fraction, owned = pet
-    if zone_id is None or not owned or kind not in PET_TYPES:
+    _id, kind, zone_id, _assigned, tick, fraction, owned = pet[:7]
+    if zone_id is None or not owned:
         return 0, 0
+    from .city_progression import stats
+    rate = int(round(stats(kind, pet[7] if len(pet)>7 else 1)["stars_h"]*100))
     seconds = min(CLAIM_MAX_SECONDS, max(0, now - tick))
-    total = seconds * PET_TYPES[kind]["stars_h"] + fraction
-    return total // 3600, total % 3600
+    # 100x integer rates to support incremental upgrades without float loss.
+    total = seconds * rate + fraction
+    return total // 360000, total % 360000
 
 
 def _owned_pets(db, owner_id):
     return db.execute(
         """SELECT p.id,p.kind,p.zone_id,p.assigned_at,p.income_tick_at,
                   p.income_fraction,
-                  (o.user_id=p.owner_id AND z.enabled=1) AS owned
+                  (o.user_id=p.owner_id AND z.enabled=1) AS owned,
+                  p.level
            FROM city_pets p
            LEFT JOIN city_ownership o ON o.zone_id=p.zone_id
            LEFT JOIN city_zones z ON z.id=p.zone_id
@@ -262,7 +266,7 @@ def state(db, user_id, now=None):
         "catalog": catalog(),
         "my_pets": [
             {"id": p[0], "kind": p[1], "zone_id": p[2], "active": bool(p[6]),
-             "pending_stars": pending_income(p, now)[0]}
+             "level": p[7], "pending_stars": pending_income(p, now)[0]}
             for p in pets
         ],
         "guards": [
@@ -347,8 +351,8 @@ def presence(db, user_id, lat, lon, accuracy_m, timestamp_s, polygons, now=None)
         # Protect user with accuracy: entire GPS uncertainty must fit the road cell.
         # On unreliable fixes, don't apply damage. No guard = healing only.
         if accuracy_m <= 35:
-            for zone_id, kind, owner_id in db.execute(
-                """SELECT p.zone_id,p.kind,p.owner_id FROM city_pets p
+            for zone_id, kind, owner_id, level in db.execute(
+                """SELECT p.zone_id,p.kind,p.owner_id,p.level FROM city_pets p
                    JOIN city_ownership o ON o.zone_id=p.zone_id AND o.user_id=p.owner_id
                    JOIN city_zones z ON z.id=p.zone_id AND z.enabled=1
                    WHERE p.zone_id IS NOT NULL AND p.owner_id<>?""",
@@ -359,12 +363,18 @@ def presence(db, user_id, lat, lon, accuracy_m, timestamp_s, polygons, now=None)
                     continue
                 if _boundary_distance_m(shape, lat, lon) < accuracy_m + 2:
                     continue
-                hit_kind, hit_zone = kind, zone_id
+                hit_kind, hit_zone, hit_level = kind, zone_id, level
                 break
-        if hit_kind in PET_TYPES:
-            # Damage numbers are HP lost per 5 MINUTES, not per hour.
-            # Real server elapsed time; no offline damage spikes.
-            damage = int(elapsed * PET_TYPES[hit_kind]["hp_5m"] * 1000 / 300)
+        if hit_kind:
+            from .city_progression import stats
+            damage = int(elapsed * stats(hit_kind, hit_level)["hp_5m"] * 1000 / 300)
+            # Zone shield applies only while active and owned by its installer.
+            shield = db.execute("""SELECT 1 FROM city_effects
+                WHERE zone_id=? AND kind='shield' AND owner_id=? AND expires_at>?""",
+                (hit_zone,owner_id,now)).fetchone() if db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='city_effects'"
+            ).fetchone() else None
+            if shield: damage = int(damage*.7)
             hp = max(MIN_HP_MILLI, hp - damage)
         else:
             hp = min(MAX_HP_MILLI, hp + int(elapsed * REGEN_HP_H * 1000 / 3600))
