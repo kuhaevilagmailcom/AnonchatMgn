@@ -14,6 +14,8 @@ from .city_roads import RoadGeometry
 
 from . import city_capture as game
 from . import city_pets
+from . import city_progression as progression
+from . import city_warehouses as warehouses
 
 # GPS anchors for public landmarks or shopping centres. Radius labels are GAME size hints only.
 # Nicknames reflect local usage; official place names and addresses are kept separately.
@@ -74,7 +76,7 @@ def seed_zones(db):
         )
 
 
-def routes(database_path, authenticate, is_admin):
+def routes(database_path, authenticate, is_admin, bot=None):
     """All user IDs come from server-verified Telegram initData."""
     road_data = RoadGeometry(Path(database_path).parent / "city_road_shapes.json")
     async def allowed(uid):
@@ -94,9 +96,16 @@ def routes(database_path, authenticate, is_admin):
         uid = await require_access(request)
         with sqlite3.connect(database_path, timeout=10) as db:
             seed_zones(db)
-            city_pets.init_db(db)
-            db.commit()
+            progression.init_db(db)
+            warehouses.init_db(db)
+            chests = progression.current_chests(db)
             pet_state = city_pets.state(db, uid)
+            pet_state.update(progression.inventory(db,uid))
+            pet_state.update(warehouses.my_warehouse(db,uid))
+            opened={r[0] for r in db.execute(
+                "SELECT chest_id FROM city_chest_claims WHERE user_id=?", (uid,))}
+            pet_state["chests"] = [{**c,"opened":c["id"] in opened} for c in chests]
+            db.commit()
             zones = db.execute(
                 """SELECT z.id, z.name, z.lat, z.lon, o.user_id, o.captured_at,
                           COALESCE(NULLIF(TRIM(u.nickname), ''), 'Аноним')
@@ -185,6 +194,160 @@ def routes(database_path, authenticate, is_admin):
         except (KeyError, TypeError, ValueError, sqlite3.Error) as exc:
             raise web.HTTPBadRequest(text=str(exc))
 
+    async def _body(request):
+        try:
+            data = await request.json()
+            if not isinstance(data, dict): raise ValueError("Неверный запрос")
+            return data
+        except (ValueError, TypeError):
+            raise web.HTTPBadRequest(text="Неверный JSON")
+
+    async def inventory(request):
+        uid = await require_access(request)
+        with sqlite3.connect(database_path, timeout=10) as db:
+            progression.init_db(db)
+            return web.json_response(progression.inventory(db,uid))
+
+    async def upgrade_pet(request):
+        uid=await require_access(request)
+        data=await _body(request)
+        try:
+            with sqlite3.connect(database_path,timeout=10,isolation_level=None) as db:
+                progression.init_db(db)
+                return web.json_response({"ok":True,**progression.upgrade(db,uid,int(data["pet_id"]))})
+        except (ValueError,KeyError,TypeError,sqlite3.Error) as e:raise web.HTTPBadRequest(text=str(e))
+
+    async def use_item(request):
+        uid=await require_access(request)
+        data=await _body(request)
+        try:
+            with sqlite3.connect(database_path,timeout=10,isolation_level=None) as db:
+                progression.init_db(db)
+                return web.json_response({"ok":True,**progression.use_item(
+                    db,uid,str(data["kind"]),data.get("zone_id"))})
+        except (ValueError,KeyError,TypeError,sqlite3.Error) as e:raise web.HTTPBadRequest(text=str(e))
+
+    async def chest_open(request):
+        uid=await require_access(request)
+        data=await _body(request)
+        try:
+            with sqlite3.connect(database_path,timeout=10,isolation_level=None) as db:
+                progression.init_db(db)
+                result=progression.open_chest(
+                    db,uid,str(data["id"]),float(data["lat"]),float(data["lon"]),
+                    float(data["accuracy_m"]),float(data["timestamp_s"]))
+                return web.json_response({"ok":True,**result})
+        except (ValueError,KeyError,TypeError,sqlite3.Error) as e:raise web.HTTPBadRequest(text=str(e))
+
+    async def premium_invoice(request):
+        uid=await require_access(request)
+        if bot is None:raise web.HTTPServiceUnavailable(text="Платежи сейчас недоступны")
+        data=await _body(request)
+        try:
+            kind=str(data["kind"])
+            with sqlite3.connect(database_path,timeout=10) as db:
+                progression.init_db(db)
+                order=progression.create_order(db,uid,kind)
+                db.commit()
+            from aiogram.types import LabeledPrice
+            pet=progression.PREMIUM[kind]
+            await bot.send_invoice(
+                chat_id=uid,title="РАЙОНЫ · "+pet["name"],
+                description="Редкий питомец "+pet["emoji"]+" для игры РАЙОНЫ",
+                payload="raiony:"+order["order_id"],currency="XTR",
+                prices=[LabeledPrice(label=pet["name"],amount=order["amount"])],
+                provider_token="")
+            return web.json_response({"ok":True,"sent":True,
+                                      "amount":order["amount"],"currency":"XTR"})
+        except (ValueError,KeyError,TypeError,sqlite3.Error) as e:raise web.HTTPBadRequest(text=str(e))
+        except Exception:
+            raise web.HTTPBadRequest(text="Не удалось отправить счёт. Открой чат с ботом.")
+
+    async def warehouse_state(request):
+        uid=await require_access(request)
+        with sqlite3.connect(database_path,timeout=10) as db:
+            progression.init_db(db)
+            warehouses.init_db(db)
+            return web.json_response(warehouses.my_warehouse(db,uid))
+
+    async def warehouse_create(request):
+        uid=await require_access(request)
+        data=await _body(request)
+        try:
+            with sqlite3.connect(database_path,timeout=10,isolation_level=None) as db:
+                warehouses.init_db(db)
+                result=warehouses.create(db,uid,data.get("name",""),
+                    data.get("emoji","📦"),data.get("description",""))
+            return web.json_response({"ok":True,**result})
+        except (ValueError,sqlite3.Error) as e:raise web.HTTPBadRequest(text=str(e))
+
+    async def warehouse_invite(request):
+        uid=await require_access(request)
+        data=await _body(request)
+        try:
+            with sqlite3.connect(database_path,timeout=10,isolation_level=None) as db:
+                warehouses.init_db(db)
+                result=warehouses.invite(db,uid,data.get("nickname",""))
+            delivered=False
+            if bot:
+                try:
+                    from aiogram.types import InlineKeyboardMarkup,InlineKeyboardButton
+                    invite_id=result["id"]
+                    kb=InlineKeyboardMarkup(inline_keyboard=[[
+                        InlineKeyboardButton(text="✅ Принять",callback_data=f"rdi:{invite_id}:y"),
+                        InlineKeyboardButton(text="❌ Отклонить",callback_data=f"rdi:{invite_id}:n")]])
+                    await bot.send_message(
+                        result["recipient_id"],
+                        f"📦 Тебя пригласили на склад!\\n\\n"
+                        f"{result['emoji']} Склад: {result['warehouse']}\\n"
+                        f"Пригласил: игрок #{uid}\\n\\nПринять приглашение?",
+                        reply_markup=kb,parse_mode=None)
+                    delivered=True
+                except Exception:
+                    # Invitation is still safely saved; user can accept in Mini App.
+                    pass
+            return web.json_response({"ok":True,"sent":delivered,"invite_id":result["id"]})
+        except (ValueError,sqlite3.Error) as e:raise web.HTTPBadRequest(text=str(e))
+
+    async def warehouse_respond(request):
+        uid=await require_access(request)
+        data=await _body(request)
+        try:
+            with sqlite3.connect(database_path,timeout=10,isolation_level=None) as db:
+                warehouses.init_db(db)
+                result=warehouses.respond(db,uid,int(data["id"]),data.get("accept") is True)
+            return web.json_response({"ok":True,**result})
+        except (KeyError,ValueError,TypeError,sqlite3.Error) as e:raise web.HTTPBadRequest(text=str(e))
+
+    async def warehouse_leave(request):
+        uid=await require_access(request)
+        try:
+            with sqlite3.connect(database_path,timeout=10,isolation_level=None) as db:
+                warehouses.init_db(db)
+                result=warehouses.leave(db,uid)
+            return web.json_response({"ok":True,**result})
+        except (ValueError,sqlite3.Error) as e:raise web.HTTPBadRequest(text=str(e))
+
+    async def warehouse_kick(request):
+        uid=await require_access(request)
+        data=await _body(request)
+        try:
+            with sqlite3.connect(database_path,timeout=10,isolation_level=None) as db:
+                warehouses.init_db(db)
+                result=warehouses.kick(db,uid,int(data["user_id"]))
+            return web.json_response({"ok":True,**result})
+        except (KeyError,ValueError,TypeError,sqlite3.Error) as e:raise web.HTTPBadRequest(text=str(e))
+
+    async def warehouse_disband(request):
+        uid=await require_access(request)
+        data=await _body(request)
+        try:
+            with sqlite3.connect(database_path,timeout=10,isolation_level=None) as db:
+                warehouses.init_db(db)
+                result=warehouses.disband(db,uid,data.get("confirm"))
+            return web.json_response({"ok":True,**result})
+        except (ValueError,sqlite3.Error) as e:raise web.HTTPBadRequest(text=str(e))
+
     async def pets_buy(request):
         uid = await require_access(request)
         try:
@@ -265,4 +428,16 @@ def routes(database_path, authenticate, is_admin):
         web.post("/api/city/pets/claim", pets_claim),
         web.post("/api/city/presence", presence),
         web.post("/api/city/respawn", respawn),
+        web.get("/api/city/inventory", inventory),
+        web.post("/api/city/pets/upgrade", upgrade_pet),
+        web.post("/api/city/items/use", use_item),
+        web.post("/api/city/chests/open", chest_open),
+        web.post("/api/city/premium/invoice", premium_invoice),
+        web.get("/api/city/warehouse", warehouse_state),
+        web.post("/api/city/warehouse/create", warehouse_create),
+        web.post("/api/city/warehouse/invite", warehouse_invite),
+        web.post("/api/city/warehouse/respond", warehouse_respond),
+        web.post("/api/city/warehouse/leave", warehouse_leave),
+        web.post("/api/city/warehouse/kick", warehouse_kick),
+        web.post("/api/city/warehouse/disband", warehouse_disband),
     ]
