@@ -103,30 +103,55 @@
         ['Район',p.zone_id?(zone?.name||'Захваченный квартал'):'В инвентаре'],
         ['Статус',p.zone_id?'Защищает территорию':'В запасе']
       ];
-      rows.forEach(([k,v])=>{
+      for(const [k,v] of rows){
         const row=make('div','district-stat-row');
         row.append(make('span','',k),make('strong','',v));stats.append(row);
-      });
+      }
       const actions=make('div','district-detail-actions');
       if(p.zone_id){
         actions.append(btn('Вернуть в инвентарь','recall',{petId:p.id}));
       }else{
-        const selected=state.zones.find(z=>z.id===state.selectedId&&z.mine);
-        const place=btn('Установить на район','place',{petId:p.id});
-        if(!selected){
-          place.disabled=true;
-          actions.append(make('p','district-help',
-            'Сначала выбери принадлежащий тебе район на карте.'));
+        const owned=state.zones.filter(z=>z.mine);
+        if(owned.length){
+          const select=make('select','district-zone-select');
+          select.id='petTargetZone';select.setAttribute('aria-label','Район для питомца');
+          for(const z of owned){
+            const option=make('option','',z.name);
+            option.value=String(z.id);
+            if(z.id===state.selectedId)option.selected=true;
+            select.append(option);
+          }
+          actions.append(make('label','district-help','Выбери свой район'),select);
+        }else{
+          actions.append(make('p','district-help','Сначала захвати район на карте.'));
         }
+        const place=btn('Установить на район','place',{petId:p.id});
+        place.disabled=!owned.length;
         actions.append(place);
       }
+      if(p.next_stats && p.upgrade_cost!=null){
+        const next=p.next_stats;
+        const preview=make('section','district-upgrade-preview');
+        preview.append(make('strong','district-upgrade-heading','Улучшение · БЫЛО → СТАЛО'));
+        for(const [caption,before,after] of [
+          ['Уровень',p.level,next.level],
+          ['Урон','−'+hp(p.hp_5m),'−'+hp(next.hp_5m)],
+          ['Доход','+'+fmt(p.stars_h)+' ⭐/ч','+'+fmt(next.stars_h)+' ⭐/ч']
+        ]){
+          const row=make('div','district-upgrade-line');
+          row.append(make('span','',caption),make('small','',String(before)),
+            make('span','district-upgrade-arrow','→'),make('strong','',String(after)));
+          preview.append(row);
+        }
+        actions.append(preview);
+      }
       const upgrade=btn(p.upgrade_cost==null?'Максимальный уровень':
-          'Улучшить · '+fmt(p.upgrade_cost)+' ⭐','upgrade',{petId:p.id});
+        'Улучшить · '+fmt(p.upgrade_cost)+' ⭐','upgrade',{petId:p.id});
       upgrade.disabled=p.upgrade_cost==null||state.wallet<p.upgrade_cost;
       actions.append(upgrade);
       detailBody.append(em,title,rar,stats,actions,
-        make('p','district-help', 'Улучшения сохраняются после смерти. '
-          +'Территории и экономика проверяются сервером.'));
+        make('p','district-help',
+          'Улучшения и питомцы сохраняются после смерти. Все характеристики рассчитывает сервер.'));
     }
     function renderPremium(){
       const list=$('premiumCatalog');if(!list)return;
@@ -190,20 +215,28 @@
         const row=make('div','district-member');
         const d=make('span','district-text');
         d.append(make('strong','',member.nickname),
-          make('small','',(member.role==='owner'?'Владелец':'Участник')+
+          make('small','',(member.role==='owner'?'Владелец':member.role==='moderator'?'Модератор':'Участник')+
             ' · '+member.zones+' районов'));
         row.append(d);
-        if(info.mine&&member.id!==info.owner_id)row.append(btn('Исключить','warehouse-kick',{uid:member.id}));
+        if(info.mine&&member.id!==info.owner_id){
+          const isMod=member.role==='moderator';
+          row.append(btn(isMod?'Снять модератора':'Модератор','warehouse-role',{
+            uid:member.id,role:isMod?'member':'moderator'
+          }));
+          row.append(btn('Исключить','warehouse-kick',{uid:member.id}));
+        }
         whBody.append(row);
       }
-      if(info.mine){
+      if(info.mine||info.my_role==='moderator'){
         const form=make('form','district-form');form.id='warehouseInvite';
         form.append(make('h3','district-heading','Пригласить по нику'));
         const nick=make('input');nick.name='nickname';nick.placeholder='Ник из АНОН МГН';nick.required=true;nick.maxLength=40;
         const sub=make('button','district-button primary','Отправить приглашение');sub.type='submit';
         form.append(nick,sub);whBody.append(form);
-        const d=btn('Удалить склад','warehouse-disband');d.classList.add('muted');
-        whBody.append(d);
+        if(info.mine){
+          const d=btn('Удалить склад','warehouse-disband');d.classList.add('muted');
+          whBody.append(d);
+        }
       }else{
         whBody.append(btn('Покинуть склад','warehouse-leave'));
       }
@@ -294,10 +327,20 @@
       const action=b.dataset.action,id=Number(b.dataset.petId);
       if(action==='upgrade'){
         const p=pets().find(x=>x.id===id);
-        if(!p||!root.confirm('Улучшить '+p.name+' за '+fmt(p.upgrade_cost)+' игровых ⭐?'))return;
-        await send('/api/city/pets/upgrade',{pet_id:id},'Питомец улучшен');
+        if(!p||p.upgrade_cost==null)return;
+        const result=await send('/api/city/pets/upgrade',{pet_id:id},'Питомец улучшен');
+        if(result?.after) {
+          renderDetail();
+          const report=make('div','district-upgrade-done');
+          report.append(make('strong','','Улучшение выполнено'),
+            make('p','',result.before.level+' → '+result.after.level+
+              ' уровень · −'+hp(result.before.hp_5m)+' → −'+hp(result.after.hp_5m)));
+          detailBody.prepend(report);
+        }
       }else if(action==='place'||action==='recall'){
-        await petAction(action,{pet_id:id,zone_id:state.selectedId});
+        const zoneId=action==='place'?Number($('petTargetZone')?.value):state.selectedId;
+        if(action==='place'&&(!zoneId||!state.zones.some(z=>z.id===zoneId&&z.mine)))return;
+        await petAction(action,{pet_id:id,zone_id:zoneId});
         detail.hidden=true;
       }
     });
@@ -333,6 +376,9 @@
       if(act==='invite-response')send('/api/city/warehouse/respond',{
         id:Number(b.dataset.id),accept:b.dataset.accept==='true'
       },'Приглашение обработано');
+      if(act==='warehouse-role')send('/api/city/warehouse/role',{
+        user_id:Number(b.dataset.uid),role:b.dataset.role
+      },'Роль участника изменена');
       if(act==='warehouse-kick' && root.confirm('Исключить игрока из склада?'))
         send('/api/city/warehouse/kick',{user_id:Number(b.dataset.uid)},'Игрок исключён');
       if(act==='warehouse-leave'&&root.confirm('Покинуть склад?'))
