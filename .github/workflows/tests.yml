@@ -36,6 +36,7 @@ jobs:
           - test_city_game_api
           - test_city_roads
           - test_city_pets
+          - test_city_progression
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -71,6 +72,7 @@ jobs:
           node --check miniapp/web/admin.js
           node --check miniapp/web/realtime.js
           node --check miniapp/web/city.js
+          node --check miniapp/web/city-expansion.js
           node --check miniapp/web/city-access.js
           node tests/city_map_provider.cjs
           node tests/city_roads.cjs
