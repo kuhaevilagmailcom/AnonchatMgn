@@ -300,9 +300,9 @@ def routes(database_path, authenticate, is_admin, bot=None):
                         InlineKeyboardButton(text="❌ Отклонить",callback_data=f"rdi:{invite_id}:n")]])
                     await bot.send_message(
                         result["recipient_id"],
-                        f"📦 Тебя пригласили на склад!\\n\\n"
-                        f"{result['emoji']} Склад: {result['warehouse']}\\n"
-                        f"Пригласил: {inviter_nick}\\n\\nПринять приглашение?",
+                        f"📦 Тебя пригласили на склад!\n\n"
+                        f"{result['emoji']} Склад: {result['warehouse']}\n"
+                        f"Пригласил: {inviter_nick}\n\nПринять приглашение?",
                         reply_markup=kb,parse_mode=None)
                     delivered=True
                 except Exception:
