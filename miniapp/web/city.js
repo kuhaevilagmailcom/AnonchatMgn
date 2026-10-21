@@ -1084,6 +1084,15 @@
   });
   setInterval(() => { if (selectedZone() && !state.capturing && !state.locating) renderSelection(); }, 1000);
   setInterval(animatePets, 2300);
+  // Another player's death frees their sectors server-side immediately.
+  // Refresh public ownership periodically so the map reflects it without
+  // forcing players to close the Mini App or hit the refresh button.
+  setInterval(() => {
+    if (!document.hidden && !state.capturing && !state.actionBusy &&
+        !state.respawning && !state.dead) {
+      load();
+    }
+  }, 45000);
   // Stationary devices can stop invoking watchPosition. Refresh only when
   // consented, so the HP/presence mechanic continues while the game is open.
   setInterval(() => {
