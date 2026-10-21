@@ -22,7 +22,7 @@ RARITY_RU = {"common":"Обычный","uncommon":"Необычный","rare":"�
              "epic":"Эпический","legendary":"Легендарный"}
 ITEMS = {
     "shield":{"name":"Щит района","emoji":"🛡️","rarity":"rare","seconds":3600,
-              "description":"Снижает входящий урон в указанном квартале на 30%"},
+              "description":"Сужает радиус вражеского захвата района до 65 м на час"},
     "medkit":{"name":"Аптечка","emoji":"❤️","rarity":"common","seconds":0,
               "description":"Мгновенно восстанавливает 30 HP"},
     "income":{"name":"Ускоритель дохода","emoji":"⚡","rarity":"rare","seconds":3600,
