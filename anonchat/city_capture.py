@@ -72,6 +72,14 @@ def capture(db, user_id, zone_id, lat, lon, accuracy_m, fix_timestamp, now=None)
           (zone_id,)).fetchone()
         if owner and owner[0] == user_id:
             raise ValueError("Already owned")
+        if owner and db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='city_effects'"
+        ).fetchone():
+            shield=db.execute("""SELECT 1 FROM city_effects WHERE
+                zone_id=? AND kind='shield' AND owner_id=? AND expires_at>?""",
+                (zone_id,owner[0],int(now))).fetchone()
+            if shield and distance_m(lat,lon,zone[1],zone[2])+accuracy_m>65:
+                raise ValueError("Щит района: нужно подойти ближе 65 метров")
         # Temporary lock item is effective server-side, not a decorative badge.
         if owner and db.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='city_effects'"
