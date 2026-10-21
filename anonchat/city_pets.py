@@ -209,12 +209,36 @@ def pending_income(pet, now):
     return total // 360000, total % 360000
 
 
+def income_with_bonus(db, pet, now):
+    """Accrue only the overlap with a live, owned one-hour income booster."""
+    stars, fraction = pending_income(pet, now)
+    if pet[2] is None or not pet[6]:
+        return stars, fraction
+    if not db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='city_effects'"
+    ).fetchone():
+        return stars, fraction
+    row=db.execute("""SELECT expires_at FROM city_effects WHERE zone_id=?
+        AND kind='income' AND owner_id=? AND expires_at>?""",
+        (pet[2], pet[8] if len(pet)>8 else 0, now)).fetchone()
+    if not row:
+        return stars, fraction
+    from .city_progression import stats
+    end=min(now,row[0])
+    start=max(pet[4], now-CLAIM_MAX_SECONDS, row[0]-3600)
+    overlap=max(0,end-start)
+    rate=int(round(stats(pet[1],pet[7])["stars_h"]*100))
+    extra=int(overlap*rate*.5)
+    total=stars*360000 + fraction + extra
+    return total//360000, total%360000
+
+
 def _owned_pets(db, owner_id):
     return db.execute(
         """SELECT p.id,p.kind,p.zone_id,p.assigned_at,p.income_tick_at,
                   p.income_fraction,
                   (o.user_id=p.owner_id AND z.enabled=1) AS owned,
-                  p.level
+                  p.level,p.owner_id
            FROM city_pets p
            LEFT JOIN city_ownership o ON o.zone_id=p.zone_id
            LEFT JOIN city_zones z ON z.id=p.zone_id
@@ -230,7 +254,7 @@ def claim(db, user_id, now=None):
         for pet in _owned_pets(db, user_id):
             if pet[2] is None or not pet[6]:
                 continue
-            stars, fraction = pending_income(pet, now)
+            stars, fraction = income_with_bonus(db, pet, now)
             earned += stars
             db.execute(
                 "UPDATE city_pets SET income_tick_at=?,income_fraction=? WHERE id=?",
@@ -258,7 +282,7 @@ def state(db, user_id, now=None):
         (user_id,),
     ).fetchone()
     pets = _owned_pets(db, user_id)
-    pending = sum(pending_income(p, now)[0] for p in pets)
+    pending = sum(income_with_bonus(db,p,now)[0] for p in pets)
     return {
         "wallet": max(0, row[0]) if row else 0,
         "hp": round((hp[0] if hp else MAX_HP_MILLI) / 1000, 2),
@@ -272,7 +296,7 @@ def state(db, user_id, now=None):
         "catalog": catalog(),
         "my_pets": [
             {"id": p[0], "kind": p[1], "zone_id": p[2], "active": bool(p[6]),
-             "level": p[7], "pending_stars": pending_income(p, now)[0]}
+             "level": p[7], "pending_stars": income_with_bonus(db,p,now)[0]}
             for p in pets
         ],
         "guards": [
