@@ -207,6 +207,19 @@
       }else{
         whBody.append(btn('Покинуть склад','warehouse-leave'));
       }
+      whBody.append(make('h3','district-heading','Совместные задания'));
+      for(const mission of info.missions||[]){
+        const row=make('div','district-invite');
+        const label=make('span','district-text');
+        label.append(make('strong','',mission.label),
+          make('small','',mission.progress+'/'+mission.target+
+            ' захватов · награда +'+mission.reward+' игровых ⭐'));
+        row.append(label);
+        const collect=btn(mission.claimed?'Получено':
+          mission.claimable?'Забрать':'В процессе','mission-claim',{tier:mission.tier});
+        collect.disabled=!mission.claimable;
+        row.append(collect);whBody.append(row);
+      }
       whBody.append(make('h3','district-heading','Достижения'));
       for(const a of info.achievements||[]){
         whBody.append(make('div','district-achievement',(a.done?'✅ ':'◻️ ')+a.name));
@@ -324,6 +337,9 @@
         send('/api/city/warehouse/kick',{user_id:Number(b.dataset.uid)},'Игрок исключён');
       if(act==='warehouse-leave'&&root.confirm('Покинуть склад?'))
         send('/api/city/warehouse/leave',{},'Ты вышел со склада');
+      if(act==='mission-claim')
+        send('/api/city/warehouse/missions/claim',{tier:Number(b.dataset.tier)},
+          'Награда за совместное задание получена');
       if(act==='warehouse-disband'&&root.confirm('Удалить склад навсегда?'))
         send('/api/city/warehouse/disband',{confirm:'УДАЛИТЬ СКЛАД'},'Склад удалён');
     });
