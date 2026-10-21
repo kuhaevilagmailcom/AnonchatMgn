@@ -60,7 +60,7 @@ def init_db(db):
     );
     CREATE TABLE IF NOT EXISTS city_effects (
        zone_id INTEGER NOT NULL, kind TEXT NOT NULL, owner_id INTEGER NOT NULL,
-       expires_at INTEGER NOT NULL, PRIMARY KEY(zone_id,kind)
+       expires_at INTEGER NOT NULL, PRIMARY KEY(zone_id,kind,owner_id)
     );
     CREATE TABLE IF NOT EXISTS city_chests (
        id TEXT PRIMARY KEY, cycle INTEGER NOT NULL, kind TEXT NOT NULL,
@@ -157,12 +157,12 @@ def use_item(db,uid,kind,zone_id=None,now=None):
               (uid,100000,now))
         elif kind=="luck":
             db.execute("""INSERT INTO city_effects(zone_id,kind,owner_id,expires_at) VALUES(0,'luck',?,?)
-               ON CONFLICT(zone_id,kind) DO UPDATE SET owner_id=excluded.owner_id,expires_at=excluded.expires_at""",
+               ON CONFLICT(zone_id,kind,owner_id) DO UPDATE SET expires_at=excluded.expires_at""",
                (uid,now+86400))
         else:
             db.execute("""INSERT INTO city_effects(zone_id,kind,owner_id,expires_at)
-              VALUES(?,?,?,?) ON CONFLICT(zone_id,kind) DO UPDATE SET
-              owner_id=excluded.owner_id,expires_at=excluded.expires_at""",
+              VALUES(?,?,?,?) ON CONFLICT(zone_id,kind,owner_id) DO UPDATE SET
+              expires_at=excluded.expires_at""",
               (int(zone_id),kind,uid,now+ITEMS[kind]["seconds"]))
         db.commit()
         return {"kind":kind,"zone_id":zone_id,"expires_at":now+ITEMS[kind]["seconds"]}
