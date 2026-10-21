@@ -20,6 +20,7 @@
     panel: $('panel'), view: $('mapView'), board: $('leaderboard'), rules: $('rules'),
     market: $('market'), shop: $('petCatalog'), inventory: $('petInventory'),
     wallet: $('wallet'), hpValue: $('hpValue'), hpHud: $('hpHud'), hpFill: $('hpFill'),
+    deathScreen: $('deathScreen'), deathLost: $('deathLost'), respawn: $('respawn'),
     pendingStars: $('pendingStars'), petCount: $('petCount'),
     placeHint: $('placeHint'), claimIncome: $('claimIncome'), zoneGuard: $('zoneGuard'),
     hudHpFill: $('hudHpFill'),
@@ -46,6 +47,7 @@
     catalog: [], myPets: [], guards: [], wallet: 0, hp: 100, pendingStars: 0,
     actionBusy: false, petGroup: null, petAgents: [], lastPresenceAt: 0,
     pendingPurchase: {},
+    dead: false, deaths: 0, zonesLost: 0, respawning: false,
     lastAttackedZone: null
   };
 
@@ -124,6 +126,39 @@
   function renderHud() {
     ui.hpHud.textContent = String(Math.ceil(state.hp));
     ui.hudHpFill.style.width = state.hp + '%';
+  }
+  function renderDeath() {
+    ui.deathScreen.hidden = !state.dead;
+    ui.deathLost.textContent = String(state.zonesLost);
+    ui.respawn.disabled = state.respawning;
+    ui.respawn.textContent = state.respawning ?
+      'Возрождаемся…' : 'Возродиться · 100 HP';
+    document.body.classList.toggle('city-is-dead', state.dead);
+  }
+
+  async function respawn() {
+    if (!state.dead || state.respawning) return;
+    state.respawning = true;
+    renderDeath();
+    try {
+      const result = await api('/api/city/respawn', {method: 'POST'});
+      if (result.dead || result.hp !== 100) throw new Error('Возрождение не подтверждено сервером');
+      state.dead = false;
+      state.hp = 100;
+      state.lastAttackedZone = null;
+      state.lastPresenceAt = Date.now();
+      renderDeath();
+      await load();
+      switchTab('map');
+      feedback('Ты возродился · 100 HP', 'success');
+      touch('success');
+    } catch (error) {
+      feedback(error.message, 'error');
+      touch('error');
+    } finally {
+      state.respawning = false;
+      renderDeath();
+    }
   }
   const ZONE_ICON_NAMES = Object.freeze({
     mall: 'store', park: 'trees', district: 'building',
@@ -543,7 +578,7 @@
     // Update HP even when no guard is present: the server regenerates it.
     // Only a deployed opponent guard inside an accurately verified polygon
     // can do damage. Never infer attacks from the zone owner alone.
-    if (!gps || document.hidden ||
+    if (!gps || document.hidden || state.dead ||
         gps.accuracy > 35 || Date.now()-state.lastPresenceAt < 15000) return;
     state.lastPresenceAt = Date.now();
     try {
@@ -554,7 +589,18 @@
           timestamp_s:gps.timestamp/1000
         })
       });
-      state.hp = Math.max(1, Math.min(100, Number(result.hp) || 1));
+      state.hp = Math.max(0, Math.min(100, number(result.hp, state.hp)));
+      if (result.dead) {
+        state.dead = true;
+        state.zonesLost = number(result.zones_lost);
+        state.deaths = number(result.deaths);
+        // Re-fetch ownership from the server: every former territory
+        // has already become free in the same death transaction.
+        await load();
+        renderDeath();
+        touch('error');
+        return;
+      }
       renderMarket();
       if (state.lastAttackedZone !== result.zone_id && result.zone_id) {
         const zone = guardedZone(result.zone_id);
@@ -660,10 +706,12 @@
     ui.state.className = 'owner-state ' + (zone.mine ? 'mine' : zone.occupied ? 'occupied' : '');
 
     const remaining = cooldownS();
-    ui.capture.disabled = !state.canCapture ||
+    ui.capture.disabled = !state.canCapture || state.dead ||
       state.capturing || state.locating || (!zone.mine && remaining > 0);
     if (!state.canCapture) {
       ui.captureLabel.textContent = 'Только просмотр';
+    } else if (state.dead) {
+      ui.captureLabel.textContent = 'Сначала возродись';
     } else if (zone.mine) {
       ui.captureLabel.textContent = 'Защитить район';
     } else if (remaining > 0) {
@@ -943,7 +991,10 @@
       state.myPets = Array.isArray(data.my_pets) ? data.my_pets : [];
       state.guards = Array.isArray(data.guards) ? data.guards : [];
       state.wallet = number(data.wallet);
-      state.hp = Math.max(1, Math.min(100, number(data.hp, 100)));
+      state.hp = Math.max(0, Math.min(100, number(data.hp, 100)));
+      state.dead = !!data.dead;
+      state.deaths = number(data.deaths);
+      state.zonesLost = number(data.zones_lost);
       state.pendingStars = number(data.pending_stars);
       state.canCapture = !!data.can_capture;
       state.radius = number(data.capture_radius_m, 100);
@@ -956,6 +1007,7 @@
       renderMyZones();
       drawTerritories();
       renderSelection();
+      renderDeath();
       if (!state.zones.length) feedback('Пока нет активных игровых районов');
     } catch (error) {
       // HP-only HUD: never access removed capture counters here.
@@ -968,7 +1020,7 @@
 
   async function capture() {
     const zone = selectedZone();
-    if (!zone || state.capturing || !state.canCapture) return;
+    if (!zone || state.capturing || !state.canCapture || state.dead) return;
     if (zone.mine) { switchTab('market'); return; }
     if (cooldownS() > 0) return;
     state.capturing = true;
@@ -1018,6 +1070,7 @@
   ui.rulesTab.addEventListener('click', () => { switchTab('rules'); });
   ui.capture.addEventListener('click', capture);
   ui.claimIncome.addEventListener('click', () => { petAction('claim'); });
+  ui.respawn.addEventListener('click', () => { respawn(); });
   ui.shop.addEventListener('click', event => {
     const button = event.target.closest('[data-buy-kind]');
     if (button) petAction('buy', {kind: button.dataset.buyKind});
