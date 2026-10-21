@@ -59,7 +59,7 @@ const leafletStub='('+function fakeLeaflet(){
       const el=document.createElement('button');
       el.type='button';el.className=opts.icon?.className||'test-marker';
       const index=window.__fakePinIndex||0;window.__fakePinIndex=index+1;
-      el.style.cssText='position:absolute;z-index:500;left:'+(37+(index%3)*61)+'px;top:'+(211+Math.floor((index%12)/3)*53)+'px';
+      el.style.cssText='position:absolute;z-index:'+(500+Number(opts.zIndexOffset||0))+';left:'+(37+(index%3)*61)+'px;top:'+(211+Math.floor((index%12)/3)*53)+'px';
       el.innerHTML=opts.icon?.html||'';
       el.setAttribute('aria-label',opts.title||'GPS');
       document.getElementById('map').append(el);
