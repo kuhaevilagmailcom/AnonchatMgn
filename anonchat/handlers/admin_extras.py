@@ -452,9 +452,10 @@ async def show_giveaway(ctx: Ctx, db: Database) -> None:
     rejected_total = int(totals.get("rejected") or 0)
     lines = [
         "🏆 <b>Розыгрыш Chat MGN</b>",
-        f"📅 Период: <b>{_date(data['start']).split()[0]} — 23.10.2026 23:59</b>",
+        f"📅 Период: <b>{_date(data['start']).split()[0]} — 22.10.2026 23:59</b>",
         "",
         f"✅ Засчитано: <b>{accepted_total:,}</b>",
+        f"♻️ Восстановлено из истории диалогов: <b>{int(totals.get('recovered') or 0):,}</b>",
         f"🚫 Отклонено как спам: <b>{rejected_total:,}</b>",
         "",
         "🏆 <b>Текущий рейтинг</b>",
