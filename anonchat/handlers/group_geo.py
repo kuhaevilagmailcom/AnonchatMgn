@@ -132,12 +132,11 @@ async def _send_round(bot, game: GroupGeoGame) -> None:
         return
 
     game.answers.clear()
-    game.round_started_at = time.time()
     a, b = players
     caption = (
         f"🗺 <b>GeoGuessr📍 · РАУНД {game.round_index + 1}/{len(game.place_ids)}</b>\n\n"
         f"👥 {_mention(a, game.inviter_name)} <b>VS</b> {_mention(b, game.player_b_name)}\n"
-        f"⏱ На ответ — <b>{GQ.GEO_ROUND_SECONDS // 60} минуты</b>\n\n"
+        f"⏱ На просмотр фото и ответ — <b>{GQ.GEO_ROUND_SECONDS // 60} минут</b>\n\n"
         "📸 <b>Где в Магнитогорске сделано это фото?</b>\n\n"
         "📍 Оба игрока отправляют геопозицию в этот чат.\n"
         "Чтобы бот гарантированно увидел ответ в группе, <b>ответь геопозицией на это фото</b>.\n"
@@ -152,6 +151,7 @@ async def _send_round(bot, game: GroupGeoGame) -> None:
             f'{caption}\n\n<a href="{html.escape(place.image_url, quote=True)}">Открыть фотографию</a>',
         )
 
+    game.round_started_at = time.time()
     round_index = game.round_index
 
     async def timeout() -> None:
@@ -277,7 +277,7 @@ async def cmd_group_geo(message: Message, bot: Bot) -> None:
     await message.answer(
         "🗺 <b>GeoGuessr📍 · ВЫЗОВ</b>\n\n"
         f"{_mention(game.inviter_id, game.inviter_name)} ищет соперника.\n"
-        f"🎮 <b>{ROUNDS} раунда</b> · ⏱ <b>2 минуты</b> на каждый.\n\n"
+        f"🎮 <b>{ROUNDS} раунда</b> · ⏱ <b>5 минут</b> на каждый.\n\n"
         "Первый, кто нажмёт <b>«Играть»</b>, станет вторым игроком.",
         reply_markup=_invite_keyboard(game.id),
     )
@@ -334,7 +334,7 @@ async def cb_group_geo_join(event: CallbackQuery, bot: Bot, db: Database) -> Non
         f"👤 {_mention(game.inviter_id, game.inviter_name)}\n"
         "<b>VS</b>\n"
         f"👤 {_mention(game.player_b_id, game.player_b_name)}\n\n"
-        f"🎮 {ROUNDS} раунда · по {GQ.GEO_ROUND_SECONDS // 60} минуты.",
+        f"🎮 {ROUNDS} раунда · по {GQ.GEO_ROUND_SECONDS // 60} минут.",
     )
     await _send_round(bot, game)
 
@@ -369,6 +369,10 @@ async def group_geo_location(message: Message, bot: Bot) -> None:
         return
     players = game.players
     if players is None or int(message.from_user.id) not in players:
+        return
+
+    if time.time() >= game.round_started_at + GQ.GEO_ROUND_SECONDS:
+        await _resolve_round(bot, game, game.round_index)
         return
 
     point = message.location
