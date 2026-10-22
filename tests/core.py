@@ -661,7 +661,7 @@ def test_geoquest_persistence_rewards_and_pair_limit() -> None:
     )
 
     assert GEO_ROUND_OPTIONS == (3, 5, 10)
-    assert GEO_ROUND_SECONDS == 120
+    assert GEO_ROUND_SECONDS == 300
     assert geo_reward(50) == 10
     assert geo_reward(250) == 8
     assert geo_reward(650) == 6
