@@ -822,7 +822,7 @@ class MiniAppServer:
             raise _json_error(503, "Не удалось отправить фото") from exc
         file_id = sent.photo[-1].file_id if sent.photo else ""
         unique_id = sent.photo[-1].file_unique_id if sent.photo else file_id
-        await self._count_miniapp_giveaway(uid, partner, sent.message_id, caption or f"photo:{unique_id}")
+        await self._count_miniapp_giveaway(uid, partner, sent.message_id, f"photo:{unique_id}:{caption}")
         await self._mirror_to_sender(uid, partner, sent.message_id)
         live_chat.publish(
             uid,
