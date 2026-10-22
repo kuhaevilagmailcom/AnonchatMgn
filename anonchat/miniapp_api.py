@@ -365,6 +365,20 @@ class MiniAppServer:
             event["media_url"] = self._signed_media_url(user_id, token)
         return event
 
+    async def _count_miniapp_giveaway(
+        self, sender_id: int, partner_id: int, message_id: int, body: str
+    ) -> None:
+        """Record a delivered Mini App message with a stable, collision-safe ID.
+
+        Telegram message_id belongs to the recipient's chat, so combine it with
+        that recipient; reserve a high-bit ID space distinct from Telegram input.
+        """
+        source = f"miniapp:{partner_id}:{message_id}".encode()
+        numeric_id = (1 << 62) | (
+            int.from_bytes(hashlib.sha256(source).digest()[:8], "big") & ((1 << 62) - 1)
+        )
+        await self.db.record_giveaway_message(sender_id, numeric_id, body)
+
     async def _mirror_to_sender(
         self, sender_id: int, partner_id: int, message_id: int
     ) -> None:
@@ -733,6 +747,7 @@ class MiniAppServer:
         except TelegramAPIError as exc:
             await self._chat_delivery_failed(uid, partner, False)
             raise _json_error(503, "Не удалось доставить сообщение") from exc
+        await self._count_miniapp_giveaway(uid, partner, sent.message_id, text)
         await self._mirror_to_sender(uid, partner, sent.message_id)
         live_chat.publish(
             uid,
@@ -806,6 +821,8 @@ class MiniAppServer:
             await self._chat_delivery_failed(uid, partner, False)
             raise _json_error(503, "Не удалось отправить фото") from exc
         file_id = sent.photo[-1].file_id if sent.photo else ""
+        unique_id = sent.photo[-1].file_unique_id if sent.photo else file_id
+        await self._count_miniapp_giveaway(uid, partner, sent.message_id, caption or f"photo:{unique_id}")
         await self._mirror_to_sender(uid, partner, sent.message_id)
         live_chat.publish(
             uid,
@@ -893,6 +910,8 @@ class MiniAppServer:
             await self._chat_delivery_failed(uid, partner, False)
             raise _json_error(503, "Не удалось отправить голосовое") from exc
         file_id = sent.voice.file_id if sent.voice else ""
+        unique_id = sent.voice.file_unique_id if sent.voice else file_id
+        await self._count_miniapp_giveaway(uid, partner, sent.message_id, f"voice:{unique_id}")
         await self._mirror_to_sender(uid, partner, sent.message_id)
         live_chat.publish(
             uid,
@@ -1004,6 +1023,8 @@ class MiniAppServer:
             await self._chat_delivery_failed(uid, partner, False)
             raise _json_error(503, "Не удалось отправить стикер") from exc
         sent_file_id = sent.sticker.file_id if sent.sticker else (file_id or "")
+        unique_id = sent.sticker.file_unique_id if sent.sticker else sent_file_id
+        await self._count_miniapp_giveaway(uid, partner, sent.message_id, f"sticker:{unique_id}")
         await self._mirror_to_sender(uid, partner, sent.message_id)
         if sticker_id == "brand-logo" and sent_file_id:
             self._brand_sticker_file_id = sent_file_id
