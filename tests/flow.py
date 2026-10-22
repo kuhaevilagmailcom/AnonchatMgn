@@ -1355,6 +1355,7 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
         item for item in reversed(group_out)
         if item.get("reply_markup") and "GeoGuessr" in str(item.get("text", ""))
     )
+    check("5 минут" in str(invite.get("text", "")), "вызов /gamegeo отводит 5 минут на раунд")
     join_data = invite["reply_markup"]["inline_keyboard"][0][0]["callback_data"]
     check(join_data.startswith("ggeo:join:"), "/gamegeo создаёт групповой вызов с кнопкой Играть")
 
