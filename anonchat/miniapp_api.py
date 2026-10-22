@@ -2085,7 +2085,7 @@ class MiniAppServer:
             partner,
             "🗺 <b>ТЕБЯ ЗОВУТ В GeoGuessr📍</b>\n\n"
             f"🎮 Раундов: <b>{total}</b>\n"
-            "⏱ На каждый раунд: <b>2 минуты</b>\n"
+            "⏱ На каждый раунд: <b>5 минут</b>\n"
             f"⭐ Чем точнее метка, тем больше награда — <b>до {await self.db.effective_xp_reward(10)} ⭐ за раунд</b>.\n"
             "Награды без дневного лимита."
             + "\n\n📍 Ответ: <b>📎 Скрепка → Геопозиция → выбрать любую точку "
@@ -2103,7 +2103,7 @@ class MiniAppServer:
             "geo",
             int(game["id"]),
             "GeoGuessr📍",
-            f"{total} раундов · 2 минуты на раунд",
+            f"{total} раундов · 5 минут на раунд",
         )
         return web.json_response({"ok": True, "message": "Приглашение отправлено"})
 
