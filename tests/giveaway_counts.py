@@ -35,8 +35,8 @@ async def test_new_messages_and_cutoff() -> None:
             # Up to 60 accepted messages in a rolling minute.
             with patch("anonchat.db.now", return_value=t + 10):
                 for number in range(6, 62):
-                    accepted = await db.record_giveaway_message(101, number, f"message {number}")
-                    assert accepted == (number <= 61 - 1), number
+                    assert await db.record_giveaway_message(101, number, f"message {number}")
+                assert not await db.record_giveaway_message(101, 62, "over the limit")
             with patch("anonchat.db.now", return_value=stamp(23, 0)):
                 assert not await db.record_giveaway_message(101, 100, "too late")
             counts = await db._fetchone(
