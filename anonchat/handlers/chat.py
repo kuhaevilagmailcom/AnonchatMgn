@@ -165,13 +165,25 @@ async def relay_to_partner(
         return
     # Розыгрыш: считаем только сообщения, успешно доставленные собеседнику.
     if copied is not None and message.message_id:
-        giveaway_body = (
-            message.text if message.text is not None else
-            message.caption if message.caption is not None else
-            " ".join((message.sticker.emoji or "стикер",)) if message.sticker else
-            "фото" if message.photo else "голосовое" if message.voice else
-            "видео" if message.video else "медиа"
-        )
+        # Different media files must not collapse into a shared "photo"/"voice" hash.
+        if message.text is not None:
+            giveaway_body = message.text
+        elif message.photo:
+            giveaway_body = f"photo:{message.photo[-1].file_unique_id}:{message.caption or ''}"
+        elif message.voice:
+            giveaway_body = f"voice:{message.voice.file_unique_id}"
+        elif message.sticker:
+            giveaway_body = f"sticker:{message.sticker.file_unique_id}"
+        elif message.video:
+            giveaway_body = f"video:{message.video.file_unique_id}:{message.caption or ''}"
+        elif message.audio:
+            giveaway_body = f"audio:{message.audio.file_unique_id}:{message.caption or ''}"
+        elif message.document:
+            giveaway_body = f"document:{message.document.file_unique_id}:{message.caption or ''}"
+        elif message.animation:
+            giveaway_body = f"animation:{message.animation.file_unique_id}:{message.caption or ''}"
+        else:
+            giveaway_body = message.caption or f"{message.content_type}:{message.message_id}"
         await ctx.db.record_giveaway_message(ctx.user_id, message.message_id, giveaway_body)
 
     METRICS.note_chat_relay()
