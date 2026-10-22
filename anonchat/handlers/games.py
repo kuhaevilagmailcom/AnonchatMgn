@@ -459,7 +459,7 @@ async def cb_geo(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
                 await ctx.reply(
                     "🗺 <b>Собеседник предлагает сыграть в GeoGuessr📍</b>\n\n"
                     f"🎮 Раундов: <b>{int(existing['total_questions'])}</b> · "
-                    "⏱ по <b>2 минуты</b> на место.",
+                    "⏱ по <b>5 минут</b> на место.",
                     K.geo_invite_keyboard(game_id),
                 )
             return
@@ -485,7 +485,7 @@ async def cb_geo(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         "📸 Бот показывает фотографию места, а вы с собеседником угадываете, "
         "где оно находится.\n\n"
         "⭐ <b>Чем ближе метка — тем больше звёзд.</b>\n"
-        "⏱ На каждый раунд — <b>2 минуты</b>.\n\n"
+        "⏱ На каждый раунд — <b>5 минут</b>.\n\n"
         "📍 Ответ отправляется через Telegram:\n"
         "<b>📎 Скрепка → Геопозиция → выбрать любую точку на карте → отправить.</b>\n\n"
         "🌍 Можно поставить метку где угодно — расстояние посчитается автоматически.\n\n"
@@ -539,7 +539,7 @@ async def cb_geo_rounds(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         partner,
         "🗺 <b>ТЕБЯ ЗОВУТ В GeoGuessr📍</b>\n\n"
         f"🎮 Раундов: <b>{total}</b>\n"
-        "⏱ На каждый раунд: <b>2 минуты</b>\n"
+        "⏱ На каждый раунд: <b>5 минут</b>\n"
         f"{reward_text}\n\n"
         "📍 Чтобы ответить: <b>📎 Скрепка → Геопозиция → выбери любую точку "
         "на карте → отправь.</b>\n"
@@ -558,13 +558,13 @@ async def cb_geo_rounds(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         "geo",
         int(game["id"]),
         "GeoGuessr📍",
-        f"{total} раундов · 2 минуты на раунд",
+        f"{total} раундов · 5 минут на раунд",
     )
     event_id = await db.add_miniapp_event(
         partner,
         "games",
         "Приглашение в «GeoGuessr📍»",
-        f"{total} раундов · по 2 минуты",
+        f"{total} раундов · по 5 минут",
         icon="geo",
         action="chat",
     )
@@ -572,7 +572,7 @@ async def cb_geo_rounds(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     await ctx.ack("Предложение отправлено")
     await ctx.reply(
         "✅ <b>Предложение отправлено</b>\n"
-        f"GeoGuessr📍 · {total} раундов · по 2 минуты."
+        f"GeoGuessr📍 · {total} раундов · по 5 минут."
     )
 
 
