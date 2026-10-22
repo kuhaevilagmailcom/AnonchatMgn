@@ -535,7 +535,7 @@ if (typeof window === 'undefined') {
           <h3>Угадай Магнитогорск</h3>
           <p>Смотри фото и ставь точку там, где, по-твоему, находится это место.</p>
           <div class="geo-rules">
-            <span>⏱ <b>2 минуты</b> на раунд</span>
+            <span>⏱ <b>5 минут</b> на раунд</span>
             <span>⭐ Чем ближе — тем больше звёзд</span>
             <span>📍 Ответ отправляется через Telegram</span>
           </div>
@@ -981,7 +981,7 @@ if (typeof window === 'undefined') {
       if(game.image_url)body+=`<div class="geo-game-photo"><img src="${esc(game.image_url)}" alt="Место в Магнитогорске"></div>`;
       if(game.status==='active'){
         body+=`
-          <div class="geo-live-head"><span>⏱ Осталось</span><strong data-geo-timer>2:00</strong></div>
+          <div class="geo-live-head"><span>⏱ Осталось</span><strong data-geo-timer>5:00</strong></div>
           <div class="geo-instructions">
             <strong>📍 Отправь выбранную точку через Telegram</strong>
             <p>📎 Скрепка → <b>Геопозиция</b> → передвинь карту → выбери любую точку → отправь.</p>
