@@ -58,7 +58,7 @@ def round_caption(row: Any, place: GQ.GeoPlace) -> str:
     )
     return (
         f"🗺 <b>GeoGuessr📍 · РАУНД {index + 1}/{total}</b>\n"
-        f"⏱ <b>Время: 2 минуты</b>\n\n"
+        f"⏱ <b>Время: {GQ.GEO_ROUND_SECONDS // 60} минут</b>\n\n"
         "📸 <b>Где в Магнитогорске сделано это фото?</b>\n\n"
         "📍 <b>Как отправить ответ:</b>\n"
         "1. Нажми <b>скрепку 📎</b> в Telegram\n"
