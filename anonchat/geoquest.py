@@ -18,7 +18,7 @@ from typing import Iterable
 
 GEO_ROUNDS = 3
 GEO_ROUND_OPTIONS = (3, 5, 10)
-GEO_ROUND_SECONDS = 120
+GEO_ROUND_SECONDS = 300
 GEO_TIE_METERS = 25.0
 
 # Награда теперь зависит не от победы как таковой, а от точности метки.
