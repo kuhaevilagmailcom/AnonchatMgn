@@ -568,6 +568,7 @@ class Database:
             await self._db.execute("PRAGMA busy_timeout=5000")
             await self._db.executescript(SCHEMA)
             await self._migrate()
+            await self._recount_giveaway_legacy()
             await self._backfill_message_daily_totals()
             await self._backfill_legacy_activity_xp()
             await self._db.commit()
@@ -1091,91 +1092,187 @@ class Database:
             raise RuntimeError("Database не инициализирован — сначала await Database.start()")
         return self._db
 
+
+    @staticmethod
+    def _giveaway_period() -> tuple[int, int]:
+        tz = ZoneInfo("Asia/Yekaterinburg")
+        return (
+            int(datetime(2026, 10, 16, tzinfo=tz).timestamp()),
+            int(datetime(2026, 10, 23, tzinfo=tz).timestamp()),
+        )
+
+    async def _giveaway_start(self) -> int:
+        default, _ = self._giveaway_period()
+        await self.db.execute(
+            "INSERT OR IGNORE INTO kv(key,value) VALUES('giveaway_2026_start',?)",
+            (str(default),),
+        )
+        row = await self._fetchone("SELECT value FROM kv WHERE key='giveaway_2026_start'")
+        return int(row["value"]) if row else default
+
+    async def _recount_giveaway_legacy(self) -> None:
+        """Re-evaluate old messages once under the relaxed anti-spam rules."""
+        marker = "giveaway_2026_recount_v2"
+        if await self.get_kv(marker) == "1":
+            return
+        start, end = self._giveaway_period()
+        events = await self._fetchall(
+            """SELECT id,user_id,created_at,content_hash,accepted,reason
+                 FROM giveaway_message_events
+                WHERE created_at>=? AND created_at<?
+                ORDER BY user_id,created_at,id""",
+            (start, end),
+        )
+        from collections import deque
+        # Legacy media only has a generic text digest, not a file fingerprint.
+        media = {hashlib.sha256(s.encode()).hexdigest()
+                 for s in ("фото", "голосовое", "видео", "медиа", "стикер")}
+        changes = []
+        previous_uid = None
+        accepted_times = deque()
+        previous_hash: dict[str, int] = {}
+        for event in events:
+            uid, ts = int(event["user_id"]), int(event["created_at"])
+            if uid != previous_uid:
+                previous_uid = uid
+                accepted_times.clear()
+                previous_hash.clear()
+            while accepted_times and accepted_times[0] <= ts - 60:
+                accepted_times.popleft()
+            digest = str(event["content_hash"] or "")
+            if not digest:
+                accepted, reason = 0, "empty"
+            elif digest not in media and ts - previous_hash.get(digest, -10**12) < 3:
+                accepted, reason = 0, "duplicate"
+            elif len(accepted_times) >= 60:
+                accepted, reason = 0, "rate_limit"
+            else:
+                accepted, reason = 1, ""
+                accepted_times.append(ts)
+                previous_hash[digest] = ts
+            if int(event["accepted"]) != accepted or (event["reason"] or "") != reason:
+                changes.append((accepted, reason, int(event["id"])))
+        if changes:
+            await self.db.executemany(
+                "UPDATE giveaway_message_events SET accepted=?,reason=? WHERE id=?",
+                changes,
+            )
+        await self.db.execute(
+            "INSERT OR REPLACE INTO kv(key,value) VALUES(?,'1')", (marker,)
+        )
+
     async def record_giveaway_message(self, user_id: int, message_id: int, body: str) -> bool:
-        """Count delivered chat messages for the October giveaway, filtering spam."""
+        """Count delivered chat messages from Telegram and the Mini App."""
         uid, mid = int(user_id), int(message_id)
         if uid <= 0 or mid <= 0:
             return False
-        now_ts = now()
-        tz = ZoneInfo("Asia/Yekaterinburg")
-        today_start = int(datetime(2026, 10, 16, 0, 0, tzinfo=tz).timestamp())
-        # Persist the campaign start once so a restart or date change cannot move it.
-        async with self.db.execute("SELECT value FROM kv WHERE key='giveaway_2026_start'") as cur:
-            row = await cur.fetchone()
-        if row is None:
-            await self.db.execute(
-                "INSERT OR IGNORE INTO kv(key,value) VALUES('giveaway_2026_start',?)",
-                (str(today_start),),
-            )
-            async with self.db.execute("SELECT value FROM kv WHERE key='giveaway_2026_start'") as cur:
-                row = await cur.fetchone()
-        start_ts = int(row[0]) if row else today_start
-        end_ts = int(datetime(2026, 10, 24, 0, 0, tzinfo=tz).timestamp())
-        if now_ts < start_ts or now_ts >= end_ts:
+        timestamp = now()
+        start = await self._giveaway_start()
+        _, end = self._giveaway_period()
+        if not start <= timestamp < end:
             return False
         normalized = " ".join(str(body or "").casefold().split())[:2000]
-        # Store only a digest, never the actual private message.
         digest = hashlib.sha256(normalized.encode("utf-8", "ignore")).hexdigest() if normalized else ""
         accepted, reason = 1, ""
         if not normalized:
             accepted, reason = 0, "empty"
+        elif await self._fetchone(
+            """SELECT 1 FROM giveaway_message_events
+                WHERE user_id=? AND content_hash=? AND accepted=1 AND created_at>?
+                LIMIT 1""", (uid, digest, timestamp - 3)
+        ):
+            accepted, reason = 0, "duplicate"
         else:
-            duplicate = await self._fetchone(
-                """SELECT 1 FROM giveaway_message_events
-                   WHERE user_id=? AND content_hash=? AND accepted=1 AND created_at>=?
-                   LIMIT 1""", (uid, digest, now_ts - 30)
+            recent = await self._fetchone(
+                """SELECT COUNT(*) AS n FROM giveaway_message_events
+                   WHERE user_id=? AND accepted=1 AND created_at>?""",
+                (uid, timestamp - 60),
             )
-            if duplicate:
-                accepted, reason = 0, "duplicate"
-            else:
-                recent = await self._fetchone(
-                    """SELECT COUNT(*) AS n FROM giveaway_message_events
-                       WHERE user_id=? AND accepted=1 AND created_at>=?""",
-                    (uid, now_ts - 60)
-                )
-                if int(recent["n"] or 0) >= 8:
-                    accepted, reason = 0, "rate_limit"
+            if int(recent["n"] or 0) >= 60:
+                accepted, reason = 0, "rate_limit"
         try:
             await self.db.execute(
                 """INSERT INTO giveaway_message_events
                    (user_id,message_id,created_at,content_hash,accepted,reason)
                    VALUES(?,?,?,?,?,?)""",
-                (uid, mid, now_ts, digest, accepted, reason),
+                (uid, mid, timestamp, digest, accepted, reason),
             )
         except aiosqlite.IntegrityError:
             return False
         return bool(accepted)
 
     async def giveaway_leaderboard(self) -> dict[str, Any]:
-        tz = ZoneInfo("Asia/Yekaterinburg")
-        now_ts = now()
-        today_start = int(datetime(2026, 10, 16, 0, 0, tzinfo=tz).timestamp())
-        async with self.db.execute("SELECT value FROM kv WHERE key='giveaway_2026_start'") as cur:
-            row = await cur.fetchone()
-        start_ts = int(row[0]) if row else today_start
-        end_ts = int(datetime(2026, 10, 24, 0, 0, tzinfo=tz).timestamp())
-        rows = await self._fetchall(
-            """SELECT u.user_id, u.nickname, u.support_stars,
-                      SUM(CASE WHEN e.accepted=1 THEN 1 ELSE 0 END) AS accepted,
-                      SUM(CASE WHEN e.accepted=0 THEN 1 ELSE 0 END) AS rejected
+        start = await self._giveaway_start()
+        _, end = self._giveaway_period()
+        events = await self._fetchall(
+            """SELECT u.user_id,u.nickname,u.support_stars,
+                      SUM(e.accepted) AS accepted,
+                      SUM(CASE WHEN e.accepted=0 THEN 1 ELSE 0 END) AS rejected,
+                      MIN(CASE WHEN e.accepted=1 THEN e.created_at END) AS first_at
                  FROM giveaway_message_events e
                  JOIN users u ON u.user_id=e.user_id
                 WHERE e.created_at>=? AND e.created_at<?
-                GROUP BY u.user_id
-                ORDER BY accepted DESC, MIN(e.created_at) ASC, u.user_id ASC
-                LIMIT 100""", (start_ts, end_ts)
+                GROUP BY u.user_id""",
+            (start, end),
         )
-        total = await self._fetchone(
-            """SELECT COUNT(*) AS total,
-                      SUM(CASE WHEN accepted=1 THEN 1 ELSE 0 END) AS accepted,
-                      SUM(CASE WHEN accepted=0 THEN 1 ELSE 0 END) AS rejected
-                 FROM giveaway_message_events WHERE created_at>=? AND created_at<?""",
-            (start_ts, end_ts)
+        # Completed dialogs contain real sent counts. Only restore messages
+        # absent from the giveaway-event log, never double-count logged spam.
+        # Boundary-crossing dialogs cannot be dated accurately and are excluded.
+        gaps = await self._fetchall(
+            """WITH parts AS (
+                   SELECT started_at,ended_at,user_a AS user_id,msg_a AS sent
+                     FROM matches WHERE started_at>=? AND ended_at IS NOT NULL AND ended_at<?
+                   UNION ALL
+                   SELECT started_at,ended_at,user_b AS user_id,msg_b AS sent
+                     FROM matches WHERE started_at>=? AND ended_at IS NOT NULL AND ended_at<?
+               )
+               SELECT p.user_id,
+                      SUM(MAX(0,p.sent-(
+                        SELECT COUNT(*) FROM giveaway_message_events e
+                        WHERE e.user_id=p.user_id
+                          AND e.created_at>=p.started_at AND e.created_at<=p.ended_at
+                      ))) AS recovered,
+                      MIN(p.started_at) AS first_at
+                 FROM parts p WHERE p.sent>0 GROUP BY p.user_id""",
+            (start, end, start, end),
         )
-        return {
-            "start": start_ts, "end": end_ts, "rows": rows,
-            "total": dict(total) if total else {"total": 0, "accepted": 0, "rejected": 0},
-        }
+        by_user: dict[int, dict[str, Any]] = {}
+        for r in events:
+            uid = int(r["user_id"])
+            by_user[uid] = dict(
+                user_id=uid, nickname=r["nickname"], support_stars=r["support_stars"],
+                accepted=int(r["accepted"] or 0), rejected=int(r["rejected"] or 0),
+                recovered=0, first_at=int(r["first_at"]) if r["first_at"] is not None else end,
+            )
+        for r in gaps:
+            uid, missing = int(r["user_id"]), int(r["recovered"] or 0)
+            if missing <= 0:
+                continue
+            if uid not in by_user:
+                user = await self._fetchone(
+                    "SELECT user_id,nickname,support_stars FROM users WHERE user_id=?", (uid,)
+                )
+                if user is None:
+                    continue
+                by_user[uid] = dict(
+                    user_id=uid, nickname=user["nickname"], support_stars=user["support_stars"],
+                    accepted=0, rejected=0, recovered=0, first_at=end,
+                )
+            entry = by_user[uid]
+            entry["accepted"] += missing
+            entry["recovered"] += missing
+            entry["first_at"] = min(entry["first_at"], int(r["first_at"]))
+        rows = sorted(
+            (v for v in by_user.values() if v["accepted"] > 0),
+            key=lambda v: (-v["accepted"], v["first_at"], v["user_id"]),
+        )[:100]
+        totals = dict(
+            accepted=sum(v["accepted"] for v in by_user.values()),
+            rejected=sum(v["rejected"] for v in by_user.values()),
+            recovered=sum(v["recovered"] for v in by_user.values()),
+        )
+        totals["total"] = totals["accepted"] + totals["rejected"]
+        return {"start": start, "end": end, "rows": rows, "total": totals}
 
     async def _fetchone(self, sql: str, params: Sequence[Any] = ()) -> aiosqlite.Row | None:
         async with self.db.execute(sql, params) as cur:
