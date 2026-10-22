@@ -29,6 +29,7 @@ jobs:
           - moderation_channel
           - admin_miniapp
           - admin_reliability
+          - giveaway_counts
           - load_smoke
           - game_resilience
           - dice_duels
