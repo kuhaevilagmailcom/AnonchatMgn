@@ -39,3 +39,35 @@ def test_nft_draw_cannot_change_winner_or_accept_late_entries() -> None:
             assert await _draw(path, closed) == winner
 
     asyncio.run(run())
+
+def test_nft_settings_and_campaign_close() -> None:
+    import aiosqlite
+    from anonchat.handlers.nft_giveaway import _active, _save_campaign
+
+    class FakeDB:
+        def __init__(self, path):
+            self.path = path
+
+        async def _fetchone(self, query, params=()):
+            async with aiosqlite.connect(self.path) as con:
+                con.row_factory = aiosqlite.Row
+                return await (await con.execute(query, params)).fetchone()
+
+    async def run() -> None:
+        with TemporaryDirectory() as temp:
+            db = FakeDB(Path(temp) / "test.db")
+            then = int(time.time()) + 300
+            created = await _save_campaign(
+                db, "First NFT", then, "01.11.2026 20:00 МГН",
+                "https://example.com/rules",
+            )
+            active = await _active(db)
+            assert active == created
+            try:
+                await _save_campaign(db, "Second NFT", then, "02.11.2026 20:00 МГН",
+                                     "https://example.com/rules")
+                assert False, "Overwriting a running draw must be rejected"
+            except ValueError:
+                pass
+
+    asyncio.run(run())
