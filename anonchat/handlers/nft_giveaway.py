@@ -11,7 +11,7 @@ import re
 import secrets
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit
 
 import aiosqlite
@@ -61,7 +61,7 @@ def _configured() -> Giveaway | None:
         close_at = int(dt.timestamp())
     except (TypeError, ValueError, OverflowError):
         return None
-    return Giveaway(campaign, nft_url, close_at, dt.strftime("%d.%m.%Y %H:%M МГН"))
+    return Giveaway(campaign, nft_url, close_at, dt.astimezone(timezone(timedelta(hours=5))).strftime("%d.%m.%Y %H:%M МГН"))
 
 
 def _message(g: Giveaway) -> str:
