@@ -473,7 +473,8 @@ async def nft_send(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         await ctx.ack("Розыгрыш не настроен или уже завершился", alert=True)
         return
     ids = await db.broadcast_ids()
-    key = f"nft-giveaway-{g.campaign}"
+    preview_id = int(event.message.message_id) if event.message else 0
+    key = f"nft-giveaway-{g.campaign}-{ctx.user_id}-{preview_id}"
     created = await create_job(
         db, key=key, actor=ctx.user_id, message=_message(g),
         button_action="nft", recipient_ids=ids,

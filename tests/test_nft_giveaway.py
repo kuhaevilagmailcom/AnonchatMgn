@@ -12,7 +12,7 @@ from anonchat.commands import COMMANDS
 from anonchat.db import Database
 from anonchat.handlers.nft_giveaway import (
     TICKET_PRICE_RUB, Giveaway, _count, _draw, _issue_paid_ticket,
-    _keyboard, _save_campaign, _start_ticket_purchase, _ticket_numbers,
+    _keyboard, _save_campaign, _start_ticket_purchase, _ticket_numbers, nft_send,
     valid_nft_url,
 )
 from anonchat import keyboards as K
@@ -149,6 +149,43 @@ def test_nft_url_validation() -> None:
     assert not valid_nft_url("https://t.me/nft/Test-1\nInjected")
 
 
+def test_admin_can_repeat_campaign_broadcast_from_a_new_preview() -> None:
+    async def run() -> None:
+        with TemporaryDirectory() as temp:
+            db = await Database(Path(temp) / "test.db").start()
+            try:
+                await db.ensure_user(123, "owner", "Owner")
+                await db.ensure_user(456, "buyer", "Buyer")
+                await _save_campaign(
+                    db, "https://t.me/nft/Test-repeat", int(time.time()) + 300, "soon"
+                )
+                ctx = SimpleNamespace(
+                    user_id=123,
+                    is_owner=True,
+                    can=lambda _permission: True,
+                    ack=AsyncMock(),
+                    reply=AsyncMock(),
+                )
+
+                first_preview = SimpleNamespace(
+                    message=SimpleNamespace(message_id=101), ack=AsyncMock()
+                )
+                second_preview = SimpleNamespace(
+                    message=SimpleNamespace(message_id=102), ack=AsyncMock()
+                )
+                await nft_send(first_preview, ctx, db)
+                await nft_send(first_preview, ctx, db)
+                await nft_send(second_preview, ctx, db)
+
+                row = await db._fetchone(
+                    "SELECT COUNT(*) AS count FROM admin_broadcast_jobs"
+                )
+                assert row and int(row["count"]) == 2
+            finally:
+                await db.close()
+    asyncio.run(run())
+
+
 if __name__ == "__main__":
     test_nft_keyboard_sells_ticket_and_old_sbp35_support_is_gone()
     test_each_verified_payment_issues_one_ticket_and_retries_are_idempotent()
@@ -156,4 +193,5 @@ if __name__ == "__main__":
     test_non_ticket_or_wrong_price_payment_never_issues_ticket()
     test_draw_uses_paid_tickets_and_is_stable()
     test_nft_url_validation()
+    test_admin_can_repeat_campaign_broadcast_from_a_new_preview()
     print("ok NFT tickets: RollyPay 35 RUB, multiple tickets, idempotency and draw")
