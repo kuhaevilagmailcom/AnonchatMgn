@@ -34,7 +34,6 @@ CB_TOP = "act:top"
 CB_SUPPORT = "act:support"
 CB_SUPPORT_STARS = "act:support:stars"
 CB_SUPPORT_RUB = "act:support:rub"
-CB_SUPPORT_SBP_35 = "act:support:sbp35"
 CB_SUPPORT_SBP_CHECK_PREFIX = "act:support:sbpcheck:"
 CB_CONTINUE = "onboard:continue"
 CB_NICK = "cfg:nick:ask"
@@ -168,8 +167,7 @@ def support_method_keyboard(*, sbp_enabled: bool) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     _button(b, "Telegram Stars", callback_data=CB_SUPPORT_STARS, icon="stars", style="success")
     if sbp_enabled:
-        _button(b, "Поддержать 35 ₽ · СБП", callback_data=CB_SUPPORT_SBP_35, icon="money", style="success")
-        _button(b, "Другая сумма · СБП", callback_data=CB_SUPPORT_RUB, icon="money", style="primary")
+        _button(b, "Рубли · СБП", callback_data=CB_SUPPORT_RUB, icon="money", style="primary")
     _button(b, "Назад", callback_data=CB_MENU, icon="home")
     b.adjust(1)
     return b.as_markup()
