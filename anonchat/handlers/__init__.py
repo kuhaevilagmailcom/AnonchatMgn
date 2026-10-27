@@ -14,6 +14,8 @@ from .polls import router as polls_router
 from .reports import router as reports_router
 from .settings import router as settings_router
 from .support import router as support_router
+from .nft_giveaway import router as nft_giveaway_router
+from .nft_setup import router as nft_setup_router
 from .raiony import router as raiony_router
 
 
@@ -23,6 +25,8 @@ def get_routers() -> list[Router]:
         settings_router,  # /profile, /settings, FSM ника
         raiony_router,   # районы: проверенные XTR-платежи и складские приглашения
         support_router,   # добровольная поддержка через Telegram Stars
+        nft_setup_router,  # настройка NFT через личные сообщения
+        nft_giveaway_router,  # бесплатный NFT-розыгрыш и его админ-команды
         reports_router,   # /report, FSM комментария жалобы
         games_router,     # игры внутри активного диалога
         admin_extras_router,  # компактные админские экраны

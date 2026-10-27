@@ -39,6 +39,7 @@ COMMANDS = (
     BotCommand(command="help", description="❓ Как пользоваться"),
     BotCommand(command="rules", description="📜 Правила"),
     BotCommand(command="support", description="⭐ Поддержать проект"),
+    BotCommand(command="nft", description="🎁 NFT-розыгрыш"),
     BotCommand(command="ref", description="🎁 Пригласить друга"),
     BotCommand(command="unblock", description="🔓 Сбросить скрытых собеседников"),
     BotCommand(command="forget", description="🧹 Удалить мой профиль"),
@@ -52,6 +53,10 @@ GROUP_COMMANDS = (
 #: админские команды, которые видны в меню модератора
 ADMIN_VISIBLE = (
     BotCommand(command="admin", description="🛡 Панель модератора"),
+    BotCommand(command="nft_setup", description="🎁 Настроить NFT-розыгрыш"),
+    BotCommand(command="nft_broadcast", description="📣 Рассылка NFT-розыгрыша"),
+    BotCommand(command="nft_stats", description="🎟 Участники NFT-розыгрыша"),
+    BotCommand(command="nft_draw", description="🏆 Выбрать победителя NFT"),
 )
 
 #: работают, если ввести руками (и из панели), но в меню не показываются

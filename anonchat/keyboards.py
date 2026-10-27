@@ -828,6 +828,7 @@ _BROADCAST_SIMPLE_ACTIONS: dict[str, tuple[str, str, str, str]] = {
     "menu": ("Главное меню", CB_MENU, "home", ""),
     "connect": ("Найти собеседника", CB_CONNECT, "view", "success"),
     "profile": ("Профиль", CB_PROFILE, "profile", "primary"),
+    "nft": ("Получить билет", "nft:join", "ticket", "primary"),
 }
 
 
