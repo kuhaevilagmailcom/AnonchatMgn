@@ -95,7 +95,55 @@ async def _init(path) -> None:
                 drawn_at INTEGER NOT NULL
             )
         """)
+        await con.execute("""
+            CREATE TABLE IF NOT EXISTS nft_giveaway_campaigns (
+                campaign TEXT PRIMARY KEY,
+                prize TEXT NOT NULL,
+                close_at INTEGER NOT NULL,
+                deadline TEXT NOT NULL,
+                rules_url TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            )
+        """)
         await con.commit()
+
+
+async def _active(db: Database) -> Giveaway | None:
+    await _init(db.path)
+    row = await db._fetchone(
+        "SELECT campaign,prize,close_at,deadline,rules_url FROM nft_giveaway_campaigns "
+        "ORDER BY created_at DESC,campaign DESC LIMIT 1"
+    )
+    if row:
+        return Giveaway(
+            str(row["campaign"]), str(row["prize"]), int(row["close_at"]),
+            str(row["deadline"]), str(row["rules_url"]),
+        )
+    return _configured()
+
+
+async def _save_campaign(db: Database, prize: str, close_at: int,
+                         deadline: str, rules_url: str) -> Giveaway:
+    await _init(db.path)
+    campaign = "nft-" + secrets.token_hex(8)
+    async with aiosqlite.connect(db.path, timeout=15.0) as con:
+        await con.execute("PRAGMA busy_timeout=10000")
+        await con.execute("BEGIN IMMEDIATE")
+        row = await (await con.execute(
+            "SELECT close_at FROM nft_giveaway_campaigns "
+            "ORDER BY created_at DESC,campaign DESC LIMIT 1"
+        )).fetchone()
+        if row and int(row[0]) > time.time():
+            await con.rollback()
+            raise ValueError("Сначала дождись завершения текущего розыгрыша.")
+        await con.execute(
+            "INSERT INTO nft_giveaway_campaigns("
+            "campaign,prize,close_at,deadline,rules_url,created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (campaign, prize, close_at, deadline, rules_url, int(time.time())),
+        )
+        await con.commit()
+    return Giveaway(campaign, prize, close_at, deadline, rules_url)
 
 
 async def _ticket(path, campaign: str, user_id: int) -> int | None:
@@ -182,8 +230,8 @@ async def _draw(path, g: Giveaway) -> tuple[int, int, int] | None:
 
 
 @router.message(Command("nft"))
-async def nft_open(message: Message, ctx: Ctx) -> None:
-    g = _configured()
+async def nft_open(message: Message, ctx: Ctx, db: Database) -> None:
+    g = await _active(db)
     if not g:
         await ctx.reply("NFT-розыгрыш пока не открыт.")
         return
@@ -192,7 +240,7 @@ async def nft_open(message: Message, ctx: Ctx) -> None:
 
 @router.callback_query(F.data == "nft:join")
 async def nft_join(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
-    g = _configured()
+    g = await _active(db)
     if not g:
         await ctx.ack("Розыгрыш пока не открыт.", alert=True)
         return
@@ -212,7 +260,7 @@ async def nft_join(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
 
 @router.callback_query(F.data == "nft:status")
 async def nft_status(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
-    g = _configured()
+    g = await _active(db)
     if not g:
         await ctx.ack("Розыгрыш пока не открыт.", alert=True)
         return
@@ -227,10 +275,10 @@ async def nft_status(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
 
 
 @router.message(Command("nft_broadcast"))
-async def nft_broadcast_preview(message: Message, ctx: Ctx) -> None:
+async def nft_broadcast_preview(message: Message, ctx: Ctx, db: Database) -> None:
     if not (ctx.is_owner or ctx.can("broadcast")):
         return
-    g = _configured()
+    g = await _active(db)
     if not g:
         await ctx.reply(
             "Для NFT-розыгрыша укажи в окружении NFT_GIVEAWAY_PRIZE, "
@@ -261,7 +309,7 @@ async def nft_send(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     if not (ctx.is_owner or ctx.can("broadcast")):
         await ctx.ack("Нет доступа", alert=True)
         return
-    g = _configured()
+    g = await _active(db)
     if not g or time.time() >= g.close_at:
         await ctx.ack("Розыгрыш не настроен или уже завершился", alert=True)
         return
@@ -282,7 +330,7 @@ async def nft_send(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
 async def nft_admin_stats(message: Message, ctx: Ctx, db: Database) -> None:
     if not (ctx.is_owner or ctx.can("stats")):
         return
-    g = _configured()
+    g = await _active(db)
     if not g:
         await ctx.reply("NFT-розыгрыш пока не настроен.")
         return
@@ -295,7 +343,7 @@ async def nft_admin_stats(message: Message, ctx: Ctx, db: Database) -> None:
 async def nft_admin_draw(message: Message, ctx: Ctx, db: Database) -> None:
     if not ctx.is_owner:
         return
-    g = _configured()
+    g = await _active(db)
     if not g:
         await ctx.reply("NFT-розыгрыш пока не настроен.")
         return
