@@ -39,7 +39,6 @@ COMMANDS = (
     BotCommand(command="help", description="❓ Как пользоваться"),
     BotCommand(command="rules", description="📜 Правила"),
     BotCommand(command="support", description="⭐ Поддержать проект"),
-    BotCommand(command="sbp35", description="💳 СБП · поддержать на 35 ₽"),
     BotCommand(command="nft", description="🎁 NFT-розыгрыш"),
     BotCommand(command="ref", description="🎁 Пригласить друга"),
     BotCommand(command="unblock", description="🔓 Сбросить скрытых собеседников"),
