@@ -1,4 +1,4 @@
-"""Добровольная поддержка проекта через Telegram Stars."""
+"""Добровольная поддержка проекта через Telegram Stars и СБП."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ MIN_STARS = 1
 MAX_STARS = 10_000
 MIN_RUB = 1
 MAX_RUB = 1_000_000_000
+QUICK_SBP_AMOUNT_RUB = 35
 
 
 class SupportStates(StatesGroup):
@@ -34,7 +35,7 @@ async def show_support_methods(ctx: Ctx, state: FSMContext, *, edit: bool) -> No
     await state.clear()
     body = (
         "💖 <b>Поддержать проект</b>\n\n"
-        "Выбери способ поддержки. После этого введёшь сумму."
+        "Выбери способ поддержки. Для СБП можно сразу оплатить 35 ₽."
     )
     kb = K.support_method_keyboard(sbp_enabled=ctx.cfg.rollypay_enabled)
     if edit and await ctx.edit(body, kb):
@@ -88,6 +89,65 @@ async def cb_support_rub(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> N
     await ask_support_amount(ctx, state, method="rub", edit=True)
 
 
+async def _send_support_sbp_payment(ctx: Ctx, db: Database, amount: int) -> None:
+    """Create an isolated 35-ruble or custom-value support invoice via existing RollyPay."""
+    if not MIN_RUB <= amount <= MAX_RUB:
+        await ctx.reply("Недопустимая сумма.")
+        return
+    if not ctx.cfg.rollypay_enabled:
+        await ctx.reply("СБП временно недоступна.")
+        return
+
+    order_id = f"support-bot-{ctx.user_id}-{secrets.token_hex(6)}"
+    local_id = ""
+    try:
+        local_id = await db.create_sbp_order(
+            order_id=order_id,
+            user_id=ctx.user_id,
+            kind="support",
+            amount_rub=amount,
+            premium_days=0,
+        )
+        payment = await create_payment(
+            ctx.cfg,
+            order_id=order_id,
+            amount=Decimal(amount),
+            description="АНОН МГН · Поддержка проекта",
+            user_id=ctx.user_id,
+        )
+        payment_id = str(payment["payment_id"])
+        pay_url = str(payment["pay_url"])
+        await db.attach_sbp_provider_payment(local_id, payment_id, pay_url)
+    except (RollyPayError, KeyError, ValueError):
+        if local_id:
+            try:
+                await db.set_sbp_status(local_id, "create_failed")
+            except Exception:
+                pass
+        await ctx.reply("Не удалось создать платёж СБП. Попробуй позже.")
+        return
+
+    await ctx.reply(
+        "💳 <b>Поддержка АНОН МГН через СБП</b>\n\n"
+        f"К оплате: <b>{amount} ₽</b>.\n"
+        "Это добровольная поддержка проекта, не покупка NFT-билета.",
+        K.support_sbp_keyboard(payment_id, pay_url, amount),
+    )
+
+
+@router.message(Command("sbp35"))
+async def cmd_support_sbp_35(message: Message, ctx: Ctx, db: Database, state: FSMContext) -> None:
+    await state.clear()
+    await _send_support_sbp_payment(ctx, db, QUICK_SBP_AMOUNT_RUB)
+
+
+@router.callback_query(F.data == K.CB_SUPPORT_SBP_35)
+async def cb_support_sbp_35(event: CallbackQuery, ctx: Ctx, db: Database, state: FSMContext) -> None:
+    await ctx.ack()
+    await state.clear()
+    await _send_support_sbp_payment(ctx, db, QUICK_SBP_AMOUNT_RUB)
+
+
 @router.message(SupportStates.amount, F.text, ~F.text.startswith("/"))
 async def support_amount(
     message: Message, ctx: Ctx, state: FSMContext, db: Database
@@ -130,41 +190,8 @@ async def support_amount(
         await ctx.reply("СБП временно недоступна.")
         return
 
-    order_id = f"support-bot-{ctx.user_id}-{secrets.token_hex(6)}"
-    local_id = ""
-    try:
-        local_id = await db.create_sbp_order(
-            order_id=order_id,
-            user_id=ctx.user_id,
-            kind="support",
-            amount_rub=amount,
-            premium_days=0,
-        )
-        payment = await create_payment(
-            ctx.cfg,
-            order_id=order_id,
-            amount=Decimal(amount),
-            description="АНОН МГН · Поддержка проекта",
-            user_id=ctx.user_id,
-        )
-        payment_id = str(payment["payment_id"])
-        pay_url = str(payment["pay_url"])
-        await db.attach_sbp_provider_payment(local_id, payment_id, pay_url)
-    except (RollyPayError, KeyError, ValueError):
-        if local_id:
-            try:
-                await db.set_sbp_status(local_id, "create_failed")
-            except Exception:
-                pass
-        await ctx.reply("Не удалось создать платёж СБП. Попробуй позже.")
-        return
-
     await state.clear()
-    await ctx.reply(
-        "💳 <b>Поддержка проекта</b>\n\n"
-        f"К оплате: <b>{amount} ₽</b>.",
-        K.support_sbp_keyboard(payment_id, pay_url, amount),
-    )
+    await _send_support_sbp_payment(ctx, db, amount)
 
 
 @router.callback_query(F.data.startswith(K.CB_SUPPORT_SBP_CHECK_PREFIX))
@@ -177,7 +204,12 @@ async def cb_support_sbp_check(
         await ctx.ack("Платёж не найден", alert=True)
         return
     if str(local["status"] or "").lower() == "paid":
-        await ctx.ack("Платёж уже учтён")
+        await ctx.ack("Платёж уже подтверждён")
+        await ctx.reply(
+            "✅ <b>СБП-оплата подтверждена</b>\n\n"
+            f"Сумма: <b>{int(local['amount_rub'])} ₽</b>.\n"
+            f"Номер операции: <code>{local['order_id']}</code>"
+        )
         return
 
     try:
@@ -212,7 +244,8 @@ async def cb_support_sbp_check(
     await ctx.ack("Спасибо за поддержку!")
     await ctx.reply(
         "💖 <b>Спасибо за поддержку АНОН МГН!</b>\n\n"
-        f"Получено: <b>{int(local['amount_rub'])} ₽</b>.",
+        f"Получено: <b>{int(local['amount_rub'])} ₽</b>.\n"
+        f"Номер операции: <code>{local['order_id']}</code>",
         K.menu_keyboard(ctx.mm.status(ctx.user_id)),
     )
 
