@@ -1,4 +1,4 @@
-"""Управление бесплатным NFT-розыгрышем из личного чата владельца."""
+"""Управление NFT-розыгрышем с платными билетами из чата владельца."""
 from __future__ import annotations
 
 import html
@@ -89,5 +89,5 @@ async def nft_setup_deadline(message: Message, ctx: Ctx, state: FSMContext, db: 
     await ctx.reply(
         "<b>Розыгрыш создан!</b>\n\n" + html.escape(_message(giveaway))
         + "\n\nДля рассылки введи /nft_broadcast и подтверди отправку.",
-        _keyboard(),
+        _keyboard(ctx.cfg.rollypay_enabled),
     )

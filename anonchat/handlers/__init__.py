@@ -26,7 +26,7 @@ def get_routers() -> list[Router]:
         raiony_router,   # районы: проверенные XTR-платежи и складские приглашения
         support_router,   # добровольная поддержка через Telegram Stars
         nft_setup_router,  # настройка NFT через личные сообщения
-        nft_giveaway_router,  # бесплатный NFT-розыгрыш и его админ-команды
+        nft_giveaway_router,  # NFT-розыгрыш: билеты через RollyPay и админ-команды
         reports_router,   # /report, FSM комментария жалобы
         games_router,     # игры внутри активного диалога
         admin_extras_router,  # компактные админские экраны

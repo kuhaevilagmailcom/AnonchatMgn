@@ -33,6 +33,7 @@ jobs:
           - load_smoke
           - game_resilience
           - dice_duels
+          - test_nft_giveaway
           - test_city_capture
           - test_city_game_api
           - test_city_roads
