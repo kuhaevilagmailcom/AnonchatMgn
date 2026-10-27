@@ -128,8 +128,8 @@ async def _send_support_sbp_payment(ctx: Ctx, db: Database, amount: int) -> None
         return
 
     await ctx.reply(
-        "💳 <b>Поддержка АНОН МГН через СБП</b>\\n\\n"
-        f"К оплате: <b>{amount} ₽</b>.\\n"
+        "💳 <b>Поддержка АНОН МГН через СБП</b>\n\n"
+        f"К оплате: <b>{amount} ₽</b>.\n"
         "Это добровольная поддержка проекта, не покупка NFT-билета.",
         K.support_sbp_keyboard(payment_id, pay_url, amount),
     )
@@ -204,7 +204,12 @@ async def cb_support_sbp_check(
         await ctx.ack("Платёж не найден", alert=True)
         return
     if str(local["status"] or "").lower() == "paid":
-        await ctx.ack("Платёж уже учтён")
+        await ctx.ack("Платёж уже подтверждён")
+        await ctx.reply(
+            "✅ <b>СБП-оплата подтверждена</b>\n\n"
+            f"Сумма: <b>{int(local['amount_rub'])} ₽</b>.\n"
+            f"Номер операции: <code>{local['order_id']}</code>"
+        )
         return
 
     try:
@@ -239,7 +244,8 @@ async def cb_support_sbp_check(
     await ctx.ack("Спасибо за поддержку!")
     await ctx.reply(
         "💖 <b>Спасибо за поддержку АНОН МГН!</b>\n\n"
-        f"Получено: <b>{int(local['amount_rub'])} ₽</b>.",
+        f"Получено: <b>{int(local['amount_rub'])} ₽</b>.\n"
+        f"Номер операции: <code>{local['order_id']}</code>",
         K.menu_keyboard(ctx.mm.status(ctx.user_id)),
     )
 
