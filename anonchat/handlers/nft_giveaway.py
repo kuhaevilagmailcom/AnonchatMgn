@@ -29,22 +29,30 @@ router = Router(name="nft_giveaway")
 @dataclass(frozen=True)
 class Giveaway:
     campaign: str
-    prize: str
+    nft_url: str
     close_at: int
     deadline: str
-    rules_url: str
+
+
+def valid_nft_url(url: str) -> bool:
+    if not url or len(url) > 1000 or any(ch.isspace() for ch in url):
+        return False
+    try:
+        parsed = urlsplit(url)
+        return bool(
+            parsed.scheme == "https" and parsed.hostname
+            and not parsed.username and not parsed.password
+        )
+    except ValueError:
+        return False
 
 
 def _configured() -> Giveaway | None:
-    """Отправка и сбор участников недоступны без приза, срока и правил."""
+    """Ссылка на NFT и срок — единственные обязательные настройки."""
     campaign = os.getenv("NFT_GIVEAWAY_ID", "nft-2026").strip().lower()
-    prize = os.getenv("NFT_GIVEAWAY_PRIZE", "").strip()
+    nft_url = os.getenv("NFT_GIVEAWAY_URL", "").strip()
     deadline = os.getenv("NFT_GIVEAWAY_CLOSE_AT", "").strip()
-    rules_url = os.getenv("NFT_GIVEAWAY_RULES_URL", "").strip()
-    if not re.fullmatch(r"[a-z0-9_-]{1,32}", campaign) or not prize or len(prize) > 160:
-        return None
-    parsed = urlsplit(rules_url)
-    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+    if not re.fullmatch(r"[a-z0-9_-]{1,32}", campaign) or not valid_nft_url(nft_url):
         return None
     try:
         dt = datetime.fromisoformat(deadline)
@@ -53,17 +61,16 @@ def _configured() -> Giveaway | None:
         close_at = int(dt.timestamp())
     except (TypeError, ValueError, OverflowError):
         return None
-    return Giveaway(campaign, prize, close_at, dt.strftime("%d.%m.%Y %H:%M %Z"), rules_url)
+    return Giveaway(campaign, nft_url, close_at, dt.strftime("%d.%m.%Y %H:%M МГН"))
 
 
 def _message(g: Giveaway) -> str:
     return (
         "🎁 Розыгрыш NFT\n\n"
-        "Для участия нужен 1 билет. Он бесплатный.\n"
-        "Нажми кнопку ниже, чтобы получить билет.\n\n"
-        f"Приз: {g.prize}\n"
-        f"Участвовать до: {g.deadline}\n"
-        f"Правила: {g.rules_url}"
+        f"NFT: {g.nft_url}\n\n"
+        "Один бесплатный билет на участника.\n"
+        f"Приём заявок до {g.deadline}.\n\n"
+        "Нажми кнопку ниже, чтобы получить билет."
     )
 
 
@@ -111,19 +118,21 @@ async def _init(path) -> None:
 async def _active(db: Database) -> Giveaway | None:
     await _init(db.path)
     row = await db._fetchone(
-        "SELECT campaign,prize,close_at,deadline,rules_url FROM nft_giveaway_campaigns "
+        "SELECT campaign,prize,close_at,deadline FROM nft_giveaway_campaigns "
         "ORDER BY created_at DESC,campaign DESC LIMIT 1"
     )
     if row:
         return Giveaway(
             str(row["campaign"]), str(row["prize"]), int(row["close_at"]),
-            str(row["deadline"]), str(row["rules_url"]),
+            str(row["deadline"]),
         )
     return _configured()
 
 
-async def _save_campaign(db: Database, prize: str, close_at: int,
-                         deadline: str, rules_url: str) -> Giveaway:
+async def _save_campaign(db: Database, nft_url: str, close_at: int,
+                         deadline: str) -> Giveaway:
+    if not valid_nft_url(nft_url):
+        raise ValueError("Нужна ссылка HTTPS на NFT.")
     await _init(db.path)
     campaign = "nft-" + secrets.token_hex(8)
     async with aiosqlite.connect(db.path, timeout=15.0) as con:
@@ -140,10 +149,19 @@ async def _save_campaign(db: Database, prize: str, close_at: int,
             "INSERT INTO nft_giveaway_campaigns("
             "campaign,prize,close_at,deadline,rules_url,created_at) "
             "VALUES (?,?,?,?,?,?)",
-            (campaign, prize, close_at, deadline, rules_url, int(time.time())),
+            (campaign, nft_url, close_at, deadline, "", int(time.time())),
         )
         await con.commit()
-    return Giveaway(campaign, prize, close_at, deadline, rules_url)
+    return Giveaway(campaign, nft_url, close_at, deadline)
+
+
+async def _ticket_number(con: aiosqlite.Connection, campaign: str, entry_id: int) -> int:
+    # Stable sequence starting at 1 in each campaign, even when old global IDs are large.
+    row = await (await con.execute(
+        "SELECT COUNT(*) FROM nft_giveaway_entries WHERE campaign=? AND id<=?",
+        (campaign, entry_id),
+    )).fetchone()
+    return int(row[0])
 
 
 async def _ticket(path, campaign: str, user_id: int) -> int | None:
@@ -154,7 +172,7 @@ async def _ticket(path, campaign: str, user_id: int) -> int | None:
             (campaign, user_id),
         )
         row = await cur.fetchone()
-        return int(row[0]) if row else None
+        return await _ticket_number(con, campaign, int(row[0])) if row else None
 
 
 async def _join(path, g: Giveaway, user_id: int) -> tuple[int | None, bool]:
@@ -168,7 +186,7 @@ async def _join(path, g: Giveaway, user_id: int) -> tuple[int | None, bool]:
         )).fetchone()
         if row:
             await con.commit()
-            return int(row[0]), False
+            return await _ticket_number(con, g.campaign, int(row[0])), False
         winner = await (await con.execute(
             "SELECT 1 FROM nft_giveaway_winners WHERE campaign=?", (g.campaign,)
         )).fetchone()
@@ -179,8 +197,9 @@ async def _join(path, g: Giveaway, user_id: int) -> tuple[int | None, bool]:
             "INSERT INTO nft_giveaway_entries(campaign,user_id,joined_at) VALUES (?,?,?)",
             (g.campaign, user_id, int(time.time())),
         )
+        ticket = await _ticket_number(con, g.campaign, int(cur.lastrowid))
         await con.commit()
-        return int(cur.lastrowid), True
+        return ticket, True
 
 
 async def _count(path, campaign: str) -> int:
@@ -205,7 +224,9 @@ async def _draw(path, g: Giveaway) -> tuple[int, int, int] | None:
         )).fetchone()
         if prior:
             await con.commit()
-            return int(prior[0]), int(prior[1]), int(prior[2])
+            return (int(prior[0]),
+                    await _ticket_number(con, g.campaign, int(prior[1])),
+                    int(prior[2]))
         if time.time() < g.close_at:
             await con.commit()
             return None
@@ -225,8 +246,9 @@ async def _draw(path, g: Giveaway) -> tuple[int, int, int] | None:
             "VALUES (?,?,?,?,?)",
             (g.campaign, user_id, entry_id, total, int(time.time())),
         )
+        ticket = await _ticket_number(con, g.campaign, entry_id)
         await con.commit()
-        return user_id, entry_id, total
+        return user_id, ticket, total
 
 
 @router.message(Command("nft"))
@@ -253,8 +275,8 @@ async def nft_join(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         return
     await ctx.ack("Билет получен!" if created else "Билет у тебя уже есть.")
     await ctx.reply(
-        f"🎟 <b>Твой билет №{ticket}</b>\n\n"
-        "Ты участвуешь в розыгрыше NFT. Повторно записываться не нужно."
+        f"🎟 <b>Билет №{ticket}</b>\n\n"
+        "Ты участвуешь в розыгрыше NFT. Сохрани номер билета."
     )
 
 
@@ -281,9 +303,8 @@ async def nft_broadcast_preview(message: Message, ctx: Ctx, db: Database) -> Non
     g = await _active(db)
     if not g:
         await ctx.reply(
-            "Для NFT-розыгрыша укажи в окружении NFT_GIVEAWAY_PRIZE, "
-            "NFT_GIVEAWAY_CLOSE_AT и NFT_GIVEAWAY_RULES_URL. "
-            "Без приза, даты и правил рассылку запускать нельзя."
+            "Сначала создай розыгрыш через /nft_setup: "
+            "нужна только ссылка на NFT и дата окончания."
         )
         return
     if time.time() >= g.close_at:
