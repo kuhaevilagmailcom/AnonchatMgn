@@ -1,10 +1,9 @@
-"""Настройка бесплатного NFT-розыгрыша владельцем через личные сообщения боту."""
+"""Управление бесплатным NFT-розыгрышем из личного чата владельца."""
 from __future__ import annotations
 
 import html
 import time
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlsplit
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -14,15 +13,14 @@ from aiogram.types import Message
 
 from ..actions import Ctx
 from ..db import Database
-from .nft_giveaway import _active, _keyboard, _message, _save_campaign
+from .nft_giveaway import _active, _keyboard, _message, _save_campaign, valid_nft_url
 
 router = Router(name="nft_setup")
 
 
 class NFTSetup(StatesGroup):
-    prize = State()
+    link = State()
     deadline = State()
-    rules = State()
 
 
 @router.message(Command("nft_setup"))
@@ -31,13 +29,13 @@ async def nft_admin_setup(message: Message, ctx: Ctx, state: FSMContext, db: Dat
         return
     current = await _active(db)
     if current and current.close_at > time.time():
-        await ctx.reply("Розыгрыш уже идёт. Следующий можно создать после завершения текущего.")
+        await ctx.reply("Розыгрыш уже идёт. Следующий можно создать после окончания.")
         return
-    await state.set_state(NFTSetup.prize)
+    await state.set_state(NFTSetup.link)
     await ctx.reply(
-        "🎁 <b>Новый NFT-розыгрыш</b>\n\n"
-        "Напиши название NFT, который разыгрываем.\n"
-        "Отмена: /nft_cancel"
+        "🎁 <b>Розыгрыш NFT</b>\n\n"
+        "Пришли ссылку на NFT (https://...).\n"
+        "Для отмены: /nft_cancel"
     )
 
 
@@ -46,27 +44,27 @@ async def nft_admin_cancel(message: Message, ctx: Ctx, state: FSMContext) -> Non
     if not ctx.is_owner:
         return
     await state.clear()
-    await ctx.reply("Настройка розыгрыша отменена.")
+    await ctx.reply("Настройка отменена.")
 
 
-@router.message(NFTSetup.prize, F.text, ~F.text.startswith("/"))
-async def nft_setup_prize(message: Message, ctx: Ctx, state: FSMContext) -> None:
+@router.message(NFTSetup.link, F.text, ~F.text.startswith("/"))
+async def nft_setup_link(message: Message, ctx: Ctx, state: FSMContext) -> None:
     if not ctx.is_owner:
         return
-    prize = (message.text or "").strip()
-    if not 3 <= len(prize) <= 160:
-        await ctx.reply("Название NFT должно содержать от 3 до 160 символов.")
+    url = (message.text or "").strip()
+    if not valid_nft_url(url):
+        await ctx.reply("Отправь корректную ссылку на NFT, начинающуюся с https://")
         return
-    await state.update_data(nft_prize=prize)
+    await state.update_data(nft_url=url)
     await state.set_state(NFTSetup.deadline)
     await ctx.reply(
-        "Когда заканчивается приём заявок?\n"
-        "Отправь дату по Магнитогорску: <b>01.11.2026 20:00</b>"
+        "До какого числа можно участвовать?\n"
+        "Например: <b>01.11.2026 20:00</b> (время Магнитогорска)."
     )
 
 
 @router.message(NFTSetup.deadline, F.text, ~F.text.startswith("/"))
-async def nft_setup_deadline(message: Message, ctx: Ctx, state: FSMContext) -> None:
+async def nft_setup_deadline(message: Message, ctx: Ctx, state: FSMContext, db: Database) -> None:
     if not ctx.is_owner:
         return
     try:
@@ -75,34 +73,13 @@ async def nft_setup_deadline(message: Message, ctx: Ctx, state: FSMContext) -> N
         if date.timestamp() <= time.time():
             raise ValueError("Past date")
     except ValueError:
-        await ctx.reply("Нужна будущая дата: <b>01.11.2026 20:00</b> (время МГН).")
-        return
-    await state.update_data(
-        nft_close_at=int(date.timestamp()),
-        nft_deadline=date.strftime("%d.%m.%Y %H:%M МГН"),
-    )
-    await state.set_state(NFTSetup.rules)
-    await ctx.reply(
-        "Пришли ссылку HTTPS на правила розыгрыша. "
-        "В правилах укажи NFT, сроки, выбор победителя и получение приза."
-    )
-
-
-@router.message(NFTSetup.rules, F.text, ~F.text.startswith("/"))
-async def nft_setup_rules(message: Message, ctx: Ctx, state: FSMContext, db: Database) -> None:
-    if not ctx.is_owner:
-        return
-    url = (message.text or "").strip()
-    parsed = urlsplit(url)
-    if (len(url) > 1000 or parsed.scheme != "https" or not parsed.hostname
-            or parsed.username or parsed.password):
-        await ctx.reply("Нужна ссылка с https:// на публичные правила.")
+        await ctx.reply("Введи будущую дату, например <b>01.11.2026 20:00</b> (МГН).")
         return
     data = await state.get_data()
     try:
-        g = await _save_campaign(
-            db, str(data["nft_prize"]), int(data["nft_close_at"]),
-            str(data["nft_deadline"]), url,
+        giveaway = await _save_campaign(
+            db, str(data["nft_url"]),
+            int(date.timestamp()), date.strftime("%d.%m.%Y %H:%M МГН"),
         )
     except (KeyError, ValueError) as exc:
         await state.clear()
@@ -110,7 +87,7 @@ async def nft_setup_rules(message: Message, ctx: Ctx, state: FSMContext, db: Dat
         return
     await state.clear()
     await ctx.reply(
-        "<b>Розыгрыш создан</b>\n\n" + html.escape(_message(g))
-        + "\n\nТеперь введи /nft_broadcast, посмотри рассылку и подтверди отправку.",
+        "<b>Розыгрыш создан!</b>\n\n" + html.escape(_message(giveaway))
+        + "\n\nДля рассылки введи /nft_broadcast и подтверди отправку.",
         _keyboard(),
     )
