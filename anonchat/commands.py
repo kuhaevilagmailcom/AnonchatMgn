@@ -55,6 +55,7 @@ ADMIN_VISIBLE = (
     BotCommand(command="admin", description="🛡 Панель модератора"),
     BotCommand(command="nft_setup", description="🎁 Настроить NFT-розыгрыш"),
     BotCommand(command="nft_broadcast", description="📣 Рассылка NFT-розыгрыша"),
+    BotCommand(command="nft_post", description="📢 Опубликовать NFT в канале"),
     BotCommand(command="nft_stats", description="🎟 Участники NFT-розыгрыша"),
     BotCommand(command="nft_draw", description="🏆 Выбрать победителя NFT"),
 )
