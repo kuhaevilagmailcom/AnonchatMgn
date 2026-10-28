@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import aiosqlite
 
@@ -14,14 +16,14 @@ from anonchat.handlers.nft_channel import (
 from anonchat.handlers.nft_giveaway import Giveaway
 
 
-def test_channel_target_uses_configured_channel(monkeypatch) -> None:
-    monkeypatch.delenv("NFT_POST_CHANNEL", raising=False)
-    assert channel_target("@anonmgn") == "@anonmgn"
-    assert channel_target("invalid channel") == ""
-    monkeypatch.setenv("NFT_POST_CHANNEL", "@MyTestChannel")
-    assert channel_target("@anonmgn") == "@MyTestChannel"
-    monkeypatch.setenv("NFT_POST_CHANNEL", "https://evil.example")
-    assert channel_target("@anonmgn") == ""
+def test_channel_target_uses_configured_channel() -> None:
+    with patch.dict(os.environ, {"NFT_POST_CHANNEL": ""}):
+        assert channel_target("@anonmgn") == "@anonmgn"
+        assert channel_target("invalid channel") == ""
+    with patch.dict(os.environ, {"NFT_POST_CHANNEL": "@MyTestChannel"}):
+        assert channel_target("@anonmgn") == "@MyTestChannel"
+    with patch.dict(os.environ, {"NFT_POST_CHANNEL": "https://evil.example"}):
+        assert channel_target("@anonmgn") == ""
 
 
 def test_giveaway_post_is_short_and_links_to_bot() -> None:
@@ -65,3 +67,10 @@ def test_one_post_per_campaign_and_channel_even_under_concurrency() -> None:
                 assert row == (121, "posted")
 
     asyncio.run(run())
+
+
+if __name__ == "__main__":
+    test_channel_target_uses_configured_channel()
+    test_giveaway_post_is_short_and_links_to_bot()
+    test_one_post_per_campaign_and_channel_even_under_concurrency()
+    print("NFT channel post tests passed")
