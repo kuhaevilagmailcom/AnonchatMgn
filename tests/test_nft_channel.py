@@ -5,13 +5,15 @@ import asyncio
 import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import aiosqlite
 
 from anonchat.handlers.nft_channel import (
     _claim_post, _record_post, channel_target,
     giveaway_post_text, participation_keyboard,
+    nft_post_confirm, nft_post_preview,
 )
 from anonchat.handlers.nft_giveaway import Giveaway
 
@@ -69,8 +71,59 @@ def test_one_post_per_campaign_and_channel_even_under_concurrency() -> None:
     asyncio.run(run())
 
 
+def test_channel_publication_attaches_real_inline_button() -> None:
+    async def run() -> None:
+        with TemporaryDirectory() as folder:
+            g = Giveaway("campaign-1", "https://t.me/nft/Prize-12",
+                         2_000_000_000, "31.12.2026 20:00 МГН")
+            bot = SimpleNamespace(
+                get_me=AsyncMock(return_value=SimpleNamespace(username="AnonChatMgn_Bot")),
+                send_message=AsyncMock(return_value=SimpleNamespace(message_id=75)),
+            )
+            ctx = SimpleNamespace(
+                is_owner=True,
+                cfg=SimpleNamespace(subscription_channel="@anonmgn"),
+                bot=bot,
+                reply=AsyncMock(),
+                ack=AsyncMock(),
+            )
+            db = SimpleNamespace(path=Path(folder) / "channel.db")
+            message = SimpleNamespace(chat=SimpleNamespace(type="private"))
+            event = SimpleNamespace(
+                data="nft:post:campaign-1",
+                message=message,
+            )
+            with patch.dict(os.environ, {"NFT_POST_CHANNEL": ""}), patch(
+                "anonchat.handlers.nft_channel._active",
+                new=AsyncMock(return_value=g),
+            ):
+                await nft_post_preview(message, ctx, db)
+                preview = ctx.reply.await_args.args[1]
+                assert preview.inline_keyboard[0][0].text == "Участвовать"
+                assert preview.inline_keyboard[0][0].url == (
+                    "https://t.me/AnonChatMgn_Bot?start=nft"
+                )
+                assert preview.inline_keyboard[1][0].callback_data == "nft:post:campaign-1"
+
+                await nft_post_confirm(event, ctx, db)
+                assert bot.send_message.await_count == 1
+                kwargs = bot.send_message.await_args.kwargs
+                assert kwargs["chat_id"] == "@anonmgn"
+                assert kwargs["text"] == giveaway_post_text(g)
+                real_button = kwargs["reply_markup"].inline_keyboard[0][0]
+                assert real_button.text == "Участвовать"
+                assert real_button.url == "https://t.me/AnonChatMgn_Bot?start=nft"
+
+                # Repeated confirmation must not post twice.
+                await nft_post_confirm(event, ctx, db)
+                assert bot.send_message.await_count == 1
+
+    asyncio.run(run())
+
+
 if __name__ == "__main__":
     test_channel_target_uses_configured_channel()
     test_giveaway_post_is_short_and_links_to_bot()
     test_one_post_per_campaign_and_channel_even_under_concurrency()
+    test_channel_publication_attaches_real_inline_button()
     print("NFT channel post tests passed")
