@@ -130,7 +130,9 @@ async def nft_post_preview(message: Message, ctx: Ctx, db: Database) -> None:
         await ctx.reply("Невозможно построить ссылку на бота.")
         return
     body = giveaway_post_text(g)
+    # Preview shows the same real Telegram URL button as the channel post.
     markup = InlineKeyboardMarkup(inline_keyboard=[
+        *participation_keyboard(me.username).inline_keyboard,
         [InlineKeyboardButton(
             text=f"Опубликовать в {channel}",
             callback_data=f"nft:post:{g.campaign}",
@@ -140,8 +142,8 @@ async def nft_post_preview(message: Message, ctx: Ctx, db: Database) -> None:
     await ctx.reply(
         f"<b>Предпросмотр для {html.escape(channel)}</b>\n\n"
         + body
-        + f"\n\nКнопка: <a href=\"https://t.me/{me.username}?start=nft\">Участвовать</a>\n"
-        "Публикация будет отправлена только после подтверждения.",
+        + "\n\nКнопка «Участвовать» ниже будет прикреплена прямо к посту "
+        "в канале. Для публикации нажми «Опубликовать».",
         markup,
     )
 
