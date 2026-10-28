@@ -13,7 +13,7 @@ from urllib.parse import urlsplit
 
 import aiosqlite
 from aiogram import F, Router
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from ..actions import Ctx
@@ -302,6 +302,18 @@ async def _draw(path, g: Giveaway) -> tuple[int, int, int] | None:
         ticket = await _ticket_number(con, g.campaign, entry_id)
         await con.commit()
         return user_id, ticket, total
+
+
+@router.message(CommandStart(), F.text.regexp(r"^/start(?:@\w+)? nft$"))
+async def nft_from_channel(message: Message, ctx: Ctx, db: Database) -> None:
+    """Direct link from a Telegram channel opens the giveaway, not the main menu."""
+    g = await _active(db)
+    if not g:
+        await ctx.reply("NFT-розыгрыш пока не открыт.")
+        return
+    await ctx.reply(html.escape(_message(g)), _keyboard(
+        ctx.cfg.rollypay_enabled and time.time() < g.close_at
+    ))
 
 
 @router.message(Command("nft"))
