@@ -13,7 +13,8 @@ from anonchat.db import Database
 from anonchat.handlers.nft_giveaway import (
     TICKET_PRICE_RUB, Giveaway, _count, _draw, _issue_paid_ticket,
     _keyboard, _save_campaign, _start_ticket_purchase, _ticket_numbers, nft_send,
-    _active, _finish_now, _pending_nft_orders, nft_finish_preview, nft_finish_confirm,
+    _active, _finish_now, _pending_nft_orders, _reconcile_pending_nft_orders,
+    nft_finish_preview, nft_finish_confirm,
     valid_nft_url,
 )
 from anonchat import keyboards as K
@@ -328,6 +329,53 @@ def test_early_finish_requires_owner_confirmation() -> None:
     asyncio.run(run())
 
 
+def test_reconcile_older_provider_payments_before_early_draw() -> None:
+    async def run() -> None:
+        with TemporaryDirectory() as temp:
+            db = await Database(Path(temp) / "test.db").start()
+            try:
+                await db.ensure_user(111, None, "Buyer")
+                await db.ensure_user(222, None, "Buyer")
+                g = await _save_campaign(
+                    db, "https://t.me/nft/Reconcile",
+                    int(time.time()) + 86400, "soon",
+                )
+                for idx, uid in enumerate((111, 222), 1):
+                    local = await db.create_sbp_order(
+                        order_id=f"reconcile-{idx}", user_id=uid,
+                        kind=f"nft_ticket:{g.campaign}", amount_rub=35,
+                    )
+                    await db.attach_sbp_provider_payment(
+                        local, f"reconcile-payment-{idx}", f"https://pay.example/{idx}",
+                    )
+                cfg = SimpleNamespace(rollypay_enabled=True)
+
+                async def provider(_cfg, payment_id):
+                    index = int(payment_id.rsplit("-", 1)[-1])
+                    return {
+                        "payment_id": payment_id,
+                        "order_id": f"reconcile-{index}",
+                        "amount": "35.00",
+                        "currency": "RUB",
+                        "status": "paid" if index == 1 else "failed",
+                    }
+
+                with patch(
+                    "anonchat.handlers.nft_giveaway.get_payment",
+                    new=AsyncMock(side_effect=provider),
+                ):
+                    await _reconcile_pending_nft_orders(db, cfg, g.campaign)
+                assert await _pending_nft_orders(db.path, g.campaign) == 0
+                assert await _ticket_numbers(db.path, g.campaign, 111) == [1]
+                assert await _ticket_numbers(db.path, g.campaign, 222) == []
+                result, winner, remaining = await _finish_now(db.path, g)
+                assert result == "drawn" and winner == (111, 1, 1)
+                assert remaining == 0
+            finally:
+                await db.close()
+    asyncio.run(run())
+
+
 if __name__ == "__main__":
     test_nft_keyboard_sells_ticket_and_old_sbp35_support_is_gone()
     test_each_verified_payment_issues_one_ticket_and_retries_are_idempotent()
@@ -340,4 +388,5 @@ if __name__ == "__main__":
     test_early_end_stops_intake_but_waits_for_pending_invoices()
     test_purchase_does_not_create_provider_invoice_after_early_close()
     test_early_finish_requires_owner_confirmation()
+    test_reconcile_older_provider_payments_before_early_draw()
     print("ok NFT tickets: RollyPay 35 RUB, multiple tickets, idempotency and draw")
