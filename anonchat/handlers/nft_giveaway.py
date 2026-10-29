@@ -65,6 +65,13 @@ def _configured() -> Giveaway | None:
 
 
 def _message(g: Giveaway) -> str:
+    if time.time() >= g.close_at:
+        return (
+            "🎁 Розыгрыш NFT\n\n"
+            f"NFT: {g.nft_url}\n\n"
+            "Приём новых заявок завершён.\n"
+            "Проверь свои билеты кнопкой ниже."
+        )
     return (
         "🎁 Розыгрыш NFT\n\n"
         f"NFT: {g.nft_url}\n\n"
@@ -265,6 +272,83 @@ async def _count(path, campaign: str) -> int:
         return int(row[0])
 
 
+async def _pending_nft_orders(path, campaign: str) -> int:
+    """Invoices that may still be paid and must be reconciled before a draw."""
+    await _init(path)
+    async with aiosqlite.connect(path, timeout=15.0) as con:
+        row = await (await con.execute(
+            "SELECT COUNT(*) FROM sbp_payments WHERE kind=? "
+            "AND status IN ('creating','awaiting_payment','pending','processing','created')",
+            (f"nft_ticket:{campaign}",),
+        )).fetchone()
+        return int(row[0])
+
+
+async def _finish_now(path, g: Giveaway) -> tuple[str, tuple[int, int, int] | None, int]:
+    """Owner-only finalization: close intake, then draw once no unsettled SBP orders remain.
+
+    Closing and winner selection share one IMMEDIATE transaction. An existing
+    winner is returned unchanged. Existing payment links must be reconciled
+    before selecting anyone, so confirmed buyers cannot be excluded silently.
+    """
+    await _init(path)
+    closed_at = int(time.time()) - 1
+    deadline = datetime.fromtimestamp(
+        closed_at, timezone(timedelta(hours=5))
+    ).strftime("%d.%m.%Y %H:%M МГН")
+    async with aiosqlite.connect(path, timeout=15.0) as con:
+        await con.execute("PRAGMA busy_timeout=10000")
+        await con.execute("BEGIN IMMEDIATE")
+        prior = await (await con.execute(
+            "SELECT user_id, entry_id, entries_count FROM nft_giveaway_winners "
+            "WHERE campaign=?", (g.campaign,),
+        )).fetchone()
+        if prior:
+            ticket = await _ticket_number(con, g.campaign, int(prior[1]))
+            await con.commit()
+            return "already_drawn", (int(prior[0]), ticket, int(prior[2])), 0
+
+        await con.execute(
+            "INSERT INTO nft_giveaway_campaigns "
+            "(campaign, prize, close_at, deadline, rules_url, created_at) "
+            "VALUES (?,?,?,?,?,?) ON CONFLICT(campaign) DO UPDATE SET "
+            "close_at=MIN(close_at, excluded.close_at), "
+            "deadline=excluded.deadline",
+            (g.campaign, g.nft_url, closed_at, deadline, "", closed_at),
+        )
+        pending = int((await (await con.execute(
+            "SELECT COUNT(*) FROM sbp_payments WHERE kind=? "
+            "AND status IN ('creating','awaiting_payment','pending','processing','created')",
+            (f"nft_ticket:{g.campaign}",),
+        )).fetchone())[0])
+        if pending:
+            await con.commit()
+            return "pending", None, pending
+
+        total = int((await (await con.execute(
+            "SELECT COUNT(*) FROM nft_giveaway_tickets WHERE campaign=?",
+            (g.campaign,),
+        )).fetchone())[0])
+        if not total:
+            await con.commit()
+            return "empty", None, 0
+
+        picked = await (await con.execute(
+            "SELECT user_id,id FROM nft_giveaway_tickets WHERE campaign=? "
+            "ORDER BY id LIMIT 1 OFFSET ?",
+            (g.campaign, secrets.randbelow(total)),
+        )).fetchone()
+        user_id, entry_id = int(picked[0]), int(picked[1])
+        await con.execute(
+            "INSERT INTO nft_giveaway_winners "
+            "(campaign,user_id,entry_id,entries_count,drawn_at) VALUES (?,?,?,?,?)",
+            (g.campaign, user_id, entry_id, total, int(time.time())),
+        )
+        ticket = await _ticket_number(con, g.campaign, entry_id)
+        await con.commit()
+        return "drawn", (user_id, ticket, total), 0
+
+
 async def _draw(path, g: Giveaway) -> tuple[int, int, int] | None:
     """Результат фиксируется один раз атомарно; повторный вызов его не меняет."""
     await _init(path)
@@ -281,6 +365,14 @@ async def _draw(path, g: Giveaway) -> tuple[int, int, int] | None:
                     await _ticket_number(con, g.campaign, int(prior[1])),
                     int(prior[2]))
         if time.time() < g.close_at:
+            await con.commit()
+            return None
+        pending = int((await (await con.execute(
+            "SELECT COUNT(*) FROM sbp_payments WHERE kind=? "
+            "AND status IN ('creating','awaiting_payment','pending','processing','created')",
+            (f"nft_ticket:{g.campaign}",),
+        )).fetchone())[0])
+        if pending:
             await con.commit()
             return None
         total = int((await (await con.execute(
@@ -322,7 +414,9 @@ async def nft_open(message: Message, ctx: Ctx, db: Database) -> None:
     if not g:
         await ctx.reply("NFT-розыгрыш пока не открыт.")
         return
-    await ctx.reply(html.escape(_message(g)), _keyboard(ctx.cfg.rollypay_enabled))
+    await ctx.reply(html.escape(_message(g)), _keyboard(
+        ctx.cfg.rollypay_enabled and time.time() < g.close_at
+    ))
 
 
 async def _start_ticket_purchase(ctx: Ctx, db: Database) -> None:
@@ -346,6 +440,13 @@ async def _start_ticket_purchase(ctx: Ctx, db: Database) -> None:
             order_id=order_id, user_id=ctx.user_id,
             kind=f"nft_ticket:{g.campaign}", amount_rub=TICKET_PRICE_RUB,
         )
+        # An owner may close the campaign while the buyer is opening checkout.
+        # Do not create an external payment if intake closed meanwhile.
+        current = await _active(db)
+        if current is None or current.campaign != g.campaign or time.time() >= current.close_at:
+            await db.set_sbp_status(local_id, "cancelled")
+            await ctx.reply("Приём новых билетов завершён.")
+            return
         payment = await create_payment(
             ctx.cfg, order_id=order_id, amount=Decimal(TICKET_PRICE_RUB),
             description="АНОН МГН · Билет NFT-розыгрыша", user_id=ctx.user_id,
@@ -511,6 +612,91 @@ async def nft_admin_stats(message: Message, ctx: Ctx, db: Database) -> None:
                     f"Закрытие: {html.escape(g.deadline)}.")
 
 
+@router.message(Command("nft_finish"))
+async def nft_finish_preview(message: Message, ctx: Ctx, db: Database) -> None:
+    """Give the owner an explicit confirmation before ending a public campaign."""
+    if not ctx.is_owner or message.chat.type != "private":
+        return
+    g = await _active(db)
+    if g is None:
+        await ctx.reply("Нет активного NFT-розыгрыша.")
+        return
+    count = await _count(db.path, g.campaign)
+    pending = await _pending_nft_orders(db.path, g.campaign)
+    body = (
+        "🏁 <b>Досрочно подвести итоги NFT?</b>\n\n"
+        f"Билетов: <b>{count}</b>\n"
+        f"Непроверенных СБП-заказов: <b>{pending}</b>\n\n"
+        "После подтверждения приём новых билетов закроется. "
+        "Победитель будет выбран случайно и сохранён навсегда.\n\n"
+        "Важно: в опубликованном посте была другая дата. "
+        "Объяви исправление подписчикам."
+    )
+    if pending:
+        body += (
+            "\n\nЕсли есть неоплаченные или неподтверждённые счета, "
+            "бот сначала остановит приём билетов и не выберет победителя, "
+            "пока платежи не будут проверены."
+        )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="Завершить и подвести итоги",
+            callback_data=f"nft:finish:{g.campaign}",
+        )],
+        [InlineKeyboardButton(text="Отмена", callback_data="nft:finish_cancel")],
+    ])
+    await ctx.reply(body, keyboard)
+
+
+@router.callback_query(F.data == "nft:finish_cancel")
+async def nft_finish_cancel(event: CallbackQuery, ctx: Ctx) -> None:
+    if not ctx.is_owner:
+        await ctx.ack("Недостаточно прав", alert=True)
+        return
+    await ctx.ack("Отменено")
+    await ctx.edit("Досрочное завершение отменено.")
+
+
+@router.callback_query(F.data.startswith("nft:finish:"))
+async def nft_finish_confirm(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    if not ctx.is_owner or not event.message or event.message.chat.type != "private":
+        await ctx.ack("Недостаточно прав", alert=True)
+        return
+    g = await _active(db)
+    campaign = (event.data or "").removeprefix("nft:finish:")
+    if not g or campaign != g.campaign:
+        await ctx.ack("Предпросмотр устарел. Вызови /nft_finish заново.", alert=True)
+        return
+    status, result, pending = await _finish_now(db.path, g)
+    await ctx.ack()
+    if status == "pending":
+        await ctx.reply(
+            "⛔ <b>Приём новых билетов остановлен.</b>\n\n"
+            f"Осталось непроверенных заказов СБП: <b>{pending}</b>.\n"
+            "Попроси покупателей проверить оплату кнопкой в боте. "
+            "Когда все счета будут разрешены, снова введи /nft_finish."
+        )
+        return
+    if status == "empty":
+        await ctx.reply(
+            "Приём закрыт, но оплаченных билетов нет. "
+            "Победителя выбирать не из кого."
+        )
+        return
+    if result is None:
+        await ctx.reply("Не удалось подвести итоги. Проверь состояние розыгрыша.")
+        return
+    user_id, ticket, total = result
+    await ctx.reply(
+        ("🏆 <b>Итоги уже подведены</b>\n\n" if status == "already_drawn"
+         else "🏆 <b>Розыгрыш завершён досрочно!</b>\n\n")
+        + f"Победитель: ID <code>{user_id}</code>\n"
+        f"Билет: <b>№{ticket}</b>\n"
+        f"Всего билетов: <b>{total}</b>\n\n"
+        "Результат сохранён. Опубликуй его в канале и уведомь победителя."
+    )
+
+
 @router.message(Command("nft_draw"))
 async def nft_admin_draw(message: Message, ctx: Ctx, db: Database) -> None:
     if not ctx.is_owner:
@@ -521,8 +707,11 @@ async def nft_admin_draw(message: Message, ctx: Ctx, db: Database) -> None:
         return
     result = await _draw(db.path, g)
     if result is None:
-        await ctx.reply("Выбрать победителя можно после закрытия приёма заявок, "
-                        "если есть участники.")
+        await ctx.reply(
+            "Итоги пока недоступны: розыгрыш не закрыт, нет билетов "
+            "или есть незавершённые платежи СБП. "
+            "Для досрочного завершения используй /nft_finish."
+        )
         return
     user_id, ticket, total = result
     await ctx.reply(
