@@ -1,6 +1,7 @@
 """NFT-розыгрыш с билетами по 35 RUB через RollyPay."""
 from __future__ import annotations
 
+import asyncio
 import html
 import os
 import re
@@ -284,6 +285,53 @@ async def _pending_nft_orders(path, campaign: str) -> int:
         return int(row[0])
 
 
+async def _reconcile_pending_nft_orders(db: Database, cfg, campaign: str) -> None:
+    """Best-effort provider verification before an early draw.
+
+    Only provider receipts with matching order, payment ID, RUB amount and
+    paid status may mint a ticket. Uncertain orders remain pending and block
+    winner selection. Limit the batch so a Telegram callback is responsive.
+    """
+    await _init(db.path)
+    rows = await db._fetchall(
+        "SELECT payment_id,order_id,amount_rub FROM sbp_payments "
+        "WHERE kind=? AND status IN "
+        "('awaiting_payment','pending','processing','created') "
+        "AND payment_id NOT LIKE 'creating:%' "
+        "ORDER BY created_at LIMIT 12",
+        (f"nft_ticket:{campaign}",),
+    )
+    if not rows or not cfg.rollypay_enabled:
+        return
+    limit = asyncio.Semaphore(4)
+
+    async def check(row) -> None:
+        async with limit:
+            payment_id = str(row["payment_id"])
+            try:
+                remote = await get_payment(cfg, payment_id)
+                value = Decimal(str(remote.get("amount", remote.get("payment_amount"))))
+                valid = (
+                    str(remote.get("payment_id") or "") == payment_id
+                    and str(remote.get("order_id") or "") == str(row["order_id"])
+                    and str(remote.get("currency") or remote.get("payment_currency") or "").upper() == "RUB"
+                    and value.is_finite() and value == Decimal(TICKET_PRICE_RUB)
+                    and int(row["amount_rub"]) == TICKET_PRICE_RUB
+                )
+                if not valid:
+                    return
+                status = str(remote.get("status") or "").lower()
+                if status == "paid":
+                    await _issue_paid_ticket(db.path, payment_id)
+                elif status in {"failed", "canceled", "cancelled", "expired"}:
+                    await db.set_sbp_status(payment_id, status)
+            except (RollyPayError, ValueError, ArithmeticError, TypeError):
+                # Never treat an unverified provider response as a paid ticket.
+                return
+
+    await asyncio.gather(*(check(row) for row in rows))
+
+
 async def _finish_now(path, g: Giveaway) -> tuple[str, tuple[int, int, int] | None, int]:
     """Owner-only finalization: close intake, then draw once no unsettled SBP orders remain.
 
@@ -510,7 +558,10 @@ async def nft_check_payment(event: CallbackQuery, ctx: Ctx, db: Database) -> Non
             return
         status = str(remote.get("status") or "").lower()
         if status != "paid":
-            if status in {"created", "pending", "processing", "awaiting_payment"}:
+            if status in {
+                "created", "pending", "processing", "awaiting_payment",
+                "failed", "cancelled", "canceled", "expired",
+            }:
                 await db.set_sbp_status(payment_id, status)
             await ctx.ack("Оплата ещё не поступила", alert=True)
             return
@@ -667,8 +718,11 @@ async def nft_finish_confirm(event: CallbackQuery, ctx: Ctx, db: Database) -> No
     if not g or campaign != g.campaign:
         await ctx.ack("Предпросмотр устарел. Вызови /nft_finish заново.", alert=True)
         return
-    status, result, pending = await _finish_now(db.path, g)
+    # Existing invoices may have been paid even if the customer did not
+    # press the verification button. Reconcile them before choosing a winner.
     await ctx.ack()
+    await _reconcile_pending_nft_orders(db, ctx.cfg, g.campaign)
+    status, result, pending = await _finish_now(db.path, g)
     if status == "pending":
         await ctx.reply(
             "⛔ <b>Приём новых билетов остановлен.</b>\n\n"
