@@ -13,6 +13,7 @@ from anonchat.db import Database
 from anonchat.handlers.nft_giveaway import (
     TICKET_PRICE_RUB, Giveaway, _count, _draw, _issue_paid_ticket,
     _keyboard, _save_campaign, _start_ticket_purchase, _ticket_numbers, nft_send,
+    _active, _finish_now, _pending_nft_orders, nft_finish_preview, nft_finish_confirm,
     valid_nft_url,
 )
 from anonchat import keyboards as K
@@ -186,6 +187,147 @@ def test_admin_can_repeat_campaign_broadcast_from_a_new_preview() -> None:
     asyncio.run(run())
 
 
+def test_owner_can_end_wrong_date_immediately_and_winner_is_fixed() -> None:
+    async def run() -> None:
+        with TemporaryDirectory() as temp:
+            db = await Database(Path(temp) / "test.db").start()
+            try:
+                await db.ensure_user(111, None, "Buyer")
+                await db.ensure_user(222, None, "Buyer")
+                future = int(time.time()) + 86400 * 30
+                g = await _save_campaign(
+                    db, "https://t.me/nft/Early", future, "29.11.2026 20:00 МГН",
+                )
+                for idx, uid in enumerate((111, 222), start=1):
+                    local = await db.create_sbp_order(
+                        order_id=f"early-{idx}", user_id=uid,
+                        kind=f"nft_ticket:{g.campaign}", amount_rub=35,
+                    )
+                    payment_id = f"payment-early-{idx}"
+                    await db.attach_sbp_provider_payment(
+                        local, payment_id, f"https://pay.example/{idx}",
+                    )
+                    await _issue_paid_ticket(db.path, payment_id)
+                assert (await _active(db)).close_at == future
+                assert await _pending_nft_orders(db.path, g.campaign) == 0
+                result, winner, remaining = await _finish_now(db.path, g)
+                assert result == "drawn"
+                assert winner is not None and winner[0] in (111, 222)
+                assert winner[1] in (1, 2) and winner[2] == 2
+                assert remaining == 0
+                assert (await _active(db)).close_at <= time.time()
+                again_result, again_winner, again_pending = await _finish_now(db.path, await _active(db))
+                assert again_result == "already_drawn"
+                assert again_winner == winner
+                assert again_pending == 0
+                assert await _draw(db.path, await _active(db)) == winner
+                # The original future deadline is now overridden in storage.
+                stored = await db._fetchone(
+                    "SELECT close_at FROM nft_giveaway_campaigns WHERE campaign=?",
+                    (g.campaign,),
+                )
+                assert stored and int(stored["close_at"]) < future
+            finally:
+                await db.close()
+    asyncio.run(run())
+
+
+def test_early_end_stops_intake_but_waits_for_pending_invoices() -> None:
+    async def run() -> None:
+        with TemporaryDirectory() as temp:
+            db = await Database(Path(temp) / "test.db").start()
+            try:
+                await db.ensure_user(111, None, "Buyer")
+                await db.ensure_user(222, None, "Buyer")
+                g = await _save_campaign(
+                    db, "https://t.me/nft/Pending",
+                    int(time.time()) + 36000, "soon",
+                )
+                pending_order = await db.create_sbp_order(
+                    order_id="unfinished-order", user_id=111,
+                    kind=f"nft_ticket:{g.campaign}", amount_rub=35,
+                )
+                await db.attach_sbp_provider_payment(
+                    pending_order, "unfinished-payment", "https://pay.example/unfinished",
+                )
+                status, winner, n = await _finish_now(db.path, g)
+                assert status == "pending" and winner is None and n == 1
+                assert (await _active(db)).close_at < time.time()
+                # An external invoice already existed; verifying a completed
+                # payment must still be possible until winner selection.
+                assert await _issue_paid_ticket(db.path, "unfinished-payment") == (1, True)
+                status, winner, n = await _finish_now(db.path, await _active(db))
+                assert status == "drawn" and winner == (111, 1, 1)
+                assert n == 0
+            finally:
+                await db.close()
+    asyncio.run(run())
+
+
+def test_purchase_does_not_create_provider_invoice_after_early_close() -> None:
+    async def run() -> None:
+        with TemporaryDirectory() as temp:
+            db = await Database(Path(temp) / "test.db").start()
+            try:
+                await db.ensure_user(111, None, "Buyer")
+                g = await _save_campaign(
+                    db, "https://t.me/nft/Cutoff",
+                    int(time.time()) + 36000, "soon",
+                )
+                assert (await _finish_now(db.path, g))[0] == "empty"
+                ctx = SimpleNamespace(
+                    user_id=111, cfg=SimpleNamespace(rollypay_enabled=True),
+                    restricted=AsyncMock(return_value=False),
+                    reply=AsyncMock(),
+                )
+                with patch(
+                    "anonchat.handlers.nft_giveaway.create_payment",
+                    new_callable=AsyncMock,
+                ) as create:
+                    await _start_ticket_purchase(ctx, db)
+                create.assert_not_awaited()
+                assert "завершена" in ctx.reply.await_args.args[0]
+            finally:
+                await db.close()
+    asyncio.run(run())
+
+
+def test_early_finish_requires_owner_confirmation() -> None:
+    async def run() -> None:
+        with TemporaryDirectory() as temp:
+            db = await Database(Path(temp) / "test.db").start()
+            try:
+                g = await _save_campaign(
+                    db, "https://t.me/nft/Admin",
+                    int(time.time()) + 36000, "soon",
+                )
+                outsider = SimpleNamespace(
+                    is_owner=False, reply=AsyncMock(), ack=AsyncMock(),
+                )
+                fake_message = SimpleNamespace(chat=SimpleNamespace(type="private"))
+                await nft_finish_preview(fake_message, outsider, db)
+                outsider.reply.assert_not_awaited()
+                fake_event = SimpleNamespace(
+                    data=f"nft:finish:{g.campaign}", message=fake_message,
+                )
+                await nft_finish_confirm(fake_event, outsider, db)
+                outsider.ack.assert_awaited()
+                assert (await _active(db)).close_at == g.close_at
+
+                owner = SimpleNamespace(
+                    is_owner=True, reply=AsyncMock(), ack=AsyncMock(),
+                )
+                await nft_finish_preview(fake_message, owner, db)
+                owner.reply.assert_awaited_once()
+                buttons = owner.reply.await_args.args[1].inline_keyboard
+                assert buttons[0][0].callback_data == f"nft:finish:{g.campaign}"
+                assert (await _active(db)).close_at == g.close_at
+                # No result until pressing the confirmation button.
+            finally:
+                await db.close()
+    asyncio.run(run())
+
+
 if __name__ == "__main__":
     test_nft_keyboard_sells_ticket_and_old_sbp35_support_is_gone()
     test_each_verified_payment_issues_one_ticket_and_retries_are_idempotent()
@@ -194,4 +336,8 @@ if __name__ == "__main__":
     test_draw_uses_paid_tickets_and_is_stable()
     test_nft_url_validation()
     test_admin_can_repeat_campaign_broadcast_from_a_new_preview()
+    test_owner_can_end_wrong_date_immediately_and_winner_is_fixed()
+    test_early_end_stops_intake_but_waits_for_pending_invoices()
+    test_purchase_does_not_create_provider_invoice_after_early_close()
+    test_early_finish_requires_owner_confirmation()
     print("ok NFT tickets: RollyPay 35 RUB, multiple tickets, idempotency and draw")
