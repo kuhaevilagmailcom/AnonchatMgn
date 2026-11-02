@@ -71,7 +71,7 @@ def test_pack_loaded_by_name_via_bot_api_with_real_ids() -> None:
             assert "5234567890123456789" in icon("stats", result)
             assert "5345678901234567890" in icon("check", result)
             assert "<tg-emoji" in icon("header", result)
-            assert icon("prize", result) == "🏆"
+            assert "5123456789012345678" in icon("prize", result)
             # In the same process, a cached pack prevents an API call per user.
             await load_protect_icons(bot)
             bot.get_sticker_set.assert_awaited_once()
