@@ -291,7 +291,7 @@ async def _raffle_stats(path, campaign: str) -> RaffleStats:
 
 async def _card(ctx: Ctx, db: Database, g: Giveaway) -> str:
     stats = await _raffle_stats(db.path, g.campaign)
-    icons = await load_protect_icons(ctx.bot)
+    icons = await load_protect_icons(getattr(ctx, 'bot', None))
     return format_giveaway(g, stats, icons, ticket_price_rub=TICKET_PRICE_RUB)
 
 
