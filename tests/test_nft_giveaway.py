@@ -14,7 +14,7 @@ from anonchat.handlers.nft_giveaway import (
     TICKET_PRICE_RUB, Giveaway, _count, _draw, _issue_paid_ticket,
     _keyboard, _save_campaign, _start_ticket_purchase, _ticket_numbers, nft_send,
     _active, _finish_now, _pending_nft_orders, _reconcile_pending_nft_orders,
-    nft_finish_preview, nft_finish_confirm,
+    _message, _payment_keyboard, nft_status, nft_finish_preview, nft_finish_confirm,
     valid_nft_url,
 )
 from anonchat import keyboards as K
@@ -376,6 +376,72 @@ def test_reconcile_older_provider_payments_before_early_draw() -> None:
     asyncio.run(run())
 
 
+def test_nft_post_and_payment_messages_explicitly_require_verification() -> None:
+    g = Giveaway("campaign", "https://t.me/nft/Test-1", int(time.time()) + 600,
+                 "03.11.2026 20:00 МГН")
+    notice = _message(g)
+    assert "Проверить оплату" in notice
+    assert "Мои билеты" in notice
+    keyboard = _payment_keyboard("payment-id", "https://pay.example/35")
+    assert keyboard.inline_keyboard[0][0].url == "https://pay.example/35"
+    assert "Проверить оплату" in keyboard.inline_keyboard[1][0].text
+    assert keyboard.inline_keyboard[1][0].callback_data == "nft:check:payment-id"
+
+
+def test_my_tickets_can_recheck_a_paid_order_even_after_giveaway_closed() -> None:
+    async def run() -> None:
+        with TemporaryDirectory() as temp:
+            db = await Database(Path(temp) / "test.db").start()
+            try:
+                await db.ensure_user(555, "buyer", "Buyer")
+                g = await _save_campaign(
+                    db, "https://t.me/nft/Restore",
+                    int(time.time()) + 600, "soon"
+                )
+                local = await db.create_sbp_order(
+                    order_id="restore-1", user_id=555,
+                    kind=f"nft_ticket:{g.campaign}", amount_rub=35,
+                )
+                await db.attach_sbp_provider_payment(
+                    local, "provider-restore-1", "https://pay.example/restore"
+                )
+                ctx = SimpleNamespace(
+                    user_id=555,
+                    cfg=SimpleNamespace(rollypay_enabled=True),
+                    ack=AsyncMock(), reply=AsyncMock(),
+                )
+                event = SimpleNamespace()
+                await nft_status(event, ctx, db)
+                text, kb = ctx.reply.await_args.args
+                assert "Проверить оплату" in text
+                assert "нет подтверждённых билетов" in text
+                assert kb.inline_keyboard[0][0].callback_data == "nft:check:provider-restore-1"
+                status, _, pending = await _finish_now(db.path, g)
+                assert status == "pending" and pending == 1
+                ctx.reply.reset_mock()
+                await nft_status(event, ctx, db)
+                text, kb = ctx.reply.await_args.args
+                assert "Проверить оплату" in text
+                assert kb.inline_keyboard[0][0].callback_data == "nft:check:provider-restore-1"
+                assert all(
+                    button.callback_data != "nft:buy"
+                    for row in kb.inline_keyboard for button in row
+                )
+                await _issue_paid_ticket(db.path, "provider-restore-1")
+                ctx.reply.reset_mock()
+                await nft_status(event, ctx, db)
+                text, kb = ctx.reply.await_args.args
+                assert "Билеты" in text or "билеты" in text
+                assert "№1" in text
+                assert all(
+                    button.callback_data != "nft:check:provider-restore-1"
+                    for row in kb.inline_keyboard for button in row
+                )
+            finally:
+                await db.close()
+    asyncio.run(run())
+
+
 if __name__ == "__main__":
     test_nft_keyboard_sells_ticket_and_old_sbp35_support_is_gone()
     test_each_verified_payment_issues_one_ticket_and_retries_are_idempotent()
@@ -389,4 +455,6 @@ if __name__ == "__main__":
     test_purchase_does_not_create_provider_invoice_after_early_close()
     test_early_finish_requires_owner_confirmation()
     test_reconcile_older_provider_payments_before_early_draw()
+    test_nft_post_and_payment_messages_explicitly_require_verification()
+    test_my_tickets_can_recheck_a_paid_order_even_after_giveaway_closed()
     print("ok NFT tickets: RollyPay 35 RUB, multiple tickets, idempotency and draw")
