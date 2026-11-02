@@ -23,7 +23,8 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from ..actions import Ctx
 from ..db import Database
-from .nft_giveaway import Giveaway, TICKET_PRICE_RUB, _active
+from .nft_giveaway import Giveaway, TICKET_PRICE_RUB, _active, _card
+from ..nft_presentation import RaffleStats, format_giveaway
 
 router = Router(name="nft_channel")
 
@@ -38,15 +39,11 @@ def channel_target(default: str) -> str:
     return ""
 
 
-def giveaway_post_text(g: Giveaway) -> str:
-    nft = html.escape(g.nft_url, quote=True)
-    date = html.escape(g.deadline)
-    return (
-        "🎁 <b>Разыгрываем NFT</b>\n\n"
-        f"<a href=\"{nft}\">Посмотреть NFT</a>\n"
-        f"🎟 Билет — {TICKET_PRICE_RUB} ₽\n"
-        f"⏳ До {date}\n\n"
-        "Участие через бота — нажми кнопку ниже."
+def giveaway_post_text(g: Giveaway, stats: RaffleStats | None = None) -> str:
+    """Same Telegram-native layout in the channel and the bot."""
+    return format_giveaway(
+        g, stats if stats is not None else RaffleStats(0, 0),
+        ticket_price_rub=TICKET_PRICE_RUB,
     )
 
 
@@ -70,6 +67,18 @@ async def _init_posts(path) -> None:
             PRIMARY KEY (campaign, channel)
         )""")
         await con.commit()
+
+
+async def _posted_message(path, campaign: str, channel: str) -> int | None:
+    """Find our previously published post for an in-place design refresh."""
+    await _init_posts(path)
+    async with aiosqlite.connect(path, timeout=15.0) as con:
+        row = await (await con.execute(
+            "SELECT message_id FROM nft_channel_posts "
+            "WHERE campaign=? AND channel=? AND status='posted'",
+            (campaign, channel),
+        )).fetchone()
+    return int(row[0]) if row and int(row[0]) > 0 else None
 
 
 async def _claim_post(path, campaign: str, channel: str) -> bool:
@@ -118,8 +127,8 @@ async def nft_post_preview(message: Message, ctx: Ctx, db: Database) -> None:
     if not ctx.is_owner or message.chat.type != "private":
         return
     g = await _active(db)
-    if g is None or time.time() >= g.close_at:
-        await ctx.reply("Сначала создай действующий розыгрыш через /nft_setup.")
+    if g is None:
+        await ctx.reply("Сначала создай розыгрыш через /nft_setup.")
         return
     channel = channel_target(ctx.cfg.subscription_channel)
     if not channel:
@@ -129,21 +138,31 @@ async def nft_post_preview(message: Message, ctx: Ctx, db: Database) -> None:
     if not me.username:
         await ctx.reply("Невозможно построить ссылку на бота.")
         return
-    body = giveaway_post_text(g)
+    body = await _card(ctx, db, g)
+    existing = await _posted_message(db.path, g.campaign, channel)
+    action_data = (
+        f"nft:post_update:{g.campaign}" if existing
+        else f"nft:post:{g.campaign}"
+    )
+    action_label = (
+        "Обновить опубликованный пост" if existing
+        else f"Опубликовать в {channel}"
+    )
     # Preview shows the same real Telegram URL button as the channel post.
     markup = InlineKeyboardMarkup(inline_keyboard=[
         *participation_keyboard(me.username).inline_keyboard,
         [InlineKeyboardButton(
-            text=f"Опубликовать в {channel}",
-            callback_data=f"nft:post:{g.campaign}",
+            text=action_label,
+            callback_data=action_data,
         )],
         [InlineKeyboardButton(text="Отмена", callback_data="nft:post_cancel")],
     ])
     await ctx.reply(
         f"<b>Предпросмотр для {html.escape(channel)}</b>\n\n"
         + body
-        + "\n\nКнопка «Участвовать» ниже будет прикреплена прямо к посту "
-        "в канале. Для публикации нажми «Опубликовать».",
+        + "\n\nКнопка «Участвовать» будет под постом. "
+        + ("Нажми «Обновить», чтобы заменить текст старого поста."
+           if existing else "Нажми «Опубликовать» для отправки."),
         markup,
     )
 
@@ -155,6 +174,51 @@ async def nft_post_cancel(event: CallbackQuery, ctx: Ctx) -> None:
         return
     await ctx.ack("Отменено")
     await ctx.edit("Публикация отменена.")
+
+
+@router.callback_query(F.data.startswith("nft:post_update:"))
+async def nft_post_update(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    """Refresh an existing channel post, including counts and emoji, without duplicates."""
+    if not ctx.is_owner or not event.message or event.message.chat.type != "private":
+        await ctx.ack("Нет доступа", alert=True)
+        return
+    g = await _active(db)
+    campaign = (event.data or "").removeprefix("nft:post_update:")
+    if not g or g.campaign != campaign:
+        await ctx.ack("Предпросмотр устарел", alert=True)
+        return
+    channel = channel_target(ctx.cfg.subscription_channel)
+    message_id = await _posted_message(db.path, campaign, channel)
+    if not channel or not message_id:
+        await ctx.ack("Пост не найден. Открой /nft_post заново.", alert=True)
+        return
+    me = await ctx.bot.get_me()
+    if not me.username:
+        await ctx.ack("Не удалось получить имя бота", alert=True)
+        return
+    body = await _card(ctx, db, g)
+    await ctx.ack()
+    try:
+        await ctx.bot.edit_message_text(
+            chat_id=int(channel) if channel.startswith("-100") else channel,
+            message_id=message_id,
+            text=body,
+            reply_markup=participation_keyboard(me.username),
+            disable_web_page_preview=True,
+        )
+    except TelegramBadRequest as exc:
+        if "message is not modified" in str(exc).lower():
+            await ctx.reply("Пост уже обновлён — изменений нет.")
+        else:
+            await ctx.reply(
+                "Telegram не разрешил изменить пост. "
+                "Проверь права администратора и доступность публикации."
+            )
+        return
+    except TelegramAPIError:
+        await ctx.reply("Не удалось обновить пост. Проверь права и повтори позже.")
+        return
+    await ctx.reply("✅ Пост розыгрыша обновлён в канале с новой статистикой и эмодзи.")
 
 
 @router.callback_query(F.data.startswith("nft:post:"))
@@ -185,7 +249,7 @@ async def nft_post_confirm(event: CallbackQuery, ctx: Ctx, db: Database) -> None
     try:
         sent = await ctx.bot.send_message(
             chat_id=int(channel) if channel.startswith("-100") else channel,
-            text=giveaway_post_text(g),
+            text=await _card(ctx, db, g),
             reply_markup=participation_keyboard(me.username),
             disable_web_page_preview=True,
         )
