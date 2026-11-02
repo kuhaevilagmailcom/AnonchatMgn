@@ -11,7 +11,8 @@ from unittest.mock import AsyncMock, patch
 import aiosqlite
 
 from anonchat.handlers.nft_channel import (
-    _claim_post, _record_post, channel_target,
+    _claim_post, _record_post, _claim_repeat, _record_repeat, channel_target,
+    nft_repeat_preview, nft_repeat_confirm,
     giveaway_post_text, participation_keyboard,
     nft_post_confirm, nft_post_preview,
 )
@@ -166,10 +167,122 @@ def test_existing_channel_post_can_be_updated_in_place() -> None:
     asyncio.run(run())
 
 
+def test_repeat_publications_are_explicit_and_deduped_per_confirmation() -> None:
+    async def run() -> None:
+        with TemporaryDirectory() as folder:
+            path = Path(folder) / "posts.db"
+            await _claim_post(path, "campaign", "@anonmgn")
+            await _record_post(path, "campaign", "@anonmgn", "posted", 101)
+            responses = await asyncio.gather(*(
+                _claim_repeat(path, "campaign", "@anonmgn", 777) for _ in range(8)
+            ))
+            assert responses.count("claimed") == 1
+            assert responses.count("duplicate") == 7
+            assert await _claim_repeat(path, "campaign", "@anonmgn", 778) == "busy"
+            await _record_repeat(path, "campaign", "@anonmgn", 777, "posted", 202)
+            assert await _claim_repeat(path, "campaign", "@anonmgn", 777) == "duplicate"
+            assert await _claim_repeat(path, "campaign", "@anonmgn", 778) == "claimed"
+            await _record_repeat(path, "campaign", "@anonmgn", 778, "unknown")
+            assert await _claim_repeat(path, "campaign", "@anonmgn", 778) == "duplicate"
+            assert await _claim_repeat(path, "campaign", "@anonmgn", 779) == "claimed"
+            await _record_repeat(path, "campaign", "@anonmgn", 779, "failed")
+            assert await _claim_repeat(path, "campaign", "@anonmgn", 779) == "claimed"
+            # The first post ID stays available for editing as before.
+            from anonchat.handlers.nft_channel import _posted_message
+            assert await _posted_message(path, "campaign", "@anonmgn") == 101
+            async with aiosqlite.connect(path) as con:
+                rows = await (await con.execute(
+                    "SELECT confirmation_message_id,status,message_id "
+                    "FROM nft_channel_repeat_posts ORDER BY confirmation_message_id"
+                )).fetchall()
+                assert rows == [(777, "posted", 202), (778, "unknown", 0),
+                                (779, "sending", 0)]
+
+    asyncio.run(run())
+
+
+def test_publish_again_button_requires_owner_double_confirmation() -> None:
+    async def run() -> None:
+        with TemporaryDirectory() as folder:
+            g = Giveaway("campaign-repeat", "https://t.me/nft/Prize",
+                         2_000_000_000, "31.12.2026 20:00 МГН")
+            db = SimpleNamespace(path=Path(folder) / "posts.db")
+            assert await _claim_post(db.path, g.campaign, "@anonmgn")
+            await _record_post(db.path, g.campaign, "@anonmgn", "posted", 101)
+            bot = SimpleNamespace(
+                get_me=AsyncMock(return_value=SimpleNamespace(username="AnonChatMgn_Bot")),
+                send_message=AsyncMock(return_value=SimpleNamespace(message_id=215)),
+            )
+            ctx = SimpleNamespace(
+                is_owner=True,
+                cfg=SimpleNamespace(subscription_channel="@anonmgn"),
+                bot=bot, reply=AsyncMock(), ack=AsyncMock(),
+            )
+            private = SimpleNamespace(chat=SimpleNamespace(type="private"), message_id=900)
+            with patch.dict(os.environ, {"NFT_POST_CHANNEL": ""}), patch(
+                "anonchat.handlers.nft_channel._active",
+                new=AsyncMock(return_value=g),
+            ):
+                await nft_post_preview(private, ctx, db)
+                markup = ctx.reply.await_args.args[1]
+                controls = [
+                    b for row in markup.inline_keyboard for b in row
+                ]
+                assert any(
+                    b.text == "Обновить опубликованный пост"
+                    for b in controls
+                )
+                repeat = next(b for b in controls if "Выложить розыгрыш ещё раз" in b.text)
+                assert repeat.callback_data == f"nft:post_repeat_preview:{g.campaign}"
+                assert bot.send_message.await_count == 0
+
+                event = SimpleNamespace(data=repeat.callback_data, message=private)
+                ctx.reply.reset_mock()
+                await nft_repeat_preview(event, ctx, db)
+                confirm_markup = ctx.reply.await_args.args[1]
+                confirm = confirm_markup.inline_keyboard[0][0]
+                assert confirm.text == "✅ Опубликовать ещё раз"
+                assert confirm.callback_data == f"nft:post_repeat_confirm:{g.campaign}"
+                assert bot.send_message.await_count == 0
+
+                ctx.reply.reset_mock()
+                final_event = SimpleNamespace(data=confirm.callback_data, message=private)
+                await nft_repeat_confirm(final_event, ctx, db)
+                bot.send_message.assert_awaited_once()
+                kwargs = bot.send_message.await_args.kwargs
+                assert kwargs["chat_id"] == "@anonmgn"
+                assert "РОЗЫГРЫШ NFT АКТИВЕН!" in kwargs["text"]
+                assert kwargs["reply_markup"].inline_keyboard[0][0].url == (
+                    "https://t.me/AnonChatMgn_Bot?start=nft"
+                )
+                await nft_repeat_confirm(final_event, ctx, db)
+                bot.send_message.assert_awaited_once()
+
+                # Another explicit confirmation can publish a later post.
+                private2 = SimpleNamespace(chat=SimpleNamespace(type="private"), message_id=901)
+                await nft_repeat_confirm(
+                    SimpleNamespace(data=confirm.callback_data, message=private2), ctx, db
+                )
+                assert bot.send_message.await_count == 2
+                # Owner-only: nothing is sent by a non-owner.
+                ctx.is_owner = False
+                await nft_repeat_confirm(
+                    SimpleNamespace(
+                        data=confirm.callback_data,
+                        message=SimpleNamespace(chat=SimpleNamespace(type="private"), message_id=902),
+                    ), ctx, db
+                )
+                assert bot.send_message.await_count == 2
+
+    asyncio.run(run())
+
+
 if __name__ == "__main__":
     test_channel_target_uses_configured_channel()
     test_giveaway_post_is_short_and_links_to_bot()
     test_one_post_per_campaign_and_channel_even_under_concurrency()
     test_channel_publication_attaches_real_inline_button()
     test_existing_channel_post_can_be_updated_in_place()
+    test_repeat_publications_are_explicit_and_deduped_per_confirmation()
+    test_publish_again_button_requires_owner_double_confirmation()
     print("NFT channel post tests passed")

@@ -149,19 +149,28 @@ async def nft_post_preview(message: Message, ctx: Ctx, db: Database) -> None:
         else f"Опубликовать в {channel}"
     )
     # Preview shows the same real Telegram URL button as the channel post.
+    action_rows = [[InlineKeyboardButton(
+        text=action_label,
+        callback_data=action_data,
+    )]]
+    if existing and time.time() < g.close_at:
+        action_rows.append([InlineKeyboardButton(
+            text="📢 Выложить розыгрыш ещё раз",
+            callback_data=f"nft:post_repeat_preview:{g.campaign}",
+        )])
     markup = InlineKeyboardMarkup(inline_keyboard=[
         *participation_keyboard(me.username).inline_keyboard,
-        [InlineKeyboardButton(
-            text=action_label,
-            callback_data=action_data,
-        )],
+        *action_rows,
         [InlineKeyboardButton(text="Отмена", callback_data="nft:post_cancel")],
     ])
     await ctx.reply(
         f"<b>Предпросмотр для {html.escape(channel)}</b>\n\n"
         + body
         + "\n\nКнопка «Участвовать» будет под постом. "
-        + ("Нажми «Обновить», чтобы заменить текст старого поста."
+        + ("«Обновить» изменит прежний пост. «Выложить ещё раз» "
+           "создаст отдельную публикацию с кнопкой «Участвовать»."
+           if existing and time.time() < g.close_at else
+           "Нажми «Обновить», чтобы заменить текст старого поста."
            if existing else "Нажми «Опубликовать» для отправки."),
         markup,
     )
@@ -174,6 +183,174 @@ async def nft_post_cancel(event: CallbackQuery, ctx: Ctx) -> None:
         return
     await ctx.ack("Отменено")
     await ctx.edit("Публикация отменена.")
+
+
+async def _init_repeat_posts(path) -> None:
+    """Separate log: don't overwrite the original post that /nft_post edits."""
+    async with aiosqlite.connect(path, timeout=15.0) as con:
+        await con.execute("PRAGMA busy_timeout=10000")
+        await con.execute("""CREATE TABLE IF NOT EXISTS nft_channel_repeat_posts (
+            campaign TEXT NOT NULL,
+            channel TEXT NOT NULL,
+            confirmation_message_id INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            message_id INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (campaign, channel, confirmation_message_id)
+        )""")
+        await con.commit()
+
+
+async def _claim_repeat(path, campaign: str, channel: str,
+                        confirmation_message_id: int) -> str:
+    """One publication per confirmation message; concurrent taps are safe."""
+    if confirmation_message_id <= 0:
+        return "invalid"
+    await _init_repeat_posts(path)
+    async with aiosqlite.connect(path, timeout=15.0) as con:
+        await con.execute("PRAGMA busy_timeout=10000")
+        await con.execute("BEGIN IMMEDIATE")
+        row = await (await con.execute(
+            "SELECT status FROM nft_channel_repeat_posts "
+            "WHERE campaign=? AND channel=? AND confirmation_message_id=?",
+            (campaign, channel, confirmation_message_id),
+        )).fetchone()
+        if row is not None and str(row[0]) != "failed":
+            await con.commit()
+            return "duplicate"
+        # Even multiple different confirmation messages must not post at once.
+        busy = await (await con.execute(
+            "SELECT 1 FROM nft_channel_repeat_posts "
+            "WHERE campaign=? AND channel=? AND status='sending' LIMIT 1",
+            (campaign, channel),
+        )).fetchone()
+        if busy:
+            await con.commit()
+            return "busy"
+        if row is not None:
+            await con.execute(
+                "UPDATE nft_channel_repeat_posts SET status='sending' "
+                "WHERE campaign=? AND channel=? AND confirmation_message_id=?",
+                (campaign, channel, confirmation_message_id),
+            )
+        else:
+            await con.execute(
+                "INSERT INTO nft_channel_repeat_posts "
+                "(campaign,channel,confirmation_message_id,status,created_at) "
+                "VALUES (?,?,?,'sending',?)",
+                (campaign, channel, confirmation_message_id, int(time.time())),
+            )
+        await con.commit()
+        return "claimed"
+
+
+async def _record_repeat(path, campaign: str, channel: str,
+                         confirmation_message_id: int, status: str,
+                         message_id: int = 0) -> None:
+    await _init_repeat_posts(path)
+    async with aiosqlite.connect(path, timeout=15.0) as con:
+        await con.execute(
+            "UPDATE nft_channel_repeat_posts SET status=?, message_id=? "
+            "WHERE campaign=? AND channel=? AND confirmation_message_id=? "
+            "AND status='sending'",
+            (status, int(message_id), campaign, channel, confirmation_message_id),
+        )
+        await con.commit()
+
+
+@router.callback_query(F.data.startswith("nft:post_repeat_preview:"))
+async def nft_repeat_preview(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    if not ctx.is_owner or not event.message or event.message.chat.type != "private":
+        await ctx.ack("Нет доступа", alert=True)
+        return
+    g = await _active(db)
+    campaign = (event.data or "").removeprefix("nft:post_repeat_preview:")
+    if not g or g.campaign != campaign or time.time() >= g.close_at:
+        await ctx.ack("Розыгрыш завершён или предпросмотр устарел.", alert=True)
+        return
+    channel = channel_target(ctx.cfg.subscription_channel)
+    if not channel or not await _posted_message(db.path, g.campaign, channel):
+        await ctx.ack("Сначала опубликуй первый пост через /nft_post.", alert=True)
+        return
+    await ctx.ack()
+    markup = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="✅ Опубликовать ещё раз",
+            callback_data=f"nft:post_repeat_confirm:{g.campaign}",
+        )],
+        [InlineKeyboardButton(
+            text="Отмена", callback_data="nft:post_cancel",
+        )],
+    ])
+    await ctx.reply(
+        "<b>Повторная публикация NFT-розыгрыша</b>\n\n"
+        f"Канал: <b>{html.escape(channel)}</b>\n\n"
+        + await _card(ctx, db, g)
+        + "\n\nБудет создано <b>НОВОЕ</b> сообщение с кнопкой "
+        "«Участвовать». Старый пост останется без изменений.",
+        markup,
+    )
+
+
+@router.callback_query(F.data.startswith("nft:post_repeat_confirm:"))
+async def nft_repeat_confirm(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    if not ctx.is_owner or not event.message or event.message.chat.type != "private":
+        await ctx.ack("Нет доступа", alert=True)
+        return
+    g = await _active(db)
+    campaign = (event.data or "").removeprefix("nft:post_repeat_confirm:")
+    if not g or g.campaign != campaign or time.time() >= g.close_at:
+        await ctx.ack("Розыгрыш завершён или подтверждение устарело.", alert=True)
+        return
+    channel = channel_target(ctx.cfg.subscription_channel)
+    if not channel or not await _posted_message(db.path, g.campaign, channel):
+        await ctx.ack("Первый пост не найден. Вызови /nft_post.", alert=True)
+        return
+    me = await ctx.bot.get_me()
+    if not me.username:
+        await ctx.ack("Не удалось определить имя бота.", alert=True)
+        return
+    confirmation_id = int(event.message.message_id)
+    claimed = await _claim_repeat(db.path, g.campaign, channel, confirmation_id)
+    if claimed != "claimed":
+        await ctx.ack(
+            "Этот пост уже отправлен или отправляется." if claimed == "duplicate"
+            else "Другая публикация ещё отправляется." if claimed == "busy"
+            else "Подтверждение недействительно.",
+            alert=True,
+        )
+        return
+    await ctx.ack()
+    try:
+        sent = await ctx.bot.send_message(
+            chat_id=int(channel) if channel.startswith("-100") else channel,
+            text=await _card(ctx, db, g),
+            reply_markup=participation_keyboard(me.username),
+            disable_web_page_preview=True,
+        )
+    except (TelegramBadRequest, TelegramForbiddenError):
+        await _record_repeat(db.path, campaign, channel, confirmation_id, "failed")
+        await ctx.reply(
+            "Не удалось выложить пост. Проверь, что бот администратор "
+            "канала с правом публикации."
+        )
+        return
+    except (TelegramNetworkError, TelegramAPIError):
+        await _record_repeat(db.path, campaign, channel, confirmation_id, "unknown")
+        await ctx.reply(
+            "Неизвестно, дошёл ли пост. Проверь канал вручную. "
+            "Повторное нажатие этой кнопки не создаст дубликат."
+        )
+        return
+    await _record_repeat(db.path, campaign, channel, confirmation_id, "posted", sent.message_id)
+    if channel.startswith("@"):
+        link = f"https://t.me/{channel[1:]}/{sent.message_id}"
+        await ctx.reply(
+            "✅ <b>Розыгрыш опубликован ещё раз!</b>\n"
+            f'<a href="{link}">Открыть новый пост</a>'
+        )
+    else:
+        await ctx.reply("✅ Розыгрыш опубликован ещё раз в канале.")
 
 
 @router.callback_query(F.data.startswith("nft:post_update:"))
