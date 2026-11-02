@@ -168,7 +168,7 @@ async def run_once(bot, db) -> bool:
         else:
             result = await bot.send_message(
                 uid, str(job["message"]), entities=entities or None,
-                parse_mode="HTML" if poll_url.startswith("poll:") and poll_url[5:].isdigit() else None,
+                parse_mode="HTML" if (str(job["button_action"] or "") == "nft" or (poll_url.startswith("poll:") and poll_url[5:].isdigit())) else None,
                 reply_markup=markup, disable_web_page_preview=True,
             )
     except TelegramForbiddenError:

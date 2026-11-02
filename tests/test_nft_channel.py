@@ -32,11 +32,14 @@ def test_giveaway_post_is_short_and_links_to_bot() -> None:
     g = Giveaway("campaign-1", "https://t.me/nft/Prize-12?a=1&b=2",
                  2_000_000_000, "31.12.2026 20:00 МГН")
     body = giveaway_post_text(g)
-    assert "<b>Разыгрываем NFT</b>" in body
+    assert "РОЗЫГРЫШ NFT АКТИВЕН!" in body
+    assert "<blockquote>" in body
+    assert "Участников: <b>0</b>" in body
+    assert "Билетов: <b>0</b>" in body
     assert "35 ₽" in body
     assert "31.12.2026 20:00 МГН" in body
     assert "https://t.me/nft/Prize-12?a=1&amp;b=2" in body
-    assert len(body) < 500
+    assert len(body) < 1400
     keyboard = participation_keyboard("AnonChatMgn_Bot")
     assert keyboard.inline_keyboard[0][0].url == (
         "https://t.me/AnonChatMgn_Bot?start=nft"
@@ -121,9 +124,52 @@ def test_channel_publication_attaches_real_inline_button() -> None:
     asyncio.run(run())
 
 
+def test_existing_channel_post_can_be_updated_in_place() -> None:
+    async def run() -> None:
+        with TemporaryDirectory() as folder:
+            from anonchat.handlers.nft_channel import nft_post_update
+            g = Giveaway("campaign-update", "https://t.me/nft/NewPrize",
+                         2_000_000_000, "31.12.2026 20:00 МГН")
+            from anonchat.handlers.nft_channel import _claim_post, _record_post
+            db = SimpleNamespace(path=Path(folder) / "channel.db")
+            assert await _claim_post(db.path, g.campaign, "@anonmgn")
+            await _record_post(db.path, g.campaign, "@anonmgn", "posted", 211)
+            bot = SimpleNamespace(
+                get_me=AsyncMock(return_value=SimpleNamespace(username="AnonChatMgn_Bot")),
+                edit_message_text=AsyncMock(),
+                send_message=AsyncMock(),
+            )
+            ctx = SimpleNamespace(
+                is_owner=True,
+                cfg=SimpleNamespace(subscription_channel="@anonmgn"),
+                bot=bot, reply=AsyncMock(), ack=AsyncMock(),
+            )
+            msg = SimpleNamespace(chat=SimpleNamespace(type="private"))
+            event = SimpleNamespace(
+                data="nft:post_update:campaign-update", message=msg,
+            )
+            with patch.dict(os.environ, {"NFT_POST_CHANNEL": ""}), patch(
+                "anonchat.handlers.nft_channel._active",
+                new=AsyncMock(return_value=g),
+            ):
+                await nft_post_update(event, ctx, db)
+            bot.edit_message_text.assert_awaited_once()
+            kwargs = bot.edit_message_text.await_args.kwargs
+            assert kwargs["message_id"] == 211
+            assert kwargs["chat_id"] == "@anonmgn"
+            assert "Статистика:" in kwargs["text"]
+            assert kwargs["reply_markup"].inline_keyboard[0][0].url == (
+                "https://t.me/AnonChatMgn_Bot?start=nft"
+            )
+            bot.send_message.assert_not_awaited()
+
+    asyncio.run(run())
+
+
 if __name__ == "__main__":
     test_channel_target_uses_configured_channel()
     test_giveaway_post_is_short_and_links_to_bot()
     test_one_post_per_campaign_and_channel_even_under_concurrency()
     test_channel_publication_attaches_real_inline_button()
+    test_existing_channel_post_can_be_updated_in_place()
     print("NFT channel post tests passed")
