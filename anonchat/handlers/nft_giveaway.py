@@ -21,6 +21,7 @@ from ..actions import Ctx
 from ..admin_broadcasts import create_job
 from ..db import Database
 from ..payments import RollyPayError, create_payment, get_payment
+from ..nft_presentation import RaffleStats, format_giveaway, load_protect_icons
 
 router = Router(name="nft_giveaway")
 TICKET_PRICE_RUB = 35
@@ -276,6 +277,24 @@ async def _count(path, campaign: str) -> int:
         return int(row[0])
 
 
+async def _raffle_stats(path, campaign: str) -> RaffleStats:
+    """Confirmed tickets only; no guessed metrics or payment amounts."""
+    await _init(path)
+    async with aiosqlite.connect(path, timeout=15.0) as con:
+        row = await (await con.execute(
+            "SELECT COUNT(DISTINCT user_id), COUNT(*) "
+            "FROM nft_giveaway_tickets WHERE campaign=?",
+            (campaign,),
+        )).fetchone()
+    return RaffleStats(participants=int(row[0]), tickets=int(row[1]))
+
+
+async def _card(ctx: Ctx, db: Database, g: Giveaway) -> str:
+    stats = await _raffle_stats(db.path, g.campaign)
+    icons = await load_protect_icons(ctx.bot)
+    return format_giveaway(g, stats, icons, ticket_price_rub=TICKET_PRICE_RUB)
+
+
 async def _pending_nft_orders(path, campaign: str) -> int:
     """Invoices that may still be paid and must be reconciled before a draw."""
     await _init(path)
@@ -454,7 +473,7 @@ async def nft_from_channel(message: Message, ctx: Ctx, db: Database) -> None:
     if not g:
         await ctx.reply("NFT-розыгрыш пока не открыт.")
         return
-    await ctx.reply(html.escape(_message(g)), _keyboard(
+    await ctx.reply(await _card(ctx, db, g), _keyboard(
         ctx.cfg.rollypay_enabled and time.time() < g.close_at
     ))
 
@@ -465,7 +484,7 @@ async def nft_open(message: Message, ctx: Ctx, db: Database) -> None:
     if not g:
         await ctx.reply("NFT-розыгрыш пока не открыт.")
         return
-    await ctx.reply(html.escape(_message(g)), _keyboard(
+    await ctx.reply(await _card(ctx, db, g), _keyboard(
         ctx.cfg.rollypay_enabled and time.time() < g.close_at
     ))
 
@@ -651,7 +670,7 @@ async def nft_broadcast_preview(message: Message, ctx: Ctx, db: Database) -> Non
         [InlineKeyboardButton(text="Отмена", callback_data="nft:cancel")],
     ])
     await ctx.reply(
-        "<b>Предпросмотр NFT-рассылки</b>\n\n" + html.escape(_message(g)),
+        "<b>Предпросмотр NFT-рассылки</b>\n\n" + await _card(ctx, db, g),
         kb,
     )
 
@@ -674,7 +693,7 @@ async def nft_send(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     preview_id = int(event.message.message_id) if event.message else 0
     key = f"nft-giveaway-{g.campaign}-{ctx.user_id}-{preview_id}"
     created = await create_job(
-        db, key=key, actor=ctx.user_id, message=_message(g),
+        db, key=key, actor=ctx.user_id, message=await _card(ctx, db, g),
         button_action="nft", recipient_ids=ids,
     )
     await ctx.ack("Рассылка добавлена в очередь" if created else "Рассылка уже запускалась")
