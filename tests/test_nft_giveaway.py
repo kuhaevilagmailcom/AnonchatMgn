@@ -416,10 +416,8 @@ def test_my_tickets_can_recheck_a_paid_order_even_after_giveaway_closed() -> Non
                 assert "Проверить оплату" in text
                 assert "нет подтверждённых билетов" in text
                 assert kb.inline_keyboard[0][0].callback_data == "nft:check:provider-restore-1"
-                await db._execute(
-                    "UPDATE nft_giveaway_campaigns SET close_at=? WHERE campaign=?",
-                    (int(time.time()) - 1, g.campaign),
-                )
+                status, _, pending = await _finish_now(db.path, g)
+                assert status == "pending" and pending == 1
                 ctx.reply.reset_mock()
                 await nft_status(event, ctx, db)
                 text, kb = ctx.reply.await_args.args
