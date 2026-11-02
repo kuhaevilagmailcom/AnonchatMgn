@@ -13,7 +13,7 @@ from aiogram.types import Message
 
 from ..actions import Ctx
 from ..db import Database
-from .nft_giveaway import _active, _keyboard, _message, _save_campaign, valid_nft_url
+from .nft_giveaway import _active, _card, _keyboard, _save_campaign, valid_nft_url
 
 router = Router(name="nft_setup")
 
@@ -87,7 +87,7 @@ async def nft_setup_deadline(message: Message, ctx: Ctx, state: FSMContext, db: 
         return
     await state.clear()
     await ctx.reply(
-        "<b>Розыгрыш создан!</b>\n\n" + html.escape(_message(giveaway))
+        "<b>Розыгрыш создан!</b>\n\n" + await _card(ctx, db, giveaway)
         + "\n\nДля рассылки введи /nft_broadcast и подтверди отправку.",
         _keyboard(ctx.cfg.rollypay_enabled),
     )
