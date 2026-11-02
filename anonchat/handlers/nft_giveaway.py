@@ -78,7 +78,10 @@ def _message(g: Giveaway) -> str:
         f"NFT: {g.nft_url}\n\n"
         f"Стоимость одного билета: {TICKET_PRICE_RUB} ₽. Можно купить несколько.\n"
         f"Приём заявок до {g.deadline}.\n\n"
-        "Билет выдаётся только после подтверждения оплаты."
+        "⚠️ <b>ВАЖНО: после оплаты вернись в этот чат и нажми "
+        "«Проверить оплату».</b>\n"
+        "Только после проверки бот выдаст номер билета. "
+        "Если уже оплатил, открой «Мои билеты» и проверь платёж."
     )
 
 
@@ -96,7 +99,7 @@ def _payment_keyboard(payment_id: str, pay_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"Оплатить {TICKET_PRICE_RUB} ₽", url=pay_url)],
         [InlineKeyboardButton(
-            text="Проверить оплату", callback_data=NFT_CHECK_PREFIX + payment_id
+            text="✅ Проверить оплату", callback_data=NFT_CHECK_PREFIX + payment_id
         )],
     ])
 
@@ -512,9 +515,11 @@ async def _start_ticket_purchase(ctx: Ctx, db: Database) -> None:
         return
     await ctx.reply(
         "🎟 <b>Билет NFT-розыгрыша</b>\n\n"
-        f"К оплате: <b>{TICKET_PRICE_RUB} ₽</b>.\n"
-        "После оплаты обязательно нажми «Проверить оплату».\n"
-        "Каждый подтверждённый платёж выдаёт один новый билет.",
+        f"К оплате: <b>{TICKET_PRICE_RUB} ₽</b>.\n\n"
+        "⚠️ <b>После оплаты вернись сюда и обязательно нажми "
+        "«Проверить оплату» ниже.</b>\n"
+        "Без этой проверки номер билета не появится.\n"
+        "Если потерял сообщение с оплатой, открой «Мои билеты».",
         _payment_keyboard(payment_id, pay_url),
     )
 
@@ -584,18 +589,47 @@ async def nft_status(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         await ctx.ack("Розыгрыш пока не открыт.", alert=True)
         return
     tickets = await _ticket_numbers(db.path, g.campaign, ctx.user_id)
+    # Customers may have left checkout without pressing the original check
+    # button. Let them retrieve a verification button from "Мои билеты".
+    pending = await db._fetchall(
+        "SELECT payment_id FROM sbp_payments WHERE user_id=? AND kind=? "
+        "AND status IN ('creating','awaiting_payment','created','pending','processing') "
+        "AND payment_id NOT LIKE 'creating:%' "
+        "ORDER BY created_at DESC LIMIT 5",
+        (ctx.user_id, f"nft_ticket:{g.campaign}"),
+    )
+    rows = [
+        [InlineKeyboardButton(
+            text=f"✅ Проверить оплату · заказ {i}",
+            callback_data=NFT_CHECK_PREFIX + str(item["payment_id"]),
+        )]
+        for i, item in enumerate(pending, 1)
+    ]
+    if time.time() < g.close_at and ctx.cfg.rollypay_enabled:
+        rows.extend(_keyboard(True).inline_keyboard)
+    else:
+        rows.extend(_keyboard(False).inline_keyboard)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
     await ctx.ack()
     if tickets:
         numbers = ", ".join(f"№{number}" for number in tickets)
-        await ctx.reply(
+        text = (
             f"🎟 Твои билеты: <b>{html.escape(numbers)}</b>.\n"
-            f"Всего: <b>{len(tickets)}</b>. Все участвуют в розыгрыше.",
-            _keyboard(ctx.cfg.rollypay_enabled) if time.time() < g.close_at else None,
+            f"Всего: <b>{len(tickets)}</b>. Все участвуют в розыгрыше."
         )
-    elif time.time() >= g.close_at:
-        await ctx.reply("Продажа билетов завершена.")
     else:
-        await ctx.reply("У тебя пока нет билетов.", _keyboard(ctx.cfg.rollypay_enabled))
+        text = "У тебя пока нет подтверждённых билетов."
+    if pending:
+        text += (
+            "\n\n⚠️ <b>Есть платежи без подтверждённого билета.</b>\n"
+            "Если уже оплатил, нажми «Проверить оплату» ниже. "
+            "После успешной проверки появится номер билета."
+        )
+        if len(pending) == 5:
+            text += "\nПоказаны последние 5 заказов."
+    elif not tickets and time.time() >= g.close_at:
+        text += "\nПродажа билетов завершена."
+    await ctx.reply(text, keyboard)
 
 
 @router.message(Command("nft_broadcast"))
