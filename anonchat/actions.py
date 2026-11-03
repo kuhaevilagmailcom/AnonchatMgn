@@ -532,10 +532,8 @@ async def show_welcome(ctx: Ctx) -> None:
 
 
 async def show_help(ctx: Ctx) -> None:
-    _LIVE_MENUS.pop(ctx.user_id, None)
-    if await ctx.edit(texts.HELP, back_menu_keyboard()):
-        return
-    await ctx.reply(texts.HELP, markup=back_menu_keyboard())
+    # Use the same text-only screen path; old photo-backed menus are replaced.
+    await ctx.render_screen("help", texts.HELP, back_menu_keyboard())
 
 
 async def show_rules(ctx: Ctx) -> None:
