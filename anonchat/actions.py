@@ -11,7 +11,6 @@ import logging
 import time
 from dataclasses import dataclass
 from enum import Enum
-from pathlib import Path
 from typing import Any
 
 from aiogram import Bot
@@ -23,9 +22,7 @@ from aiogram.exceptions import (
 )
 from aiogram.types import (
     CallbackQuery,
-    FSInputFile,
     InlineKeyboardMarkup,
-    InputMediaPhoto,
     Message,
     ReplyParameters,
 )
@@ -48,14 +45,12 @@ from . import live_chat
 from . import word_game as WG
 from .runtime_state import online_count as presence_online_count
 
-ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "menu"
 log = logging.getLogger(__name__)
 
 # Только память процесса: никаких записей message_id/онлайна в SQLite.
 # Нужны для замены старого меню и обновления счётчика без мусора в БД.
 _SCREEN_MESSAGES: dict[int, tuple[int, int]] = {}
 _LIVE_MENUS: dict[int, tuple[int, int, str, bool, int, float]] = {}
-_FILE_ID_CACHE: dict[str, str] = {}
 
 
 class DeliveryResult(Enum):
@@ -119,84 +114,45 @@ class Ctx:
         self, image: str, caption: str, markup: InlineKeyboardMarkup | None = None,
         *, live_menu: bool = False,
     ) -> Message | None:
-        """Держит один актуальный экран: старое меню удаляется, новое редактируется/заменяется."""
+        """All built-in screens are text-only; keep their buttons and screen tracking.
+
+        The image parameter remains for existing callers, but is deliberately
+        ignored. An old photo menu cannot be edited into a text message through
+        the Bot API: send its text replacement first, then delete the old photo.
+        """
         if not live_menu:
             _LIVE_MENUS.pop(self.user_id, None)
         target = self.event.message if isinstance(self.event, CallbackQuery) else self.event
         if target is None:
             return None
-        path = ASSET_DIR / image
-        if not path.exists():
-            if await self.edit(caption, markup):
-                return target
-            return await self.reply(caption, markup)
 
-        key = f"menu_file_id:{image}"
-        cached = _FILE_ID_CACHE.get(key, "")
-        if not cached:
-            cached = await self.db.get_kv(key)
-            if cached:
-                _FILE_ID_CACHE[key] = cached
-        sources: list[str | FSInputFile] = ([cached] if cached else []) + [FSInputFile(path)]
-        for source in sources:
-            for wrapped in (True, False):
-                body = self.pack.wrap(caption) if wrapped else self.pack.strip(caption)
-                try:
-                    if isinstance(self.event, CallbackQuery) and getattr(target, "photo", None):
-                        result = await target.edit_media(
-                            InputMediaPhoto(media=source, caption=body), reply_markup=markup
-                        )
-                    else:
-                        result = await target.answer_photo(source, caption=body, reply_markup=markup)
-                    final = result if isinstance(result, Message) else target
-                    if isinstance(final, Message):
-                        if final.photo:
-                            new_file_id = final.photo[-1].file_id
-                            if new_file_id != cached:
-                                _FILE_ID_CACHE[key] = new_file_id
-                                await self.db.set_kv(key, new_file_id)
-                                cached = new_file_id
-                        if (
-                            isinstance(self.event, CallbackQuery)
-                            and target.message_id != final.message_id
-                        ):
-                            try:
-                                await self.bot.delete_message(target.chat.id, target.message_id)
-                            except TelegramAPIError:
-                                pass
-                        await _remember_screen(self.bot, self.user_id, final)
-                        if live_menu:
-                            _LIVE_MENUS[self.user_id] = (
-                                final.chat.id, final.message_id, self.nick, self.is_admin,
-                                online_count(self.mm), time.monotonic(),
-                            )
-                    return final
-                except TelegramBadRequest as exc:
-                    if wrapped and self.pack.accept(exc):
-                        continue
-                    break
-                except TelegramAPIError:
-                    break
-            if isinstance(source, str):
-                _FILE_ID_CACHE.pop(key, None)
-                await self.db.delete_kv(key)
-        fallback = await self.reply(caption, markup)
-        if fallback is not None:
+        callback = isinstance(self.event, CallbackQuery)
+        has_media = any(
+            getattr(target, field, None)
+            for field in ("photo", "video", "animation", "document", "audio", "sticker")
+        )
+        if callback and not has_media and await self.edit(caption, markup):
+            final = target
+        else:
+            final = await self.reply(caption, markup)
             if (
-                isinstance(self.event, CallbackQuery)
-                and target.message_id != fallback.message_id
+                final is not None and callback
+                and target.message_id != final.message_id
             ):
+                # Replace previous image-backed menu after delivery succeeds.
                 try:
                     await self.bot.delete_message(target.chat.id, target.message_id)
                 except TelegramAPIError:
                     pass
-            await _remember_screen(self.bot, self.user_id, fallback)
+
+        if isinstance(final, Message):
+            await _remember_screen(self.bot, self.user_id, final)
             if live_menu:
                 _LIVE_MENUS[self.user_id] = (
-                    fallback.chat.id, fallback.message_id, self.nick, self.is_admin,
-                    online_count(self.mm),
+                    final.chat.id, final.message_id, self.nick, self.is_admin,
+                    online_count(self.mm), time.monotonic(),
                 )
-        return fallback
+        return final
 
     async def screen(
         self, image: str, caption: str, markup: InlineKeyboardMarkup | None = None
@@ -329,9 +285,9 @@ async def refresh_live_menus(
         for attempt in range(2):
             wrapped = pack.wrap(body) if pack and attempt == 0 else (pack.strip(body) if pack else body)
             try:
-                await bot.edit_message_caption(
+                await bot.edit_message_text(
                     chat_id=chat_id, message_id=message_id,
-                    caption=wrapped, reply_markup=markup,
+                    text=wrapped, reply_markup=markup,
                 )
                 _LIVE_MENUS[user_id] = (
                     chat_id, message_id, nickname, is_admin, size, opened_at
@@ -517,40 +473,29 @@ async def send_screen_to(
     markup: InlineKeyboardMarkup | None = None, pack: EmojiPack | None = None,
     db: Database | None = None,
 ) -> DeliveryResult:
-    path = ASSET_DIR / image
-    if not path.exists():
-        return await send_to(bot, chat_id, caption, markup, pack)
-    key = f"menu_file_id:{image}"
-    cached = _FILE_ID_CACHE.get(key, "")
-    if not cached and db:
-        cached = await db.get_kv(key)
-        if cached:
-            _FILE_ID_CACHE[key] = cached
-    photo: str | FSInputFile = cached or FSInputFile(path)
+    """Send a text-only built-in screen (including the match-found notice).
+
+    image/db stay in the signature for existing callers; no PNG file is read
+    and no cached Telegram photo file_id is used or stored.
+    """
     for attempt in range(2):
-        body = pack.wrap(caption) if pack and attempt == 0 else (pack.strip(caption) if pack else caption)
+        body = (
+            pack.wrap(caption) if pack and attempt == 0
+            else pack.strip(caption) if pack else caption
+        )
         try:
-            sent = await bot.send_photo(chat_id, photo, caption=body, reply_markup=markup)
-            if db and sent.photo:
-                new_file_id = sent.photo[-1].file_id
-                if new_file_id != cached:
-                    _FILE_ID_CACHE[key] = new_file_id
-                    await db.set_kv(key, new_file_id)
-                    cached = new_file_id
+            sent = await bot.send_message(chat_id, body, reply_markup=markup)
             _LIVE_MENUS.pop(chat_id, None)
-            await _remember_screen(bot, chat_id, sent)
+            if isinstance(sent, Message):
+                await _remember_screen(bot, chat_id, sent)
             return DeliveryResult.DELIVERED
         except TelegramBadRequest as exc:
-            if attempt == 0 and pack is not None and pack.accept(exc):
+            if pack and attempt == 0 and pack.accept(exc):
                 continue
-            if cached:
-                _FILE_ID_CACHE.pop(key, None)
-                await db.delete_kv(key)
-                cached = ""
-                photo = FSInputFile(path)
-                continue
-            message = str(exc).lower()
-            return DeliveryResult.UNAVAILABLE if "chat not found" in message else DeliveryResult.TEMP_ERROR
+            return (
+                DeliveryResult.UNAVAILABLE if "chat not found" in str(exc).lower()
+                else DeliveryResult.TEMP_ERROR
+            )
         except TelegramRetryAfter as exc:
             await asyncio.sleep(max(0.0, float(exc.retry_after)))
         except TelegramForbiddenError:
