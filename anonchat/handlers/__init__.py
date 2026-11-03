@@ -17,6 +17,7 @@ from .support import router as support_router
 from .nft_giveaway import router as nft_giveaway_router
 from .nft_channel import router as nft_channel_router
 from .nft_setup import router as nft_setup_router
+from .nft_win import router as nft_win_router
 from .raiony import router as raiony_router
 
 
@@ -27,6 +28,7 @@ def get_routers() -> list[Router]:
         raiony_router,   # районы: проверенные XTR-платежи и складские приглашения
         support_router,   # добровольная поддержка через Telegram Stars
         nft_setup_router,  # настройка NFT через личные сообщения
+        nft_win_router,  # ручное сообщение владельцу о победителе
         nft_channel_router,  # публикация NFT в канале
         nft_giveaway_router,  # NFT-розыгрыш: билеты через RollyPay и админ-команды
         reports_router,   # /report, FSM комментария жалобы
