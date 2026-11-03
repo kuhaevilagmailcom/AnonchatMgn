@@ -26,6 +26,7 @@ jobs:
         suite:
           - core
           - flow
+          - test_text_screens
           - moderation_channel
           - admin_miniapp
           - admin_reliability
