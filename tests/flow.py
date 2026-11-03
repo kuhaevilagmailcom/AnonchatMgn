@@ -825,28 +825,33 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     session.clear()
     await press(A, "act:settings")
-    check(any(item["method"] == "editMessageMedia" for item in session.outbox),
-          "главное меню в настройки меняет картинку")
-    first_settings_file = await db.get_kv("menu_file_id:05_settings.png")
-    check(bool(first_settings_file), "file_id экрана сохраняется в SQLite")
+    check(any(item["method"] == "sendMessage" for item in session.outbox),
+          "главное меню в настройки открывает текст и кнопки")
+    check(not any(item["method"] in {"sendPhoto", "editMessageMedia"} for item in session.outbox),
+          "настройки не отправляют декоративную картинку")
+    check(not await db.get_kv("menu_file_id:05_settings.png"),
+          "новые экраны не создают кеш file_id картинок")
 
     session.clear()
     await press(A, "act:profile")
-    check(any(item["method"] == "editMessageMedia" for item in session.outbox),
-          "настройки в профиль меняет картинку")
+    check(any(item["method"] == "sendMessage" for item in session.outbox),
+          "профиль открывается текстом")
+    check(not any(item["method"] in {"sendPhoto", "editMessageMedia"} for item in session.outbox),
+          "профиль не отправляет декоративную картинку")
 
     session.clear()
     await press(A, "act:rules")
-    check(any(item["method"] == "editMessageMedia" for item in session.outbox),
-          "профиль в правила меняет картинку")
+    check(any(item["method"] == "sendMessage" for item in session.outbox),
+          "правила открываются текстом")
+    check(not any(item["method"] in {"sendPhoto", "editMessageMedia"} for item in session.outbox),
+          "правила не отправляют декоративную картинку")
 
     session.clear()
     await press(A, "act:settings")
-    edit_media = next(
-        item for item in reversed(session.outbox) if item["method"] == "editMessageMedia"
-    )
-    media = edit_media.get("media", {})
-    check(media.get("media") == first_settings_file, "повторный экран использует cached file_id")
+    check(any(item["method"] == "sendMessage" for item in session.outbox),
+          "повторные настройки открываются без картинки")
+    check(not any(item["method"] in {"sendPhoto", "editMessageMedia"} for item in session.outbox),
+          "повторные настройки не используют cached file_id")
 
     session.clear()
     await press(A, "cfg:feedback")
