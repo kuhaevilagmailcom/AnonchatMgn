@@ -36,6 +36,7 @@ jobs:
           - dice_duels
           - test_nft_giveaway
           - test_nft_ticket_quantity
+          - test_nft_grant
           - test_nft_channel
           - test_nft_channel_live
           - test_nft_presentation
