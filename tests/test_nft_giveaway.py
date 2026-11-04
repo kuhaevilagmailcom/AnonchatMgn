@@ -24,7 +24,7 @@ def test_nft_keyboard_sells_ticket_and_old_sbp35_support_is_gone() -> None:
     labels = [button.text for row in _keyboard(True).inline_keyboard for button in row]
     callbacks = [button.callback_data for row in _keyboard(True).inline_keyboard for button in row]
     support_labels = [button.text for row in K.support_method_keyboard(sbp_enabled=True).inline_keyboard for button in row]
-    assert "Купить билет · 35 ₽" in labels
+    assert "Купить билеты · от 35 ₽" in labels
     assert "nft:buy" in callbacks
     assert "Поддержать 35 ₽ · СБП" not in support_labels
     assert all(command.command != "sbp35" for command in COMMANDS)
