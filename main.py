@@ -31,6 +31,7 @@ from anonchat.pack import EmojiPack
 from anonchat.diagnostics import METRICS
 from anonchat.admin_events import run_worker as run_notice_worker
 from anonchat.admin_broadcasts import run_worker as run_broadcast_worker
+from anonchat.nft_channel_live import run_worker as run_nft_channel_refresh
 from anonchat.backups import maybe_backup
 from anonchat.runtime_state import online_count as presence_online_count
 from anonchat import live_chat
@@ -218,6 +219,7 @@ async def main() -> None:  # pragma: no cover
     menu_task: asyncio.Task | None = None
     notice_task: asyncio.Task | None = None
     broadcast_task: asyncio.Task | None = None
+    nft_refresh_task: asyncio.Task | None = None
     miniapp_server = None
 
     @dp.startup()
@@ -265,6 +267,9 @@ async def main() -> None:  # pragma: no cover
         menu_task = asyncio.create_task(menu_refresher(bot, mm, pack, database))
         notice_task = asyncio.create_task(run_notice_worker(bot, database),name='admin-notice-delivery')
         broadcast_task = asyncio.create_task(run_broadcast_worker(bot,database),name='admin-broadcast-delivery')
+        nft_refresh_task = asyncio.create_task(
+            run_nft_channel_refresh(bot, database), name='nft-channel-live-refresh'
+        )
 
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
@@ -273,6 +278,12 @@ async def main() -> None:  # pragma: no cover
             janitor_task.cancel()
         if menu_task is not None:
             menu_task.cancel()
+        if nft_refresh_task is not None:
+            nft_refresh_task.cancel()
+            try:
+                await nft_refresh_task
+            except asyncio.CancelledError:
+                pass
         if broadcast_task is not None:
             broadcast_task.cancel()
             try:
