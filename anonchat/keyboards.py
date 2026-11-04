@@ -109,7 +109,7 @@ def menu_keyboard(
         _button(b, "Найти собеседника", callback_data=CB_CONNECT, icon="view", style="success")
         _button(b, "Открыть приложение", url=MINIAPP_PUBLIC_URL, icon="link", style="primary")
         if nft_active:
-            _button(b, "NFT-розыгрыш", callback_data="nft:open", icon="gift", style="primary")
+            _button(b, "Розыгрыш NFT", callback_data="nft:open", icon="gift", style="primary")
     _button(b, "Профиль", callback_data=CB_PROFILE, icon="profile")
     _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
     _button(b, "Топ", callback_data=CB_TOP, icon="stats")
