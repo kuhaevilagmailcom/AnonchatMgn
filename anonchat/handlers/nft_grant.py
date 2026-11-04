@@ -103,7 +103,7 @@ async def _finish_grant(
         user_id, qty, first_number = int(user_id), int(qty), int(first_number)
         if status != "pending":
             await con.commit()
-            return str(status), user_id, qty, first_number
+            return ("already_issued" if status == "issued" else str(status)), user_id, qty, first_number
         if not approve:
             await con.execute(
                 "UPDATE nft_ticket_grants SET status='cancelled' WHERE token=?",
