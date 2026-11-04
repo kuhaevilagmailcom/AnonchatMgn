@@ -152,6 +152,9 @@ def test_existing_channel_post_can_be_updated_in_place() -> None:
             with patch.dict(os.environ, {"NFT_POST_CHANNEL": ""}), patch(
                 "anonchat.handlers.nft_channel._active",
                 new=AsyncMock(return_value=g),
+            ), patch(
+                "anonchat.nft_channel_live._active",
+                new=AsyncMock(return_value=g),
             ):
                 await nft_post_update(event, ctx, db)
             bot.edit_message_text.assert_awaited_once()
