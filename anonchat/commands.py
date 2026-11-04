@@ -60,6 +60,7 @@ ADMIN_VISIBLE = (
     BotCommand(command="nft_draw", description="🏆 Выбрать победителя NFT"),
     BotCommand(command="nft_finish", description="🏁 Завершить NFT-розыгрыш сейчас"),
     BotCommand(command="win", description="🏆 Сообщение о победителе NFT по ID"),
+    BotCommand(command="nft_give", description="🎟 Выдать NFT-билеты по ID"),
 )
 
 #: работают, если ввести руками (и из панели), но в меню не показываются
