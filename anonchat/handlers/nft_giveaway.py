@@ -15,6 +15,8 @@ from urllib.parse import urlsplit
 import aiosqlite
 from aiogram import F, Router
 from aiogram.filters import Command, CommandStart
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from ..actions import Ctx
@@ -26,6 +28,43 @@ from ..nft_presentation import RaffleStats, format_giveaway, load_protect_icons
 router = Router(name="nft_giveaway")
 TICKET_PRICE_RUB = 35
 NFT_CHECK_PREFIX = "nft:check:"
+MAX_TICKETS_PER_ORDER = 99
+
+
+class NFTTicketQuantity(StatesGroup):
+    waiting = State()
+
+
+def _quantity_for_amount(amount_rub: int) -> int:
+    """Amount in local authoritative SBP order is exact and bounded."""
+    amount = int(amount_rub)
+    if amount <= 0 or amount % TICKET_PRICE_RUB:
+        raise ValueError("Invalid NFT ticket payment amount")
+    quantity = amount // TICKET_PRICE_RUB
+    if not 1 <= quantity <= MAX_TICKETS_PER_ORDER:
+        raise ValueError("NFT order quantity must be between 1 and 99")
+    return quantity
+
+
+def _valid_nft_amount(amount_rub: int) -> bool:
+    try:
+        _quantity_for_amount(int(amount_rub))
+        return True
+    except (ValueError, TypeError, OverflowError):
+        return False
+
+
+def _parse_quantity(raw: str) -> int | None:
+    value = (raw or "").strip()
+    if not re.fullmatch(r"[0-9]{1,2}", value):
+        return None
+    number = int(value)
+    return number if 1 <= number <= MAX_TICKETS_PER_ORDER else None
+
+
+def _ticket_keys(payment_id: str, quantity: int) -> list[str]:
+    """First key stays the historical provider id for old 1-ticket orders."""
+    return [payment_id] + [f"{payment_id}:ticket:{index}" for index in range(2, quantity + 1)]
 
 
 @dataclass(frozen=True)
@@ -90,15 +129,15 @@ def _keyboard(payment_enabled: bool = True) -> InlineKeyboardMarkup:
     rows = []
     if payment_enabled:
         rows.append([InlineKeyboardButton(
-            text=f"Купить билет · {TICKET_PRICE_RUB} ₽", callback_data="nft:buy"
+            text=f"Купить билеты · от {TICKET_PRICE_RUB} ₽", callback_data="nft:buy"
         )])
     rows.append([InlineKeyboardButton(text="Мои билеты", callback_data="nft:status")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _payment_keyboard(payment_id: str, pay_url: str) -> InlineKeyboardMarkup:
+def _payment_keyboard(payment_id: str, pay_url: str, amount_rub: int = TICKET_PRICE_RUB) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"Оплатить {TICKET_PRICE_RUB} ₽", url=pay_url)],
+        [InlineKeyboardButton(text=f"Оплатить {amount_rub} ₽", url=pay_url)],
         [InlineKeyboardButton(
             text="✅ Проверить оплату", callback_data=NFT_CHECK_PREFIX + payment_id
         )],
@@ -223,7 +262,13 @@ async def _ticket_numbers(path, campaign: str, user_id: int) -> list[int]:
 
 
 async def _issue_paid_ticket(path, payment_id: str) -> tuple[int, bool]:
-    """Atomically mark a verified RollyPay payment paid and issue one ticket."""
+    """Atomically issue all tickets for one verified provider payment, once.
+
+    Existing 35 RUB orders keep their original payment_id on the single ticket.
+    Larger valid orders add indexed suffixes, with a unique payment_id per row.
+    All inserts and payment status changes share one SQLite IMMEDIATE transaction.
+    Returns first numbered ticket and whether this transaction minted new tickets.
+    """
     await _init(path)
     async with aiosqlite.connect(path, timeout=15.0) as con:
         con.row_factory = aiosqlite.Row
@@ -236,15 +281,22 @@ async def _issue_paid_ticket(path, payment_id: str) -> tuple[int, bool]:
             await con.rollback()
             raise ValueError("Payment not found")
         kind = str(payment["kind"] or "")
-        if not kind.startswith("nft_ticket:") or int(payment["amount_rub"]) != TICKET_PRICE_RUB:
+        if not kind.startswith("nft_ticket:"):
             await con.rollback()
             raise ValueError("Payment is not an NFT ticket order")
+        try:
+            quantity = _quantity_for_amount(int(payment["amount_rub"]))
+        except (ValueError, TypeError):
+            await con.rollback()
+            raise ValueError("Payment amount does not match NFT ticket pricing")
         campaign = kind.split(":", 1)[1]
+        keys = _ticket_keys(str(payment_id), quantity)
         existing = await (await con.execute(
             "SELECT id FROM nft_giveaway_tickets WHERE payment_id=?", (str(payment_id),)
         )).fetchone()
         if existing:
-            number = await _ticket_number(con, campaign, int(existing[0]))
+            # The first row can exist only after a fully committed batch.
+            number = await _ticket_number(con, campaign, int(existing["id"]))
             await con.commit()
             return number, False
         winner = await (await con.execute(
@@ -253,19 +305,23 @@ async def _issue_paid_ticket(path, payment_id: str) -> tuple[int, bool]:
         if winner:
             await con.rollback()
             raise ValueError("Giveaway already drawn")
-        cur = await con.execute(
-            "INSERT INTO nft_giveaway_tickets(campaign,user_id,payment_id,joined_at) "
-            "VALUES (?,?,?,?)",
-            (campaign, int(payment["user_id"]), str(payment_id), int(time.time())),
-        )
+        # Old tickets and all other payments are counted before adding this batch.
+        first_number = int((await (await con.execute(
+            "SELECT COUNT(*) FROM nft_giveaway_tickets WHERE campaign=?", (campaign,)
+        )).fetchone())[0]) + 1
+        joined_at = int(time.time())
+        for key in keys:
+            await con.execute(
+                "INSERT INTO nft_giveaway_tickets(campaign,user_id,payment_id,joined_at) "
+                "VALUES (?,?,?,?)",
+                (campaign, int(payment["user_id"]), key, joined_at),
+            )
         await con.execute(
             "UPDATE sbp_payments SET status='paid',paid_at=? WHERE payment_id=?",
-            (int(time.time()), str(payment_id)),
+            (joined_at, str(payment_id)),
         )
-        number = await _ticket_number(con, campaign, int(cur.lastrowid))
         await con.commit()
-        return number, True
-
+        return first_number, True
 
 async def _count(path, campaign: str) -> int:
     await _init(path)
@@ -337,8 +393,8 @@ async def _reconcile_pending_nft_orders(db: Database, cfg, campaign: str) -> Non
                     str(remote.get("payment_id") or "") == payment_id
                     and str(remote.get("order_id") or "") == str(row["order_id"])
                     and str(remote.get("currency") or remote.get("payment_currency") or "").upper() == "RUB"
-                    and value.is_finite() and value == Decimal(TICKET_PRICE_RUB)
-                    and int(row["amount_rub"]) == TICKET_PRICE_RUB
+                    and value.is_finite() and value == Decimal(int(row["amount_rub"]))
+                    and 1 <= _quantity_for_amount(int(row["amount_rub"])) <= MAX_TICKETS_PER_ORDER
                 )
                 if not valid:
                     return
@@ -489,7 +545,7 @@ async def nft_open(message: Message, ctx: Ctx, db: Database) -> None:
     ))
 
 
-async def _start_ticket_purchase(ctx: Ctx, db: Database) -> None:
+async def _start_ticket_purchase(ctx: Ctx, db: Database, quantity: int = 1) -> None:
     g = await _active(db)
     if not g:
         await ctx.reply("Розыгрыш пока не открыт.")
@@ -503,12 +559,16 @@ async def _start_ticket_purchase(ctx: Ctx, db: Database) -> None:
     if not ctx.cfg.rollypay_enabled:
         await ctx.reply("Оплата рублями временно недоступна.")
         return
+    if not 1 <= quantity <= MAX_TICKETS_PER_ORDER:
+        await ctx.reply("Введи количество от 1 до 99.")
+        return
+    amount_rub = quantity * TICKET_PRICE_RUB
     order_id = f"nft-{g.campaign}-{ctx.user_id}-{secrets.token_hex(5)}"
     local_id = ""
     try:
         local_id = await db.create_sbp_order(
             order_id=order_id, user_id=ctx.user_id,
-            kind=f"nft_ticket:{g.campaign}", amount_rub=TICKET_PRICE_RUB,
+            kind=f"nft_ticket:{g.campaign}", amount_rub=amount_rub,
         )
         # An owner may close the campaign while the buyer is opening checkout.
         # Do not create an external payment if intake closed meanwhile.
@@ -518,8 +578,8 @@ async def _start_ticket_purchase(ctx: Ctx, db: Database) -> None:
             await ctx.reply("Приём новых билетов завершён.")
             return
         payment = await create_payment(
-            ctx.cfg, order_id=order_id, amount=Decimal(TICKET_PRICE_RUB),
-            description="АНОН МГН · Билет NFT-розыгрыша", user_id=ctx.user_id,
+            ctx.cfg, order_id=order_id, amount=Decimal(amount_rub),
+            description=f"АНОН МГН · {quantity} билет(ов) NFT-розыгрыша", user_id=ctx.user_id,
         )
         payment_id = str(payment["payment_id"])
         pay_url = str(payment["pay_url"])
@@ -533,20 +593,60 @@ async def _start_ticket_purchase(ctx: Ctx, db: Database) -> None:
         await ctx.reply("Не удалось создать платёж. Попробуй немного позже.")
         return
     await ctx.reply(
-        "🎟 <b>Билет NFT-розыгрыша</b>\n\n"
-        f"К оплате: <b>{TICKET_PRICE_RUB} ₽</b>.\n\n"
+        "🎟 <b>Билеты NFT-розыгрыша</b>\n\n"
+        f"Количество: <b>{quantity}</b> шт.\n"
+        f"Цена за билет: <b>{TICKET_PRICE_RUB} ₽</b>\n"
+        f"К оплате: <b>{amount_rub} ₽</b>.\n\n"
         "⚠️ <b>После оплаты вернись сюда и обязательно нажми "
         "«Проверить оплату» ниже.</b>\n"
         "Без этой проверки номер билета не появится.\n"
         "Если потерял сообщение с оплатой, открой «Мои билеты».",
-        _payment_keyboard(payment_id, pay_url),
+        _payment_keyboard(payment_id, pay_url, amount_rub),
     )
 
 
 @router.callback_query(F.data.in_({"nft:buy", "nft:join"}))
-async def nft_buy(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+async def nft_buy(event: CallbackQuery, ctx: Ctx, db: Database, state: FSMContext) -> None:
     await ctx.ack()
-    await _start_ticket_purchase(ctx, db)
+    g = await _active(db)
+    if not g or time.time() >= g.close_at:
+        await state.clear()
+        await ctx.reply("Продажа билетов завершена.")
+        return
+    if await ctx.restricted():
+        await ctx.reply("Участие недоступно.")
+        return
+    if not ctx.cfg.rollypay_enabled:
+        await ctx.reply("Оплата рублями временно недоступна.")
+        return
+    await state.set_state(NFTTicketQuantity.waiting)
+    await ctx.reply(
+        "🎟 <b>Введите кол-во билетов, которое хотите купить, от 1 до 99.</b>\n\n"
+        f"Цена одного билета: <b>{TICKET_PRICE_RUB} ₽</b>.\n"
+        "Отправьте число отдельным сообщением, например: <code>5</code>.",
+        InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="Отмена", callback_data="nft:buy_cancel"),
+        ]]),
+    )
+
+
+@router.callback_query(F.data == "nft:buy_cancel")
+async def nft_buy_cancel(event: CallbackQuery, ctx: Ctx, state: FSMContext) -> None:
+    await state.clear()
+    await ctx.ack("Отменено")
+    await ctx.reply("Покупка билетов отменена.")
+
+
+@router.message(NFTTicketQuantity.waiting, F.text, ~F.text.startswith("/"))
+async def nft_enter_quantity(
+    message: Message, ctx: Ctx, db: Database, state: FSMContext,
+) -> None:
+    quantity = _parse_quantity(message.text or "")
+    if quantity is None:
+        await ctx.reply("Введите целое число от 1 до 99, например <code>5</code>.")
+        return
+    await state.clear()
+    await _start_ticket_purchase(ctx, db, quantity)
 
 
 @router.callback_query(F.data.startswith(NFT_CHECK_PREFIX))
@@ -556,7 +656,7 @@ async def nft_check_payment(event: CallbackQuery, ctx: Ctx, db: Database) -> Non
     if (
         not local or int(local["user_id"]) != ctx.user_id
         or not str(local["kind"] or "").startswith("nft_ticket:")
-        or int(local["amount_rub"]) != TICKET_PRICE_RUB
+        or not _valid_nft_amount(local["amount_rub"])
     ):
         await ctx.ack("Платёж не найден", alert=True)
         return
@@ -574,7 +674,7 @@ async def nft_check_payment(event: CallbackQuery, ctx: Ctx, db: Database) -> Non
             and str(currency or "").upper() == "RUB"
         )
         try:
-            matches = matches and Decimal(str(amount)) == Decimal(TICKET_PRICE_RUB)
+            matches = matches and Decimal(str(amount)) == Decimal(int(local["amount_rub"]))
         except Exception:
             matches = False
         if not matches:
@@ -594,10 +694,13 @@ async def nft_check_payment(event: CallbackQuery, ctx: Ctx, db: Database) -> Non
     except ValueError:
         await ctx.ack("Не удалось выдать билет. Обратись в поддержку.", alert=True)
         return
-    await ctx.ack("Билет выдан!" if fresh else "Этот платёж уже учтён")
+    quantity = _quantity_for_amount(int(local["amount_rub"]))
+    await ctx.ack("Билеты выданы!" if fresh else "Этот платёж уже учтён")
+    numbers = f"№{ticket}" if quantity == 1 else f"№{ticket}–№{ticket + quantity - 1}"
     await ctx.reply(
-        f"🎟 <b>Билет №{ticket}</b>\n\n"
-        "Оплата подтверждена. Билет участвует в NFT-розыгрыше."
+        f"🎟 <b>Билеты {numbers}</b>\n"
+        f"Количество: <b>{quantity}</b> шт.\n\n"
+        "Оплата подтверждена. Все билеты участвуют в NFT-розыгрыше."
     )
 
 
