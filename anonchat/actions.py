@@ -51,6 +51,7 @@ log = logging.getLogger(__name__)
 # Нужны для замены старого меню и обновления счётчика без мусора в БД.
 _SCREEN_MESSAGES: dict[int, tuple[int, int]] = {}
 _LIVE_MENUS: dict[int, tuple[int, int, str, bool, int, float]] = {}
+_LIVE_MENU_NFT_FLAGS: dict[int, bool] = {}
 
 
 class DeliveryResult(Enum):
@@ -112,7 +113,7 @@ class Ctx:
 
     async def render_screen(
         self, image: str, caption: str, markup: InlineKeyboardMarkup | None = None,
-        *, live_menu: bool = False,
+        *, live_menu: bool = False, nft_active: bool = False,
     ) -> Message | None:
         """All built-in screens are text-only; keep their buttons and screen tracking.
 
@@ -122,6 +123,7 @@ class Ctx:
         """
         if not live_menu:
             _LIVE_MENUS.pop(self.user_id, None)
+            _LIVE_MENU_NFT_FLAGS.pop(self.user_id, None)
         target = self.event.message if isinstance(self.event, CallbackQuery) else self.event
         if target is None:
             return None
@@ -152,6 +154,7 @@ class Ctx:
                     final.chat.id, final.message_id, self.nick, self.is_admin,
                     online_count(self.mm), time.monotonic(),
                 )
+                _LIVE_MENU_NFT_FLAGS[self.user_id] = nft_active
         return final
 
     async def screen(
@@ -255,20 +258,32 @@ def online_count(mm: Matchmaker | None = None) -> int:
     return presence_online_count()
 
 
+async def _nft_is_active(db: Database | None) -> bool:
+    """Only an unexpired NFT campaign makes the main-menu button visible."""
+    if db is None:
+        return False
+    # Lazy import: the giveaway handlers already import Ctx from actions.py.
+    from .handlers.nft_giveaway import _active
+    giveaway = await _active(db)
+    return bool(giveaway and giveaway.close_at > time.time())
+
+
 async def refresh_live_menus(
     bot: Bot, mm: Matchmaker, pack: EmojiPack | None = None, db: Database | None = None
 ) -> None:
     """Редко обновляет только свежие главные меню, не устраивая массовый edit-шторм."""
     size = online_count(mm)
     poll_active = bool(await db.active_poll()) if db is not None else False
+    nft_active = await _nft_is_active(db)
     now_mono = time.monotonic()
     edited = 0
     for user_id, item in list(_LIVE_MENUS.items()):
         chat_id, message_id, nickname, is_admin, previous_size, opened_at = item
         if now_mono - opened_at > 10 * 60:
             _LIVE_MENUS.pop(user_id, None)
+            _LIVE_MENU_NFT_FLAGS.pop(user_id, None)
             continue
-        if previous_size == size:
+        if previous_size == size and _LIVE_MENU_NFT_FLAGS.get(user_id) == nft_active:
             continue
         status = mm.status(user_id)
         if status != "free":
@@ -281,7 +296,10 @@ async def refresh_live_menus(
             f"{texts.STATUS_FREE}\n\n"
             f"🟢 Онлайн сейчас: <b>{size}</b>"
         )
-        markup = menu_keyboard("free", size, admin=is_admin, poll_active=poll_active)
+        markup = menu_keyboard(
+            "free", size, admin=is_admin, poll_active=poll_active,
+            nft_active=nft_active,
+        )
         for attempt in range(2):
             wrapped = pack.wrap(body) if pack and attempt == 0 else (pack.strip(body) if pack else body)
             try:
@@ -292,12 +310,14 @@ async def refresh_live_menus(
                 _LIVE_MENUS[user_id] = (
                     chat_id, message_id, nickname, is_admin, size, opened_at
                 )
+                _LIVE_MENU_NFT_FLAGS[user_id] = nft_active
                 edited += 1
                 break
             except TelegramBadRequest as exc:
                 if pack and attempt == 0 and pack.accept(exc):
                     continue
                 _LIVE_MENUS.pop(user_id, None)
+                _LIVE_MENU_NFT_FLAGS.pop(user_id, None)
                 break
             except TelegramAPIError:
                 _LIVE_MENUS.pop(user_id, None)
@@ -486,6 +506,7 @@ async def send_screen_to(
         try:
             sent = await bot.send_message(chat_id, body, reply_markup=markup)
             _LIVE_MENUS.pop(chat_id, None)
+            _LIVE_MENU_NFT_FLAGS.pop(chat_id, None)
             if isinstance(sent, Message):
                 await _remember_screen(bot, chat_id, sent)
             return DeliveryResult.DELIVERED
@@ -519,11 +540,15 @@ async def show_menu(ctx: Ctx) -> None:
         f"🟢 Онлайн сейчас: <b>{online_count(ctx.mm)}</b>"
     )
     poll_active = bool(await ctx.db.active_poll()) if status == "free" else False
+    nft_active = await _nft_is_active(ctx.db) if status == "free" else False
     kb = menu_keyboard(
-        status, ctx.mm.queue_size(), admin=ctx.is_admin, poll_active=poll_active
+        status, ctx.mm.queue_size(), admin=ctx.is_admin,
+        poll_active=poll_active, nft_active=nft_active,
     )
     image = {"paired": "03_found.png", "queued": "02_search.png"}.get(status, "01_main_menu.png")
-    await ctx.render_screen(image, body, kb, live_menu=(status == "free"))
+    await ctx.render_screen(
+        image, body, kb, live_menu=(status == "free"), nft_active=nft_active,
+    )
 
 
 async def show_welcome(ctx: Ctx) -> None:
