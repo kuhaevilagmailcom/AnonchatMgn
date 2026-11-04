@@ -369,34 +369,27 @@ async def nft_post_update(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     if not channel or not message_id:
         await ctx.ack("Пост не найден. Открой /nft_post заново.", alert=True)
         return
-    me = await ctx.bot.get_me()
-    if not me.username:
-        await ctx.ack("Не удалось получить имя бота", alert=True)
-        return
-    body = await _card(ctx, db, g)
     await ctx.ack()
-    try:
-        await ctx.bot.edit_message_text(
-            chat_id=int(channel) if channel.startswith("-100") else channel,
-            message_id=message_id,
-            text=body,
-            reply_markup=participation_keyboard(me.username),
-            disable_web_page_preview=True,
-        )
-    except TelegramBadRequest as exc:
-        if "message is not modified" in str(exc).lower():
-            await ctx.reply("Пост уже обновлён — изменений нет.")
-        else:
-            await ctx.reply(
-                "Telegram не разрешил изменить пост. "
-                "Проверь права администратора и доступность публикации."
-            )
-        return
-    except TelegramAPIError:
-        await ctx.reply("Не удалось обновить пост. Проверь права и повтори позже.")
-        return
-    await ctx.reply("✅ Пост розыгрыша обновлён в канале с новой статистикой и эмодзи.")
+    # Imports here avoid a circular dependency with the background worker.
+    from ..nft_channel_live import refresh_campaign_posts
 
+    result = await refresh_campaign_posts(ctx.bot, db, channel=channel)
+    if result["total"] == 0:
+        await ctx.reply("Опубликованные сообщения не найдены в базе.")
+    elif result["failed"]:
+        await ctx.reply(
+            "Не все сообщения удалось обновить. "
+            f"Успешно: {result['updated']}, без изменений: {result['unchanged']}, "
+            f"ошибок: {result['failed']}. Проверь права бота на редактирование постов."
+        )
+    elif result["updated"] == 0:
+        await ctx.reply("✅ Все публикации розыгрыша уже актуальны.")
+    else:
+        await ctx.reply(
+            f"✅ Обновлено публикаций: <b>{result['updated']}</b>. "
+            "Количество участников, билетов и время пересчитаны. "
+            "Кнопки «Участвовать» сохранены."
+        )
 
 @router.callback_query(F.data.startswith("nft:post:"))
 async def nft_post_confirm(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
