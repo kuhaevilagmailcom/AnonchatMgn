@@ -37,6 +37,7 @@ jobs:
           - test_nft_giveaway
           - test_nft_ticket_quantity
           - test_nft_channel
+          - test_nft_channel_live
           - test_nft_presentation
           - test_nft_win
           - test_city_capture
