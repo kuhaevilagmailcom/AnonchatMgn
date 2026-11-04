@@ -35,6 +35,7 @@ jobs:
           - game_resilience
           - dice_duels
           - test_nft_giveaway
+          - test_nft_ticket_quantity
           - test_nft_channel
           - test_nft_presentation
           - test_nft_win
