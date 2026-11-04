@@ -82,7 +82,8 @@ CB_ADMIN_PANEL = "adm:panel"
 
 
 def menu_keyboard(
-    status: str = "free", queue_size: int = 0, admin: bool = False, poll_active: bool = False
+    status: str = "free", queue_size: int = 0, admin: bool = False,
+    poll_active: bool = False, nft_active: bool = False,
 ) -> InlineKeyboardMarkup:
     """Главное меню.
 
@@ -107,6 +108,8 @@ def menu_keyboard(
     else:
         _button(b, "Найти собеседника", callback_data=CB_CONNECT, icon="view", style="success")
         _button(b, "Открыть приложение", url=MINIAPP_PUBLIC_URL, icon="link", style="primary")
+        if nft_active:
+            _button(b, "Розыгрыш NFT", callback_data="nft:open", icon="gift", style="primary")
     _button(b, "Профиль", callback_data=CB_PROFILE, icon="profile")
     _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
     _button(b, "Топ", callback_data=CB_TOP, icon="stats")
@@ -115,6 +118,8 @@ def menu_keyboard(
     _button(b, "Правила", callback_data=CB_RULES, icon="ticket")
     _button(b, "Обратная связь", callback_data=CB_FEEDBACK, icon="support")
     rows = [1, 1, 2, 2, 1] if not poll_active else [1, 1, 2, 2, 2]
+    if nft_active:
+        rows.insert(2, 1)
     if admin:
         _button(b, "Панель модератора", callback_data=CB_ADMIN_PANEL, icon="bonus", style="primary")
         rows.append(1)

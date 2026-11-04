@@ -545,6 +545,17 @@ async def nft_open(message: Message, ctx: Ctx, db: Database) -> None:
     ))
 
 
+@router.callback_query(F.data == "nft:open")
+async def nft_open_from_menu(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
+    """Main-menu action opens the existing raffle and its purchase/status controls."""
+    await ctx.ack()
+    g = await _active(db)
+    if not g or time.time() >= g.close_at:
+        await ctx.reply("Розыгрыш уже завершён. Посмотреть свои билеты можно через /nft.")
+        return
+    await ctx.reply(await _card(ctx, db, g), _keyboard(ctx.cfg.rollypay_enabled))
+
+
 async def _start_ticket_purchase(ctx: Ctx, db: Database, quantity: int = 1) -> None:
     g = await _active(db)
     if not g:
