@@ -53,7 +53,7 @@ def test_quantity_prompt_and_cancel_do_not_create_payment() -> None:
                     await nft_buy(event, ctx, db, state)
                     state.set_state.assert_awaited_once_with(NFTTicketQuantity.waiting)
                     text, keyboard = ctx.reply.await_args.args
-                    assert "от 1 до 99" in text
+                    assert "От 1 до 99" in text
                     assert "35 ₽" in text
                     assert keyboard.inline_keyboard[0][0].callback_data == "nft:buy_cancel"
                     create.assert_not_awaited()
@@ -87,7 +87,7 @@ def test_invalid_quantity_does_not_charge_and_valid_quantity_creates_exact_invoi
                 ) as create:
                     for bad in ("0", "100", "2.5", "abc"):
                         await nft_enter_quantity(SimpleNamespace(text=bad), ctx, db, state)
-                        assert "от 1 до 99" in ctx.reply.await_args.args[0]
+                        assert "От 1 до 99" in ctx.reply.await_args.args[0]
                         state.clear.assert_not_awaited()
                         create.assert_not_awaited()
                     await nft_enter_quantity(SimpleNamespace(text="5"), ctx, db, state)
@@ -101,8 +101,7 @@ def test_invalid_quantity_does_not_charge_and_valid_quantity_creates_exact_invoi
                     assert int(payment["amount_rub"]) == 175
                     assert await _count(db.path, g.campaign) == 0
                     text, keyboard = ctx.reply.await_args.args
-                    assert "Количество: <b>5</b>" in text
-                    assert "К оплате: <b>175 ₽</b>" in text
+                    assert "5 шт. · <b>175 ₽</b>" in text
                     assert keyboard.inline_keyboard[0][0].text == "Оплатить 175 ₽"
                     assert keyboard.inline_keyboard[1][0].callback_data == "nft:check:bulk-5"
             finally:

@@ -111,7 +111,7 @@
       tile('Сообщений за 7 дней',fmt(s.messages_week))+tile('Сообщений за всё время',fmt(s.messages))+
       tile('В поиске',fmt(d.queue))+
       tile('Диалогов сейчас',fmt(d.dialogs))+tile('Жалоб открыто',fmt(s.open_reports))+
-      tile('Начислено сегодня',fmt(s.xp_today)+' ★')+
+      tile('Начислено сегодня',fmt(s.xp_today)+' 💎')+
       tile('Банов / мутов',fmt(s.banned)+' / '+fmt(s.muted))+
       tile('Активных игр',fmt(g.total))+tile('База данных',(d.db_mb||0)+' МБ')+
       tile('Множитель','×'+d.multiplier)+'</section>'+
@@ -120,12 +120,12 @@
   }
   async function users(){
     const d=await api('/users',{}, {page:state.usersPage,q:state.query,sort:state.sort,filter:state.userFilter});
-    const sorts=[['recent','Недавно были'],['new','Новые'],['xp','По очкам'],['messages','По сообщениям'],['dialogs','По диалогам']];
+    const sorts=[['recent','Недавно были'],['new','Новые'],['xp','По кристаллам'],['messages','По сообщениям'],['dialogs','По диалогам']];
     const filters=[['all','Все'],['active','Недавно онлайн'],['queue','В поиске'],['dialog','В диалоге'],['ban','Заблокированы'],['mute','В муте'],['support','Поддержали'],['admins','Администраторы']];
     return wrapHeader(d.total+' пользователей')+
       '<form id="adminSearch" class="admin-search"><input name="q" placeholder="ID, @username, ник или имя" value="'+escape(state.query)+'" autocomplete="off"><button type="submit">Найти</button></form>'+
       '<div class="admin-filters"><select data-filter="sort" aria-label="Сортировка">'+opt(sorts,state.sort)+'</select><select data-filter="userFilter" aria-label="Фильтр">'+opt(filters,state.userFilter)+'</select></div>'+
-      '<div class="admin-list">'+(d.items.length?d.items.map(u=>row(escape(u.nickname||u.first_name||'Пользователь')+' · '+fmt(u.xp)+' ★',
+      '<div class="admin-list">'+(d.items.length?d.items.map(u=>row(escape(u.nickname||u.first_name||'Пользователь')+' · '+fmt(u.xp)+' 💎',
        (u.username?escape('@'+u.username)+' · ':'')+'ID '+u.user_id+' · '+fmt(u.messages)+' сообщений · '+fmt(u.dialogs)+' диалогов'+
        '<br>Был: '+date(u.last_seen),'user',u.user_id,u.banned?pill('Бан','danger'):'' )).join(''):placeholder)+'</div>'+
       pageNav(state.usersPage,state.usersPage+1<d.pages,'usersPage');
@@ -140,23 +140,23 @@
       ['Статус',escape(({free:'Свободен',queued:'В поиске',paired:'В диалоге'})[d.status]||d.status)],
       ['Возраст / район',escape(String(u.age||'—')+' / '+(u.district||'—'))],
       ['Пол / ищет',escape((u.gender||'—')+' / '+(u.looking_for||'—'))],
-      ['Счёт',fmt(u.xp)+' ★'],['Поддержка',fmt(u.support_stars)+' Stars / '+fmt(u.support_rub)+' ₽'],
+      ['Кристаллы',fmt(u.xp)+' 💎'],['Поддержка',fmt(u.support_stars)+' Telegram Stars / '+fmt(u.support_rub)+' ₽'],
       ['Сообщений / диалогов',fmt(u.messages)+' / '+fmt(u.dialogs)],
       ['Оценки + / −',fmt(u.good_ratings)+' / '+fmt(u.bad_ratings)],
-      ['Жалоб',fmt(u.reports_received)],['Рефералов',fmt(ref.invited)+' · +'+fmt(ref.earned)+' ★'],
+      ['Жалоб',fmt(u.reports_received)],['Рефералов',fmt(ref.invited)+' · +'+fmt(ref.earned)+' 💎'],
       ['Бан',u.banned?'Да · '+escape(u.ban_reason||'—')+(Number(u.ban_until)>0?' · до '+date(u.ban_until):' · бессрочно'):'Нет'],
       ['Мут до',Number(u.mute_until)>Date.now()/1000?date(u.mute_until):'Не активен'],
       ['Администратор',d.admin_permissions?.length?escape(d.admin_permissions.join(', ')):'Нет']
     ];
-    const buttons=[navButton('История очков','userLedger',u.user_id)];
-    if(can('points')){buttons.push(navButton('Выдать очки','openAdjust','+'+u.user_id,'accent'),navButton('Списать очки','openAdjust','-'+u.user_id))}
+    const buttons=[navButton('История кристаллов','userLedger',u.user_id)];
+    if(can('points')){buttons.push(navButton('Выдать кристаллы','openAdjust','+'+u.user_id,'accent'),navButton('Списать кристаллы','openAdjust','-'+u.user_id))}
     if(can('ban'))buttons.push(navButton(u.banned?'Разблокировать':'Заблокировать','openModerate',(u.banned?'unban:':'ban:')+u.user_id,'danger'));
     if(can('mute'))buttons.push(navButton(Number(u.mute_until)>Date.now()/1000?'Снять мут':'Мут на время','openModerate',(Number(u.mute_until)>Date.now()/1000?'unmute:':'mute:')+u.user_id));
     if(d.partner_id&&can('monitor'))buttons.push(navButton('Собеседник: '+d.partner_id,'openUser',d.partner_id));
     return wrapHeader('Данные участника · только для администрации')+
-      '<div class="admin-user-hero"><small>ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ</small><h2>'+escape(u.nickname||u.first_name||'Аноним')+'</h2><strong>'+fmt(u.xp)+' ★</strong></div>'+
+      '<div class="admin-user-hero"><small>ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ</small><h2>'+escape(u.nickname||u.first_name||'Аноним')+'</h2><strong>'+fmt(u.xp)+' 💎</strong></div>'+
       '<dl class="admin-details">'+parts.map(([k,v])=>'<div><dt>'+escape(k)+'</dt><dd>'+v+'</dd></div>').join('')+'</dl>'+
-      '<section class="admin-balance-history"><h3>⭐ Баланс на дату</h3>'+
+      '<section class="admin-balance-history"><h3>💎 Баланс на дату</h3>'+
       '<form id="adminBalanceAtForm" class="admin-balance-history-form" data-user-id="'+u.user_id+'">'+
       '<label>Выберите дату и время (МГН)<input type="datetime-local" name="when" required step="60"'+
       ' max="'+localDateTimeInput()+'" value="'+localDateTimeInput()+'"></label>'+
@@ -184,13 +184,13 @@
     });
     const t=d.totals||{},history=d.items||[];
     return wrapHeader('Каждая операция · начисления и списания')+
-      transactionControls()+'<div class="admin-stats mini">'+tile('Начислено +',fmt(t.credits)+' ★')+
-      tile('Списано −',fmt(t.debits)+' ★')+tile('Операций',fmt(t.n))+
-      tile('Начальные балансы',fmt(d.opening_balance)+' ★')+'</div>'+
+      transactionControls()+'<div class="admin-stats mini">'+tile('Начислено +',fmt(t.credits)+' 💎')+
+      tile('Списано −',fmt(t.debits)+' 💎')+tile('Операций',fmt(t.n))+
+      tile('Начальные балансы',fmt(d.opening_balance)+' 💎')+'</div>'+
       '<div class="admin-note">'+escape(d.note||'')+'</div>'+
       '<div class="admin-list">'+(history.length?history.map(tx=>row(
-        '<span class="'+(tx.amount>=0?'admin-positive':'admin-negative')+'">'+(tx.amount>0?'+':'')+fmt(tx.amount)+' ★</span> · '+escape(sourceNames[tx.source]||tx.source),
-        'ID '+tx.user_id+' · '+date(tx.created_at)+' · Баланс после: '+fmt(tx.balance_after)+' ★'+
+        '<span class="'+(tx.amount>=0?'admin-positive':'admin-negative')+'">'+(tx.amount>0?'+':'')+fmt(tx.amount)+' 💎</span> · '+escape(sourceNames[tx.source]||tx.source),
+        'ID '+tx.user_id+' · '+date(tx.created_at)+' · Баланс после: '+fmt(tx.balance_after)+' 💎'+
         (tx.actor_id?' · админ '+tx.actor_id:'')+
         (tx.reason?'<br>'+escape(tx.reason):'')+
         (tx.reference_id?'<br>Ссылка: '+escape(tx.reference_type||'')+' '+escape(tx.reference_id):''),
@@ -212,7 +212,7 @@
       '<div class="admin-giveaway-winners">'+result.items.map(w=>
         '<div class="admin-giveaway-winner"><span>'+escape(w.place)+' место</span>'+
         navButton(w.nickname||'Аноним','openUser',w.user_id)+
-        '<strong>'+fmt(w.stars)+' ⭐</strong>'+
+        '<strong>'+fmt(w.stars)+' 💎</strong>'+
         '<small>'+fmt(w.messages)+' сообщ.</small></div>').join('')+
       '</div></section>';
   }
@@ -221,7 +221,7 @@
     return wrapHeader('Telegram и Mini App · одна база')+
       giveawaySummary(d.giveaway)+
       '<div class="admin-tabs">'+[['week','Неделя'],['month','Месяц'],['all','Всё время']].map(([id,label])=>navButton(label,'rankingPeriod',id,state.rankingPeriod===id?'selected':'')).join('')+'</div>'+
-      '<div class="admin-list">'+(d.items?.length?d.items.map(i=>row('#'+i.place+' '+escape(i.nickname||'Аноним')+' · '+fmt(i.xp)+' ★',
+      '<div class="admin-list">'+(d.items?.length?d.items.map(i=>row('#'+i.place+' '+escape(i.nickname||'Аноним')+' · '+fmt(i.xp)+' 💎',
       'ID '+i.user_id+' · '+fmt(i.messages)+' сообщений · '+fmt(i.dialogs)+' диалогов','openUser',i.user_id)).join(''):placeholder)+'</div>';
   }
   async function reports(){
@@ -250,8 +250,8 @@
     const d=await api('/chats',{}, {page:state.chatsPage});
     return wrapHeader('Активных пар: '+d.total)+'<div class="admin-note">Только служебные сведения об активных соединениях. Содержимое приватного общения здесь не публикуется.</div>'+
       '<div class="admin-list">'+(d.items?.length?d.items.map(i=>'<div class="admin-pair"><span>💬 Пара</span>'+
-      navButton('ID '+i.user_a+' · '+(i.stars_a==null?'—':fmt(i.stars_a))+' ⭐','openUser',i.user_a)+
-      '<b>↔</b>'+navButton('ID '+i.user_b+' · '+(i.stars_b==null?'—':fmt(i.stars_b))+' ⭐','openUser',i.user_b)+
+      navButton('ID '+i.user_a+' · '+(i.stars_a==null?'—':fmt(i.stars_a))+' 💎','openUser',i.user_a)+
+      '<b>↔</b>'+navButton('ID '+i.user_b+' · '+(i.stars_b==null?'—':fmt(i.stars_b))+' 💎','openUser',i.user_b)+
       '</div>').join(''):placeholder)+'</div>'+
       pageNav(state.chatsPage,state.chatsPage+1<d.pages,'chatsPage');
   }
@@ -362,7 +362,7 @@
     const sources=d.sources||[],max=Math.max(1,...sources.map(a=>Number(a.credits)));
     return activityChart(state.activityDays,state.activityAllTime)+
       '<section class="admin-stats">'+amounts.map(([k,v])=>tile(k,v)).join('')+'</section><div class="admin-subheading">Начисления по источникам · неделя</div>'+
-      '<div class="admin-chart">'+(sources.length?sources.map(s=>'<div class="admin-chart-row"><span>'+escape(sourceNames[s.source]||s.source)+'</span><strong>+'+fmt(s.credits)+' ★</strong><div class="admin-chart-track"><i style="width:'+Math.max(0,Math.min(100,s.credits/max*100))+'%"></i></div></div>').join(''):placeholder)+'</div>';
+      '<div class="admin-chart">'+(sources.length?sources.map(s=>'<div class="admin-chart-row"><span>'+escape(sourceNames[s.source]||s.source)+'</span><strong>+'+fmt(s.credits)+' 💎</strong><div class="admin-chart-track"><i style="width:'+Math.max(0,Math.min(100,s.credits/max*100))+'%"></i></div></div>').join(''):placeholder)+'</div>';
   }
   async function admins(){
     const d=await api('/admins');
@@ -419,9 +419,9 @@
   }
   function startAdjust(value){
     const sign=value.startsWith('-')?-1:1,target=Number(value.slice(1));
-    showModal('<h2>'+(sign>0?'Выдать очки':'Списать очки')+'</h2><p class="admin-muted">Пользователь ID '+target+'. Награда не умножается на x2/x3 — это ручная корректировка.</p>'+
+    showModal('<h2>'+(sign>0?'Выдать кристаллы':'Списать кристаллы')+'</h2><p class="admin-muted">Пользователь ID '+target+'. Награда не умножается на x2/x3 — это ручная корректировка.</p>'+
       '<form id="adminAdjustForm" class="admin-form"><label>Сумма<input name="amount" type="number" min="1" max="1000000" value="100" required></label>'+
-      '<div class="admin-quick">'+[10,25,50,100,250,500].map(n=>navButton(String(n)+' ★','quickAmount',n)).join('')+'</div>'+
+      '<div class="admin-quick">'+[10,25,50,100,250,500].map(n=>navButton(String(n)+' 💎','quickAmount',n)).join('')+'</div>'+
       '<label>Причина (обязательно)<textarea name="reason" maxlength="500" required placeholder="Почему начисляем или списываем?"></textarea></label>'+
       '<button class="admin-primary" type="submit">Проверить изменение</button></form>');
     state.adjust={target,sign};
@@ -525,13 +525,13 @@
         toast('Опрос завершён');render();
       }
       else if(action==='broadcastStatus')await statusBroadcast(value);
-      else if(action==='multiplier'){showModal('<h2>Множитель очков</h2><p class="admin-muted">Устанавливает ручной x1/x2/x3. Автоматический x2 по дням недели действует отдельно.</p><div class="admin-actions">'+[1,2,3].map(n=>navButton('×'+n,'setMultiplier',n)).join('')+'</div>')}
+      else if(action==='multiplier'){showModal('<h2>Множитель кристаллов</h2><p class="admin-muted">Устанавливает ручной x1/x2/x3. Автоматический x2 по дням недели действует отдельно.</p><div class="admin-actions">'+[1,2,3].map(n=>navButton('×'+n,'setMultiplier',n)).join('')+'</div>')}
       else if(action==='setMultiplier'){if(!confirm('Установить x'+value+'?'))return;const d=await post('/multiplier',{value:Number(value)});closeModal();toast('Множитель: x'+d.multiplier);render()}
       else if(action==='executeAdjust'){
         if(el.disabled)return;
         el.disabled=true;
         try{const a=state.pending;const r=await post('/adjust',{user_id:a.target,amount:a.amount,reason:a.reason,key:a.key});
-          closeModal();toast(r.applied?'Баланс изменён: '+fmt(r.balance)+' ★':'Уже выполнено');render()}
+          closeModal();toast(r.applied?'Баланс изменён: '+fmt(r.balance)+' 💎':'Уже выполнено');render()}
         finally{el.disabled=false}
       }else if(action==='executeModeration'){
         el.disabled=true;
@@ -580,7 +580,7 @@
         try{
           const info=await api('/users/'+uid+'/stars-at',{}, {timestamp:ts});
           if(uid!==state.selectedId||!form.isConnected)return;
-          if(info.status==='known')result.textContent=fmt(info.balance)+' ⭐';
+          if(info.status==='known')result.textContent=fmt(info.balance)+' 💎';
           else result.textContent='История за это время недоступна'+
             (info.available_since?' · с '+date(info.available_since):'');
         }finally{button.disabled=false}
@@ -594,8 +594,8 @@
         const d=await api('/users/'+a.target);
         if(full<0&&d.user.xp+full<0)throw new Error('Нельзя списать больше текущего баланса');
         showModal('<h2>Подтверждение</h2><dl class="admin-details"><div><dt>ID пользователя</dt><dd>'+a.target+'</dd></div>'+
-          '<div><dt>Баланс сейчас</dt><dd>'+fmt(d.user.xp)+' ★</dd></div><div><dt>Изменение</dt><dd>'+fmt(full)+' ★</dd></div>'+
-          '<div><dt>Станет</dt><dd>'+fmt(d.user.xp+full)+' ★</dd></div><div><dt>Причина</dt><dd>'+escape(reason)+'</dd></div></dl>'+
+          '<div><dt>Баланс сейчас</dt><dd>'+fmt(d.user.xp)+' 💎</dd></div><div><dt>Изменение</dt><dd>'+fmt(full)+' 💎</dd></div>'+
+          '<div><dt>Станет</dt><dd>'+fmt(d.user.xp+full)+' 💎</dd></div><div><dt>Причина</dt><dd>'+escape(reason)+'</dd></div></dl>'+
           navButton('Подтвердить изменение','executeAdjust','','admin-primary'));
       }else if(id==='adminModerationForm'){
         const a=state.moderation,reason=String(data.get('reason')||'').trim();

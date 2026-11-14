@@ -85,9 +85,9 @@ def _place(game: GroupGeoGame) -> GQ.GeoPlace | None:
 def _format_answer(game: GroupGeoGame, user_id: int) -> str:
     answer = game.answers.get(int(user_id))
     if answer is None:
-        return "⏰ нет ответа · 0 очков"
+        return "⏰ нет ответа · 0 💎"
     _lat, _lon, distance, score = answer
-    return f"📏 {GQ.format_distance(distance)} · +{score} очк."
+    return f"📏 {GQ.format_distance(distance)} · +{score} 💎"
 
 
 async def _drop_game(game: GroupGeoGame) -> None:
@@ -141,7 +141,7 @@ async def _send_round(bot, game: GroupGeoGame) -> None:
         "📍 Оба игрока отправляют геопозицию в этот чат.\n"
         "Чтобы бот гарантированно увидел ответ в группе, <b>ответь геопозицией на это фото</b>.\n"
         "Можно отправить <b>любую точку карты</b>, в том числе текущую геопозицию.\n\n"
-        "⭐ Чем ближе к месту — тем больше очков за раунд."
+        "💎 Чем ближе к месту — тем больше кристаллов за раунд."
     )
     try:
         await bot.send_photo(game.chat_id, place.image_url, caption=caption)
@@ -182,8 +182,8 @@ async def _finish_match(bot, game: GroupGeoGame) -> None:
     await bot.send_message(
         game.chat_id,
         "🏁 <b>GeoGuessr📍 завершён</b>\n\n"
-        f"{_mention(a, game.inviter_name)} — <b>{score_a}</b> очк.\n"
-        f"{_mention(b, game.player_b_name)} — <b>{score_b}</b> очк.\n\n"
+        f"{_mention(a, game.inviter_name)} — <b>{score_a}</b> 💎\n"
+        f"{_mention(b, game.player_b_name)} — <b>{score_b}</b> 💎\n\n"
         f"{verdict}\n\n"
         "Новая игра: /gamegeo",
     )

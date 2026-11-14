@@ -241,7 +241,7 @@ def open_chest(db,uid,chest_id,lat,lon,accuracy,timestamp,now=None):
             reward="stars";value=random.SystemRandom().randint(
                 *{"common":(20,75),"rare":(80,200),"epic":(220,450),"legendary":(500,1000)}[kind])
             city_pets._change_xp(db,uid,value,"city_chest","Сундук РАЙОНЫ",chest_id)
-            description=f"+{value} игровых ⭐"
+            description=f"+{value} 💎"
         db.execute("""INSERT INTO city_chest_claims(chest_id,user_id,reward_kind,reward_amount,claimed_at)
                       VALUES(?,?,?,?,?)""",
                    (chest_id,uid,reward, value if isinstance(value,int) else 1,int(now)))

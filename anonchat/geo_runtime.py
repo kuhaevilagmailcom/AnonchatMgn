@@ -52,9 +52,9 @@ def round_caption(row: Any, place: GQ.GeoPlace) -> str:
     total = max(1, int(row["total_questions"] or GQ.GEO_ROUNDS))
     reward_enabled = bool(int(row["reward_awarded"] or 0))
     reward_line = (
-        "⭐ <b>За точность — до 10 ⭐ базово</b> · без дневного лимита · x2/x3 применяется"
+        "💎 <b>За точность — до 10 кристаллов</b> · без дневного лимита · x2/x3 применяется"
         if reward_enabled
-        else "⭐ Сегодня с этим собеседником раунд идёт без начисления ⭐"
+        else "💎 Сегодня с этим собеседником раунд идёт без награды"
     )
     return (
         f"🗺 <b>GeoGuessr📍 · РАУНД {index + 1}/{total}</b>\n"
@@ -68,7 +68,7 @@ def round_caption(row: Any, place: GQ.GeoPlace) -> str:
         "🌍 <b>Можно поставить метку в любой точке карты.</b> "
         "Игра примет её и посчитает расстояние до правильного места.\n\n"
         f"{reward_line}\n"
-        "🎯 Чем ближе метка к настоящему месту — тем больше ⭐.\n\n"
+        "🎯 Чем ближе метка к настоящему месту — тем больше кристаллов.\n\n"
         f"<i>Фото: {html.escape(place.credit)}</i>"
     )
 
@@ -100,10 +100,10 @@ async def send_round(bot, pack, row: Any) -> bool:
 
 def _accuracy_line(distance: float | None, answered: bool, reward: int) -> str:
     if not answered or distance is None:
-        return "⏰ <b>Метка не отправлена вовремя</b> · +<b>0 ⭐</b>"
+        return "⏰ <b>Метка не отправлена вовремя</b> · +<b>0 💎</b>"
     return (
         f"📏 Ошибка — <b>{GQ.format_distance(distance)}</b>\n"
-        f"⭐ За точность — <b>+{int(reward)} ⭐</b>"
+        f"💎 За точность — <b>+{int(reward)}</b>"
     )
 
 
@@ -159,14 +159,14 @@ def result_body(
         "👤 <b>Собеседник</b>\n"
         f"{_accuracy_line(other_distance, other_answered, other_reward)}\n\n"
         f"{verdict}\n\n"
-        f"✨ За игру сейчас: <b>{mine_total} ⭐</b>"
+        f"✨ За игру сейчас: <b>{mine_total} 💎</b>"
     )
     if finished:
         body += (
             "\n\n━━━━━━━━━━━━━━\n"
             "🏁 <b>GeoGuessr📍 ЗАВЕРШЁН</b>\n"
             f"🎮 Раундов сыграно: <b>{total}</b>\n"
-            f"⭐ Получено за игру: <b>{mine_total} ⭐</b>\n"
+            f"💎 Получено за игру: <b>{mine_total}</b>\n"
             "━━━━━━━━━━━━━━"
         )
     else:

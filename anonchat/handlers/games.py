@@ -143,7 +143,7 @@ def _number_prompt(row: Any) -> str:
         f"🔢 <b>Числа · раунд {round_index + 1}/{NUMBER_ROUNDS}</b>\n\n"
         f"Выбери число от <b>1</b> до <b>{range_max}</b>.\n"
         "Собеседник увидит его только после своего выбора.\n"
-        "⭐ Общий лимит наград за игры — 500 ⭐ в день."
+        "💎 Общий лимит наград за игры — 500 кристаллов в день."
     )
 
 
@@ -173,7 +173,7 @@ async def _send_number_result(
     def reward_line(actual: int) -> str:
         if raw_reward <= 0:
             return "В этом раунде без награды."
-        return f"+<b>{actual} ⭐</b>."
+        return f"+<b>{actual} 💎</b>."
 
     if diff == 0:
         head_a = head_b = (
@@ -212,13 +212,13 @@ async def _send_number_result(
             f"🔢 <b>Игра окончена</b>\n"
             f"Сыграно раундов: <b>{NUMBER_ROUNDS}</b>\n"
             f"Точных совпадений: <b>{exact}/{NUMBER_ROUNDS}</b>\n"
-            f"Ты получил за игру: <b>{total_a} ⭐</b>."
+            f"Ты получил за игру: <b>{total_a} 💎</b>."
         )
         final_b = (
             f"🔢 <b>Игра окончена</b>\n"
             f"Сыграно раундов: <b>{NUMBER_ROUNDS}</b>\n"
             f"Точных совпадений: <b>{exact}/{NUMBER_ROUNDS}</b>\n"
-            f"Ты получил за игру: <b>{total_b} ⭐</b>."
+            f"Ты получил за игру: <b>{total_b} 💎</b>."
         )
         markup = K.number_end_keyboard()
         body_a = f"{body_a}\n\n{final_a}"
@@ -241,8 +241,8 @@ async def _send_question(ctx: Ctx, row: Any) -> None:
 
 def _final_text(matches: int, total: int, reward: int = 0) -> str:
     reward_line = (
-        f"\n🎁 Начислено <b>{reward} ⭐</b>."
-        if reward > 0 else "\n⭐ Дневной лимит игр достигнут (500 ⭐)."
+        f"\n🎁 Начислено <b>{reward} 💎</b>."
+        if reward > 0 else "\n💎 Дневной лимит игр достигнут (500)."
     ) if matches == total else ""
     return f"⚔️ <b>Битва окончена</b>\nСовпадений: <b>{matches}/{total}</b>.{reward_line}"
 
@@ -311,7 +311,7 @@ async def _open_games(ctx: Ctx) -> None:
     remaining = max(0, 500 - used)
     await ctx.reply(
         "🎮 <b>Игры с собеседником</b>\n\n"
-        f"⭐ Сегодня из игр: <b>{min(used, 500)}/500</b> · осталось <b>{remaining}</b>."
+        f"💎 Сегодня из игр: <b>{min(used, 500)}/500</b> · осталось <b>{remaining}</b>."
         "\nЛимит общий для всех игр, x2/x3 входит в него. "
         "После лимита играть можно без начислений.\n\nВыбери игру.",
         K.games_keyboard(admin=ctx.is_admin),
@@ -484,7 +484,7 @@ async def cb_geo(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         "🗺 <b>GeoGuessr📍 · МАГНИТОГОРСК</b>\n\n"
         "📸 Бот показывает фотографию места, а вы с собеседником угадываете, "
         "где оно находится.\n\n"
-        "⭐ <b>Чем ближе метка — тем больше звёзд.</b>\n"
+        "💎 <b>Чем ближе метка — тем больше кристаллов.</b>\n"
         "⏱ На каждый раунд — <b>5 минут</b>.\n\n"
         "📍 Ответ отправляется через Telegram:\n"
         "<b>📎 Скрепка → Геопозиция → выбрать любую точку на карте → отправить.</b>\n\n"
@@ -531,7 +531,7 @@ async def cb_geo_rounds(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
 
     max_geo_reward = await db.effective_xp_reward(10)
     reward_text = (
-        f"⭐ Чем точнее метка, тем больше награда — <b>до {max_geo_reward} ⭐ за раунд</b>. "
+        f"💎 Чем точнее метка, тем больше награда — <b>до {max_geo_reward} за раунд</b>. "
         "Без дневного лимита."
     )
     result = await send_to(
@@ -957,7 +957,7 @@ async def cb_words(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         partner,
         "🗣 <b>Собеседник предлагает сыграть в «Объясни слово»</b>\n\n"
         f"Раундов: <b>{WG.WORD_ROUNDS}</b>. Один объясняет слово, второй угадывает. "
-        f"За правильное угадывание — до <b>{word_reward} ⭐</b>.",
+        f"За правильное угадывание — до <b>{word_reward} 💎</b>.",
         K.word_invite_keyboard(game.id),
         ctx.pack,
     )
@@ -971,11 +971,11 @@ async def cb_words(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
         "words",
         int(game.id),
         "🗣 Объясни слово",
-        f"{WG.WORD_ROUNDS} слов · до {word_reward} ⭐ за угадывание",
+        f"{WG.WORD_ROUNDS} слов · до {word_reward} 💎 за угадывание",
     )
     event_id = await ctx.db.add_miniapp_event(
         partner, "games", "Приглашение в «Объясни слово»",
-        f"{WG.WORD_ROUNDS} слов · до {word_reward} ⭐",
+        f"{WG.WORD_ROUNDS} слов · до {word_reward} 💎",
         icon="gamepad-2", action="chat",
     )
     live_chat.signal({partner}, "events_changed", event_id=event_id)

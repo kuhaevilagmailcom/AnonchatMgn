@@ -68,12 +68,12 @@ def base_prize(kind: str, winning_value: int, losing_value: int) -> int:
 
 def reward_rules(kind: str) -> str:
     return {
-        "basket": "За победное попадание: +3 ⭐.",
-        "football": "За победный гол: +2 ⭐.",
-        "slots": "Пара — 5 ⭐; три 🍒/🍋 — 7 ⭐; три BAR — 10 ⭐; 777 — 15 ⭐.",
-        "darts": "Победителю 2 ⭐, за яблочко 3 ⭐.",
-        "dice": "Победителю 2 ⭐, за шестёрку 3 ⭐.",
-        "bowling": "Победителю 2 ⭐, за страйк 3 ⭐.",
+        "basket": "За победное попадание: +3 💎.",
+        "football": "За победный гол: +2 💎.",
+        "slots": "Пара — 5 💎; три 🍒/🍋 — 7 💎; три BAR — 10 💎; 777 — 15 💎.",
+        "darts": "Победителю 2 💎, за яблочко 3 💎.",
+        "dice": "Победителю 2 💎, за шестёрку 3 💎.",
+        "bowling": "Победителю 2 💎, за страйк 3 💎.",
     }[kind]
 
 
@@ -223,7 +223,7 @@ async def invite(mm: Any, bot: Any, uid: int, partner: int, kind: str) -> Duel:
         _GAMES[game.pair] = game
     emoji, name, _ = KINDS[kind]
     rule = "Один раунд: каждый делает по одному броску. " + reward_rules(kind) + "\n" \
-           "x2/x3 и дневной лимит 500 ⭐ действуют как в остальных играх."
+           "x2/x3 и дневной лимит 500 💎 действуют как в остальных играх."
     try:
         await bot.send_message(
             partner, f"{emoji} <b>Собеседник зовёт в «{name}»</b>\n"
@@ -364,7 +364,7 @@ async def roll(mm: Any, bot: Any, uid: int, partner: int, game_id: int,
             outcome = ("🤝 Ничья!" if mine_score == their_score
                        else "🏆 Победа!" if mine_score > their_score else "Собеседник победил.")
             actual_reward = game.rewards.get(player, 0)
-            reward_line = f"\n+{actual_reward} ⭐" if actual_reward else ""
+            reward_line = f"\n+{actual_reward} 💎" if actual_reward else ""
             text = (f"{game.emoji} <b>{outcome}</b>\n"
                     f"Ты: <b>{display_value(game.kind, mine)}</b> · "
                     f"Собеседник: <b>{display_value(game.kind, theirs)}</b>"

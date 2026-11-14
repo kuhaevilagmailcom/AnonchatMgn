@@ -100,7 +100,7 @@
       const stats=make('div','district-detail-stats');
       const zone=state.zones.find(z=>z.id===p.zone_id);
       const rows=[
-        ['Урон','−'+hp(p.hp_5m)],['Доход','+'+fmt(p.stars_h)+' ⭐/ч'],
+        ['Урон','−'+hp(p.hp_5m)],['Доход','+'+fmt(p.stars_h)+' 💎/ч'],
         ['Защита',p.pet_hp+'/100'],
         ['Район',p.zone_id?(zone?.name||'Захваченный квартал'):'В инвентаре'],
         ['Статус',p.zone_id?'Защищает территорию':'В запасе']
@@ -138,7 +138,7 @@
         for(const [caption,before,after] of [
           ['Уровень',p.level,next.level],
           ['Урон','−'+hp(p.hp_5m),'−'+hp(next.hp_5m)],
-          ['Доход','+'+fmt(p.stars_h)+' ⭐/ч','+'+fmt(next.stars_h)+' ⭐/ч']
+          ['Доход','+'+fmt(p.stars_h)+' 💎/ч','+'+fmt(next.stars_h)+' 💎/ч']
         ]){
           const row=make('div','district-upgrade-line');
           row.append(make('span','',caption),make('small','',String(before)),
@@ -148,7 +148,7 @@
         actions.append(preview);
       }
       const upgrade=btn(p.upgrade_cost==null?'Максимальный уровень':
-        'Улучшить · '+fmt(p.upgrade_cost)+' ⭐','upgrade',{petId:p.id});
+        'Улучшить · '+fmt(p.upgrade_cost)+' 💎','upgrade',{petId:p.id});
       upgrade.disabled=p.upgrade_cost==null||state.wallet<p.upgrade_cost;
       actions.append(upgrade);
       detailBody.append(em,title,rar,stats,actions,
@@ -164,7 +164,7 @@
         const info=make('div','pet-product-info');
         info.append(make('strong','',p.name+' · '+(RARITY[p.rarity]||p.rarity)),
           make('small','',
-            'Доход: +'+fmt(p.stars_h)+' ⭐/ч · Урон: −'+hp(p.hp_5m)));
+            'Доход: +'+fmt(p.stars_h)+' 💎/ч · Урон: −'+hp(p.hp_5m)));
         const box=make('div','pet-product-price');
         const buy=btn('Оплатить','premium',{kind:p.kind});
         box.append(make('small','',fmt(p.xtr)+' Telegram Stars'),buy);
@@ -209,7 +209,7 @@
       head.append(ht);whBody.append(head);
       const metrics=make('div','district-warehouse-metrics');
       [['Участники',info.members.length+'/10'],['Уровень',info.level],
-       ['Районы',info.zones],['Доход','+'+info.income_h+' ⭐/ч']].forEach(([k,v])=>{
+       ['Районы',info.zones],['Доход','+'+info.income_h+' 💎/ч']].forEach(([k,v])=>{
          const div=make('div');div.append(make('small','',k),make('strong','',v));metrics.append(div)
        });
       whBody.append(metrics,make('h3','district-heading','Участники'));
@@ -248,7 +248,7 @@
         const label=make('span','district-text');
         label.append(make('strong','',mission.label),
           make('small','',mission.progress+'/'+mission.target+
-            ' захватов · награда +'+mission.reward+' игровых ⭐'));
+            ' захватов · награда +'+mission.reward+' 💎'));
         row.append(label);
         const collect=btn(mission.claimed?'Получено':
           mission.claimable?'Забрать':'В процессе','mission-claim',{tier:mission.tier});

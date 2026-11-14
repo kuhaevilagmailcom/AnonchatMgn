@@ -1027,7 +1027,7 @@ def test_keyboard_styles_and_icons() -> None:
     for markup in markups:
         for row in markup.inline_keyboard:
             for btn in row:
-                if btn.text in emoji_labels or btn.text == "👍 Норм" or "⭐" in btn.text:
+                if btn.text in emoji_labels or btn.text == "👍 Норм" or "⭐" in btn.text or "💎" in btn.text:
                     continue
                 assert all(
                     ord(c) < 0x2500 or c in "\ufe0f\ufe0e\u200d" for c in btn.text
@@ -1060,7 +1060,8 @@ def test_keyboard_styles_and_icons() -> None:
     assert texts_of(K.geo_end_keyboard()) == ["Сыграть ещё", "Вернуться в чат"]
     assert texts_of(K.geo_end_keyboard(can_start=False)) == ["Вернуться в чат"]
     assert texts_of(K.number_range_keyboard()) == [
-        "1–10 · 15 ⭐", "1–100 · 25 ⭐", "1–1000 · 50 ⭐", "Назад",
+        "1–10 · 15 кристаллов", "1–100 · 25 кристаллов",
+        "1–1000 · 50 кристаллов", "Назад",
     ]
     report_buttons = texts_of(K.admin_report_keyboard(77))
     assert "Одобрить · +10 ⭐" not in report_buttons
@@ -1081,9 +1082,9 @@ def test_keyboard_styles_and_icons() -> None:
     assert texts_of(K.menu_keyboard("free", admin=True))[-1] == "Панель модератора"
     assert "Поддержать проект" not in texts_of(K.menu_keyboard("free"))
     assert "Поддержать проект" in texts_of(K.settings_keyboard(False, "", "Ник"))
-    assert "Обратная связь" not in texts_of(K.settings_keyboard(False, "", "Ник"))
+    assert "Обратная связь" in texts_of(K.settings_keyboard(False, "", "Ник"))
     assert "Обратная связь" not in texts_of(K.profile_keyboard())
-    assert "Обратная связь" in texts_of(K.menu_keyboard("free"))
+    assert "Обратная связь" not in texts_of(K.menu_keyboard("free"))
     assert "Помощь" not in texts_of(K.menu_keyboard("free"))
 
 

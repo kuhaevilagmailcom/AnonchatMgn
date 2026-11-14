@@ -915,7 +915,7 @@ class Database:
                     before = int(row["xp"] or 0)
                     after = before + delta
                     if after < 0:
-                        raise ValueError("Недостаточно очков для списания")
+                        raise ValueError("Недостаточно кристаллов для списания")
                     await conn.execute(
                         """UPDATE users SET xp=?, xp_source=?, xp_reason=?,
                                xp_actor_id=?, xp_reference_type=?, xp_reference_id=?,

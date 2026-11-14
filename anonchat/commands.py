@@ -26,23 +26,7 @@ from .config import Config
 log = logging.getLogger("anonchat")
 
 COMMANDS = (
-    BotCommand(command="start", description="🧲 Меню чата"),
-    BotCommand(command="connect", description="🔎 Найти собеседника"),
-    BotCommand(command="next", description="⏭ Следующий"),
-    BotCommand(command="stop", description="⏹ Остановить диалог"),
-    BotCommand(command="report", description="🚩 Пожаловаться"),
-    BotCommand(command="game", description="🎮 Игры с собеседником"),
-    BotCommand(command="nick", description="🙋 Публичный ник"),
-    BotCommand(command="profile", description="📊 Профиль"),
-    BotCommand(command="settings", description="⚙️ Настройки поиска"),
-    BotCommand(command="top", description="🏆 Топ города"),
-    BotCommand(command="help", description="❓ Как пользоваться"),
-    BotCommand(command="rules", description="📜 Правила"),
-    BotCommand(command="support", description="⭐ Поддержать проект"),
-    BotCommand(command="nft", description="🎁 NFT-розыгрыш"),
-    BotCommand(command="ref", description="🎁 Пригласить друга"),
-    BotCommand(command="unblock", description="🔓 Сбросить скрытых собеседников"),
-    BotCommand(command="forget", description="🧹 Удалить мой профиль"),
+    BotCommand(command="start", description="Открыть АНОН МГН"),
 )
 
 #: команда, видимая только в меню команд групповых чатов
@@ -53,14 +37,6 @@ GROUP_COMMANDS = (
 #: админские команды, которые видны в меню модератора
 ADMIN_VISIBLE = (
     BotCommand(command="admin", description="🛡 Панель модератора"),
-    BotCommand(command="nft_setup", description="🎁 Настроить NFT-розыгрыш"),
-    BotCommand(command="nft_broadcast", description="📣 Рассылка NFT-розыгрыша"),
-    BotCommand(command="nft_post", description="📢 Опубликовать NFT в канале"),
-    BotCommand(command="nft_stats", description="🎟 Участники NFT-розыгрыша"),
-    BotCommand(command="nft_draw", description="🏆 Выбрать победителя NFT"),
-    BotCommand(command="nft_finish", description="🏁 Завершить NFT-розыгрыш сейчас"),
-    BotCommand(command="win", description="🏆 Сообщение о победителе NFT по ID"),
-    BotCommand(command="nft_give", description="🎟 Выдать NFT-билеты по ID"),
 )
 
 #: работают, если ввести руками (и из панели), но в меню не показываются

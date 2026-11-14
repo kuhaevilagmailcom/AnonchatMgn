@@ -310,13 +310,13 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     # 5. мусорные типы не пересылаем, команды не теряем
     session.clear()
     await send(A, "/unknowncmd")
-    check("Команда не найдена" in session.last_to(A), "неизвестная команда не улетает собеседнику")
+    check("Открой меню" in session.last_to(A), "неизвестная команда не улетает собеседнику")
 
     # 5b. пока идёт диалог — свои экраны закрыты, надо /stop
     session.clear()
     await send(A, "/profile")
-    check("заверши диалог" in session.last_to(A).lower() and "/stop" in session.last_to(A),
-          "в диалоге профиль закрыт: просит /stop")
+    check("заверши" in session.last_to(A).lower() and "/stop" not in session.last_to(A),
+          "в диалоге профиль закрыт и предлагает кнопки")
     check(mm.status(A) == "paired", "диалог при этом не распался")
     session.clear()
     await press(A, "act:settings")
@@ -371,7 +371,7 @@ async def run_flow(holder: dict[str, Any] | None = None) -> None:
     card = session.last_to(A)
     check("Вася" in card and "👤" in card, "профиль показывает текущий ранг")
     check("<code>" in card and "▱" in card, "полоса прогресса до следующего ранга на месте")
-    check("⭐" in card and "Сообщений" in card and "Диалогов" in card,
+    check("💎" in card and "Сообщений" in card and "Диалогов" in card,
           "профиль показывает основные показатели")
     check("До «Типок»" in card, "видно прогресс до следующего ранга")
 
@@ -1154,10 +1154,10 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
 
     session.clear()
     await send(A, "/send @explicit_user")
-    check(session.to(B) == [] and "Команда не найдена" in session.last_to(A), "/send удалена")
+    check(session.to(B) == [] and "Открой меню" in session.last_to(A), "/send удалена")
     session.clear()
     await send(A, "/user https://t.me/example")
-    check(session.to(B) == [] and "Команда не найдена" in session.last_to(A), "/user удалена")
+    check(session.to(B) == [] and "Открой меню" in session.last_to(A), "/user удалена")
 
     session.clear()
     await payload(A, contact={"phone_number": "+79991234567", "first_name": "X"})
@@ -1231,7 +1231,7 @@ async def run_flow_modern(holder: dict[str, Any] | None = None) -> None:
     await send(A, "проверка x2")
     await send(A, "/stop")
     check(int((await db.get_user(A))["xp"]) - xp_before_x3 == 5,
-          "x2/x3 начисляют две и три звезды за сообщения в чате")
+          "x2/x3 начисляют два и три кристалла за сообщения в чате")
     await db.set_xp_multiplier(1)
     await press(A, "act:settings")
     await press(A, "cfg:nick:ask")

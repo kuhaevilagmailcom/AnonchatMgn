@@ -25,14 +25,15 @@ def test_card_layout_uses_actual_one_prize_and_safe_html() -> None:
         deadline="11.11.2026 20:00 МГН",
     )
     html = format_giveaway(g, RaffleStats(2, 5), now=1_899_900_000)
-    assert "<b>РОЗЫГРЫШ NFT АКТИВЕН!</b>" in html
+    assert "<b>Розыгрыш NFT</b>" in html
     assert 'href="https://t.me/nft/Prize-1?q=one&amp;x=&quot;two&quot;"' in html
     assert "<blockquote>" in html
     assert "Участников: <b>2</b>" in html
     assert "Билетов: <b>5</b>" in html
-    assert "Билет: <b>35 ₽</b>" in html
+    assert "<b>35 ₽</b> за билет" in html
     assert "Проверить оплату" in html
-    assert "Успей принять участие!" in html
+    assert "Посмотреть приз" in html
+    assert "ВАЖНО" not in html
     assert "2-е место" not in html and "3-е место" not in html
     assert len(html) < 4096
 
@@ -46,7 +47,7 @@ def test_countdown_and_closed_variant() -> None:
         close_at=10, deadline="expired",
     )
     html = format_giveaway(g, RaffleStats(4, 8), now=20)
-    assert "ЗАВЕРШЁН" in html
+    assert "Розыгрыш завершён" in html
     assert "Приём билетов завершён" in html
     assert "Успей принять участие" not in html
 

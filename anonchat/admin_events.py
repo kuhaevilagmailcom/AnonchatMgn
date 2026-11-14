@@ -51,8 +51,8 @@ def notice(kind: str, *, reason: str = "", minutes: int = 0,
         return "🔊 Ограничение общения снято", f"Причина: {why}\nВы снова можете общаться."
     if kind == "points":
         sign = "+" if amount > 0 else "−"
-        title = "⭐ Вам начислены очки" if amount > 0 else "➖ С вашего баланса списаны очки"
-        return title, f"Изменение: {sign}{abs(amount):,} ⭐\nПричина: {why}\nВаш баланс: {balance:,} ⭐".replace(",", " ")
+        title = "💎 Вам начислены кристаллы" if amount > 0 else "➖ Списаны кристаллы"
+        return title, f"Изменение: {sign}{abs(amount):,} 💎\nПричина: {why}\nБаланс: {balance:,} 💎".replace(",", " ")
     raise ValueError(f"Unknown administrative event: {kind}")
 
 

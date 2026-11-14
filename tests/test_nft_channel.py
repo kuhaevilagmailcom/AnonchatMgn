@@ -33,7 +33,7 @@ def test_giveaway_post_is_short_and_links_to_bot() -> None:
     g = Giveaway("campaign-1", "https://t.me/nft/Prize-12?a=1&b=2",
                  2_000_000_000, "31.12.2026 20:00 МГН")
     body = giveaway_post_text(g)
-    assert "РОЗЫГРЫШ NFT АКТИВЕН!" in body
+    assert "Розыгрыш NFT" in body
     assert "<blockquote>" in body
     assert "Участников: <b>0</b>" in body
     assert "Билетов: <b>0</b>" in body
@@ -161,7 +161,7 @@ def test_existing_channel_post_can_be_updated_in_place() -> None:
             kwargs = bot.edit_message_text.await_args.kwargs
             assert kwargs["message_id"] == 211
             assert kwargs["chat_id"] == "@anonmgn"
-            assert "Статистика:" in kwargs["text"]
+            assert "Участников:" in kwargs["text"]
             assert kwargs["reply_markup"].inline_keyboard[0][0].url == (
                 "https://t.me/AnonChatMgn_Bot?start=nft"
             )
@@ -254,7 +254,7 @@ def test_publish_again_button_requires_owner_double_confirmation() -> None:
                 bot.send_message.assert_awaited_once()
                 kwargs = bot.send_message.await_args.kwargs
                 assert kwargs["chat_id"] == "@anonmgn"
-                assert "РОЗЫГРЫШ NFT АКТИВЕН!" in kwargs["text"]
+                assert "Розыгрыш NFT" in kwargs["text"]
                 assert kwargs["reply_markup"].inline_keyboard[0][0].url == (
                     "https://t.me/AnonChatMgn_Bot?start=nft"
                 )

@@ -456,7 +456,7 @@ async def cb_subscription_reward(event: CallbackQuery, ctx: Ctx, db: Database) -
     await ctx.ack()
     amount = max(1, int(ctx.cfg.subscription_reward))
     body = (
-        f"⭐️ <b>{amount} ⭐️ за подписку</b>\n\n"
+        f"💎 <b>{amount} кристаллов за подписку</b>\n\n"
         "Подпишись на наш Telegram-канал, затем нажми «Проверить подписку».\n\n"
         "Награда выдаётся один раз."
     )
@@ -502,7 +502,7 @@ async def cb_subscription_check(event: CallbackQuery, ctx: Ctx, db: Database) ->
         return
 
     ctx.me = await db.get_user(ctx.user_id)
-    await ctx.ack(f"+{effective_amount} ⭐️")
+    await ctx.ack(f"+{effective_amount} 💎")
     await show_profile(ctx)
 
 

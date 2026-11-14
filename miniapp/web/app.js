@@ -318,13 +318,13 @@ if (typeof window === 'undefined') {
   }
   function renderTopPage(items=[]){
     const root=$('#topPageList');if(!root)return;
-    if(!items.length){root.innerHTML='<div class="empty top-empty">За этот период пока никто не набрал ⭐.</div>';return}
+    if(!items.length){root.innerHTML='<div class="empty top-empty">За этот период пока нет кристаллов.</div>';return}
     root.innerHTML=items.map(x=>{
       const medal=x.place===1?'🥇':x.place===2?'🥈':x.place===3?'🥉':'';
       return `<article class="top-page-item ${x.me?'me':''} ${x.place<=3?'podium':''}">
         <span class="top-place">${medal||x.place}</span>
         <span class="top-person"><strong>${esc(x.nick)}${x.emoji?` <i class="top-user-emoji">${esc(x.emoji)}</i>`:''}</strong><small>${esc(x.rank||'')}</small></span>
-        <span class="top-stars"><b>${Number(x.stars||0).toLocaleString('ru-RU')}</b><i>★</i></span>
+        <span class="top-stars"><b>${Number(x.stars||0).toLocaleString('ru-RU')}</b><i>💎</i></span>
       </article>`;
     }).join('');
   }
@@ -342,7 +342,7 @@ if (typeof window === 'undefined') {
       const until=data.ends_at?new Date(data.ends_at*1000).toLocaleDateString('ru-RU',{day:'numeric',month:'long'}):'';
       const periodHint=until?` · до ${until}`:'';
       mine.hidden=false;
-      mine.innerHTML=`<span><small>ТВОЁ МЕСТО</small><strong>#${data.my.place||'—'}</strong></span><span><b>${Number(data.my.stars||0).toLocaleString('ru-RU')} ★</b><small>${data.my.place>10&&data.my.to_top10?`${data.my.to_top10} ★ до топ-10`:'Ты в топ-10'}${periodHint}</small></span>`;
+      mine.innerHTML=`<span><small>ТВОЁ МЕСТО</small><strong>#${data.my.place||'—'}</strong></span><span><b>${Number(data.my.stars||0).toLocaleString('ru-RU')} 💎</b><small>${data.my.place>10&&data.my.to_top10?`${data.my.to_top10} 💎 до топ-10`:'Ты в топ-10'}${periodHint}</small></span>`;
     }else if(mine)mine.hidden=true;
   }
 
@@ -388,7 +388,7 @@ if (typeof window === 'undefined') {
   async function loadHomeQuest(){
     const data=await safe('/api/miniapp/quests',{},null);const first=data?.items?.[0];if(!first)return;
     state.stats.quest_current=Number(first.current||0);state.stats.quest_target=Number(first.target||1);
-    const label=$('[data-quest-label]');if(label)label.textContent=`${first.title} · ${first.reward||0} ★`;
+    const label=$('[data-quest-label]');if(label)label.textContent=`${first.title} · ${first.reward||0} 💎`;
     setAll('quest-progress-text',first.claimed?'Готово':`${first.current}/${first.target}`);
     $$('[data-quest-progress]').forEach(el=>el.style.width=`${Math.min(100,first.current/Math.max(1,first.target)*100)}%`);
   }
@@ -440,7 +440,7 @@ if (typeof window === 'undefined') {
       <div class="result-grid">
         <div><small>Отправлено</small><strong>${result.sent||0}</strong></div>
         <div><small>Получено</small><strong>${result.received||0}</strong></div>
-        <div class="stars"><small>Заработано</small><strong>+${result.earned||0} ★</strong></div>
+        <div class="stars"><small>Заработано</small><strong>+${result.earned||0} 💎</strong></div>
       </div>
       ${resultGames(result.games)}
     </section>
@@ -483,25 +483,25 @@ if (typeof window === 'undefined') {
     }
     if(kind==='achievements'){
       const data=await safe('/api/miniapp/achievements',{},null);const items=data?.items||[];
-      body.innerHTML=`<div class="achievement-head"><strong>${data?.unlocked||0}/${data?.total||items.length}</strong><span>получено</span></div><div class="achievement-grid">${items.map(a=>`<article class="${a.unlocked?'unlocked':'locked'}"><span>${a.unlocked?'🏆':'🔒'}</span><strong>${esc(a.title)}</strong><small>${a.unlocked?'Выполнено':`${a.current}/${a.target}`} · ${a.reward} ★</small></article>`).join('')}</div>`;return;
+      body.innerHTML=`<div class="achievement-head"><strong>${data?.unlocked||0}/${data?.total||items.length}</strong><span>получено</span></div><div class="achievement-grid">${items.map(a=>`<article class="${a.unlocked?'unlocked':'locked'}"><span>${a.unlocked?'🏆':'🔒'}</span><strong>${esc(a.title)}</strong><small>${a.unlocked?'Выполнено':`${a.current}/${a.target}`} · ${a.reward} 💎</small></article>`).join('')}</div>`;return;
     }
     if(kind==='edit-profile'){
       body.innerHTML=`${panel('Профиль','Измени ник, который отображается в профиле и топе.')}<div class="form-field"><label>Новый ник · 2–24 символа</label><input id="nick" maxlength="24" value="${esc(state.user.nick.replace(/^@/,''))}" placeholder="Аноним"></div><div class="modal-actions"><button class="action" data-close-modal>Отмена</button><button class="action accent" id="saveNick">Сохранить</button></div>`;
       $('#saveNick').onclick=saveNick;bindClose(body);return
     }
-    if(kind==='quests'){const d=await safe('/api/miniapp/quests',{},null);const items=d?.items||[];body.innerHTML=items.length?items.map(q=>`<article class="quest ${q.claimed?'claimed':''}"><div><strong>${esc(q.title)}</strong><b>${q.claimed?'Получено':`${q.current}/${q.target}`}</b></div><p>${q.claimed?`+${q.reward} ★ уже начислено`:q.done?'Награда начислится автоматически':`Награда: ${q.reward} ★`}</p><i class="progress"><i style="width:${Math.min(100,q.current/Math.max(1,q.target)*100)}%"></i></i></article>`).join(''):'<div class="empty">Сегодня заданий нет.</div>';return}
+    if(kind==='quests'){const d=await safe('/api/miniapp/quests',{},null);const items=d?.items||[];body.innerHTML=items.length?items.map(q=>`<article class="quest ${q.claimed?'claimed':''}"><div><strong>${esc(q.title)}</strong><b>${q.claimed?'Получено':`${q.current}/${q.target}`}</b></div><p>${q.claimed?`+${q.reward} 💎 уже начислено`:q.done?'Награда начислится автоматически':`Награда: ${q.reward} 💎`}</p><i class="progress"><i style="width:${Math.min(100,q.current/Math.max(1,q.target)*100)}%"></i></i></article>`).join(''):'<div class="empty">Сегодня заданий нет.</div>';return}
     if(kind==='streak'){const d=await safe('/api/miniapp/streak',{},null);if(d){state.stats.streak=d.current;state.stats.best_streak=d.best;render()}body.innerHTML=`${panel('Текущая серия',`<b>${state.stats.streak} дней</b> подряд. Серия не ограничена семью днями.`)}<div class="flame-grid">${Array.from({length:7},(_,i)=>`<i class="${i<Math.min(7,state.stats.streak)?'on':''}"></i>`).join('')}</div>${panel('Личный рекорд',`${state.stats.best_streak} дней. Активным считается день, когда ты общался в боте.`)}`;return}
     if(kind==='activity'){
       const d=await safe('/api/miniapp/activity',{},null)||{today:{},all:{}};
       body.innerHTML=['today','all'].map((k,i)=>`<section class="panel"><h3>${['Сегодня','За всё время'][i]}</h3><div class="kv-grid"><div class="kv"><small>Диалоги</small><strong>${d[k]?.dialogs||0}</strong></div><div class="kv"><small>Сообщения</small><strong>${d[k]?.messages||0}</strong></div><div class="kv"><small>Игры</small><strong>${d[k]?.games||0}</strong></div><div class="kv"><small>Хорошие оценки</small><strong>${d[k]?.good_ratings||0}</strong></div></div></section>`).join('');
       return
     }
-    if(kind==='top'){const d=await safe('/api/miniapp/top',{},null);const items=d?.items||(!tg?.initData?[{place:1,nick:'Аноним-4821',rank:'Завсегдатай',stars:1380},{place:2,nick:'northwind',rank:'Свой человек',stars:1240},{place:3,nick:'Аноним-1520',rank:'Собеседник',stars:1110}]:[]);body.innerHTML=items.length?`<div class="top-list">${items.map(x=>`<div class="top-item"><i>${x.place}</i><span><strong>${esc(x.nick)}</strong><small>${esc(x.rank||'')}</small></span><b>${x.stars||0} ★</b></div>`).join('')}</div>`:'<div class="empty">В топе пока никого.</div>';return}
-    if(kind==='referral'){body.innerHTML=`${panel('Твои приглашения',`Приглашено: <b>${state.referral.invited}</b> · Получено: <b>${state.referral.earned} ★</b>`)}<div class="copy-box"><input id="refLink" readonly value="${esc(state.referral_url)}"><button id="copyRef" aria-label="Скопировать">${svg('copy')}</button></div><p class="hint">Друг должен впервые запустить бота по этой ссылке.</p>`;$('#copyRef').onclick=copyReferral;return}
+    if(kind==='top'){const d=await safe('/api/miniapp/top',{},null);const items=d?.items||(!tg?.initData?[{place:1,nick:'Аноним-4821',rank:'Завсегдатай',stars:1380},{place:2,nick:'northwind',rank:'Свой человек',stars:1240},{place:3,nick:'Аноним-1520',rank:'Собеседник',stars:1110}]:[]);body.innerHTML=items.length?`<div class="top-list">${items.map(x=>`<div class="top-item"><i>${x.place}</i><span><strong>${esc(x.nick)}</strong><small>${esc(x.rank||'')}</small></span><b>${x.stars||0} 💎</b></div>`).join('')}</div>`:'<div class="empty">В топе пока никого.</div>';return}
+    if(kind==='referral'){body.innerHTML=`${panel('Твои приглашения',`Приглашено: <b>${state.referral.invited}</b> · Получено: <b>${state.referral.earned} 💎</b>`)}<div class="copy-box"><input id="refLink" readonly value="${esc(state.referral_url)}"><button id="copyRef" aria-label="Скопировать">${svg('copy')}</button></div><p class="hint">Друг должен впервые запустить бота по этой ссылке.</p>`;$('#copyRef').onclick=copyReferral;return}
     if(kind==='settings'){await settings(body);return}
     if(kind==='feedback'){body.innerHTML=`${panel('Напиши команде','Сообщение уйдёт всем администраторам бота.')}<div class="form-field"><label>Сообщение · до 1000 символов</label><textarea id="feedback" maxlength="1000" placeholder="Что случилось или что можно улучшить?"></textarea></div><div class="modal-actions one"><button class="action accent" id="sendFeedback">Отправить</button></div>`;$('#sendFeedback').onclick=sendFeedback;return}
     if(kind==='rules'){
-      body.innerHTML=`<section class="rules-card"><h3>Правила АНОН МГН</h3><blockquote><b>1. Без оскорблений и травли</b><p>Не унижай собеседника, не угрожай и не провоцируй конфликт.</p><b>2. Не сливай личную информацию</b><p>Нельзя отправлять чужие номера, адреса, фото, аккаунты и другие приватные данные без разрешения.</p><b>3. Без спама и запрещённого контента</b><p>Не отправляй рекламу, флуд, шок-контент и материалы 18+.</p><b>4. Увидел нарушение — отправь жалобу</b><p>Нажми <b>«Жалоба»</b> — сообщение попадёт модерации. Если по жалобе модератор выдаст мут или бан, автор жалобы получит <b>+10 ★</b> базово.</p><b>5. ★ — это очки внутри бота</b><p>Звёзды нельзя вывести или обменять на деньги. Они нужны для места в топе. Первые места в топе иногда получают подарки от команды АНОН МГН.</p></blockquote><i>Общайся нормально — и всё будет нормально.</i></section>`;return}
+      body.innerHTML=`<section class="rules-card"><h3>Правила АНОН МГН</h3><blockquote><b>1. Без оскорблений и травли</b><p>Не унижай собеседника, не угрожай и не провоцируй конфликт.</p><b>2. Не сливай личную информацию</b><p>Нельзя отправлять чужие номера, адреса, фото, аккаунты и другие приватные данные без разрешения.</p><b>3. Без спама и запрещённого контента</b><p>Не отправляй рекламу, флуд, шок-контент и материалы 18+.</p><b>4. Увидел нарушение — отправь жалобу</b><p>Подтверждённая жалоба может принести <b>+10 💎</b>.</p><b>5. Кристаллы</b><p>💎 — внутренняя награда АНОН МГН, а не Telegram Stars. Их нельзя вывести или обменять на деньги.</p></blockquote><i>Общайся нормально — и всё будет нормально.</i></section>`;return}
     if(kind==='chat-games'){
       body.innerHTML=`
         <div class="chat-game-picker">
@@ -509,12 +509,12 @@ if (typeof window === 'undefined') {
           <button data-chat-game="battle"><span>⚔️</span><div><strong>Битва мнений</strong><small>5 или 10 вопросов</small></div></button>
           <button data-chat-game="geo"><span>🗺</span><div><strong>GeoGuessr📍</strong><small>Угадай место в Магнитогорске</small></div></button>
           <div class="chat-game-emoji-grid">
-            <button type="button" data-chat-game="dice-dice">🎲 <span>Кости<small>2–3 ⭐</small></span></button>
-            <button type="button" data-chat-game="dice-basket">🏀 <span>Баскетбол<small>3 ⭐</small></span></button>
-            <button type="button" data-chat-game="dice-darts">🎯 <span>Дартс<small>2–3 ⭐</small></span></button>
-            <button type="button" data-chat-game="dice-football">⚽ <span>Футбол<small>2 ⭐</small></span></button>
-            <button type="button" data-chat-game="dice-bowling">🎳 <span>Боулинг<small>2–3 ⭐</small></span></button>
-            <button type="button" data-chat-game="dice-slots">🎰 <span>Автомат<small>5–15 ⭐</small></span></button>
+            <button type="button" data-chat-game="dice-dice">🎲 <span>Кости<small>2–3 💎</small></span></button>
+            <button type="button" data-chat-game="dice-basket">🏀 <span>Баскетбол<small>3 💎</small></span></button>
+            <button type="button" data-chat-game="dice-darts">🎯 <span>Дартс<small>2–3 💎</small></span></button>
+            <button type="button" data-chat-game="dice-football">⚽ <span>Футбол<small>2 💎</small></span></button>
+            <button type="button" data-chat-game="dice-bowling">🎳 <span>Боулинг<small>2–3 💎</small></span></button>
+            <button type="button" data-chat-game="dice-slots">🎰 <span>Автомат<small>5–15 💎</small></span></button>
           </div>
         </div>`;
       $$('[data-chat-game]',body).forEach(b=>b.onclick=()=>{
@@ -527,7 +527,7 @@ if (typeof window === 'undefined') {
       });
       return;
     }
-    if(kind==='battle'){body.innerHTML=`${panel('Битва мнений','Идеальное совпадение 5/5 или 10/10 даёт каждому 25 ★ базово. x2/x3 учитывается, но из всех игр за день начисляется максимум 500 ★.')}<div class="modal-actions"><button class="action" data-battle="5">5 вопросов</button><button class="action accent" data-battle="10">10 вопросов</button></div>`;$$('[data-battle]',body).forEach(b=>b.onclick=()=>inviteBattle(+b.dataset.battle));return}
+    if(kind==='battle'){body.innerHTML=`${panel('Битва мнений','Идеальное совпадение даёт каждому 25 💎. Дневной лимит всех игр — 500 💎.')}<div class="modal-actions"><button class="action" data-battle="5">5 вопросов</button><button class="action accent" data-battle="10">10 вопросов</button></div>`;$$('[data-battle]',body).forEach(b=>b.onclick=()=>inviteBattle(+b.dataset.battle));return}
     if(kind==='geo'){
       body.innerHTML=`
         <section class="geo-intro">
@@ -536,7 +536,7 @@ if (typeof window === 'undefined') {
           <p>Смотри фото и ставь точку там, где, по-твоему, находится это место.</p>
           <div class="geo-rules">
             <span>⏱ <b>5 минут</b> на раунд</span>
-            <span>⭐ Чем ближе — тем больше звёзд</span>
+            <span>💎 Чем ближе — тем больше кристаллов</span>
             <span>📍 Ответ отправляется через Telegram</span>
           </div>
           <div class="geo-safety"><b>Как ответить:</b><br>📎 Скрепка → Геопозиция → передвинь карту → выбери любую точку → отправь.<br><br><b>Можно поставить метку в любой точке карты.</b></div>
@@ -553,7 +553,7 @@ if (typeof window === 'undefined') {
   async function settings(body){
     const sub=await safe('/api/miniapp/subscription',{},null)||(!tg?.initData?state.subscription:null);state.subscription=sub;
     const themeBlock=`<div class="setting"><div><strong>Тема</strong><small>меняет акцент и поверхности</small></div><div class="theme-picker">${[['pink','Розовая'],['blue','Синяя'],['violet','Фиолетовая'],['green','Зелёная'],['orange','Оранжевая'],['mono','Ч/Б']].map(([v,t])=>`<button data-theme-choice="${v}" class="${(state.user.theme||'pink')===v?'active':''}">${t}</button>`).join('')}</div></div>`;
-    body.innerHTML=`<div class="setting"><div><strong>Твой пол</strong><small>необязательно</small></div><div class="segments" id="gender"><button data-value="m">Парень</button><button data-value="f">Девушка</button><button data-value="">Не указывать</button></div></div><div class="setting"><div><strong>Кого ищешь</strong><small>предпочтение</small></div><div class="segments" id="looking"><button data-value="m">Парня</button><button data-value="f">Девушку</button><button data-value="">Неважно</button></div></div><div class="setting"><div><strong>Твой берег</strong><small>необязательно</small></div><select id="district"><option value="">Любой</option><option value="Правый берег">Правый берег</option><option value="Левый берег">Левый берег</option></select></div><div class="setting"><div><strong>Возраст</strong><small>необязательно · 13–20</small></div><input id="age" type="number" inputmode="numeric" min="13" max="20" placeholder="Не указан"></div>${themeBlock}${sub&&!sub.claimed?`<section class="panel reward"><span>${svg('gift')}</span><span><strong>${sub.amount} ★ за подписку</strong><small>Одноразовая награда</small></span><button id="subscribe">Получить</button></section>`:''}<section class="panel reward"><span>${svg('gift')}</span><span><strong>Поддержать проект</strong><small>Telegram Stars или СБП</small></span><button id="support">Поддержать</button></section><div class="modal-actions"><button class="action" id="resetSettings">Сбросить</button><button class="action accent" id="saveSettings">Сохранить</button></div><div class="modal-actions one"><button class="action danger" id="forget">Удалить профиль</button></div>`;
+    body.innerHTML=`<div class="setting"><div><strong>Твой пол</strong><small>необязательно</small></div><div class="segments" id="gender"><button data-value="m">Парень</button><button data-value="f">Девушка</button><button data-value="">Не указывать</button></div></div><div class="setting"><div><strong>Кого ищешь</strong><small>предпочтение</small></div><div class="segments" id="looking"><button data-value="m">Парня</button><button data-value="f">Девушку</button><button data-value="">Неважно</button></div></div><div class="setting"><div><strong>Твой берег</strong><small>необязательно</small></div><select id="district"><option value="">Любой</option><option value="Правый берег">Правый берег</option><option value="Левый берег">Левый берег</option></select></div><div class="setting"><div><strong>Возраст</strong><small>необязательно · 13–20</small></div><input id="age" type="number" inputmode="numeric" min="13" max="20" placeholder="Не указан"></div>${themeBlock}${sub&&!sub.claimed?`<section class="panel reward"><span>${svg('gift')}</span><span><strong>${sub.amount} 💎 за подписку</strong><small>Одноразовая награда</small></span><button id="subscribe">Получить</button></section>`:''}<section class="panel reward"><span>${svg('gift')}</span><span><strong>Поддержать проект</strong><small>Telegram Stars или СБП</small></span><button id="support">Поддержать</button></section><div class="modal-actions"><button class="action" id="resetSettings">Сбросить</button><button class="action accent" id="saveSettings">Сохранить</button></div><div class="modal-actions one"><button class="action danger" id="forget">Удалить профиль</button></div>`;
     $('#district').value=state.user.district||'';$('#age').value=state.user.age||'';
     $$('#gender button').forEach(b=>b.classList.toggle('active',b.dataset.value===(state.user.gender||'')));
     $$('#looking button').forEach(b=>b.classList.toggle('active',b.dataset.value===(state.user.looking_for||'')));
@@ -586,9 +586,9 @@ if (typeof window === 'undefined') {
   }
   async function saveSettings(){const payload={age:+($('#age').value||0),district:$('#district').value,gender:$('#gender .active')?.dataset.value||'',looking_for:$('#looking .active')?.dataset.value||'',same_district:0};const r=await safe('/api/miniapp/settings',{method:'POST',body:JSON.stringify(payload)},null);if(r||!tg?.initData){state.user={...state.user,...payload,...(r?.user||{})};render();closeModal();toast('Настройки сохранены');notify()}}
   async function resetSettings(){const r=await safe('/api/miniapp/settings/reset',{method:'POST',body:'{}'},null);if(r||!tg?.initData){Object.assign(state.user,{age:0,district:'',gender:'',looking_for:''});render();settings($('#modalBody'));toast('Настройки сброшены')}}
-  function confirmForget(){const body=$('#modalBody');body.innerHTML=`${panel('Удалить профиль?','Ник, звёзды, статистика и настройки будут удалены без возможности восстановления.')}<div class="modal-actions"><button class="action" id="cancelForget">Отмена</button><button class="action danger" id="doForget">Удалить</button></div>`;$('#cancelForget').onclick=()=>settings(body);$('#doForget').onclick=forgetProfile}
+  function confirmForget(){const body=$('#modalBody');body.innerHTML=`${panel('Удалить профиль?','Ник, кристаллы, статистика и настройки будут удалены без возможности восстановления.')}<div class="modal-actions"><button class="action" id="cancelForget">Отмена</button><button class="action danger" id="doForget">Удалить</button></div>`;$('#cancelForget').onclick=()=>settings(body);$('#doForget').onclick=forgetProfile}
   async function forgetProfile(){const r=await safe('/api/miniapp/profile/forget',{method:'POST',body:'{}'},null);if(r){notify();try{tg?.close()}catch(_){location.reload()}}}
-  async function claimSubscription(){if(!state.subscription)return;try{tg?.openTelegramLink?.(state.subscription.url)}catch(_){};toast('Подпишись и нажми ещё раз для проверки');const b=$('#subscribe');if(b){b.textContent='Проверить';b.onclick=async()=>{const r=await safe('/api/miniapp/subscription/claim',{method:'POST',body:'{}'},null);if(r){state.user.stars=r.stars;render();settings($('#modalBody'));toast(`+${r.amount} ★`);notify()}}}}
+  async function claimSubscription(){if(!state.subscription)return;try{tg?.openTelegramLink?.(state.subscription.url)}catch(_){};toast('Подпишись и нажми ещё раз для проверки');const b=$('#subscribe');if(b){b.textContent='Проверить';b.onclick=async()=>{const r=await safe('/api/miniapp/subscription/claim',{method:'POST',body:'{}'},null);if(r){state.user.stars=r.stars;render();settings($('#modalBody'));toast(`+${r.amount} 💎`);notify()}}}}
   function openPaymentUrl(url){
     try{if(typeof tg?.openLink==='function')tg.openLink(url);else window.open(url,'_blank','noopener')}catch(_){location.href=url}
   }
@@ -887,7 +887,7 @@ if (typeof window === 'undefined') {
           <span>Ты <b>${mine==null?'—':esc(game.my_display||String(mine))}</b></span><span>${esc(game.emoji)}</span><span>Собеседник <b>${other==null?'—':esc(game.partner_display||String(other))}</b></span>
         </div>
         <p>${description}</p>
-        ${game.finished&&game.reward_total?'<div class="dice-duel-reward">+'+Number(game.reward_total)+' ⭐</div>':''}
+        ${game.finished&&game.reward_total?'<div class="dice-duel-reward">+'+Number(game.reward_total)+' 💎</div>':''}
         ${game.finished?'<button class="game-next game-repeat dice-replay-btn" type="button" data-dice-replay>Ещё раз · '+esc(game.emoji)+'</button>':''}
         ${game.status==='active'&&!game.answered?'<button class="game-next dice-roll-btn" type="button" data-dice-roll>Бросить '+esc(game.emoji)+'</button>':''}
         ${game.status==='active'?'<small>Анимированный бросок появится в Telegram.</small>':''}
@@ -964,7 +964,7 @@ if (typeof window === 'undefined') {
           <small>Разница: ${game.difference??0} · точных: ${game.matches||0}/${game.total||3}</small>
         </div>`;
         if(game.can_next)body+=`<button class="game-next" type="button" data-game-next>Следующий раунд</button>`;
-        if(game.finished)body+=`<div class="game-finished">🏁 Игра окончена · получено ${game.reward_total||0} ★</div>`;
+        if(game.finished)body+=`<div class="game-finished">🏁 Игра окончена · получено ${game.reward_total||0} 💎</div>`;
       }
       body+='</div>';root.innerHTML=top+body;
       const form=$('#numberGameForm',root);if(form)form.onsubmit=async e=>{
@@ -992,17 +992,17 @@ if (typeof window === 'undefined') {
         }else{
           body+=`<button class="geo-open-telegram" type="button" data-geo-telegram>Открыть Telegram для ответа</button>`;
         }
-        body+=`<div class="geo-stars-hint">⭐ Чем ближе к месту — тем больше звёзд · базово до 10 ★ · x2/x3 применяется</div>`;
+        body+=`<div class="geo-stars-hint">💎 Чем ближе к месту — тем больше кристаллов · базово до 10 · x2/x3 применяется</div>`;
       }else if(game.status==='round_done'||game.finished){
         body+=`<div class="game-result geo-result">
           <strong>📍 ${esc(game.place_title||'Результат раунда')}</strong>
           <span>Твоя ошибка: <b>${formatGeoDistance(game.my_distance)}</b></span>
           <span>Собеседник: <b>${formatGeoDistance(game.partner_distance)}</b></span>
-          <small>✨ За игру: ${game.reward_total||0} ★</small>
+          <small>✨ За игру: ${game.reward_total||0} 💎</small>
         </div>`;
         if(game.source_url)body+=`<a class="geo-source" href="${esc(game.source_url)}" target="_blank" rel="noopener">Источник фото · ${esc(game.license||'лицензия')}</a>`;
         if(game.can_next)body+=`<button class="game-next" type="button" data-game-next>Следующее место</button>`;
-        if(game.finished)body+=`<div class="game-finished">🏁 GeoGuessr📍 окончен · получено ${game.reward_total||0} ★</div>`;
+        if(game.finished)body+=`<div class="game-finished">🏁 GeoGuessr📍 окончен · получено ${game.reward_total||0} 💎</div>`;
       }
       body+='</div>';root.innerHTML=top+body;
       if(game.status==='active')startGeoTimer(game.deadline);

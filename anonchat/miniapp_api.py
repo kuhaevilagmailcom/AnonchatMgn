@@ -645,7 +645,7 @@ class MiniAppServer:
                     guessed.guesser_id, guessed.explainer_id
                 )
                 game = WG.get_by_id(guessed.game_id)
-                reward_line = f"+<b>{awarded} ⭐</b>."
+                reward_line = f"+<b>{awarded} 💎</b>."
                 end_line = (
                     f"\n\n🏁 <b>Игра окончена</b> · {guessed.total_rounds} слов."
                     if guessed.finished
@@ -1375,7 +1375,7 @@ class MiniAppServer:
             await self.db.activity_add(partner, good_ratings=1)
             await self._push_event(
                 partner, "rating", "Хорошая оценка",
-                f"Собеседник поставил 👍 · +{reward} ⭐",
+                f"Собеседник поставил 👍 · +{reward} 💎",
                 icon="thumbs-up", action="profile",
             )
         await self.db.mark_dialog_result_rated(uid)
@@ -2086,7 +2086,7 @@ class MiniAppServer:
             "🗺 <b>ТЕБЯ ЗОВУТ В GeoGuessr📍</b>\n\n"
             f"🎮 Раундов: <b>{total}</b>\n"
             "⏱ На каждый раунд: <b>5 минут</b>\n"
-            f"⭐ Чем точнее метка, тем больше награда — <b>до {await self.db.effective_xp_reward(10)} ⭐ за раунд</b>.\n"
+            f"💎 Чем точнее метка, тем больше награда — <b>до {await self.db.effective_xp_reward(10)} за раунд</b>.\n"
             "Награды без дневного лимита."
             + "\n\n📍 Ответ: <b>📎 Скрепка → Геопозиция → выбрать любую точку "
             "на карте → отправить.</b>\n"
@@ -2128,7 +2128,7 @@ class MiniAppServer:
             partner,
             "🗣 <b>Собеседник предлагает сыграть в «Объясни слово»</b>\n\n"
             f"Раундов: <b>{WG.WORD_ROUNDS}</b>. Один объясняет слово, второй угадывает. "
-            f"За правильное угадывание — <b>{word_reward} ⭐</b>.",
+            f"За правильное угадывание — <b>{word_reward} 💎</b>.",
             K.word_invite_keyboard(game.id),
             self.pack,
         )
@@ -2141,7 +2141,7 @@ class MiniAppServer:
             "words",
             int(game.id),
             "🗣 Объясни слово",
-            f"{WG.WORD_ROUNDS} слов · {word_reward} ⭐ за угадывание",
+            f"{WG.WORD_ROUNDS} слов · {word_reward} 💎 за угадывание",
         )
         return web.json_response({"ok": True, "message": "Приглашение отправлено"})
 
@@ -2297,7 +2297,7 @@ class MiniAppServer:
                 body = (
                     f"🔢 <b>Числа · раунд {round_index + 1}/{NUMBER_ROUNDS}</b>\n\n"
                     f"Выбери число от <b>1</b> до <b>{range_max}</b>.\n"
-                    f"Точное совпадение: до <b>{reward} ⭐</b>."
+                    f"Точное совпадение: до <b>{reward} 💎</b>."
                 )
                 markup = K.number_input_keyboard(game_id, round_index)
                 for player_id in (user_a, user_b):
@@ -2442,9 +2442,9 @@ class MiniAppServer:
                             side = "a" if player_id == user_a else "b"
                             actual_reward = int(game[f"reward_total_{side}"] or 0)
                             if actual_reward:
-                                body += f"\n🎁 Тебе начислено <b>{actual_reward} ⭐</b>."
+                                body += f"\n🎁 Тебе начислено <b>{actual_reward} 💎</b>."
                             else:
-                                body += "\n⭐ Дневной лимит игр достигнут (500 ⭐)."
+                                body += "\n💎 Дневной лимит игр достигнут (500)."
                     await send_to(self.bot, player_id, body, K.chat_keyboard(), self.pack)
                 if str(game["status"]) == "finished":
                     self.mm.record_game(
@@ -2534,7 +2534,7 @@ class MiniAppServer:
                         f"Разница: <b>{diff}</b>"
                     )
                     if reward > 0:
-                        body += f"\n+<b>{reward} ⭐</b>"
+                        body += f"\n+<b>{reward} 💎</b>"
                     if str(game["status"]) == "finished":
                         body += (
                             f"\n\n🏁 <b>Игра окончена</b> · "

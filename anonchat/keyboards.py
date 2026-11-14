@@ -79,6 +79,7 @@ def _button(
 
 
 CB_ADMIN_PANEL = "adm:panel"
+CB_ADMIN_RAFFLE = "nft:admin"
 
 
 def menu_keyboard(
@@ -106,20 +107,18 @@ def menu_keyboard(
         b.adjust(1, 2)
         return b.as_markup()
     else:
-        _button(b, "Найти собеседника", callback_data=CB_CONNECT, icon="view", style="success")
-        _button(b, "Открыть приложение", url=MINIAPP_PUBLIC_URL, icon="link", style="primary")
+        _button(b, "Начать общение", callback_data=CB_CONNECT, icon="view", style="success")
         if nft_active:
-            _button(b, "Розыгрыш NFT", callback_data="nft:open", icon="gift", style="primary")
+            _button(b, "Розыгрыш", callback_data="nft:open", icon="gift", style="primary")
     _button(b, "Профиль", callback_data=CB_PROFILE, icon="profile")
-    _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
     _button(b, "Топ", callback_data=CB_TOP, icon="stats")
+    _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
+    _button(b, "Правила", callback_data=CB_RULES, icon="ticket")
     if poll_active:
         _button(b, "Опрос", callback_data=CB_POLL, icon="ticket", style="primary")
-    _button(b, "Правила", callback_data=CB_RULES, icon="ticket")
-    _button(b, "Обратная связь", callback_data=CB_FEEDBACK, icon="support")
-    rows = [1, 1, 2, 2, 1] if not poll_active else [1, 1, 2, 2, 2]
+    rows = [1, 2, 2] if not poll_active else [1, 2, 2, 1]
     if nft_active:
-        rows.insert(2, 1)
+        rows.insert(1, 1)
     if admin:
         _button(b, "Панель модератора", callback_data=CB_ADMIN_PANEL, icon="bonus", style="primary")
         rows.append(1)
@@ -159,7 +158,7 @@ def profile_keyboard(
 
     if not subscription_claimed:
         _button(
-            b, f"{int(subscription_reward)} ⭐️ за подписку",
+            b, f"{int(subscription_reward)} кристаллов за подписку",
             callback_data=CB_SUBSCRIBE_REWARD, icon="stars", style="success"
         )
 
@@ -308,9 +307,11 @@ def settings_keyboard(
     _button(b, "Возраст", callback_data="cfg:age:ask", icon="stars")
     _button(b, "Онлайн сейчас", callback_data=CB_ONLINE, icon="view")
     _button(b, "Поддержать проект", callback_data=CB_SUPPORT, icon="stars", style="success")
+    _button(b, "Обратная связь", callback_data=CB_FEEDBACK, icon="support")
+    _button(b, "Приложение", url=MINIAPP_PUBLIC_URL, icon="link")
     _button(b, "Удалить профиль", callback_data="cfg:forget:ask", icon="delete", style="danger")
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
-    b.adjust(1, 2, 2, 2, 1, 1)
+    b.adjust(1, 2, 2, 2, 2, 1, 1)
     return b.as_markup()
 
 
@@ -419,9 +420,9 @@ def feedback_admin_keyboard(user_id: int) -> InlineKeyboardMarkup:
 
 def number_range_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    _button(b, "1–10 · 15 ⭐", callback_data="game:numbers:range:10", style="primary")
-    _button(b, "1–100 · 25 ⭐", callback_data="game:numbers:range:100", style="primary")
-    _button(b, "1–1000 · 50 ⭐", callback_data="game:numbers:range:1000", style="success")
+    _button(b, "1–10 · 15 кристаллов", callback_data="game:numbers:range:10", style="primary")
+    _button(b, "1–100 · 25 кристаллов", callback_data="game:numbers:range:100", style="primary")
+    _button(b, "1–1000 · 50 кристаллов", callback_data="game:numbers:range:1000", style="success")
     _button(b, "Назад", callback_data=CB_GAMES, icon="home")
     b.adjust(1, 1, 1, 1)
     return b.as_markup()
@@ -699,6 +700,7 @@ def admin_panel_keyboard(
         _button(b, "Проверка топов", callback_data="ax:t:w", icon="bonus")
         _button(b, "Розыгрыш сообщений", callback_data="ax:g", icon="bonus", style="primary")
     if owner:
+        _button(b, "NFT-розыгрыш", callback_data=CB_ADMIN_RAFFLE, icon="gift", style="primary")
         _button(
             b, f"Множитель: x{int(xp_multiplier)}",
             callback_data=CB_PANEL_MULTIPLIER, icon="stars",
@@ -731,6 +733,20 @@ def admin_panel_keyboard(
         )
     _button(b, "В меню", callback_data=CB_MENU, icon="home")
     b.adjust(2)
+    return b.as_markup()
+
+
+def admin_raffle_keyboard() -> InlineKeyboardMarkup:
+    """One compact owner hub instead of a list of NFT slash commands."""
+    b = InlineKeyboardBuilder()
+    _button(b, "Открыть", callback_data="nft:open", icon="view")
+    _button(b, "Создать", callback_data="nft:admin:create", icon="add", style="success")
+    _button(b, "Рассылка", callback_data="nft:admin:broadcast", icon="support")
+    _button(b, "Опубликовать", callback_data="nft:admin:post", icon="link", style="primary")
+    _button(b, "Статистика", callback_data="nft:admin:stats", icon="stats")
+    _button(b, "Завершить", callback_data="nft:admin:finish", icon="delete", style="danger")
+    _button(b, "В панель", callback_data=CB_PANEL_BACK, icon="home")
+    b.adjust(2, 2, 2, 1)
     return b.as_markup()
 
 

@@ -108,20 +108,15 @@ def _configured() -> Giveaway | None:
 def _message(g: Giveaway) -> str:
     if time.time() >= g.close_at:
         return (
-            "🎁 Розыгрыш NFT\n\n"
-            f"NFT: {g.nft_url}\n\n"
-            "Приём новых заявок завершён.\n"
-            "Проверь свои билеты кнопкой ниже."
+            "<b>Розыгрыш завершён</b>\n\n"
+            f"{g.nft_url}\n\n"
+            "Результаты и твои билеты — ниже."
         )
     return (
-        "🎁 Розыгрыш NFT\n\n"
-        f"NFT: {g.nft_url}\n\n"
-        f"Стоимость одного билета: {TICKET_PRICE_RUB} ₽. Можно купить несколько.\n"
-        f"Приём заявок до {g.deadline}.\n\n"
-        "⚠️ ВАЖНО: после оплаты вернись в этот чат и нажми "
-        "«Проверить оплату».\n"
-        "Только после проверки бот выдаст номер билета. "
-        "Если уже оплатил, открой «Мои билеты» и проверь платёж."
+        "<b>Розыгрыш NFT</b>\n\n"
+        f"{g.nft_url}\n"
+        f"Билет — {TICKET_PRICE_RUB} ₽ · до {g.deadline}\n\n"
+        "После оплаты нажми «Проверить оплату» — билет появится сразу."
     )
 
 
@@ -129,9 +124,10 @@ def _keyboard(payment_enabled: bool = True) -> InlineKeyboardMarkup:
     rows = []
     if payment_enabled:
         rows.append([InlineKeyboardButton(
-            text=f"Купить билеты · от {TICKET_PRICE_RUB} ₽", callback_data="nft:buy"
+            text="Купить билеты", callback_data="nft:buy"
         )])
     rows.append([InlineKeyboardButton(text="Мои билеты", callback_data="nft:status")])
+    rows.append([InlineKeyboardButton(text="В меню", callback_data="act:menu")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -551,7 +547,7 @@ async def nft_open_from_menu(event: CallbackQuery, ctx: Ctx, db: Database) -> No
     await ctx.ack()
     g = await _active(db)
     if not g or time.time() >= g.close_at:
-        await ctx.reply("Розыгрыш уже завершён. Посмотреть свои билеты можно через /nft.")
+        await ctx.reply("Розыгрыш уже завершён.", _keyboard(False))
         return
     await ctx.reply(await _card(ctx, db, g), _keyboard(ctx.cfg.rollypay_enabled))
 
@@ -604,14 +600,9 @@ async def _start_ticket_purchase(ctx: Ctx, db: Database, quantity: int = 1) -> N
         await ctx.reply("Не удалось создать платёж. Попробуй немного позже.")
         return
     await ctx.reply(
-        "🎟 <b>Билеты NFT-розыгрыша</b>\n\n"
-        f"Количество: <b>{quantity}</b> шт.\n"
-        f"Цена за билет: <b>{TICKET_PRICE_RUB} ₽</b>\n"
-        f"К оплате: <b>{amount_rub} ₽</b>.\n\n"
-        "⚠️ <b>После оплаты вернись сюда и обязательно нажми "
-        "«Проверить оплату» ниже.</b>\n"
-        "Без этой проверки номер билета не появится.\n"
-        "Если потерял сообщение с оплатой, открой «Мои билеты».",
+        "<b>Оплата билетов</b>\n\n"
+        f"{quantity} шт. · <b>{amount_rub} ₽</b>\n\n"
+        "Оплати и нажми «Проверить оплату».",
         _payment_keyboard(payment_id, pay_url, amount_rub),
     )
 
@@ -632,9 +623,9 @@ async def nft_buy(event: CallbackQuery, ctx: Ctx, db: Database, state: FSMContex
         return
     await state.set_state(NFTTicketQuantity.waiting)
     await ctx.reply(
-        "🎟 <b>Введите кол-во билетов, которое хотите купить, от 1 до 99.</b>\n\n"
-        f"Цена одного билета: <b>{TICKET_PRICE_RUB} ₽</b>.\n"
-        "Отправьте число отдельным сообщением, например: <code>5</code>.",
+        "<b>Сколько билетов?</b>\n\n"
+        f"От 1 до 99 · {TICKET_PRICE_RUB} ₽ за билет.\n"
+        "Отправь число, например <code>5</code>.",
         InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="Отмена", callback_data="nft:buy_cancel"),
         ]]),
@@ -654,7 +645,7 @@ async def nft_enter_quantity(
 ) -> None:
     quantity = _parse_quantity(message.text or "")
     if quantity is None:
-        await ctx.reply("Введите целое число от 1 до 99, например <code>5</code>.")
+        await ctx.reply("От 1 до 99. Например: <code>5</code>.")
         return
     await state.clear()
     await _start_ticket_purchase(ctx, db, quantity)
@@ -772,8 +763,7 @@ async def nft_broadcast_preview(message: Message, ctx: Ctx, db: Database) -> Non
     g = await _active(db)
     if not g:
         await ctx.reply(
-            "Сначала создай розыгрыш через /nft_setup: "
-            "нужна только ссылка на NFT и дата окончания."
+            "Сначала создай розыгрыш в NFT-разделе панели."
         )
         return
     if time.time() >= g.close_at:
@@ -883,7 +873,7 @@ async def nft_finish_confirm(event: CallbackQuery, ctx: Ctx, db: Database) -> No
     g = await _active(db)
     campaign = (event.data or "").removeprefix("nft:finish:")
     if not g or campaign != g.campaign:
-        await ctx.ack("Предпросмотр устарел. Вызови /nft_finish заново.", alert=True)
+        await ctx.ack("Предпросмотр устарел. Открой NFT-раздел заново.", alert=True)
         return
     # Existing invoices may have been paid even if the customer did not
     # press the verification button. Reconcile them before choosing a winner.
@@ -895,7 +885,7 @@ async def nft_finish_confirm(event: CallbackQuery, ctx: Ctx, db: Database) -> No
             "⛔ <b>Приём новых билетов остановлен.</b>\n\n"
             f"Осталось непроверенных заказов СБП: <b>{pending}</b>.\n"
             "Попроси покупателей проверить оплату кнопкой в боте. "
-            "Когда все счета будут разрешены, снова введи /nft_finish."
+            "Когда все счета будут разрешены, снова нажми «Завершить»."
         )
         return
     if status == "empty":
@@ -931,7 +921,7 @@ async def nft_admin_draw(message: Message, ctx: Ctx, db: Database) -> None:
         await ctx.reply(
             "Итоги пока недоступны: розыгрыш не закрыт, нет билетов "
             "или есть незавершённые платежи СБП. "
-            "Для досрочного завершения используй /nft_finish."
+            "Для досрочного завершения нажми «Завершить» в NFT-разделе."
         )
         return
     user_id, ticket, total = result

@@ -439,12 +439,12 @@
     return state.zones.find(z => z.id === id);
   }
   function renderMarket() {
-    ui.wallet.textContent = state.wallet.toLocaleString('ru-RU') + ' ⭐';
+    ui.wallet.textContent = state.wallet.toLocaleString('ru-RU') + ' 💎';
     ui.hpValue.textContent = state.hp.toFixed(1).replace(/\.0$/, '');
     ui.hpHud.textContent = String(Math.ceil(state.hp));
     ui.hpFill.style.width = state.hp + '%';
     ui.hudHpFill.style.width = state.hp + '%';
-    ui.pendingStars.textContent = state.pendingStars.toLocaleString('ru-RU') + ' ⭐';
+    ui.pendingStars.textContent = state.pendingStars.toLocaleString('ru-RU') + ' 💎';
     ui.claimIncome.disabled = state.actionBusy || state.pendingStars <= 0;
     ui.shop.replaceChildren();
     for (const pet of state.catalog) {
@@ -452,14 +452,14 @@
       const emoji = element('span', pet.emoji, 'pet-product-emoji');
       const info = element('div', null, 'pet-product-info');
       info.append(element('strong', pet.name),
-        element('small', 'Доход: +' + pet.stars_h + ' ⭐/ч'),
+        element('small', 'Доход: +' + pet.stars_h + ' 💎/ч'),
         element('small', 'Урон: −' + Number(pet.hp_5m).toLocaleString('ru-RU') + ' HP / 5 мин'));
       const buyBox = element('div', null, 'pet-product-price');
       const buy = element('button', 'Купить');
       buy.type = 'button';
       buy.dataset.buyKind = pet.kind;
       buy.disabled = state.actionBusy || state.wallet < pet.price;
-      const price = element('small', pet.price.toLocaleString('ru-RU') + ' ⭐');
+      const price = element('small', pet.price.toLocaleString('ru-RU') + ' 💎');
       buyBox.append(price, buy);
       row.append(emoji, info, buyBox);
       ui.shop.append(row);
@@ -480,7 +480,7 @@
       const desc = element('div', null, 'pet-inventory-label');
       const location = pet.zone_id ? guardedZone(pet.zone_id)?.name || 'Район' : 'В запасе';
       desc.append(element('strong', info.name + ' · #' + pet.id),
-        element('small', location + (pet.zone_id ? ' · +' + info.stars_h + ' ⭐/ч' : '')));
+        element('small', location + (pet.zone_id ? ' · +' + info.stars_h + ' 💎/ч' : '')));
       const button = element('button', pet.zone_id ? 'Снять' : 'Поставить', 'pet-action');
       button.type = 'button';
       button.dataset.petAction = pet.zone_id ? 'recall' : 'place';
@@ -514,7 +514,7 @@
       if (action === 'buy') feedback('Питомец куплен. Выбери свой район!', 'success');
       else if (action === 'place') feedback('Защитник отправлен на район', 'success');
       else if (action === 'recall') feedback('Питомец вернулся в запас', 'success');
-      else feedback('Получено ' + (result.stars || 0) + ' ⭐', 'success');
+      else feedback('Получено ' + (result.stars || 0) + ' 💎', 'success');
       touch('success');
     } catch (error) {
       feedback(error.message, 'error');
@@ -756,7 +756,7 @@
       ui.zoneGuard.textContent = d?.emoji || '🐈';
       ui.zoneGuard.title = (d?.name || defender.kind) + ' · Ур. '+
         (defender.level || 1) + ' · −'+(defender.hp_5m || d?.hp_5m || 0)+
-        ' HP / 5 мин · +'+(defender.stars_h || d?.stars_h || 0)+' ⭐/ч';
+        ' HP / 5 мин · +'+(defender.stars_h || d?.stars_h || 0)+' 💎/ч';
     }
 
     if (!zone) {

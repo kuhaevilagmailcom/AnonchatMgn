@@ -115,7 +115,7 @@ async def reward_reporter_for_action(
     if not claimed:
         reward = 0
     reward_line = (
-        f"\n\n🎁 За принятые меры · +<b>{reward} ⭐</b>."
+        f"\n\n🎁 За принятые меры · +<b>{reward} 💎</b>."
         if reward > 0
         else ""
     )
@@ -218,7 +218,7 @@ async def find_text(db: Database, query: str) -> str:
             f"<code>{r['user_id']}</code> · 🙋 "
             f"<b>{texts.esc(nicklib.display(r['nickname'], int(r['user_id']), r['support_stars']))}</b>"
             f" · {texts.esc(r['first_name'])}{texts.esc(telegram_name)}\n"
-            f"   {rank.name} · {rank.pretty(int(r['messages']))} сообщ. · ⭐ {rank.pretty(int(r['xp']))}"
+            f"   {rank.name} · {rank.pretty(int(r['messages']))} сообщ. · 💎 {rank.pretty(int(r['xp']))}"
             f" · диалогов {r['dialogs']} · жалоб {r['reports_received']}"
             + (" · ⛔ бан" if r["banned"] else "")
         )
@@ -239,10 +239,10 @@ async def who_text(db: Database, uid: int) -> str | None:
         f"👤 <code>{uid}</code> · 🙋 "
         f"<b>{texts.esc(nicklib.display(row['nickname'], uid, row['support_stars']))}</b>\n"
         f"📛 {texts.esc(row['first_name'])}{texts.esc(telegram_name)}\n"
-        f"{rank.name} · {rank.pretty(int(row['messages']))} сообщ. · ⭐ {rank.pretty(int(row['xp']))}\n"
+        f"{rank.name} · {rank.pretty(int(row['messages']))} сообщ. · 💎 {rank.pretty(int(row['xp']))}\n"
         f"💬 диалогов: {row['dialogs']} · 👍 {row['good_ratings']} · 👎 {row['bad_ratings']}\n"
         f"🚩 жалоб: {row['reports_received']} · {texts.esc(row['district'] or 'район не указан')}\n"
-        f"💎 Поддержка: {int(row['support_stars'])} ⭐\n"
+        f"💳 Поддержка: {int(row['support_stars'])} Telegram Stars\n"
         f"в чате с {time.strftime('%d.%m.%Y', time.localtime(row['created_at']))}"
         + ("\n⛔ в бане" if row["banned"] else "")
     )
@@ -255,7 +255,7 @@ async def users_text(db: Database, limit: int = 30, offset: int = 0) -> tuple[st
         username = f" · @{row['username']}" if row["username"] else ""
         lines.append(
             f"<code>{row['user_id']}</code>{texts.esc(username)} · "
-            f"{texts.esc(row['first_name'] or '-')} · {int(row['xp'])} ⭐"
+            f"{texts.esc(row['first_name'] or '-')} · {int(row['xp'])} 💎"
         )
     return "\n".join(lines), len(rows)
 
@@ -333,7 +333,7 @@ async def game_watch_text(db: Database) -> str:
                 f"Диапазон: <b>1–{int(row['range_max'])}</b>",
                 f"Ответ A: <b>{texts.esc(answer_a)}</b>",
                 f"Ответ B: <b>{texts.esc(answer_b)}</b>",
-                f"Награды: <b>A {int(row['reward_total_a'])} ⭐ · B {int(row['reward_total_b'])} ⭐</b>",
+                f"Награды: <b>A {int(row['reward_total_a'])} 💎 · B {int(row['reward_total_b'])} 💎</b>",
                 (
                     "Награда этой паре доступна"
                     if int(row["reward_awarded"] or 0)
@@ -346,7 +346,7 @@ async def game_watch_text(db: Database) -> str:
             lines.extend([
                 f"Метка A: <b>{texts.esc(distance_a)}</b>",
                 f"Метка B: <b>{texts.esc(distance_b)}</b>",
-                f"Награды: <b>A {int(row['reward_total_a'])} ⭐ · B {int(row['reward_total_b'])} ⭐</b>",
+                f"Награды: <b>A {int(row['reward_total_a'])} 💎 · B {int(row['reward_total_b'])} 💎</b>",
             ])
         else:
             question_ids = json.loads(str(row["question_ids"] or "[]"))
@@ -550,7 +550,7 @@ async def panel_screen(ctx: Ctx, db: Database, mm: Matchmaker, edit: bool = True
         f"🟢 Сегодня {s['active_today']} · за 7 дней {s['active_week']}\n"
         f"⏳ В поиске {mm.queue_size()} · 💬 диалогов {mm.online_pairs()}\n"
         f"🚩 Жалоб {s['open_reports']} · ⛔ банов {s['banned']} · 🔇 мутов {s['muted']}\n"
-        f"⭐ Начислено сегодня {s['xp_today']} · множитель x{multiplier}\n"
+        f"💎 Начислено сегодня {s['xp_today']} · множитель x{multiplier}\n"
         f"💾 SQLite {db_mb:.2f} МБ · 🟢 работает {uptime//3600} ч {uptime%3600//60} мин\n"
     )
     kb = K.admin_panel_keyboard(
@@ -579,7 +579,7 @@ PANEL_PROMPTS = {
     K.CB_PANEL_MUTE: ("mute", texts.PANEL_ASK_MUTE),
     K.CB_PANEL_POINTS: (
         "points",
-        "⭐ Пришли <code>id +50</code> для выдачи или <code>id -50</code> для снятия очков.",
+        "💎 Пришли <code>id +50</code> для выдачи или <code>id -50</code> для снятия кристаллов.",
     ),    K.CB_PANEL_ADMINS: (
         "admins",
         "👮 Пришли <code>id права</code>. Права через запятую: "
@@ -736,9 +736,9 @@ async def cmd_points(message: Message, ctx: Ctx, db: Database) -> None:
     try:
         amount = int(parts[1])
     except ValueError:
-        await ctx.reply("Количество очков должно быть целым числом со знаком.")
+        await ctx.reply("Количество кристаллов должно быть целым числом со знаком.")
         return
-    await ctx.reply("Ручные изменения очков проводятся через /admin → Пользователи → карточка: с причиной и подтверждением.")
+    await ctx.reply("Кристаллы меняются в панели: Пользователи → карточка → баланс.")
 
 
 @router.message(Command("adminadd", "adminperms"))
@@ -808,8 +808,8 @@ async def cmd_purge_referrals(message: Message, ctx: Ctx, db: Database) -> None:
         "🧹 <b>Предпросмотр очистки накрутки</b>\n\n"
         f"Пользователь: <code>{user_id}</code>\n"
         f"Прямых рефералов: <b>{preview['referrals']}</b>\n"
-        f"Начислено по ним: <b>{preview['referral_xp']} ⭐</b>\n"
-        f"Текущий баланс станет 0: <b>{preview['current_xp']} ⭐</b>\n"
+        f"Начислено по ним: <b>{preview['referral_xp']} 💎</b>\n"
+        f"Текущий баланс станет 0: <b>{preview['current_xp']} 💎</b>\n"
         f"Профилей будет удалено: <b>{preview['users_to_delete']}</b>\n"
         f"Защищено (платёж/админ): <b>{preview['protected_users']}</b>\n\n"
         "Платежи и оплаченные Telegram Stars не удаляются. Действие необратимо.",
@@ -1042,7 +1042,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         await db.log_admin_action(ctx.user_id, 0, "multiplier", f"x{value}")
         await ctx.ack(f"Множитель x{value} включён")
         await ctx.edit(
-            f"⭐ <b>Множитель очков за сообщения</b>\n\nСейчас: <b>x{value}</b>",
+            f"💎 <b>Множитель кристаллов за сообщения</b>\n\nСейчас: <b>x{value}</b>",
             K.xp_multiplier_keyboard(value),
         )
         return
@@ -1107,7 +1107,7 @@ async def cb_panel(event: CallbackQuery, ctx: Ctx, db: Database, mm: Matchmaker,
         value = await db.xp_multiplier()
         await ctx.ack()
         await ctx.edit(
-            f"⭐ <b>Множитель очков за сообщения</b>\n\nСейчас: <b>x{value}</b>\n"
+            f"💎 <b>Множитель кристаллов за сообщения</b>\n\nСейчас: <b>x{value}</b>\n"
             "x2/x3 действует только на сообщения, отправленные пока событие включено.",
             K.xp_multiplier_keyboard(value),
         )
@@ -1510,7 +1510,7 @@ async def panel_input(message: Message, ctx: Ctx, db: Database, mm: Matchmaker, 
         if uid is None or amount == 0:
             await ctx.reply("Формат: <code>123456 +50</code> или <code>123456 -50</code>.")
         else:
-            await ctx.reply("Для изменения баланса открой /admin → Пользователи → карточка, укажи причину и подтверди.")
+            await ctx.reply("Открой панель → Пользователи → карточка → баланс.")
     elif what == "admins":
         uid, tail = _id_args(raw)
         permissions = parse_permissions(tail)
@@ -1643,8 +1643,8 @@ async def cb_purge_referrals(
         "✅ <b>Реферальная накрутка удалена</b>\n\n"
         f"Пользователь: <code>{user_id}</code>\n"
         f"Удалено реферальных связей: <b>{result['referrals_removed']}</b>\n"
-        f"Списано реферальных начислений: <b>{result['referral_xp_removed']} ⭐</b>\n"
-        f"Баланс пользователя: <b>0 ⭐</b>\n"
+        f"Списано реферальных начислений: <b>{result['referral_xp_removed']} 💎</b>\n"
+        f"Баланс пользователя: <b>0 💎</b>\n"
         f"Удалено фейк-профилей: <b>{result['users_deleted']}</b>\n"
         f"Сохранено защищённых профилей: <b>{result['protected_users']}</b>\n\n"
         "Платежи и оплаченные Telegram Stars сохранены.",

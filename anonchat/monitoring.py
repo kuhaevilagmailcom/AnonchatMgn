@@ -166,8 +166,8 @@ def _chat_header(pack, sender: Any, sender_id: int, partner: Any, partner_id: in
     chat_icon = pack.admin_icon("chat") if pack is not None else "💬"
     user_icon = pack.admin_icon("user") if pack is not None else "👤"
     # Plain balance next to each participant, frozen at message delivery time.
-    sender_stars = f"{int(sender['xp']):,}".replace(",", " ") + " ⭐" if sender is not None else "— ⭐"
-    partner_stars = f"{int(partner['xp']):,}".replace(",", " ") + " ⭐" if partner is not None else "— ⭐"
+    sender_stars = f"{int(sender['xp']):,}".replace(",", " ") + " 💎" if sender is not None else "— 💎"
+    partner_stars = f"{int(partner['xp']):,}".replace(",", " ") + " 💎" if partner is not None else "— 💎"
     return (
         f"{chat_icon} <b>Активный чат</b>\n\n"
         f"{user_icon} <b>От:</b> {_identity(sender, sender_id)} · {sender_stars}\n"

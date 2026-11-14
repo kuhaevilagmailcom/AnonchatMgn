@@ -328,7 +328,7 @@ async def cmd_start(
                 await send_to(
                     ctx.bot,
                     referrer_id,
-                    f"🎁 По твоей ссылке пришёл новый пользователь · +{effective_reward} ⭐",
+                    f"🎁 По твоей ссылке пришёл новый пользователь · +{effective_reward} 💎",
                     pack=ctx.pack,
                 )
     if ctx.is_admin:

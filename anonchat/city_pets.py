@@ -73,7 +73,7 @@ def init_db(db):
 
 def _change_xp(db, user_id, amount, source, reason, ref_id):
     if not isinstance(amount, int) or abs(amount) > 100_000:
-        raise ValueError("Некорректное количество звёзд")
+        raise ValueError("Некорректное количество кристаллов")
     cursor = db.execute(
         """UPDATE users SET xp=xp+?, xp_source=?, xp_reason=?,
                   xp_reference_type='city_game', xp_reference_id=?
@@ -81,7 +81,7 @@ def _change_xp(db, user_id, amount, source, reason, ref_id):
         (amount, source, reason, str(ref_id), user_id, amount),
     )
     if cursor.rowcount != 1:
-        raise ValueError("Недостаточно звёзд ⭐")
+        raise ValueError("Недостаточно кристаллов 💎")
     return db.execute("SELECT xp FROM users WHERE user_id=?", (user_id,)).fetchone()[0]
 
 

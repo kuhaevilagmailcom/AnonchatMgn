@@ -144,17 +144,15 @@ def format_giveaway(
     """
     now = time.time() if now is None else now
     active = now < int(giveaway.close_at)
-    heading = "РОЗЫГРЫШ NFT АКТИВЕН!" if active else "РОЗЫГРЫШ NFT ЗАВЕРШЁН"
+    heading = "Розыгрыш NFT" if active else "Розыгрыш завершён"
     nft_link = html.escape(str(giveaway.nft_url), quote=True)
     text = [
         f'{icon("header", icons)} <b>{heading}</b>',
         "",
-        f'{icon("prize", icons)} <b>Приз:</b>',
-        f'<blockquote>🥇 <a href="{nft_link}">NFT-подарок</a></blockquote>',
+        f'{icon("prize", icons)} <a href="{nft_link}"><b>Посмотреть приз</b></a>',
         "",
-        f'{icon("stats", icons)} <b>Статистика:</b>',
         "<blockquote>"
-        f'{icon("ticket", icons)} Билет: <b>{ticket_price_rub} ₽</b>\n'
+        f'{icon("ticket", icons)} <b>{ticket_price_rub} ₽</b> за билет\n'
         f'{icon("people", icons)} Участников: <b>{max(0, stats.participants)}</b>\n'
         f'{icon("gift", icons)} Билетов: <b>{max(0, stats.tickets)}</b>'
         "</blockquote>",
@@ -162,18 +160,13 @@ def format_giveaway(
     ]
     if active:
         text.extend([
-            f'{icon("timer", icons)} <b>Осталось времени:</b> '
-            f'{remaining_time(giveaway.close_at, now)}',
+            f'{icon("timer", icons)} Осталось: <b>{remaining_time(giveaway.close_at, now)}</b>',
             f'<i>До {html.escape(str(giveaway.deadline))}</i>',
-            "",
-            f'{icon("check", icons)} <b>Важно:</b> после оплаты вернись в бот '
-            'и нажми <b>«Проверить оплату»</b>, чтобы получить билет.',
-            "",
-            f'{icon("action", icons)} <b>Успей принять участие!</b>',
+            "После оплаты нажми <b>«Проверить оплату»</b>.",
         ])
     else:
         text.extend([
-            f'{icon("timer", icons)} <b>Приём билетов завершён.</b>',
-            "Если уже оплатил, проверь платёж и свои билеты в боте.",
+            f'{icon("timer", icons)} Приём билетов завершён.',
+            "Проверь свои билеты кнопкой ниже.",
         ])
     return "\n".join(text)

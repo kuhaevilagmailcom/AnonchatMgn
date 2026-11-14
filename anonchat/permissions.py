@@ -24,7 +24,7 @@ PERMISSION_LABELS = {
     "broadcast": "рассылка",
     "mute": "мут",
     "ban": "бан и разбан",
-    "points": "выдача и снятие очков",
+    "points": "выдача и снятие кристаллов",
     "monitor": "наблюдение за чатами",
 }
 
@@ -42,6 +42,7 @@ def parse_permissions(raw: str) -> frozenset[str]:
         "бан": "ban",
         "мут": "mute",
         "очки": "points",
+        "кристаллы": "points",
         "статистика": "stats",
     }
     chunks = value.replace(";", ",").replace(" ", ",").split(",")

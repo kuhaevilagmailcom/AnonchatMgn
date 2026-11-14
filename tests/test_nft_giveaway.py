@@ -24,7 +24,7 @@ def test_nft_keyboard_sells_ticket_and_old_sbp35_support_is_gone() -> None:
     labels = [button.text for row in _keyboard(True).inline_keyboard for button in row]
     callbacks = [button.callback_data for row in _keyboard(True).inline_keyboard for button in row]
     support_labels = [button.text for row in K.support_method_keyboard(sbp_enabled=True).inline_keyboard for button in row]
-    assert "Купить билеты · от 35 ₽" in labels
+    assert "Купить билеты" in labels
     assert "nft:buy" in callbacks
     assert "Поддержать 35 ₽ · СБП" not in support_labels
     assert all(command.command != "sbp35" for command in COMMANDS)
@@ -381,7 +381,7 @@ def test_nft_post_and_payment_messages_explicitly_require_verification() -> None
                  "03.11.2026 20:00 МГН")
     notice = _message(g)
     assert "Проверить оплату" in notice
-    assert "Мои билеты" in notice
+    assert "35 ₽" in notice
     keyboard = _payment_keyboard("payment-id", "https://pay.example/35")
     assert keyboard.inline_keyboard[0][0].url == "https://pay.example/35"
     assert "Проверить оплату" in keyboard.inline_keyboard[1][0].text

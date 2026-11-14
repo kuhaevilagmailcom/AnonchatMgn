@@ -13,7 +13,7 @@ def test_manual_winner_message() -> None:
     assert format_manual_win(123456789) == (
         "🏆 <b>ID <code>123456789</code> выиграл NFT в конкурсе!</b>"
     )
-    assert any(command.command == "win" for command in ADMIN_VISIBLE)
+    assert all(command.command != "win" for command in ADMIN_VISIBLE)
 
 
 def test_owner_only_private_win_message() -> None:

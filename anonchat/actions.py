@@ -596,7 +596,7 @@ async def show_top(ctx: Ctx, period: str = "week") -> None:
             place = ctx.pack.top_flag(i) or f"<code>{i}</code>"
             lines.append(
                 f"{place} <b>{texts.esc(nicklib.display(row['nickname'], int(row['user_id']), row['support_stars']))}</b>"
-                f" · <b>{int(row['xp'] or 0)} ⭐</b>"
+                f" · <b>{int(row['xp'] or 0)} 💎</b>"
             )
     lines += ["", "<i>Ники участники придумывают сами.</i>"]
     await ctx.render_screen("08_top.png", "\n".join(lines), top_keyboard(period))
@@ -609,7 +609,7 @@ async def show_referral(ctx: Ctx) -> None:
     body = (
         "🎁 <b>Пригласить друга</b>\n\n"
         f"Приглашено: <b>{invited}</b>\n"
-        f"Получено: <b>{earned} ⭐</b>\n\n"
+        f"Получено: <b>{earned} 💎</b>\n\n"
         f"Твоя ссылка:\n<code>{link}</code>"
     )
     await ctx.render_screen("04_profile.png", body, referral_keyboard(link))
@@ -697,7 +697,7 @@ async def show_profile(ctx: Ctx) -> None:
         "</blockquote>",
         f"<i>{rank.emoji} {texts.esc(rank.title)}</i>",
         "",
-        f"⭐ Очки: <b>{int(me['xp'])}</b>",
+        f"💎 Кристаллы: <b>{int(me['xp'])}</b>",
     ]
     lines += [
         f"💬 Сообщения: <b>{messages}</b> · Диалоги: <b>{me['dialogs']}</b>",
@@ -724,7 +724,7 @@ async def show_profile(ctx: Ctx) -> None:
         f"Пол: <b>{'👨 М' if me['gender'] == 'm' else '👩 Д' if me['gender'] == 'f' else 'не указан'}</b>",
         f"Берег: <b>{texts.esc(me['district']) if me['district'] else 'не указан'}</b>",
         "",
-        f"🎁 Приглашено: <b>{invited}</b> · получено <b>{referral_xp} ⭐</b>",
+        f"🎁 Приглашено: <b>{invited}</b> · получено <b>{referral_xp} 💎</b>",
     ]
     bot_me = await ctx.bot.me()
     ask_token = await ctx.db.anonymous_question_token(ctx.user_id)
@@ -739,7 +739,7 @@ async def show_profile(ctx: Ctx) -> None:
     if int(me["support_stars"] or 0) > 0 or int(me["support_rub"] or 0) > 0:
         parts = []
         if int(me["support_stars"] or 0) > 0:
-            parts.append(f"{int(me['support_stars'])} ⭐")
+            parts.append(f"{int(me['support_stars'])} Telegram Stars")
         if int(me["support_rub"] or 0) > 0:
             parts.append(f"{int(me['support_rub'])} ₽")
         lines += ["", f"💎 Поддержал проект: {' · '.join(parts)}"]
@@ -894,7 +894,7 @@ def _dialog_summary_text(summary: dict, user_id: int, earned_xp: int) -> str:
     games = max(0, int(game.get("games", 0)))
     return (
         f"{duration} · {count(messages, 'сообщение', 'сообщения', 'сообщений')}\n"
-        f"{count(games, 'игра', 'игры', 'игр')} · +{max(0, int(earned_xp))} ★"
+        f"{count(games, 'игра', 'игры', 'игр')} · +{max(0, int(earned_xp))} 💎"
     )
 
 

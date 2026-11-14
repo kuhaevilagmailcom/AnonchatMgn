@@ -21,7 +21,7 @@ from ..permissions import ALL_ADMIN_PERMISSIONS
 router = Router(name="admin_extras")
 TZ = ZoneInfo("Asia/Yekaterinburg")
 SORTS = {"r": ("recent", "Недавно активные"), "n": ("new", "Новые"),
-         "x": ("xp", "По очкам"), "m": ("messages", "По сообщениям"),
+         "x": ("xp", "По кристаллам"), "m": ("messages", "По сообщениям"),
          "d": ("dialogs", "По диалогам")}
 FILTERS = {"a": ("all", "Все"), "o": ("active", "Недавно онлайн"),
            "q": ("queue", "В поиске"), "c": ("dialog", "В диалоге"),
@@ -101,7 +101,7 @@ async def show_users(
              ""]
     for i, u in enumerate(rows, 1+12*page):
         lines.append(
-            f"<b>{i}. {texts.esc(_name(u))}</b> · {int(u['xp']):,} ⭐\n"
+            f"<b>{i}. {texts.esc(_name(u))}</b> · {int(u['xp']):,} 💎\n"
             + (f"{texts.esc('@'+u['username'])} · " if u['username'] else "")
             + f"ID <code>{u['user_id']}</code>\n"
             f"{int(u['messages']):,} сообщений · {int(u['dialogs']):,} диалогов\n"
@@ -155,18 +155,18 @@ async def show_card(
         f"Был: {_date(user['last_seen'])} · {status}\n"
         f"Район: {texts.esc(user['district'] or 'любой')} · возраст: {user['age']}\n"
         f"Пол: {texts.esc(user['gender'] or 'любой')}; ищет: {texts.esc(user['looking_for'] or 'любого')}\n\n"
-        f"⭐ Баланс: <b>{user['xp']}</b> · поддержка: {user['support_stars']} Stars\n"
+        f"💎 Баланс: <b>{user['xp']}</b> · поддержка: {user['support_stars']} Telegram Stars\n"
         f"Сообщения: {user['messages']} · диалоги: {user['dialogs']}\n"
         f"Оценки: 👍 {user['good_ratings']} · 👎 {user['bad_ratings']}\n"
         f"Жалобы: {user['reports_received']}\n"
-        f"Приглашения: {invited} · получено: {earned} ⭐\n"
+        f"Приглашения: {invited} · получено: {earned} 💎\n"
         f"Бан: {'да' if user['banned'] else 'нет'} · {texts.esc(user['ban_reason'] or '—')}\n"
         f"Мут до: {_date(user['mute_until']) if int(user['mute_until'])>int(datetime.now(TZ).timestamp()) else 'нет'}\n"
         f"Админ: {'да' if perms else 'нет'}"
         + (f" · {texts.esc(', '.join(sorted(perms)))}" if perms else "")
     )
     b = InlineKeyboardBuilder()
-    _button(b,"⭐ История начислений",f"ax:h:{uid}:a:a:0:a")
+    _button(b,"💎 История начислений",f"ax:h:{uid}:a:a:0:a")
     if ctx.can('points'):
         _button(b,"➕ Выдать",f"ax:a:{uid}:+")
         _button(b,"➖ Списать",f"ax:a:{uid}:-")
@@ -215,17 +215,17 @@ async def show_history(
             (uid, since),
         )
         opening_amount = int(opening["n"] or 0) if opening else 0
-    lines = [f"⭐ <b>История · {texts.esc(_name(user))}</b>",
-             f"Баланс: <b>{user['xp']} ⭐</b>",
+    lines = [f"💎 <b>История · {texts.esc(_name(user))}</b>",
+             f"Баланс: <b>{user['xp']} 💎</b>",
              f"{KIND[kind]} · {PERIOD[period]} · {SOURCES[source_code][1]}",
              f"Начислено: +{max(0, info['credits'] - opening_amount)} · Списано: −{info['debits']}",
-             f"Начальный баланс: {opening_amount} ⭐ (архив)" if opening_amount else "",
+             f"Начальный баланс: {opening_amount} 💎 (архив)" if opening_amount else "",
              f"Операций: {info['count']}", ""]
     for r in rows:
         amount = int(r['amount'])
         details = str(r['reason'] or r['reference_id'] or '')
         lines.append(
-            f"{amount:+} ⭐ · <b>{texts.esc(XP_NAMES.get(r['source'],r['source']))}</b>\n"
+            f"{amount:+} 💎 · <b>{texts.esc(XP_NAMES.get(r['source'],r['source']))}</b>\n"
             f"{_date(r['created_at'])}"
             + (f" · {texts.esc(details[:85])}" if details else "")
             + (f" · админ <code>{r['actor_id']}</code>" if r['actor_id'] else "")
@@ -259,7 +259,7 @@ async def show_top_check(ctx: Ctx, db: Database, period: str) -> None:
     rows = await db.top_period(days,10)
     lines=[f"🏆 <b>Проверка топа · {PERIOD[{'w':'w','m':'m','a':'a'}[period]]}</b>",""]
     for i,u in enumerate(rows,1):
-        lines.append(f"{i}. {texts.esc(_name(u))} · {u['xp']} ⭐ · ID <code>{u['user_id']}</code>")
+        lines.append(f"{i}. {texts.esc(_name(u))} · {u['xp']} 💎 · ID <code>{u['user_id']}</code>")
     if not rows:
         lines.append("Пока нет участников.")
     lines.append("\nПериоды: Магнитогорск (UTC+5). Telegram и Mini App используют общие методы БД.")
@@ -294,21 +294,21 @@ async def show_global_ledger(ctx: Ctx, db: Database, offset: int = 0) -> None:
         (referral_day_start(),),
     )
     shown = rows[:12]
-    lines = ["⭐ <b>Начисления · журнал</b>",
-             f"За сегодня: +{int(totals['earned'] or 0)} ⭐ · −{int(totals['spent'] or 0)} ⭐",
-             "<i>Начальный баланс — это снимок, не заработанные сегодня очки.</i>",
+    lines = ["💎 <b>Начисления · журнал</b>",
+             f"За сегодня: +{int(totals['earned'] or 0)} 💎 · −{int(totals['spent'] or 0)} 💎",
+             "<i>Начальный баланс — это снимок, не заработанные сегодня кристаллы.</i>",
              f"Операции {offset+1}–{offset+len(shown)}", ""]
     b = InlineKeyboardBuilder()
     for r in shown:
         sign = int(r["amount"])
         desc = XP_NAMES.get(str(r["source"]), str(r["source"]))
         lines.append(
-            f"<b>{sign:+} ⭐</b> · {texts.esc(desc)} · {texts.esc(_name(r))}\n"
+            f"<b>{sign:+} 💎</b> · {texts.esc(desc)} · {texts.esc(_name(r))}\n"
             f"ID <code>{r['user_id']}</code> · {_date(r['created_at'])}"
             + (f" · {texts.esc(str(r['reason'])[:70])}" if r["reason"] else "")
         )
         if ctx.can("users"):
-            _button(b, f"ID {r['user_id']} · {sign:+} ⭐", f"ax:u:{r['user_id']}:r:a:0")
+            _button(b, f"ID {r['user_id']} · {sign:+} 💎", f"ax:u:{r['user_id']}:r:a:0")
     if not shown:
         lines.append("Операций ещё нет.")
     if offset:
@@ -377,7 +377,7 @@ async def _preview(ctx:Ctx, state:FSMContext, db:Database, uid:int, delta:int, r
         return
     before=int(user['xp'])
     if before+delta<0:
-        await ctx.reply("Недостаточно очков для списания.")
+        await ctx.reply("Недостаточно кристаллов для списания.")
         return
     nonce=secrets.token_hex(8)
     await state.set_state(None)
@@ -387,10 +387,10 @@ async def _preview(ctx:Ctx, state:FSMContext, db:Database, uid:int, delta:int, r
     _button(b,"Отмена",f"ax:u:{uid}:r:a:0")
     b.adjust(2)
     await ctx.reply(
-        f"⭐ <b>Изменение баланса</b>\n"
+        f"💎 <b>Изменение баланса</b>\n"
         f"Пользователь: {texts.esc(_name(user))}\nID: <code>{uid}</code>\n"
-        f"Было: {before} ⭐\nИзменение: {delta:+} ⭐\n"
-        f"Станет: {before+delta} ⭐\nПричина: {texts.esc(reason)}",
+        f"Было: {before} 💎\nИзменение: {delta:+} 💎\n"
+        f"Станет: {before+delta} 💎\nПричина: {texts.esc(reason)}",
         b.as_markup()
     )
 
@@ -543,11 +543,11 @@ async def extras_callback(
             await state.update_data(ax_uid=uid,ax_sign=sign)
             b=InlineKeyboardBuilder()
             for amount in (10,25,50,100,250,500):
-                _button(b,f"{amount} ⭐",f"ax:v:{uid}:{sign*amount}")
+                _button(b,f"{amount} 💎",f"ax:v:{uid}:{sign*amount}")
             _button(b,"Другая сумма",f"ax:c:{uid}:{sign}")
             _button(b,"Отмена",f"ax:u:{uid}:r:a:0")
             b.adjust(3,3,1,1)
-            await _screen(ctx,"Выдача очков" if sign==1 else "Списание очков",b.as_markup())
+            await _screen(ctx,"Выдача кристаллов" if sign==1 else "Списание кристаллов",b.as_markup())
         elif action == 'v' and len(parts)==4:
             if not ctx.can('points'):
                 raise PermissionError
@@ -556,7 +556,7 @@ async def extras_callback(
                 raise ValueError
             await state.set_state(ExtraStates.reason)
             await state.update_data(ax_uid=uid,ax_delta=delta)
-            await _screen(ctx,f"Изменение: {delta:+} ⭐\nОтправь обязательную причину:",K.panel_cancel_keyboard())
+            await _screen(ctx,f"Изменение: {delta:+} 💎\nОтправь обязательную причину:",K.panel_cancel_keyboard())
         elif action == 'c' and len(parts)==4:
             if not ctx.can('points'):
                 raise PermissionError
@@ -578,7 +578,7 @@ async def extras_callback(
                 idempotency_key=f"admin:{ctx.user_id}:{parts[2]}",
             )
             await state.clear()
-            await _screen(ctx,f"{'Готово' if applied else 'Уже выполнено'}. Баланс <code>{uid}</code>: <b>{balance} ⭐</b>",K.panel_back_keyboard())
+            await _screen(ctx,f"{'Готово' if applied else 'Уже выполнено'}. Баланс <code>{uid}</code>: <b>{balance} 💎</b>",K.panel_back_keyboard())
         elif action in ('b','m') and len(parts)==3:
             needed='ban' if action=='b' else 'mute'
             if not ctx.can(needed):

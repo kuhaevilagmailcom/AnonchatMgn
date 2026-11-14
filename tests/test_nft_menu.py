@@ -36,15 +36,15 @@ def _buttons(markup) -> dict[str, str | None]:
 def test_button_visible_only_on_active_free_menu() -> None:
     normal = _buttons(menu_keyboard("free"))
     active = _buttons(menu_keyboard("free", nft_active=True))
-    assert "Розыгрыш NFT" not in normal
-    assert active["Розыгрыш NFT"] == "nft:open"
-    assert "Найти собеседника" in active
+    assert "Розыгрыш" not in normal
+    assert active["Розыгрыш"] == "nft:open"
+    assert "Начать общение" in active
     assert "Профиль" in active
     assert "Настройки" in active
-    assert "Розыгрыш NFT" not in _buttons(menu_keyboard("queued", nft_active=True))
-    assert "Розыгрыш NFT" not in _buttons(menu_keyboard("paired", nft_active=True))
+    assert "Розыгрыш" not in _buttons(menu_keyboard("queued", nft_active=True))
+    assert "Розыгрыш" not in _buttons(menu_keyboard("paired", nft_active=True))
     with_poll = _buttons(menu_keyboard("free", nft_active=True, poll_active=True, admin=True))
-    assert with_poll["Розыгрыш NFT"] == "nft:open"
+    assert with_poll["Розыгрыш"] == "nft:open"
     assert "Панель модератора" in with_poll
     assert "Опрос" in with_poll
 
@@ -79,7 +79,7 @@ def test_main_menu_and_live_refresh_follow_raffle_lifecycle() -> None:
                     event=event, user_id=uid, me=await db.get_user(uid),
                 )
                 await show_menu(ctx)
-                assert "Розыгрыш NFT" not in str(session.to(uid)[-1]["reply_markup"])
+                assert "Розыгрыш" not in str(session.to(uid)[-1]["reply_markup"])
                 assert _LIVE_MENU_NFT_FLAGS[uid] is False
                 g = await _save_campaign(
                     db, "https://t.me/nft/MenuPrize",
@@ -93,7 +93,7 @@ def test_main_menu_and_live_refresh_follow_raffle_lifecycle() -> None:
                     if call["method"] == "editMessageText"
                 ]
                 assert edited
-                assert "Розыгрыш NFT" in str(edited[-1]["reply_markup"])
+                assert "Розыгрыш" in str(edited[-1]["reply_markup"])
                 assert _LIVE_MENU_NFT_FLAGS[uid] is True
                 session.clear()
                 await db.db.execute(
@@ -108,7 +108,7 @@ def test_main_menu_and_live_refresh_follow_raffle_lifecycle() -> None:
                     if call["method"] == "editMessageText"
                 ]
                 assert edited
-                assert "Розыгрыш NFT" not in str(edited[-1]["reply_markup"])
+                assert "Розыгрыш" not in str(edited[-1]["reply_markup"])
                 assert _LIVE_MENU_NFT_FLAGS[uid] is False
             finally:
                 _LIVE_MENUS.pop(uid, None)
@@ -141,8 +141,8 @@ def test_main_menu_button_opens_live_raffle_but_not_expired_buy() -> None:
                 await nft_open_from_menu(event, ctx, db)
                 ctx.ack.assert_awaited_once()
                 text, keyboard = ctx.reply.await_args.args
-                assert "РОЗЫГРЫШ NFT АКТИВЕН!" in text
-                assert _buttons(keyboard)["Купить билеты · от 35 ₽"] == "nft:buy"
+                assert "Розыгрыш NFT" in text
+                assert _buttons(keyboard)["Купить билеты"] == "nft:buy"
                 assert _buttons(keyboard)["Мои билеты"] == "nft:status"
                 await db.db.execute(
                     "UPDATE nft_giveaway_campaigns SET close_at=? WHERE campaign=?",
@@ -152,7 +152,7 @@ def test_main_menu_button_opens_live_raffle_but_not_expired_buy() -> None:
                 ctx.reply.reset_mock()
                 await nft_open_from_menu(event, ctx, db)
                 assert "завершён" in ctx.reply.await_args.args[0]
-                assert len(ctx.reply.await_args.args) == 1
+                assert _buttons(ctx.reply.await_args.args[1])["Мои билеты"] == "nft:status"
             finally:
                 await db.close()
     asyncio.run(run())

@@ -226,7 +226,7 @@ class MiniAppAdmin:
         reason = str(data.get("reason") or "").strip()
         key = str(data.get("key") or "")
         if not amount or abs(amount) > 1000000:
-            raise _json_error(400, "Сумма от 1 до 1 000 000 очков")
+            raise _json_error(400, "Сумма от 1 до 1 000 000 кристаллов")
         if not reason or len(reason)>500:
             raise _json_error(400, "Причина обязательна (до 500 символов)")
         if not re.fullmatch(r"[a-zA-Z0-9_-]{16,90}", key):

@@ -128,7 +128,7 @@ async def nft_post_preview(message: Message, ctx: Ctx, db: Database) -> None:
         return
     g = await _active(db)
     if g is None:
-        await ctx.reply("Сначала создай розыгрыш через /nft_setup.")
+        await ctx.reply("Сначала создай розыгрыш в NFT-разделе панели.")
         return
     channel = channel_target(ctx.cfg.subscription_channel)
     if not channel:
@@ -270,7 +270,7 @@ async def nft_repeat_preview(event: CallbackQuery, ctx: Ctx, db: Database) -> No
         return
     channel = channel_target(ctx.cfg.subscription_channel)
     if not channel or not await _posted_message(db.path, g.campaign, channel):
-        await ctx.ack("Сначала опубликуй первый пост через /nft_post.", alert=True)
+        await ctx.ack("Сначала опубликуй первый пост из NFT-раздела.", alert=True)
         return
     await ctx.ack()
     markup = InlineKeyboardMarkup(inline_keyboard=[
@@ -304,7 +304,7 @@ async def nft_repeat_confirm(event: CallbackQuery, ctx: Ctx, db: Database) -> No
         return
     channel = channel_target(ctx.cfg.subscription_channel)
     if not channel or not await _posted_message(db.path, g.campaign, channel):
-        await ctx.ack("Первый пост не найден. Вызови /nft_post.", alert=True)
+        await ctx.ack("Первый пост не найден. Открой NFT-раздел заново.", alert=True)
         return
     me = await ctx.bot.get_me()
     if not me.username:
@@ -367,7 +367,7 @@ async def nft_post_update(event: CallbackQuery, ctx: Ctx, db: Database) -> None:
     channel = channel_target(ctx.cfg.subscription_channel)
     message_id = await _posted_message(db.path, campaign, channel)
     if not channel or not message_id:
-        await ctx.ack("Пост не найден. Открой /nft_post заново.", alert=True)
+        await ctx.ack("Пост не найден. Открой NFT-раздел заново.", alert=True)
         return
     await ctx.ack()
     # Imports here avoid a circular dependency with the background worker.
@@ -399,7 +399,7 @@ async def nft_post_confirm(event: CallbackQuery, ctx: Ctx, db: Database) -> None
     g = await _active(db)
     campaign = (event.data or "").removeprefix("nft:post:")
     if g is None or campaign != g.campaign or time.time() >= g.close_at:
-        await ctx.ack("Предпросмотр устарел. Открой /nft_post заново.", alert=True)
+        await ctx.ack("Предпросмотр устарел. Открой NFT-раздел заново.", alert=True)
         return
     channel = channel_target(ctx.cfg.subscription_channel)
     if not channel:

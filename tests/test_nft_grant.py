@@ -22,7 +22,7 @@ from anonchat.handlers.nft_grant import (
 
 
 def test_grant_command_syntax_and_owner_menu() -> None:
-    assert any(command.command == "nft_give" for command in ADMIN_VISIBLE)
+    assert all(command.command != "nft_give" for command in ADMIN_VISIBLE)
     assert _parse_grant("/nft_give 123456789 1") == (123456789, 1)
     assert _parse_grant("/nft_give 123456789 99") == (123456789, 99)
     for raw in (

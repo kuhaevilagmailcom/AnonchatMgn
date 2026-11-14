@@ -237,7 +237,7 @@ async def relay_to_partner(
                 guessed.guesser_id, guessed.explainer_id
             )
             game = WG.get_by_id(guessed.game_id)
-            reward_line = f"+<b>{awarded} ⭐</b>."
+            reward_line = f"+<b>{awarded} 💎</b>."
             end_line = (
                 f"\n\n🏁 <b>Игра окончена</b> · {guessed.total_rounds} слов."
                 if guessed.finished
