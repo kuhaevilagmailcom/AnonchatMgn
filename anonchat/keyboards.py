@@ -159,7 +159,7 @@ def profile_keyboard(
     if not subscription_claimed:
         _button(
             b, f"{int(subscription_reward)} кристаллов за подписку",
-            callback_data=CB_SUBSCRIBE_REWARD, icon="stars", style="success"
+            callback_data=CB_SUBSCRIBE_REWARD, icon="bonus", style="success"
         )
 
     _button(b, "Настройки", callback_data=CB_SETTINGS, icon="settings")
@@ -420,9 +420,9 @@ def feedback_admin_keyboard(user_id: int) -> InlineKeyboardMarkup:
 
 def number_range_keyboard() -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
-    _button(b, "1–10 · 15 кристаллов", callback_data="game:numbers:range:10", style="primary")
-    _button(b, "1–100 · 25 кристаллов", callback_data="game:numbers:range:100", style="primary")
-    _button(b, "1–1000 · 50 кристаллов", callback_data="game:numbers:range:1000", style="success")
+    _button(b, "1–10 · 15 кристаллов", callback_data="game:numbers:range:10", icon="bonus", style="primary")
+    _button(b, "1–100 · 25 кристаллов", callback_data="game:numbers:range:100", icon="bonus", style="primary")
+    _button(b, "1–1000 · 50 кристаллов", callback_data="game:numbers:range:1000", icon="bonus", style="success")
     _button(b, "Назад", callback_data=CB_GAMES, icon="home")
     b.adjust(1, 1, 1, 1)
     return b.as_markup()
@@ -695,7 +695,7 @@ def admin_panel_keyboard(
         _button(b, "Разбан по id", callback_data=CB_PANEL_UNBAN, icon="check")
         _button(b, "Бан-лист", callback_data=CB_PANEL_BAN_LIST, icon="delete")
     if "points" in permissions:
-        _button(b, "Начисления", callback_data="ax:ledger:0", icon="stars")
+        _button(b, "Начисления", callback_data="ax:ledger:0", icon="bonus")
     if "stats" in permissions:
         _button(b, "Проверка топов", callback_data="ax:t:w", icon="bonus")
         _button(b, "Розыгрыш сообщений", callback_data="ax:g", icon="bonus", style="primary")
@@ -703,7 +703,7 @@ def admin_panel_keyboard(
         _button(b, "NFT-розыгрыш", callback_data=CB_ADMIN_RAFFLE, icon="gift", style="primary")
         _button(
             b, f"Множитель: x{int(xp_multiplier)}",
-            callback_data=CB_PANEL_MULTIPLIER, icon="stars",
+            callback_data=CB_PANEL_MULTIPLIER, icon="bonus",
             style="success" if int(xp_multiplier) > 1 else "primary",
         )
         _button(
@@ -756,7 +756,7 @@ def xp_multiplier_keyboard(current: int = 1) -> InlineKeyboardMarkup:
         _button(
             b, f"• x{value}" if value == int(current) else f"x{value}",
             callback_data=f"adm:panel:xp:{value}",
-            icon="stars",
+            icon="bonus",
             style="success" if value == int(current) else "",
         )
     _button(b, "В панель", callback_data=CB_PANEL_BACK, icon="home")

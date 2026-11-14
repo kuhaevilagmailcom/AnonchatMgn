@@ -2,6 +2,7 @@
 from anonchat import keyboards as K, texts
 from anonchat.commands import ADMIN_VISIBLE, COMMANDS
 from anonchat.handlers.nft_giveaway import Giveaway, _keyboard, _message
+from anonchat.pack import ICONS
 
 
 def _labels(markup) -> list[str]:
@@ -24,6 +25,14 @@ def test_internal_rewards_are_crystals_not_telegram_stars() -> None:
     assert any(
         "100 кристаллов" in label for label in _labels(K.profile_keyboard(subscription_reward=100))
     )
+    reward_button = next(
+        button
+        for row in K.profile_keyboard(subscription_reward=100).inline_keyboard
+        for button in row
+        if "100 кристаллов" in button.text
+    )
+    assert ICONS["bonus"] == "5427168083074628963"
+    assert reward_button.icon_custom_emoji_id == ICONS["bonus"]
 
 
 def test_commands_are_hidden_behind_buttons() -> None:

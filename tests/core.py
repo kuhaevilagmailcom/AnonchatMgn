@@ -1297,6 +1297,10 @@ def test_pack_emoji() -> None:
     twice = pack.wrap("📊 и ещё 📊")
     assert twice.count("<tg-emoji") == 1, twice
 
+    # Кристалл — валюта: каждое упоминание использует один фирменный custom emoji.
+    crystals = pack.wrap("Баланс 10 💎 · награда +5 💎", limit=0)
+    assert crystals.count('<tg-emoji emoji-id="5427168083074628963">💎</tg-emoji>') == 2, crystals
+
     # лимит подмены: украшаем максимум N эмодзи в сообщении, начиная с заголовка
     limited = pack.wrap("📊⭐⚙️💬", limit=2)
     assert limited.count("<tg-emoji") == 2, limited

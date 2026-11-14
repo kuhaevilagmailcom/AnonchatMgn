@@ -25,6 +25,10 @@ TG_EMOJI_CLOSE = re.compile(r"</tg-emoji>")
 #: сколько эмодзи пака в одном сообщении бота. Больше — уже карнавал.
 MAX_WRAP_PER_MESSAGE = 5
 
+# Кристалл — валюта интерфейса, поэтому каждый его показ должен быть custom emoji,
+# а не только первый декоративный акцент в сообщении.
+ALWAYS_WRAP = frozenset({"💎"})
+
 #: имя -> (custom_emoji_id, как знак выглядит без анимации, какие символы ещё сводим на него)
 PACK: dict[str, tuple[str, str, tuple[str, ...]]] = {
     "support": ("5443038326535759644", "💬", ("💌",)),
@@ -289,17 +293,17 @@ class EmojiPack:
                     i = end
                     continue
             matched = False
-            if budget:
-                for key in keys:
-                    if text.startswith(key, i) and key not in used:
-                        emoji_id, canonical = self._map[key]
-                        out.append(f'<tg-emoji emoji-id="{emoji_id}">{canonical}</tg-emoji>')
+            for key in keys:
+                always = key in ALWAYS_WRAP
+                if text.startswith(key, i) and (always or (budget and key not in used)):
+                    emoji_id, canonical = self._map[key]
+                    out.append(f'<tg-emoji emoji-id="{emoji_id}">{canonical}</tg-emoji>')
+                    if not always:
                         used.add(key)
-                        # тот же знак больше не оборачиваем: глазами это один акцент
-                        i += len(key)
                         budget -= 1
-                        matched = True
-                        break
+                    i += len(key)
+                    matched = True
+                    break
             if not matched:
                 out.append(text[i])
                 i += 1
