@@ -1,4 +1,4 @@
-"""NFT-розыгрыш с билетами по 35 RUB через RollyPay."""
+"""NFT-розыгрыш с билетами по 50 RUB через RollyPay."""
 from __future__ import annotations
 
 import asyncio
@@ -26,7 +26,8 @@ from ..payments import RollyPayError, create_payment, get_payment
 from ..nft_presentation import RaffleStats, format_giveaway, load_protect_icons
 
 router = Router(name="nft_giveaway")
-TICKET_PRICE_RUB = 35
+TICKET_PRICE_RUB = 50
+LEGACY_TICKET_PRICE_RUB = 35
 NFT_CHECK_PREFIX = "nft:check:"
 MAX_TICKETS_PER_ORDER = 99
 
@@ -35,20 +36,33 @@ class NFTTicketQuantity(StatesGroup):
     waiting = State()
 
 
-def _quantity_for_amount(amount_rub: int) -> int:
-    """Amount in local authoritative SBP order is exact and bounded."""
+def _quantity_for_amount(amount_rub: int, price_rub: int = TICKET_PRICE_RUB) -> int:
+    """Validate a local SBP order against its own unit price."""
     amount = int(amount_rub)
-    if amount <= 0 or amount % TICKET_PRICE_RUB:
+    if amount <= 0 or amount % price_rub:
         raise ValueError("Invalid NFT ticket payment amount")
-    quantity = amount // TICKET_PRICE_RUB
+    quantity = amount // price_rub
     if not 1 <= quantity <= MAX_TICKETS_PER_ORDER:
         raise ValueError("NFT order quantity must be between 1 and 99")
     return quantity
 
 
-def _valid_nft_amount(amount_rub: int) -> bool:
+def _price_for_order(order_id: str) -> int:
+    """Old orders have no price suffix (35 RUB); new orders explicitly carry 50."""
+    match = re.search(r"-price([0-9]+)$", str(order_id))
+    price = int(match.group(1)) if match else LEGACY_TICKET_PRICE_RUB
+    if price not in (LEGACY_TICKET_PRICE_RUB, TICKET_PRICE_RUB):
+        raise ValueError("Unsupported NFT ticket order price")
+    return price
+
+
+def _quantity_for_order(amount_rub: int, order_id: str) -> int:
+    return _quantity_for_amount(amount_rub, _price_for_order(order_id))
+
+
+def _valid_nft_amount(amount_rub: int, order_id: str) -> bool:
     try:
-        _quantity_for_amount(int(amount_rub))
+        _quantity_for_order(int(amount_rub), order_id)
         return True
     except (ValueError, TypeError, OverflowError):
         return False
@@ -281,7 +295,7 @@ async def _issue_paid_ticket(path, payment_id: str) -> tuple[int, bool]:
             await con.rollback()
             raise ValueError("Payment is not an NFT ticket order")
         try:
-            quantity = _quantity_for_amount(int(payment["amount_rub"]))
+            quantity = _quantity_for_order(int(payment["amount_rub"]), payment["order_id"])
         except (ValueError, TypeError):
             await con.rollback()
             raise ValueError("Payment amount does not match NFT ticket pricing")
@@ -390,7 +404,7 @@ async def _reconcile_pending_nft_orders(db: Database, cfg, campaign: str) -> Non
                     and str(remote.get("order_id") or "") == str(row["order_id"])
                     and str(remote.get("currency") or remote.get("payment_currency") or "").upper() == "RUB"
                     and value.is_finite() and value == Decimal(int(row["amount_rub"]))
-                    and 1 <= _quantity_for_amount(int(row["amount_rub"])) <= MAX_TICKETS_PER_ORDER
+                    and 1 <= _quantity_for_order(int(row["amount_rub"]), row["order_id"]) <= MAX_TICKETS_PER_ORDER
                 )
                 if not valid:
                     return
@@ -570,7 +584,7 @@ async def _start_ticket_purchase(ctx: Ctx, db: Database, quantity: int = 1) -> N
         await ctx.reply("Введи количество от 1 до 99.")
         return
     amount_rub = quantity * TICKET_PRICE_RUB
-    order_id = f"nft-{g.campaign}-{ctx.user_id}-{secrets.token_hex(5)}"
+    order_id = f"nft-{g.campaign}-{ctx.user_id}-{secrets.token_hex(5)}-price{TICKET_PRICE_RUB}"
     local_id = ""
     try:
         local_id = await db.create_sbp_order(
@@ -658,7 +672,7 @@ async def nft_check_payment(event: CallbackQuery, ctx: Ctx, db: Database) -> Non
     if (
         not local or int(local["user_id"]) != ctx.user_id
         or not str(local["kind"] or "").startswith("nft_ticket:")
-        or not _valid_nft_amount(local["amount_rub"])
+        or not _valid_nft_amount(local["amount_rub"], local["order_id"])
     ):
         await ctx.ack("Платёж не найден", alert=True)
         return
@@ -696,7 +710,7 @@ async def nft_check_payment(event: CallbackQuery, ctx: Ctx, db: Database) -> Non
     except ValueError:
         await ctx.ack("Не удалось выдать билет. Обратись в поддержку.", alert=True)
         return
-    quantity = _quantity_for_amount(int(local["amount_rub"]))
+    quantity = _quantity_for_order(int(local["amount_rub"]), local["order_id"])
     await ctx.ack("Билеты выданы!" if fresh else "Этот платёж уже учтён")
     numbers = f"№{ticket}" if quantity == 1 else f"№{ticket}–№{ticket + quantity - 1}"
     await ctx.reply(
