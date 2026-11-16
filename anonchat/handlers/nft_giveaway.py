@@ -192,10 +192,15 @@ async def _init(path) -> None:
         # Existing campaigns were created before configurable prices existed.
         columns = await (await con.execute("PRAGMA table_info(nft_giveaway_campaigns)")).fetchall()
         if "price_rub" not in {str(row[1]) for row in columns}:
-            await con.execute(
-                "ALTER TABLE nft_giveaway_campaigns "
-                "ADD COLUMN price_rub INTEGER NOT NULL DEFAULT 30"
-            )
+            try:
+                await con.execute(
+                    "ALTER TABLE nft_giveaway_campaigns "
+                    "ADD COLUMN price_rub INTEGER NOT NULL DEFAULT 30"
+                )
+            except aiosqlite.OperationalError as exc:
+                # Two bot instances may migrate the same database concurrently.
+                if "duplicate column name" not in str(exc).lower():
+                    raise
         await con.execute("""
             CREATE TABLE IF NOT EXISTS nft_giveaway_tickets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -670,7 +675,10 @@ async def _start_ticket_purchase(ctx: Ctx, db: Database, quantity: int = 1) -> N
                 or time.time() >= current.close_at
                 or current.price_rub != g.price_rub):
             await db.set_sbp_status(local_id, "cancelled")
-            await ctx.reply("Приём новых билетов завершён.")
+            if current and current.campaign == g.campaign and current.price_rub != g.price_rub:
+                await ctx.reply("Цена билета изменилась. Начни покупку заново.")
+            else:
+                await ctx.reply("Приём новых билетов завершён.")
             return
         payment = await create_payment(
             ctx.cfg, order_id=order_id, amount=Decimal(amount_rub),
