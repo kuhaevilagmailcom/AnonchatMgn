@@ -28,7 +28,7 @@ def test_nft_keyboard_sells_ticket_and_old_sbp35_support_is_gone() -> None:
     assert "nft:buy" in callbacks
     assert "Поддержать 35 ₽ · СБП" not in support_labels
     assert all(command.command != "sbp35" for command in COMMANDS)
-    assert TICKET_PRICE_RUB == 50
+    assert TICKET_PRICE_RUB == 30
 
 
 def test_each_verified_payment_issues_one_ticket_and_retries_are_idempotent() -> None:
@@ -62,7 +62,7 @@ def test_each_verified_payment_issues_one_ticket_and_retries_are_idempotent() ->
     asyncio.run(run())
 
 
-def test_buy_button_creates_50_rub_rollypay_ticket_order() -> None:
+def test_buy_button_creates_30_rub_rollypay_ticket_order() -> None:
     async def run() -> None:
         with TemporaryDirectory() as temp:
             db = await Database(Path(temp) / "test.db").start()
@@ -88,11 +88,11 @@ def test_buy_button_creates_50_rub_rollypay_ticket_order() -> None:
                     await _start_ticket_purchase(ctx, db)
                 local = await db.get_sbp_payment("provider-payment")
                 assert local and local["kind"] == f"nft_ticket:{g.campaign}"
-                assert int(local["amount_rub"]) == 50
+                assert int(local["amount_rub"]) == 30
                 assert create.await_args.kwargs["amount"].as_tuple().exponent == 0
-                assert int(create.await_args.kwargs["amount"]) == 50
+                assert int(create.await_args.kwargs["amount"]) == 30
                 message, markup = ctx.reply.await_args.args
-                assert "50 ₽" in message
+                assert "30 ₽" in message
                 assert any(
                     button.url == "https://pay.example/ticket"
                     for row in markup.inline_keyboard for button in row
@@ -381,7 +381,7 @@ def test_nft_post_and_payment_messages_explicitly_require_verification() -> None
                  "03.11.2026 20:00 МГН")
     notice = _message(g)
     assert "Проверить оплату" in notice
-    assert "50 ₽" in notice
+    assert "30 ₽" in notice
     keyboard = _payment_keyboard("payment-id", "https://pay.example/35")
     assert keyboard.inline_keyboard[0][0].url == "https://pay.example/35"
     assert "Проверить оплату" in keyboard.inline_keyboard[1][0].text
@@ -445,7 +445,7 @@ def test_my_tickets_can_recheck_a_paid_order_even_after_giveaway_closed() -> Non
 if __name__ == "__main__":
     test_nft_keyboard_sells_ticket_and_old_sbp35_support_is_gone()
     test_each_verified_payment_issues_one_ticket_and_retries_are_idempotent()
-    test_buy_button_creates_50_rub_rollypay_ticket_order()
+    test_buy_button_creates_30_rub_rollypay_ticket_order()
     test_non_ticket_or_wrong_price_payment_never_issues_ticket()
     test_draw_uses_paid_tickets_and_is_stable()
     test_nft_url_validation()
@@ -457,4 +457,4 @@ if __name__ == "__main__":
     test_reconcile_older_provider_payments_before_early_draw()
     test_nft_post_and_payment_messages_explicitly_require_verification()
     test_my_tickets_can_recheck_a_paid_order_even_after_giveaway_closed()
-    print("ok NFT tickets: RollyPay 50 RUB, legacy 35 RUB orders, multiple tickets, idempotency and draw")
+    print("ok NFT tickets: RollyPay 30 RUB, legacy 35/50 RUB orders, multiple tickets, idempotency and draw")
