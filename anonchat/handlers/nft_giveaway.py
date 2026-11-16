@@ -1,4 +1,4 @@
-"""NFT-розыгрыш с билетами по 50 RUB через RollyPay."""
+"""NFT-розыгрыш с изменяемой ценой билета через RollyPay."""
 from __future__ import annotations
 
 import asyncio
@@ -26,8 +26,10 @@ from ..payments import RollyPayError, create_payment, get_payment
 from ..nft_presentation import RaffleStats, format_giveaway, load_protect_icons
 
 router = Router(name="nft_giveaway")
-TICKET_PRICE_RUB = 50
+TICKET_PRICE_RUB = 30
 LEGACY_TICKET_PRICE_RUB = 35
+MIN_TICKET_PRICE_RUB = 1
+MAX_TICKET_PRICE_RUB = 10_000
 NFT_CHECK_PREFIX = "nft:check:"
 MAX_TICKETS_PER_ORDER = 99
 
@@ -48,10 +50,10 @@ def _quantity_for_amount(amount_rub: int, price_rub: int = TICKET_PRICE_RUB) -> 
 
 
 def _price_for_order(order_id: str) -> int:
-    """Old orders have no price suffix (35 RUB); new orders explicitly carry 50."""
+    """Unmarked legacy orders cost 35 RUB; explicit order suffix preserves all later prices."""
     match = re.search(r"-price([0-9]+)$", str(order_id))
     price = int(match.group(1)) if match else LEGACY_TICKET_PRICE_RUB
-    if price not in (LEGACY_TICKET_PRICE_RUB, TICKET_PRICE_RUB):
+    if not MIN_TICKET_PRICE_RUB <= price <= MAX_TICKET_PRICE_RUB:
         raise ValueError("Unsupported NFT ticket order price")
     return price
 
@@ -87,6 +89,7 @@ class Giveaway:
     nft_url: str
     close_at: int
     deadline: str
+    price_rub: int = TICKET_PRICE_RUB
 
 
 def valid_nft_url(url: str) -> bool:
@@ -129,7 +132,7 @@ def _message(g: Giveaway) -> str:
     return (
         "<b>Розыгрыш NFT</b>\n\n"
         f"{g.nft_url}\n"
-        f"Билет — {TICKET_PRICE_RUB} ₽ · до {g.deadline}\n\n"
+        f"Билет — {g.price_rub} ₽ · до {g.deadline}\n\n"
         "После оплаты нажми «Проверить оплату» — билет появится сразу."
     )
 
@@ -181,10 +184,18 @@ async def _init(path) -> None:
                 prize TEXT NOT NULL,
                 close_at INTEGER NOT NULL,
                 deadline TEXT NOT NULL,
+                price_rub INTEGER NOT NULL DEFAULT 30,
                 rules_url TEXT NOT NULL,
                 created_at INTEGER NOT NULL
             )
         """)
+        # Existing campaigns were created before configurable prices existed.
+        columns = await (await con.execute("PRAGMA table_info(nft_giveaway_campaigns)")).fetchall()
+        if "price_rub" not in {str(row[1]) for row in columns}:
+            await con.execute(
+                "ALTER TABLE nft_giveaway_campaigns "
+                "ADD COLUMN price_rub INTEGER NOT NULL DEFAULT 30"
+            )
         await con.execute("""
             CREATE TABLE IF NOT EXISTS nft_giveaway_tickets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -215,13 +226,13 @@ async def _init(path) -> None:
 async def _active(db: Database) -> Giveaway | None:
     await _init(db.path)
     row = await db._fetchone(
-        "SELECT campaign,prize,close_at,deadline FROM nft_giveaway_campaigns "
+        "SELECT campaign,prize,close_at,deadline,price_rub FROM nft_giveaway_campaigns "
         "ORDER BY created_at DESC,campaign DESC LIMIT 1"
     )
     if row:
         return Giveaway(
             str(row["campaign"]), str(row["prize"]), int(row["close_at"]),
-            str(row["deadline"]),
+            str(row["deadline"]), int(row["price_rub"]),
         )
     return _configured()
 
@@ -244,12 +255,56 @@ async def _save_campaign(db: Database, nft_url: str, close_at: int,
             raise ValueError("Сначала дождись завершения текущего розыгрыша.")
         await con.execute(
             "INSERT INTO nft_giveaway_campaigns("
-            "campaign,prize,close_at,deadline,rules_url,created_at) "
-            "VALUES (?,?,?,?,?,?)",
-            (campaign, nft_url, close_at, deadline, "", int(time.time())),
+            "campaign,prize,close_at,deadline,price_rub,rules_url,created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (campaign, nft_url, close_at, deadline, TICKET_PRICE_RUB, "", int(time.time())),
         )
         await con.commit()
     return Giveaway(campaign, nft_url, close_at, deadline)
+
+
+async def _update_active_campaign(
+    db: Database, *, price_rub: int | None = None,
+    close_at: int | None = None, deadline: str | None = None,
+) -> Giveaway:
+    """Update the latest active campaign atomically, without touching tickets/orders."""
+    if price_rub is None and close_at is None:
+        raise ValueError("Не указано, что изменить.")
+    if price_rub is not None and not MIN_TICKET_PRICE_RUB <= price_rub <= MAX_TICKET_PRICE_RUB:
+        raise ValueError("Цена должна быть от 1 до 10000 ₽.")
+    if close_at is not None and (close_at <= time.time() or not deadline):
+        raise ValueError("Укажи будущую дату окончания.")
+    await _init(db.path)
+    async with aiosqlite.connect(db.path, timeout=15.0) as con:
+        con.row_factory = aiosqlite.Row
+        await con.execute("PRAGMA busy_timeout=10000")
+        await con.execute("BEGIN IMMEDIATE")
+        row = await (await con.execute(
+            "SELECT campaign,prize,close_at,deadline,price_rub "
+            "FROM nft_giveaway_campaigns "
+            "ORDER BY created_at DESC,campaign DESC LIMIT 1"
+        )).fetchone()
+        if row is None or int(row["close_at"]) <= time.time():
+            await con.rollback()
+            raise ValueError("Нет активного розыгрыша для изменения.")
+        winner = await (await con.execute(
+            "SELECT 1 FROM nft_giveaway_winners WHERE campaign=?",
+            (str(row["campaign"]),),
+        )).fetchone()
+        if winner:
+            await con.rollback()
+            raise ValueError("Победитель уже выбран — менять условия нельзя.")
+        actual_price = int(row["price_rub"]) if price_rub is None else price_rub
+        actual_close = int(row["close_at"]) if close_at is None else close_at
+        actual_deadline = str(row["deadline"]) if deadline is None else deadline
+        await con.execute(
+            "UPDATE nft_giveaway_campaigns "
+            "SET price_rub=?,close_at=?,deadline=? WHERE campaign=?",
+            (actual_price, actual_close, actual_deadline, str(row["campaign"])),
+        )
+        await con.commit()
+    return Giveaway(str(row["campaign"]), str(row["prize"]),
+                    actual_close, actual_deadline, actual_price)
 
 
 async def _ticket_number(con: aiosqlite.Connection, campaign: str, entry_id: int) -> int:
@@ -358,7 +413,7 @@ async def _raffle_stats(path, campaign: str) -> RaffleStats:
 async def _card(ctx: Ctx, db: Database, g: Giveaway) -> str:
     stats = await _raffle_stats(db.path, g.campaign)
     icons = await load_protect_icons(getattr(ctx, 'bot', None))
-    return format_giveaway(g, stats, icons, ticket_price_rub=TICKET_PRICE_RUB)
+    return format_giveaway(g, stats, icons, ticket_price_rub=g.price_rub)
 
 
 async def _pending_nft_orders(path, campaign: str) -> int:
@@ -583,8 +638,8 @@ async def _start_ticket_purchase(ctx: Ctx, db: Database, quantity: int = 1) -> N
     if not 1 <= quantity <= MAX_TICKETS_PER_ORDER:
         await ctx.reply("Введи количество от 1 до 99.")
         return
-    amount_rub = quantity * TICKET_PRICE_RUB
-    order_id = f"nft-{g.campaign}-{ctx.user_id}-{secrets.token_hex(5)}-price{TICKET_PRICE_RUB}"
+    amount_rub = quantity * g.price_rub
+    order_id = f"nft-{g.campaign}-{ctx.user_id}-{secrets.token_hex(5)}-price{g.price_rub}"
     local_id = ""
     try:
         local_id = await db.create_sbp_order(
@@ -594,7 +649,9 @@ async def _start_ticket_purchase(ctx: Ctx, db: Database, quantity: int = 1) -> N
         # An owner may close the campaign while the buyer is opening checkout.
         # Do not create an external payment if intake closed meanwhile.
         current = await _active(db)
-        if current is None or current.campaign != g.campaign or time.time() >= current.close_at:
+        if (current is None or current.campaign != g.campaign
+                or time.time() >= current.close_at
+                or current.price_rub != g.price_rub):
             await db.set_sbp_status(local_id, "cancelled")
             await ctx.reply("Приём новых билетов завершён.")
             return
@@ -638,7 +695,7 @@ async def nft_buy(event: CallbackQuery, ctx: Ctx, db: Database, state: FSMContex
     await state.set_state(NFTTicketQuantity.waiting)
     await ctx.reply(
         "<b>Сколько билетов?</b>\n\n"
-        f"От 1 до 99 · {TICKET_PRICE_RUB} ₽ за билет.\n"
+        f"От 1 до 99 · {g.price_rub} ₽ за билет.\n"
         "Отправь число, например <code>5</code>.",
         InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text="Отмена", callback_data="nft:buy_cancel"),
