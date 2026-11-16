@@ -743,10 +743,12 @@ def admin_raffle_keyboard() -> InlineKeyboardMarkup:
     _button(b, "Создать", callback_data="nft:admin:create", icon="add", style="success")
     _button(b, "Рассылка", callback_data="nft:admin:broadcast", icon="support")
     _button(b, "Опубликовать", callback_data="nft:admin:post", icon="link", style="primary")
+    _button(b, "Цена билета", callback_data="nft:admin:price", icon="money")
+    _button(b, "Дата окончания", callback_data="nft:admin:date", icon="ticket")
     _button(b, "Статистика", callback_data="nft:admin:stats", icon="stats")
     _button(b, "Завершить", callback_data="nft:admin:finish", icon="delete", style="danger")
     _button(b, "В панель", callback_data=CB_PANEL_BACK, icon="home")
-    b.adjust(2, 2, 2, 1)
+    b.adjust(2, 2, 2, 2, 1)
     return b.as_markup()
 
 
@@ -849,7 +851,7 @@ _BROADCAST_SIMPLE_ACTIONS: dict[str, tuple[str, str, str, str]] = {
     "menu": ("Главное меню", CB_MENU, "home", ""),
     "connect": ("Найти собеседника", CB_CONNECT, "view", "success"),
     "profile": ("Профиль", CB_PROFILE, "profile", "primary"),
-    "nft": ("Купить билет · 50 ₽", "nft:buy", "ticket", "primary"),
+    "nft": ("Купить билет", "nft:buy", "ticket", "primary"),
 }
 
 
