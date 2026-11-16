@@ -44,11 +44,6 @@ def _parse_mgn_date(text: str) -> tuple[int, str]:
     return int(date.timestamp()), date.strftime("%d.%m.%Y %H:%M МГН")
 
 
-def _command_arg(message: Message) -> str:
-    parts = (message.text or "").strip().split(maxsplit=1)
-    return parts[1].strip() if len(parts) > 1 else ""
-
-
 async def _notify_changed(ctx: Ctx, db: Database, what: str) -> None:
     g = await _active(db)
     await ctx.reply(
@@ -254,47 +249,6 @@ async def nft_admin_edit_cancel(
     await state.clear()
     await ctx.ack("Отменено")
     await ctx.reply("Изменение отменено.", K.admin_raffle_keyboard())
-
-
-@router.message(Command("nft_price"))
-async def nft_admin_price_command(
-    message: Message, ctx: Ctx, state: FSMContext, db: Database,
-) -> None:
-    if not ctx.is_owner:
-        return
-    raw = _command_arg(message)
-    if raw:
-        if await _apply_price(ctx, db, raw):
-            await state.clear()
-    else:
-        g = await _active(db)
-        if not g or g.close_at <= time.time():
-            await ctx.reply("Нет активного розыгрыша для изменения.")
-            return
-        await state.set_state(NFTEdit.price)
-        await ctx.reply(f"Цена сейчас {g.price_rub} ₽. Отправь новую сумму от 1 до 10000.")
-
-
-@router.message(Command("nft_date"))
-async def nft_admin_date_command(
-    message: Message, ctx: Ctx, state: FSMContext, db: Database,
-) -> None:
-    if not ctx.is_owner:
-        return
-    raw = _command_arg(message)
-    if raw:
-        if await _apply_deadline(ctx, db, raw):
-            await state.clear()
-    else:
-        g = await _active(db)
-        if not g or g.close_at <= time.time():
-            await ctx.reply("Нет активного розыгрыша для изменения.")
-            return
-        await state.set_state(NFTEdit.deadline)
-        await ctx.reply(
-            f"Окончание сейчас {html.escape(g.deadline)}. "
-            "Отправь новую дату ДД.ММ.ГГГГ ЧЧ:ММ по Магнитогорску."
-        )
 
 
 @router.message(NFTEdit.price, F.text, ~F.text.startswith("/"))
