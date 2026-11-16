@@ -284,6 +284,23 @@ async def _update_active_campaign(
             "FROM nft_giveaway_campaigns "
             "ORDER BY created_at DESC,campaign DESC LIMIT 1"
         )).fetchone()
+        if row is None:
+            # An active raffle may have been configured only through .env.
+            # Persist it first, so owners can edit it like a bot-created one.
+            fallback = _configured()
+            if fallback is not None and fallback.close_at > time.time():
+                await con.execute(
+                    "INSERT OR IGNORE INTO nft_giveaway_campaigns "
+                    "(campaign,prize,close_at,deadline,price_rub,rules_url,created_at) "
+                    "VALUES (?,?,?,?,?,?,?)",
+                    (fallback.campaign, fallback.nft_url, fallback.close_at,
+                     fallback.deadline, fallback.price_rub, "", int(time.time())),
+                )
+                row = await (await con.execute(
+                    "SELECT campaign,prize,close_at,deadline,price_rub "
+                    "FROM nft_giveaway_campaigns WHERE campaign=?",
+                    (fallback.campaign,),
+                )).fetchone()
         if row is None or int(row["close_at"]) <= time.time():
             await con.rollback()
             raise ValueError("Нет активного розыгрыша для изменения.")
