@@ -37,7 +37,7 @@ def test_giveaway_post_is_short_and_links_to_bot() -> None:
     assert "<blockquote>" in body
     assert "Участников: <b>0</b>" in body
     assert "Билетов: <b>0</b>" in body
-    assert "50 ₽" in body
+    assert "30 ₽" in body
     assert "31.12.2026 20:00 МГН" in body
     assert "https://t.me/nft/Prize-12?a=1&amp;b=2" in body
     assert len(body) < 1400
