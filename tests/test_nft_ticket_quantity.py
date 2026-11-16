@@ -19,11 +19,11 @@ from anonchat.handlers.nft_giveaway import (
 def test_quantity_input_bounds_and_price() -> None:
     for text, quantity in (("1", 1), ("05", 5), ("99", 99), (" 9 ", 9)):
         assert _parse_quantity(text) == quantity
-        assert _quantity_for_amount(quantity * 50) == quantity
+        assert _quantity_for_amount(quantity * 30) == quantity
         assert _quantity_for_amount(quantity * 35, 35) == quantity
     for text in ("", "0", "100", "1000", "-1", "1.5", "1,5", "1 0", "abc", "9999999999999"):
         assert _parse_quantity(text) is None
-    assert _quantity_for_amount(350) == 7
+    assert _quantity_for_amount(300) == 10
     assert _quantity_for_amount(350, 35) == 10
     for amount in (0, 1, 34, 36, 5000, -35):
         try:
@@ -57,7 +57,7 @@ def test_quantity_prompt_and_cancel_do_not_create_payment() -> None:
                     state.set_state.assert_awaited_once_with(NFTTicketQuantity.waiting)
                     text, keyboard = ctx.reply.await_args.args
                     assert "От 1 до 99" in text
-                    assert "50 ₽" in text
+                    assert "30 ₽" in text
                     assert keyboard.inline_keyboard[0][0].callback_data == "nft:buy_cancel"
                     create.assert_not_awaited()
                     await nft_buy_cancel(event, ctx, state)
@@ -96,16 +96,16 @@ def test_invalid_quantity_does_not_charge_and_valid_quantity_creates_exact_invoi
                     await nft_enter_quantity(SimpleNamespace(text="5"), ctx, db, state)
                     state.clear.assert_awaited_once()
                     create.assert_awaited_once()
-                    assert int(create.await_args.kwargs["amount"]) == 250
+                    assert int(create.await_args.kwargs["amount"]) == 150
                     assert "5 билет" in create.await_args.kwargs["description"]
                     payment = await db.get_sbp_payment("bulk-5")
                     assert payment is not None
                     assert payment["kind"] == f"nft_ticket:{g.campaign}"
-                    assert int(payment["amount_rub"]) == 250
+                    assert int(payment["amount_rub"]) == 150
                     assert await _count(db.path, g.campaign) == 0
                     text, keyboard = ctx.reply.await_args.args
-                    assert "5 шт. · <b>250 ₽</b>" in text
-                    assert keyboard.inline_keyboard[0][0].text == "Оплатить 250 ₽"
+                    assert "5 шт. · <b>150 ₽</b>" in text
+                    assert keyboard.inline_keyboard[0][0].text == "Оплатить 150 ₽"
                     assert keyboard.inline_keyboard[1][0].callback_data == "nft:check:bulk-5"
             finally:
                 await db.close()
