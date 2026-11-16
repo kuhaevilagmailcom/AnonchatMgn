@@ -134,7 +134,7 @@ class RaffleStats:
 def format_giveaway(
     giveaway: Any, stats: RaffleStats,
     icons: dict[str, tuple[str, str]] | None = None,
-    *, now: float | None = None, ticket_price_rub: int = 50,
+    *, now: float | None = None, ticket_price_rub: int = 30,
 ) -> str:
     """Same layout for Telegram channel, bot and mass broadcasts.
 
