@@ -23,7 +23,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from ..actions import Ctx
 from ..db import Database
-from .nft_giveaway import Giveaway, TICKET_PRICE_RUB, _active, _card
+from .nft_giveaway import Giveaway, _active, _card
 from ..nft_presentation import RaffleStats, format_giveaway
 
 router = Router(name="nft_channel")
@@ -43,7 +43,7 @@ def giveaway_post_text(g: Giveaway, stats: RaffleStats | None = None) -> str:
     """Same Telegram-native layout in the channel and the bot."""
     return format_giveaway(
         g, stats if stats is not None else RaffleStats(0, 0),
-        ticket_price_rub=TICKET_PRICE_RUB,
+        ticket_price_rub=g.price_rub,
     )
 
 
