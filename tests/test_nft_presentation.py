@@ -30,7 +30,7 @@ def test_card_layout_uses_actual_one_prize_and_safe_html() -> None:
     assert "<blockquote>" in html
     assert "Участников: <b>2</b>" in html
     assert "Билетов: <b>5</b>" in html
-    assert "<b>50 ₽</b> за билет" in html
+    assert "<b>30 ₽</b> за билет" in html
     assert "Проверить оплату" in html
     assert "Посмотреть приз" in html
     assert "ВАЖНО" not in html
