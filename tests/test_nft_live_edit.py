@@ -17,8 +17,8 @@ from anonchat.handlers.nft_giveaway import (
     _start_ticket_purchase, _update_active_campaign,
 )
 from anonchat.handlers.nft_setup import (
-    _parse_mgn_date, nft_admin_date_command, nft_admin_edit_prompt,
-    nft_admin_price_command,
+    _parse_mgn_date, nft_admin_edit_prompt,
+    nft_admin_price_value, nft_admin_date_value, NFTEdit,
 )
 
 
@@ -155,19 +155,23 @@ def test_owner_can_edit_from_commands_and_panel() -> None:
                     "anonchat.nft_channel_live.refresh_campaign_posts",
                     new_callable=AsyncMock,
                 ):
-                    await nft_admin_price_command(
-                        SimpleNamespace(text="/nft_price 45"), ctx, state, db,
-                    )
-                    assert (await _active(db)).price_rub == 45
-                    await nft_admin_date_command(
-                        SimpleNamespace(text="/nft_date " + date), ctx, state, db,
-                    )
-                    assert (await _active(db)).close_at == expected_ts
-                    assert (await _active(db)).deadline == expected_text
                     await nft_admin_edit_prompt(
                         SimpleNamespace(data="nft:admin:price"), ctx, state, db,
                     )
-                    state.set_state.assert_awaited()
+                    state.set_state.assert_awaited_with(NFTEdit.price)
+                    await nft_admin_price_value(
+                        SimpleNamespace(text="45"), ctx, state, db,
+                    )
+                    assert (await _active(db)).price_rub == 45
+                    await nft_admin_edit_prompt(
+                        SimpleNamespace(data="nft:admin:date"), ctx, state, db,
+                    )
+                    state.set_state.assert_awaited_with(NFTEdit.deadline)
+                    await nft_admin_date_value(
+                        SimpleNamespace(text=date), ctx, state, db,
+                    )
+                    assert (await _active(db)).close_at == expected_ts
+                    assert (await _active(db)).deadline == expected_text
                     denied = SimpleNamespace(
                         is_owner=False, ack=AsyncMock(), reply=AsyncMock(),
                     )
