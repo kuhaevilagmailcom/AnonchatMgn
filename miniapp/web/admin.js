@@ -360,7 +360,7 @@
       ['Anon Plus Stars',fmt(p.anonplus_stars_total)+' ★'],['Anon Plus СБП',fmt(p.anonplus_sbp_total)+' ₽'],
       ['Активных Plus',fmt(p.anonplus_active)],['Игр: битва',fmt(g.battle)],['Игр: числа',fmt(g.numbers)],['Игр: Geo',fmt(g.geo)]];
     const sources=d.sources||[],max=Math.max(1,...sources.map(a=>Number(a.credits)));
-    return activityChart(state.activityDays,state.activityAllTime)+
+    return '<div class="admin-actions"><button type="button" class="admin-primary" data-action="openFullAnalytics">Открыть большую аналитику</button></div>'+activityChart(state.activityDays,state.activityAllTime)+
       '<section class="admin-stats">'+amounts.map(([k,v])=>tile(k,v)).join('')+'</section><div class="admin-subheading">Начисления по источникам · неделя</div>'+
       '<div class="admin-chart">'+(sources.length?sources.map(s=>'<div class="admin-chart-row"><span>'+escape(sourceNames[s.source]||s.source)+'</span><strong>+'+fmt(s.credits)+' 💎</strong><div class="admin-chart-track"><i style="width:'+Math.max(0,Math.min(100,s.credits/max*100))+'%"></i></div></div>').join(''):placeholder)+'</div>';
   }
@@ -492,6 +492,7 @@
       else if(action==='openAdjust')startAdjust(value);
       else if(action==='openModerate')startModeration(value);
       else if(action==='quickAmount'){$('#adminAdjustForm [name="amount"]',root).value=value}
+      else if(action==='openFullAnalytics'){location.href='./stats/'}
       else if(action==='rankingPeriod'){state.rankingPeriod=value;render()}
       else if(action==='reportsStatus'){state.reportsStatus=value;state.reportsPage=0;render()}
       else if(action==='editAdmin')await editAdmin(value);

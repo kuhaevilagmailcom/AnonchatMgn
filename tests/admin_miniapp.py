@@ -48,7 +48,7 @@ def test_admin_miniapp_endpoints() -> None:
             home=await client.get("/")
             assert home.status==200
             home_html=await home.text()
-            assert "admin.js?v=11" in home_html and "admin.css?v=11" in home_html
+            assert "admin.js?v=12" in home_html and "admin.css?v=11" in home_html
             assert "admin-wall.js" not in home_html
             assert "wall.js" not in home_html and "wall.css" not in home_html
             assert 'data-nav="wall"' not in home_html
@@ -57,7 +57,11 @@ def test_admin_miniapp_endpoints() -> None:
             assert retired_endpoint.status == 404
             assert (await client.get("/wall.js")).status == 404
             assert 'data-game="numbers"' not in home_html
-            assert "500 ⭐ в день" in home_html
+            assert "500 💎 в день" in home_html
+            stats_page = await client.get("/stats/")
+            assert stats_page.status == 200
+            stats_html = await stats_page.text()
+            assert "Анон прямо сейчас" in stats_html and "telegram-web-app.js" in stats_html
             admin_bundle=await client.get("/admin.js")
             assert admin_bundle.status==200
             assert "api('/bootstrap')" in await admin_bundle.text()

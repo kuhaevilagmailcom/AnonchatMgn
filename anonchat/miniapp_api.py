@@ -2840,8 +2840,13 @@ class MiniAppServer:
         async def index(_request: web.Request) -> web.StreamResponse:
             return web.FileResponse(self.web_dir / "index.html")
 
+        async def stats_index(_request: web.Request) -> web.StreamResponse:
+            return web.FileResponse(self.web_dir / "stats" / "index.html")
+
         if self.serve_static:
             app.router.add_get("/", index)
+            app.router.add_get("/stats", stats_index)
+            app.router.add_get("/stats/", stats_index)
             app.router.add_static("/", self.web_dir, show_index=False, append_version=True)
         return app
 

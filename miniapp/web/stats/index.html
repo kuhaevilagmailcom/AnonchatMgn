@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#f2f0ff">
+  <title>Anon Pulse — аналитика анонимного чата</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Основная навигация">
+      <a class="brand" href="#overview" aria-label="Анон — статистика">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span>АНОН<em>стат</em></span>
+      </a>
+
+      <nav class="nav-list">
+        <a class="nav-item active" href="#overview" data-section="overview">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <span>Обзор</span>
+        </a>
+        <a class="nav-item" href="#audience" data-section="audience">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span>Аудитория</span>
+        </a>
+        <a class="nav-item" href="#dialogs" data-section="dialogs">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8M8 13h5"/></svg>
+          <span>Диалоги</span>
+          <b>24</b>
+        </a>
+        <a class="nav-item" href="#retention" data-section="retention">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>
+          <span>Удержание</span>
+        </a>
+        <a class="nav-item" href="#moderation" data-section="moderation">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>
+          <span>Модерация</span>
+        </a>
+      </nav>
+
+      <div class="side-status">
+        <div class="pulse-orbit" aria-hidden="true"><i></i></div>
+        <div>
+          <strong>Система в норме</strong>
+          <span>Ответ API · 84 мс</span>
+        </div>
+      </div>
+
+      <button class="profile" type="button" aria-label="Открыть профиль">
+        <span class="avatar">А</span>
+        <span><strong>Администратор</strong><small>@anon_owner</small></span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+    </aside>
+
+    <main class="main" id="main">
+      <header class="topbar">
+        <button class="mobile-menu" type="button" aria-label="Открыть меню">
+          <span></span><span></span>
+        </button>
+        <div>
+          <p id="todayLabel">Сегодня</p>
+          <h1>Всё, что происходит внутри анона.</h1>
+        </div>
+        <div class="top-actions">
+          <button class="back-app-button" id="backToApp" type="button" aria-label="Вернуться в Mini App">← <span>Mini App</span></button>
+          <button class="icon-button" type="button" aria-label="Уведомления">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9ZM9.7 20h4.6"/></svg>
+            <i></i>
+          </button>
+          <button class="export-button" id="exportBtn" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/></svg>
+            Экспорт
+          </button>
+        </div>
+      </header>
+
+      <section class="page-section active" id="overview" aria-labelledby="overview-title">
+        <div class="section-heading">
+          <div>
+            <h2 id="overview-title">Анон прямо сейчас</h2>
+            <p>Люди, сообщения, знакомства и проблемы — одним взглядом</p>
+          </div>
+          <div class="period-switch" role="group" aria-label="Период отчёта">
+            <button type="button" data-period="day">День</button>
+            <button class="active" type="button" data-period="week">7 дней</button>
+            <button type="button" data-period="month">30 дней</button>
+          </div>
+        </div>
+
+        <div class="metric-strip" aria-label="Основные показатели">
+          <article class="metric hero-metric">
+            <div class="metric-icon violet"><svg viewBox="0 0 24 24"><path d="M16 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM8 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8 0c-2.7 0-8 1.35-8 4v3h12v-3c0-2.65-1.3-4-4-4ZM8 15c-3.1 0-6 1.55-6 4v1h4v-3c0-.73.28-1.4.78-2H8Z"/></svg></div>
+            <div class="metric-copy"><span>Активных пользователей</span><strong data-metric="users">12 842</strong><small class="up"><b>↑ 18,4%</b> к прошлой неделе</small></div>
+            <div class="mini-bars" data-bars="users" aria-hidden="true"></div>
+          </article>
+          <article class="metric">
+            <div class="metric-icon blue"><svg viewBox="0 0 24 24"><path d="M20 2H4a2 2 0 0 0-2 2v14l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Zm-4 8H8V8h8v2Zm2-4H6V4h12v2Z"/></svg></div>
+            <div class="metric-copy"><span>Сообщений</span><strong data-metric="messages">486 291</strong><small class="up"><b>↑ 24,1%</b> к прошлой неделе</small></div>
+          </article>
+          <article class="metric">
+            <div class="metric-icon mint"><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm1 15h-2v-2h2v2Zm0-4h-2V7h2v6Z"/></svg></div>
+            <div class="metric-copy"><span>Средняя сессия</span><strong data-metric="session">18:42</strong><small class="up"><b>↑ 2:16</b> дольше обычного</small></div>
+          </article>
+          <article class="metric">
+            <div class="metric-icon coral"><svg viewBox="0 0 24 24"><path d="m12 2 8 3v6c0 5.05-3.4 9.75-8 11-4.6-1.25-8-5.95-8-11V5l8-3Zm-1 14 6-6-1.4-1.4-4.6 4.58-2.6-2.58L7 12l4 4Z"/></svg></div>
+            <div class="metric-copy"><span>Без жалоб</span><strong data-metric="safe">98,7%</strong><small class="down"><b>↓ 0,3%</b> требует внимания</small></div>
+          </article>
+        </div>
+
+        <div class="dashboard-grid">
+          <article class="panel activity-panel">
+            <div class="panel-head">
+              <div><h3>Поток сообщений</h3><p>Живой ритм анона против прошлого периода</p></div>
+              <div class="legend"><i></i>Сейчас <span></span>Было <b>+24,1%</b></div>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="activityChart" role="img" aria-label="График количества сообщений по дням"></canvas>
+              <div class="chart-tooltip" id="chartTooltip" hidden></div>
+            </div>
+            <div class="chart-axis" id="activityAxis"></div>
+          </article>
+
+          <article class="panel live-panel">
+            <div class="panel-head">
+              <div><h3>Сейчас в чате</h3><p>Обновлено несколько секунд назад</p></div>
+              <span class="live-label"><i></i>Live</span>
+            </div>
+            <div class="live-number"><strong id="onlineNow">1 284</strong><span>онлайн</span></div>
+            <div class="wave-field" aria-hidden="true"><canvas id="waveChart"></canvas></div>
+            <div class="live-stats">
+              <div><span>Ищут собеседника</span><strong>312</strong></div>
+              <div><span>В диалоге</span><strong>972</strong></div>
+            </div>
+          </article>
+
+          <article class="panel funnel-panel">
+            <div class="panel-head"><div><h3>Воронка знакомства</h3><p>Что происходит после запуска бота</p></div><button class="text-action" type="button">Подробнее</button></div>
+            <div class="funnel">
+              <div><span><b>1</b>Запустили бота</span><strong>18 420</strong><i style="--w:100%"></i></div>
+              <div><span><b>2</b>Начали поиск</span><strong>14 108 <em>76,6%</em></strong><i style="--w:76.6%"></i></div>
+              <div><span><b>3</b>Нашли собеседника</span><strong>12 842 <em>91,0%</em></strong><i style="--w:69.7%"></i></div>
+              <div><span><b>4</b>Отправили сообщение</span><strong>11 391 <em>88,7%</em></strong><i style="--w:61.8%"></i></div>
+              <div><span><b>5</b>Вернулись завтра</span><strong>6 482 <em>56,9%</em></strong><i style="--w:35.2%"></i></div>
+            </div>
+          </article>
+
+          <article class="panel quality-panel">
+            <div class="panel-head"><div><h3>Качество диалогов</h3><p>По оценкам после завершения</p></div><button class="dots-button" type="button" aria-label="Дополнительные действия">•••</button></div>
+            <div class="quality-score">
+              <div class="score-ring" style="--score:84"><span><strong>8,4</strong><small>из 10</small></span></div>
+              <div class="score-copy"><strong>Людям нравится</strong><p>На 0,6 выше, чем в прошлом периоде</p><span class="up">↑ 7,7%</span></div>
+            </div>
+            <div class="sentiments">
+              <div><span><i class="happy">☺</i>Отлично</span><strong>64%</strong></div>
+              <div><span><i class="neutral">—</i>Нормально</span><strong>27%</strong></div>
+              <div><span><i class="sad">⌢</i>Плохо</span><strong>9%</strong></div>
+            </div>
+          </article>
+        </div>
+
+        <div class="lower-grid">
+          <article class="panel time-panel">
+            <div class="panel-head"><div><h3>Когда чат активнее всего</h3><p>Среднее число сообщений по часам</p></div><div class="peak-note"><span>Пик сегодня</span><strong>22:00</strong></div></div>
+            <div class="heatmap" id="heatmap" aria-label="Тепловая карта активности по часам и дням"></div>
+          </article>
+
+          <article class="panel topics-panel">
+            <div class="panel-head"><div><h3>Темы разговоров</h3><p>Определено по обезличенному тексту</p></div></div>
+            <div class="topic-list">
+              <div><span class="topic-dot purple">♪</span><p><strong>Музыка и кино</strong><small>82 491 сообщение</small></p><b>27%</b></div>
+              <div><span class="topic-dot blue">♡</span><p><strong>Отношения</strong><small>64 208 сообщений</small></p><b>21%</b></div>
+              <div><span class="topic-dot orange">☀</span><p><strong>Жизнь и учёба</strong><small>48 917 сообщений</small></p><b>16%</b></div>
+              <div><span class="topic-dot mint">♙</span><p><strong>Игры</strong><small>39 744 сообщения</small></p><b>13%</b></div>
+            </div>
+          </article>
+        </div>
+
+        <div class="intel-grid">
+          <article class="panel intel-panel">
+            <div class="panel-head"><div><h3>Поиск и мэтчи</h3><p>Как быстро люди находят собеседника</p></div><span class="intel-tag">за 7 дней</span></div>
+            <div class="intel-metrics">
+              <div><span>Запусков поиска</span><strong>14 108</strong><small class="up">↑ 19,8%</small></div><div><span>Успешный мэтч</span><strong>91,0%</strong><small class="up">↑ 3,2 п.п.</small></div><div><span>Медиана ожидания</span><strong>8 сек</strong><small class="up">↓ 2 сек</small></div><div><span>Пропущено пар</span><strong>2 416</strong><small class="down">17,1% поисков</small></div><div><span>Повторный поиск</span><strong>38,4%</strong><small>в течение часа</small></div><div><span>Дошли до 10 сообщений</span><strong>72,6%</strong><small class="up">↑ 5,1 п.п.</small></div>
+            </div>
+          </article>
+          <article class="panel intel-panel source-panel">
+            <div class="panel-head"><div><h3>Откуда приходят</h3><p>Источник первого запуска</p></div></div>
+            <div class="source-total"><strong>3 816</strong><span>новых людей</span></div>
+            <div class="source-bar"><i style="--w:44;--c:#f743b8"></i><i style="--w:31;--c:#8f7cf7"></i><i style="--w:17;--c:#72e6b1"></i><i style="--w:8;--c:#55555d"></i></div>
+            <div class="source-list"><div><i style="--c:#f743b8"></i><span>Рекомендации Telegram</span><b>44%</b></div><div><i style="--c:#8f7cf7"></i><span>Приглашения друзей</span><b>31%</b></div><div><i style="--c:#72e6b1"></i><span>Прямой запуск</span><b>17%</b></div><div><i style="--c:#55555d"></i><span>Другое</span><b>8%</b></div></div>
+          </article>
+        </div>
+        <div class="device-strip panel"><div class="device-title"><h3>Срез аудитории</h3><p>Устройства и регионы без персональных данных</p></div><div><span>Android</span><strong>61%</strong><i><b style="--w:61%"></b></i></div><div><span>iPhone</span><strong>33%</strong><i><b style="--w:33%"></b></i></div><div><span>Desktop</span><strong>6%</strong><i><b style="--w:6%"></b></i></div><div class="region-list"><span>Топ регионов</span><strong>Москва · СПб · Екатеринбург</strong><small>26% · 14% · 8%</small></div></div>
+      </section>
+
+      <section class="page-section" id="audience" aria-labelledby="audience-title">
+        <div class="section-heading"><div><h2 id="audience-title">Аудитория</h2><p>Кто приходит, возвращается и остаётся в чате</p></div></div>
+        <div class="feature-placeholder">
+          <div class="big-stat"><span>Новых за 7 дней</span><strong>3 816</strong><small>29,7% активной аудитории</small></div>
+          <div class="audience-rings"><div style="--v:72"><b>72%</b><span>вернулись</span></div><div style="--v:48"><b>48%</b><span>общаются ежедневно</span></div><div style="--v:63"><b>63%</b><span>нашли пару быстро</span></div></div>
+        </div>
+      </section>
+
+      <section class="page-section" id="dialogs" aria-labelledby="dialogs-title">
+        <div class="section-heading"><div><h2 id="dialogs-title">Диалоги</h2><p>Обезличенный поток активных сессий</p></div><label class="search"><svg viewBox="0 0 24 24"><path d="m21 21-4.3-4.3M19 11a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input id="dialogSearch" type="search" placeholder="Найти по ID или теме"></label></div>
+        <div class="dialog-summary"><div><span>Идут сейчас</span><strong>972</strong><small class="live-dot">в реальном времени</small></div><div><span>Средняя длина</span><strong>18:42</strong><small class="up">↑ 2:16 за неделю</small></div><div><span>Сообщений на диалог</span><strong>38</strong><small class="up">↑ 12,4%</small></div><div><span>Завершили без жалобы</span><strong>98,7%</strong><small>11 244 диалога</small></div></div>
+        <div class="panel table-panel"><div class="data-table" id="dialogTable"></div></div>
+        <div class="dialog-insights"><article class="panel"><h3>Почему диалог закончился</h3><div class="reason-list"><div><span>Обычное завершение</span><b>61%</b><i style="--w:61%"></i></div><div><span>Новый поиск</span><b>24%</b><i style="--w:24%"></i></div><div><span>Собеседник вышел</span><b>11%</b><i style="--w:11%"></i></div><div><span>Жалоба или блок</span><b>4%</b><i class="danger" style="--w:4%"></i></div></div></article><article class="panel peak-dialog"><span>Самый длинный сегодня</span><strong>01:48:12</strong><p>638 сообщений · «Музыка и кино»</p><small>Данные полностью обезличены</small></article></div>
+      </section>
+
+      <section class="page-section" id="retention" aria-labelledby="retention-title">
+        <div class="section-heading"><div><h2 id="retention-title">Удержание</h2><p>Как часто пользователи возвращаются</p></div></div>
+        <div class="retention-layout"><article class="panel cohort-panel"><h3>Когорты по неделям</h3><div id="cohortGrid" class="cohort-grid"></div></article><article class="panel retention-summary"><span>Возврат на 7-й день</span><strong>35,2%</strong><p>Лучший результат за последние 6 недель.</p><div class="trend-pill">↑ 4,8 п.п.</div></article></div>
+      </section>
+
+      <section class="page-section" id="moderation" aria-labelledby="moderation-title">
+        <div class="section-heading"><div><h2 id="moderation-title">Модерация</h2><p>Сигналы риска без раскрытия личности пользователей</p></div><select id="moderationFilter" aria-label="Фильтр модерации"><option value="all">Все сигналы</option><option value="high">Высокий риск</option><option value="medium">Средний риск</option></select></div>
+        <div class="moderation-summary"><div><span>Открыто</span><strong>24</strong></div><div><span>Решено сегодня</span><strong>71</strong></div><div><span>Среднее время</span><strong>2м 14с</strong></div><div><span>Автоматически</span><strong>82%</strong></div></div>
+        <div class="panel cases" id="moderationCases"></div>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
