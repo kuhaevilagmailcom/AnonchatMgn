@@ -88,3 +88,8 @@ def test_manual_invoice_verifies_provider_identity_amount_and_currency() -> None
             finally:
                 await db.close()
     asyncio.run(scenario())
+
+
+if __name__ == "__main__":
+    test_manual_invoice_lifecycle()
+    test_manual_invoice_verifies_provider_identity_amount_and_currency()
