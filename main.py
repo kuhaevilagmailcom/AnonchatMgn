@@ -31,6 +31,7 @@ from anonchat.pack import EmojiPack
 from anonchat.diagnostics import METRICS
 from anonchat.admin_events import run_worker as run_notice_worker
 from anonchat.admin_broadcasts import run_worker as run_broadcast_worker
+from anonchat.handlers.manual_invoices import sync_pending_manual_invoices
 from anonchat.nft_channel_live import run_worker as run_nft_channel_refresh
 from anonchat.backups import maybe_backup
 from anonchat.runtime_state import online_count as presence_online_count
@@ -74,6 +75,7 @@ async def janitor(
     """Подчищает устаревшее состояние и регулярно пересобирает возможные пары."""
     last_maintenance = 0.0
     last_backup_check = 0.0
+    last_manual_invoice_sync = 0.0
     last_raiony_chest_cycle = None
     while True:
         try:
@@ -86,6 +88,12 @@ async def janitor(
             if expired_mutes or expired_bans:
                 log.info('Expired restrictions lifted: mutes=%s bans=%s', expired_mutes, expired_bans)
             await db.online_peak(presence_online_count())
+            if time.monotonic() - last_manual_invoice_sync >= 300:
+                last_manual_invoice_sync = time.monotonic()
+                try:
+                    await sync_pending_manual_invoices(bot, cfg, db)
+                except Exception:
+                    log.exception("janitor: не удалось сверить ручные счета")
             # Server-driven five-hour chest cycles, persisted across restarts.
             from anonchat.city_progression import CHEST_INTERVAL
             cycle = int(time.time()) // CHEST_INTERVAL
