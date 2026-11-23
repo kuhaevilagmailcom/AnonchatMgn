@@ -665,6 +665,7 @@ def admin_panel_keyboard(
     anonymous_monitor_enabled: bool = False,
     xp_multiplier: int = 1,
     poll_active: bool = False,
+    invoices_enabled: bool = False,
 ) -> InlineKeyboardMarkup:
     """Панель модератора: никаких команд в счёт, всё кнопками."""
     b = InlineKeyboardBuilder()
@@ -699,6 +700,8 @@ def admin_panel_keyboard(
     if "stats" in permissions:
         _button(b, "Проверка топов", callback_data="ax:t:w", icon="bonus")
         _button(b, "Розыгрыш сообщений", callback_data="ax:g", icon="bonus", style="primary")
+    if invoices_enabled:
+        _button(b, "💳 Счета на оплату", callback_data="bill:home", icon="ticket", style="primary")
     if owner:
         _button(b, "NFT-розыгрыш", callback_data=CB_ADMIN_RAFFLE, icon="gift", style="primary")
         _button(
