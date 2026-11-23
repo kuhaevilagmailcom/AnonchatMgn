@@ -178,7 +178,7 @@ async def verify_manual_invoice(cfg: Config, db: Database, invoice: dict) -> tup
     return status, fresh
 
 
-async def _notify_paid(ctx: Ctx, invoice: dict) -> None:
+async def _notify_paid(bot: object, invoice: dict, skip_user_id: int = 0) -> None:
     body_admin = (
         f"✅ <b>Оплачен счёт №{invoice['id']}</b>\n"
         f"Сумма: <b>{invoice['amount_rub']} ₽</b>\n"
@@ -194,12 +194,29 @@ async def _notify_paid(ctx: Ctx, invoice: dict) -> None:
         (int(invoice["created_by"]), body_admin),
         (int(invoice["user_id"]), body_user),
     ):
-        if uid == ctx.user_id:
+        if uid == skip_user_id:
             continue
         try:
-            await ctx.bot.send_message(uid, body)
+            await bot.send_message(uid, body)
         except TelegramAPIError:
             log.info("Manual invoice %s: notification to %s not delivered", invoice["id"], uid)
+
+
+async def sync_pending_manual_invoices(bot: object, cfg: Config, db: Database) -> int:
+    """Регулярно сверяем свежие СБП-счета без необходимости нажимать кнопку."""
+    if not cfg.rollypay_enabled:
+        return 0
+    paid = 0
+    for invoice in await db.list_pending_manual_invoices(limit=12):
+        try:
+            status, fresh = await verify_manual_invoice(cfg, db, invoice)
+        except RollyPayError:
+            log.warning("Manual invoice %s: provider reconciliation failed", invoice["id"])
+            continue
+        if status == "paid" and fresh:
+            paid += 1
+            await _notify_paid(bot, invoice)
+    return paid
 
 
 @router.message(Command("invoice", "счёт", "счет"))
@@ -234,7 +251,7 @@ async def callback_invoice(event: CallbackQuery, ctx: Ctx, db: Database, cfg: Co
             return
         await ctx.ack("Оплата подтверждена" if status == "paid" else "Платёж пока не оплачен", alert=status != "paid")
         if fresh:
-            await _notify_paid(ctx, invoice)
+            await _notify_paid(ctx.bot, invoice, skip_user_id=ctx.user_id)
         if ctx.is_owner:
             await _detail(ctx, db, invoice_id)
         elif status == "paid":
