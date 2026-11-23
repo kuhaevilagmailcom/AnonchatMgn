@@ -2969,6 +2969,17 @@ class Database:
         )
         return [dict(row) for row in rows]
 
+    async def list_pending_manual_invoices(self, limit: int = 10) -> list[dict[str, Any]]:
+        rows = await self._fetchall(
+            """SELECT * FROM manual_invoices
+               WHERE payment_id IS NOT NULL
+                 AND status IN ('awaiting_payment','pending','processing','created','new')
+                 AND created_at >= ?
+               ORDER BY created_at DESC LIMIT ?""",
+            (now() - 30 * 86400, max(1, min(int(limit), 30))),
+        )
+        return [dict(row) for row in rows]
+
     async def manual_invoice_stats(self) -> dict[str, int]:
         row = await self._fetchone(
             """SELECT COUNT(*) AS total,
