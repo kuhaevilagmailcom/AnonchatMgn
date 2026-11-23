@@ -559,6 +559,7 @@ async def panel_screen(ctx: Ctx, db: Database, mm: Matchmaker, edit: bool = True
         anonymous_monitor_enabled=await db.get_kv(f"anonq_monitor:{ctx.user_id}") == "1",
         xp_multiplier=multiplier,
         poll_active=active_poll is not None,
+        invoices_enabled=ctx.is_owner,
     )
     if edit and await ctx.edit(body, kb):
         return
