@@ -48,6 +48,7 @@ jobs:
           - test_city_roads
           - test_city_pets
           - test_city_progression
+          - test_manual_invoices
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

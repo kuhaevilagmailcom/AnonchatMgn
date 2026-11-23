@@ -14,6 +14,7 @@ from .polls import router as polls_router
 from .reports import router as reports_router
 from .settings import router as settings_router
 from .support import router as support_router
+from .manual_invoices import router as manual_invoices_router
 from .nft_giveaway import router as nft_giveaway_router
 from .nft_channel import router as nft_channel_router
 from .nft_setup import router as nft_setup_router
@@ -28,6 +29,7 @@ def get_routers() -> list[Router]:
         settings_router,  # /profile, /settings, FSM ника
         raiony_router,   # районы: проверенные XTR-платежи и складские приглашения
         support_router,   # добровольная поддержка через Telegram Stars
+        manual_invoices_router,  # ручные счета СБП для владельцев
         nft_setup_router,  # настройка NFT через личные сообщения
         nft_win_router,  # ручное сообщение владельцу о победителе
         nft_grant_router,  # подтверждённая админ-выдача NFT-билетов по ID
