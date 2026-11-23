@@ -129,6 +129,24 @@ CREATE TABLE IF NOT EXISTS sbp_payments (
     paid_at       INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS manual_invoices (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id     TEXT NOT NULL UNIQUE,
+    payment_id   TEXT UNIQUE,
+    user_id      INTEGER NOT NULL,
+    created_by   INTEGER NOT NULL,
+    amount_rub   INTEGER NOT NULL CHECK(amount_rub BETWEEN 1 AND 100000),
+    description  TEXT NOT NULL,
+    pay_url      TEXT NOT NULL DEFAULT '',
+    status       TEXT NOT NULL DEFAULT 'creating',
+    created_at   INTEGER NOT NULL,
+    paid_at      INTEGER NOT NULL DEFAULT 0,
+    delivered_at INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_manual_invoices_status_created
+ON manual_invoices(status, created_at);
+
 CREATE TABLE IF NOT EXISTS reward_claims (
     user_id    INTEGER NOT NULL,
     reward_key TEXT    NOT NULL,
@@ -2896,6 +2914,113 @@ class Database:
                 "premium_until": premium_until,
                 "amount_rub": int(payment["amount_rub"]),
             }
+
+    # ------------------------------------------------------------------ manual SBP invoices
+    async def create_manual_invoice(
+        self, *, order_id: str, created_by: int, user_id: int,
+        amount_rub: int, description: str,
+    ) -> int:
+        description = str(description).strip()
+        if not (1 <= int(user_id) < 2**63 and 1 <= int(created_by) < 2**63
+                and 1 <= int(amount_rub) <= 100_000 and 3 <= len(description) <= 200):
+            raise ValueError("Invalid manual invoice")
+        cur = await self.db.execute(
+            """INSERT INTO manual_invoices
+               (order_id, user_id, created_by, amount_rub, description, created_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (str(order_id), int(user_id), int(created_by), int(amount_rub),
+             description, now()),
+        )
+        await self.db.commit()
+        return int(cur.lastrowid)
+
+    async def attach_manual_invoice(
+        self, invoice_id: int, payment_id: str, pay_url: str,
+    ) -> None:
+        if not payment_id or not pay_url:
+            raise ValueError("Missing payment details")
+        cur = await self.db.execute(
+            """UPDATE manual_invoices
+               SET payment_id=?, pay_url=?, status='awaiting_payment'
+               WHERE id=? AND status='creating'""",
+            (str(payment_id), str(pay_url), int(invoice_id)),
+        )
+        if cur.rowcount != 1:
+            raise ValueError("Invoice is not attachable")
+        await self.db.commit()
+
+    async def get_manual_invoice(self, invoice_id: int) -> dict[str, Any] | None:
+        row = await self._fetchone(
+            "SELECT * FROM manual_invoices WHERE id=?", (int(invoice_id),),
+        )
+        return dict(row) if row else None
+
+    async def list_manual_invoices(
+        self, *, status: str = "all", limit: int = 7, offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        filter_sql = (
+            "AND status='paid'" if status == "paid"
+            else "AND status!='paid'" if status == "unpaid" else ""
+        )
+        rows = await self._fetchall(
+            f"""SELECT * FROM manual_invoices WHERE 1=1 {filter_sql}
+                ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?""",
+            (max(1, min(int(limit), 100)), max(0, int(offset))),
+        )
+        return [dict(row) for row in rows]
+
+    async def manual_invoice_stats(self) -> dict[str, int]:
+        row = await self._fetchone(
+            """SELECT COUNT(*) AS total,
+                      COALESCE(SUM(CASE WHEN status='paid' THEN 1 ELSE 0 END), 0) AS paid,
+                      COALESCE(SUM(CASE WHEN status='paid' THEN amount_rub ELSE 0 END), 0) AS paid_rub
+               FROM manual_invoices"""
+        )
+        total, paid = int(row["total"]), int(row["paid"])
+        return {
+            "total": total, "paid": paid, "unpaid": total - paid,
+            "paid_rub": int(row["paid_rub"]),
+        }
+
+    async def mark_manual_invoice_delivered(self, invoice_id: int) -> None:
+        await self.db.execute(
+            """UPDATE manual_invoices SET delivered_at=?
+               WHERE id=? AND delivered_at=0""",
+            (now(), int(invoice_id)),
+        )
+        await self.db.commit()
+
+    async def set_manual_invoice_status(self, invoice_id: int, status: str) -> bool:
+        """Возвращает True только при первом переходе в оплаченный статус."""
+        allowed = {
+            "paid", "pending", "awaiting_payment", "processing", "created", "new",
+            "failed", "expired", "cancelled", "canceled", "refunded", "create_failed",
+        }
+        if status not in allowed:
+            raise ValueError("Unsupported invoice status")
+        if status == "paid":
+            cur = await self.db.execute(
+                """UPDATE manual_invoices SET status='paid', paid_at=?
+                   WHERE id=? AND payment_id IS NOT NULL AND status!='paid'""",
+                (now(), int(invoice_id)),
+            )
+            await self.db.commit()
+            return cur.rowcount == 1
+        if status == "create_failed":
+            await self.db.execute(
+                """UPDATE manual_invoices SET status='create_failed'
+                   WHERE id=? AND status='creating'""",
+                (int(invoice_id),),
+            )
+        else:
+            await self.db.execute(
+                """UPDATE manual_invoices SET status=?
+                   WHERE id=? AND payment_id IS NOT NULL
+                     AND status NOT IN ('paid', 'create_failed')""",
+                (str(status), int(invoice_id)),
+            )
+        await self.db.commit()
+        return False
 
     async def payment_stats(self) -> dict[str, int]:
         star_rows = await self._fetchall(
