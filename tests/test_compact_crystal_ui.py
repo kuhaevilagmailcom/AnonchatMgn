@@ -49,6 +49,7 @@ def test_raffle_is_compact_and_administered_from_one_button_hub() -> None:
     assert "NFT-розыгрыш" in _labels(K.admin_panel_keyboard(owner=True))
     assert hasattr(K, "admin_raffle_keyboard")
     assert _labels(K.admin_raffle_keyboard()) == [
-        "Открыть", "Создать", "Рассылка", "Опубликовать", "Статистика", "Завершить", "В панель",
+        "Открыть", "Создать", "Рассылка", "Опубликовать", "Цена билета",
+        "Дата окончания", "Статистика", "Ручной итог", "Завершить", "В панель",
     ]
 

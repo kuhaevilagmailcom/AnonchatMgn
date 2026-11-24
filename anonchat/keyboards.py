@@ -749,9 +749,10 @@ def admin_raffle_keyboard() -> InlineKeyboardMarkup:
     _button(b, "Цена билета", callback_data="nft:admin:price", icon="money")
     _button(b, "Дата окончания", callback_data="nft:admin:date", icon="ticket")
     _button(b, "Статистика", callback_data="nft:admin:stats", icon="stats")
+    _button(b, "Ручной итог", callback_data="nft:admin:manual_result", icon="edit")
     _button(b, "Завершить", callback_data="nft:admin:finish", icon="delete", style="danger")
     _button(b, "В панель", callback_data=CB_PANEL_BACK, icon="home")
-    b.adjust(2, 2, 2, 2, 1)
+    b.adjust(2, 2, 2, 2, 2)
     return b.as_markup()
 
 
